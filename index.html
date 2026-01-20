@@ -5395,8 +5395,36 @@ async function loadTestPage() {
   debugEl.innerHTML = 'Loading...';
   if (testTable) { testTable.destroy(); testTable = null; }
 
-  // Create fresh container with explicit dimensions
-  gridEl.innerHTML = '<div id="test-grid-inner" style="width: 100%; min-width: 800px;"></div>';
+  // Inject CSS reset for this test grid
+  let styleEl = document.getElementById('test-grid-reset-css');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'test-grid-reset-css';
+    styleEl.textContent = `
+      #test-grid-inner .tabulator-cell,
+      #test-grid-inner .tabulator-col {
+        display: table-cell !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        width: auto !important;
+        min-width: 150px !important;
+        max-width: none !important;
+        overflow: visible !important;
+      }
+      #test-grid-inner .tabulator-row {
+        display: table-row !important;
+      }
+      #test-grid-inner .tabulator-header,
+      #test-grid-inner .tabulator-tableHolder {
+        display: block !important;
+        overflow: visible !important;
+      }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
+  // Create fresh container
+  gridEl.innerHTML = '<div id="test-grid-inner" style="width:100%;overflow:auto;"></div>';
 
   // 1. Fetch directly from Airtable
   const res = await fetch(
@@ -5441,6 +5469,19 @@ async function loadTestPage() {
     data: data,
     columns: columns,
   });
+
+  // Debug: inspect DOM after render
+  setTimeout(() => {
+    const cols = document.querySelectorAll('#test-grid-inner .tabulator-col');
+    const cells = document.querySelectorAll('#test-grid-inner .tabulator-row:first-child .tabulator-cell');
+    debugEl.innerHTML += `<br>DOM: ${cols.length} cols, ${cells.length} cells in first row`;
+
+    // Log column widths
+    cols.forEach((col, i) => {
+      const rect = col.getBoundingClientRect();
+      debugEl.innerHTML += `<br>Col ${i}: ${rect.width}px wide`;
+    });
+  }, 500);
 }
 
 // Test page refresh button
