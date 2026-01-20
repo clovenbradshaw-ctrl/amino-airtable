@@ -5422,29 +5422,26 @@ async function loadTestPage() {
   debugEl.innerHTML = 'Loading...';
   if (testTable) { testTable.destroy(); testTable = null; }
 
-  // Inject CSS reset for this test grid
+  // Inject CSS to make ALL column headers visible
   let styleEl = document.getElementById('test-grid-reset-css');
   if (!styleEl) {
     styleEl = document.createElement('style');
     styleEl.id = 'test-grid-reset-css';
     styleEl.textContent = `
-      #test-grid-inner .tabulator-cell,
       #test-grid-inner .tabulator-col {
-        display: table-cell !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        width: auto !important;
+        background: #e0e0e0 !important;
+        border: 1px solid #333 !important;
         min-width: 150px !important;
-        max-width: none !important;
-        overflow: visible !important;
       }
-      #test-grid-inner .tabulator-row {
-        display: table-row !important;
+      #test-grid-inner .tabulator-col-title {
+        color: #000 !important;
+        font-weight: bold !important;
+        font-size: 14px !important;
       }
-      #test-grid-inner .tabulator-header,
-      #test-grid-inner .tabulator-tableHolder {
-        display: block !important;
-        overflow: visible !important;
+      #test-grid-inner .tabulator-cell {
+        border: 1px solid #ccc !important;
+        min-width: 150px !important;
+        background: #fff !important;
       }
     `;
     document.head.appendChild(styleEl);
