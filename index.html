@@ -5436,37 +5436,34 @@ async function loadTestPage() {
     return;
   }
 
-  // 2. Use just 4 fields for simplicity
+  // 2. Get field names from first record
   const fieldNames = Object.keys(records[0].fields).slice(0, 4);
 
-  // 3. Flatten all values to display strings
+  // 3. Build columns with simple indexed field keys (col0, col1, etc.)
+  // Title = display name, field = data key
+  const columns = fieldNames.map((name, i) => ({
+    title: name,
+    field: `col${i}`,
+    width: 200,
+  }));
+
+  // 4. Build data rows - each tuple maps to indexed keys
   const data = records.map(rec => {
-    const row = { id: rec.id };
-    fieldNames.forEach(name => {
+    const row = {};
+    fieldNames.forEach((name, i) => {
       let val = rec.fields[name];
+      // Flatten value to string
       if (val === null || val === undefined) {
         val = '';
       } else if (Array.isArray(val)) {
-        // Join arrays (handles multiselect, linked records, etc.)
-        val = val.map(v => typeof v === 'object' ? (v.name || v.id || JSON.stringify(v)) : v).join(', ');
+        val = val.map(v => typeof v === 'object' ? (v.name || v.id || String(v)) : v).join(', ');
       } else if (typeof val === 'object') {
-        // Handle objects (attachments, etc.)
-        val = val.name || val.url || val.id || JSON.stringify(val);
-      } else {
-        val = String(val);
+        val = val.name || val.url || val.id || String(val);
       }
-      row[name] = val;
+      row[`col${i}`] = String(val);
     });
     return row;
   });
-
-  // 4. Explicit columns with widths
-  const columns = fieldNames.map(name => ({
-    title: name,
-    field: name,
-    width: 200,
-    minWidth: 100,
-  }));
 
   debugEl.innerHTML = `Columns: ${columns.map(c => c.field).join(', ')}<br>Data[0]: ${JSON.stringify(data[0])}`;
   countEl.textContent = `${data.length} records`;
