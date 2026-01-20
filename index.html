@@ -5425,6 +5425,10 @@ async function loadTestPage() {
   const columns = buildColumns(fields);
   log(`Built ${columns.length} columns`);
 
+  // Log column field names
+  const columnFields = columns.map(c => c.field);
+  log(`Column fields: ${columnFields.slice(0, 5).join(', ')}...`);
+
   // Load from cache first
   let records = [];
   try {
@@ -5450,6 +5454,34 @@ async function loadTestPage() {
 
   if (gridData.length > 0) {
     log(`First record keys: ${Object.keys(gridData[0]).join(', ')}`);
+
+    // Deep debug - compare columns vs data
+    const dataKeys = Object.keys(gridData[0]).filter(k => !k.startsWith('_'));
+    const missingInData = columnFields.filter(f => !dataKeys.includes(f));
+    const extraInData = dataKeys.filter(k => !columnFields.includes(k));
+
+    if (missingInData.length > 0) {
+      log(`WARNING: Column fields not in data: ${missingInData.slice(0, 10).join(', ')}${missingInData.length > 10 ? '...' : ''}`);
+    }
+    if (extraInData.length > 0) {
+      log(`Extra fields in data not in columns: ${extraInData.slice(0, 5).join(', ')}`);
+    }
+
+    // Show raw first record structure
+    const firstRec = records[0];
+    log(`Raw record keys: ${Object.keys(firstRec || {}).join(', ')}`);
+    if (firstRec?._given?.fields) {
+      log(`_given.fields keys: ${Object.keys(firstRec._given.fields).join(', ')}`);
+    } else {
+      log(`WARNING: No _given.fields found!`);
+    }
+    if (firstRec?._meant?.fields) {
+      log(`_meant.fields keys: ${Object.keys(firstRec._meant.fields).join(', ')}`);
+    }
+
+    // Sample a value that should exist
+    const sampleField = columnFields[1]; // Second column
+    log(`Sample field "${sampleField}" value in data: ${JSON.stringify(gridData[0][sampleField])}`);
   }
 
   // Update count
