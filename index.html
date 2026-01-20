@@ -1201,7 +1201,7 @@
       flex-direction: column;
     }
 
-    .main-content #page-data {
+    .main-content #page-data.active {
       padding: 0;
       display: flex;
       flex-direction: column;
@@ -1209,7 +1209,7 @@
       flex: 1;
     }
 
-    .main-content #page-sync {
+    .main-content #page-sync.active {
       padding: 24px;
       justify-content: flex-start;
       align-items: stretch;
@@ -1404,6 +1404,9 @@
         <span id="sidebar-sync-text">Synced just now</span>
         <button id="sidebar-refresh-btn" title="Refresh">
           <i class="ph ph-arrows-clockwise"></i>
+        </button>
+        <button id="sidebar-disconnect-btn" title="Disconnect">
+          <i class="ph ph-sign-out"></i>
         </button>
       </div>
     </div>
@@ -3730,7 +3733,7 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
       // Show main UI immediately
       localStorage.setItem('airtable_api_key', apiKey);
       localStorage.setItem('airtable_base_id', baseId);
-      navEl.style.display = 'flex';
+      // Nav bar hidden - functionality exists in header
       showPage('data');
       await updateBadges();
 
@@ -3753,7 +3756,7 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
 
       populateTableDropdown();
 
-      navEl.style.display = 'flex';
+      // Nav bar hidden - functionality exists in header
       showPage('data');
       await updateBadges();
 
@@ -3966,8 +3969,8 @@ function populateTableDropdown() {
   populateLeftPanel();
 }
 
-// Disconnect
-document.getElementById('disconnect-btn').addEventListener('click', async () => {
+// Disconnect function
+async function handleDisconnect() {
   if (!confirm('Disconnect? Your cached data will be preserved for next time.')) return;
 
   CONFIG.API_KEY = '';
@@ -3990,7 +3993,11 @@ document.getElementById('disconnect-btn').addEventListener('click', async () => 
   navEl.style.display = 'none';
   document.getElementById('tables-list').innerHTML = '';
   showPage('connect');
-});
+}
+
+// Disconnect buttons (nav and sidebar)
+document.getElementById('disconnect-btn')?.addEventListener('click', handleDisconnect);
+document.getElementById('sidebar-disconnect-btn')?.addEventListener('click', handleDisconnect);
 
 // Auto-connect
 async function init() {
