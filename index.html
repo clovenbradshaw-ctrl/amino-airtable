@@ -554,6 +554,20 @@
     .tabulator .tabulator-row.row-conflict { border-left: 3px solid var(--danger); }
     .tabulator .tabulator-row.row-new { border-left: 3px solid var(--success); }
 
+    /* Formula cell indicators */
+    .tabulator .tabulator-cell.formula-cell {
+      background: rgba(99, 102, 241, 0.05);
+      font-style: italic;
+    }
+    .formula-calculated {
+      color: var(--accent);
+    }
+    .formula-calculated::after {
+      content: ' ⚡';
+      font-size: 10px;
+      opacity: 0.7;
+    }
+
     /* Status badges in cells */
     .badge {
       display: inline-flex;
@@ -2018,6 +2032,545 @@ const ExperienceEngine = {
 };
 
 // ============================================================
+// FORMULA ENGINE - Local formula calculation
+// ============================================================
+const FormulaEngine = {
+  // Cache parsed formulas for performance
+  _cache: new Map(),
+
+  // Evaluate a formula string with record data
+  evaluate(formulaStr, record, fields) {
+    if (!formulaStr || typeof formulaStr !== 'string') return null;
+
+    try {
+      // Get or create parsed formula
+      let parsed = this._cache.get(formulaStr);
+      if (!parsed) {
+        parsed = this.parse(formulaStr);
+        this._cache.set(formulaStr, parsed);
+      }
+
+      // Create field lookup map (name -> value)
+      const fieldValues = {};
+      const fieldMap = new Map(fields.map(f => [f.id, f.name]));
+
+      for (const [key, value] of Object.entries(record)) {
+        fieldValues[key] = value;
+      }
+
+      return this.exec(parsed, fieldValues);
+    } catch (e) {
+      console.warn('Formula evaluation error:', e.message, formulaStr);
+      return '#ERROR';
+    }
+  },
+
+  // Parse formula string into AST
+  parse(formula) {
+    const tokens = this.tokenize(formula);
+    return this.parseExpression(tokens, 0).node;
+  },
+
+  // Tokenize formula string
+  tokenize(formula) {
+    const tokens = [];
+    let i = 0;
+
+    while (i < formula.length) {
+      const ch = formula[i];
+
+      // Whitespace
+      if (/\s/.test(ch)) {
+        i++;
+        continue;
+      }
+
+      // Field reference: {Field Name}
+      if (ch === '{') {
+        const end = formula.indexOf('}', i);
+        if (end === -1) throw new Error('Unclosed field reference');
+        tokens.push({ type: 'field', value: formula.slice(i + 1, end) });
+        i = end + 1;
+        continue;
+      }
+
+      // String literal: "text" or 'text'
+      if (ch === '"' || ch === "'") {
+        const quote = ch;
+        let str = '';
+        i++;
+        while (i < formula.length && formula[i] !== quote) {
+          if (formula[i] === '\\' && i + 1 < formula.length) {
+            i++;
+            str += formula[i];
+          } else {
+            str += formula[i];
+          }
+          i++;
+        }
+        if (i >= formula.length) throw new Error('Unclosed string');
+        tokens.push({ type: 'string', value: str });
+        i++;
+        continue;
+      }
+
+      // Number
+      if (/[0-9.]/.test(ch)) {
+        let num = '';
+        while (i < formula.length && /[0-9.]/.test(formula[i])) {
+          num += formula[i];
+          i++;
+        }
+        tokens.push({ type: 'number', value: parseFloat(num) });
+        continue;
+      }
+
+      // Operators
+      if (ch === '+') { tokens.push({ type: 'op', value: '+' }); i++; continue; }
+      if (ch === '-') { tokens.push({ type: 'op', value: '-' }); i++; continue; }
+      if (ch === '*') { tokens.push({ type: 'op', value: '*' }); i++; continue; }
+      if (ch === '/') { tokens.push({ type: 'op', value: '/' }); i++; continue; }
+      if (ch === '&') { tokens.push({ type: 'op', value: '&' }); i++; continue; }
+      if (ch === '(') { tokens.push({ type: 'lparen' }); i++; continue; }
+      if (ch === ')') { tokens.push({ type: 'rparen' }); i++; continue; }
+      if (ch === ',') { tokens.push({ type: 'comma' }); i++; continue; }
+
+      // Comparison operators
+      if (ch === '=' && formula[i + 1] !== '=') {
+        tokens.push({ type: 'op', value: '=' }); i++; continue;
+      }
+      if (ch === '!' && formula[i + 1] === '=') {
+        tokens.push({ type: 'op', value: '!=' }); i += 2; continue;
+      }
+      if (ch === '<' && formula[i + 1] === '=') {
+        tokens.push({ type: 'op', value: '<=' }); i += 2; continue;
+      }
+      if (ch === '>' && formula[i + 1] === '=') {
+        tokens.push({ type: 'op', value: '>=' }); i += 2; continue;
+      }
+      if (ch === '<') { tokens.push({ type: 'op', value: '<' }); i++; continue; }
+      if (ch === '>') { tokens.push({ type: 'op', value: '>' }); i++; continue; }
+
+      // Function or identifier
+      if (/[a-zA-Z_]/.test(ch)) {
+        let name = '';
+        while (i < formula.length && /[a-zA-Z0-9_]/.test(formula[i])) {
+          name += formula[i];
+          i++;
+        }
+        // Check for TRUE/FALSE literals
+        if (name.toUpperCase() === 'TRUE') {
+          tokens.push({ type: 'boolean', value: true });
+        } else if (name.toUpperCase() === 'FALSE') {
+          tokens.push({ type: 'boolean', value: false });
+        } else {
+          tokens.push({ type: 'func', value: name.toUpperCase() });
+        }
+        continue;
+      }
+
+      // Unknown character - skip
+      i++;
+    }
+
+    return tokens;
+  },
+
+  // Parse expression with precedence
+  parseExpression(tokens, pos) {
+    return this.parseComparison(tokens, pos);
+  },
+
+  // Parse comparison (lowest precedence)
+  parseComparison(tokens, pos) {
+    let { node: left, pos: newPos } = this.parseAddSub(tokens, pos);
+
+    while (newPos < tokens.length &&
+           tokens[newPos].type === 'op' &&
+           ['=', '!=', '<', '>', '<=', '>='].includes(tokens[newPos].value)) {
+      const op = tokens[newPos].value;
+      const { node: right, pos: nextPos } = this.parseAddSub(tokens, newPos + 1);
+      left = { type: 'binary', op, left, right };
+      newPos = nextPos;
+    }
+
+    return { node: left, pos: newPos };
+  },
+
+  // Parse addition/subtraction and string concat
+  parseAddSub(tokens, pos) {
+    let { node: left, pos: newPos } = this.parseMulDiv(tokens, pos);
+
+    while (newPos < tokens.length &&
+           tokens[newPos].type === 'op' &&
+           ['+', '-', '&'].includes(tokens[newPos].value)) {
+      const op = tokens[newPos].value;
+      const { node: right, pos: nextPos } = this.parseMulDiv(tokens, newPos + 1);
+      left = { type: 'binary', op, left, right };
+      newPos = nextPos;
+    }
+
+    return { node: left, pos: newPos };
+  },
+
+  // Parse multiplication/division
+  parseMulDiv(tokens, pos) {
+    let { node: left, pos: newPos } = this.parseUnary(tokens, pos);
+
+    while (newPos < tokens.length &&
+           tokens[newPos].type === 'op' &&
+           ['*', '/'].includes(tokens[newPos].value)) {
+      const op = tokens[newPos].value;
+      const { node: right, pos: nextPos } = this.parseUnary(tokens, newPos + 1);
+      left = { type: 'binary', op, left, right };
+      newPos = nextPos;
+    }
+
+    return { node: left, pos: newPos };
+  },
+
+  // Parse unary (negative numbers)
+  parseUnary(tokens, pos) {
+    if (pos < tokens.length && tokens[pos].type === 'op' && tokens[pos].value === '-') {
+      const { node, pos: newPos } = this.parsePrimary(tokens, pos + 1);
+      return { node: { type: 'unary', op: '-', operand: node }, pos: newPos };
+    }
+    return this.parsePrimary(tokens, pos);
+  },
+
+  // Parse primary (literals, fields, functions, parentheses)
+  parsePrimary(tokens, pos) {
+    if (pos >= tokens.length) {
+      return { node: { type: 'literal', value: null }, pos };
+    }
+
+    const token = tokens[pos];
+
+    // Literals
+    if (token.type === 'number' || token.type === 'string' || token.type === 'boolean') {
+      return { node: { type: 'literal', value: token.value }, pos: pos + 1 };
+    }
+
+    // Field reference
+    if (token.type === 'field') {
+      return { node: { type: 'field', name: token.value }, pos: pos + 1 };
+    }
+
+    // Function call
+    if (token.type === 'func') {
+      const funcName = token.value;
+      if (pos + 1 < tokens.length && tokens[pos + 1].type === 'lparen') {
+        // Parse arguments
+        const args = [];
+        let argPos = pos + 2;
+
+        while (argPos < tokens.length && tokens[argPos].type !== 'rparen') {
+          const { node: arg, pos: newPos } = this.parseExpression(tokens, argPos);
+          args.push(arg);
+          argPos = newPos;
+
+          if (argPos < tokens.length && tokens[argPos].type === 'comma') {
+            argPos++;
+          }
+        }
+
+        // Skip closing paren
+        if (argPos < tokens.length && tokens[argPos].type === 'rparen') {
+          argPos++;
+        }
+
+        return { node: { type: 'call', func: funcName, args }, pos: argPos };
+      }
+      // Bare function name (shouldn't happen but handle it)
+      return { node: { type: 'call', func: funcName, args: [] }, pos: pos + 1 };
+    }
+
+    // Parenthesized expression
+    if (token.type === 'lparen') {
+      const { node, pos: newPos } = this.parseExpression(tokens, pos + 1);
+      // Skip closing paren
+      const closePos = newPos < tokens.length && tokens[newPos].type === 'rparen' ? newPos + 1 : newPos;
+      return { node, pos: closePos };
+    }
+
+    // Unknown - return null
+    return { node: { type: 'literal', value: null }, pos: pos + 1 };
+  },
+
+  // Execute AST node
+  exec(node, fields) {
+    if (!node) return null;
+
+    switch (node.type) {
+      case 'literal':
+        return node.value;
+
+      case 'field':
+        const val = fields[node.name];
+        // Handle undefined/null
+        if (val === undefined || val === null) return null;
+        // Handle linked records/attachments (return count or first value)
+        if (Array.isArray(val)) {
+          if (val.length === 0) return null;
+          if (typeof val[0] === 'object') return val.length; // Count for linked records
+          return val[0]; // First value for simple arrays
+        }
+        return val;
+
+      case 'unary':
+        const operand = this.exec(node.operand, fields);
+        if (node.op === '-') return -this.toNumber(operand);
+        return operand;
+
+      case 'binary':
+        const left = this.exec(node.left, fields);
+        const right = this.exec(node.right, fields);
+        return this.execBinary(node.op, left, right);
+
+      case 'call':
+        const args = node.args.map(a => this.exec(a, fields));
+        return this.execFunction(node.func, args);
+
+      default:
+        return null;
+    }
+  },
+
+  // Execute binary operation
+  execBinary(op, left, right) {
+    switch (op) {
+      case '+': return this.toNumber(left) + this.toNumber(right);
+      case '-': return this.toNumber(left) - this.toNumber(right);
+      case '*': return this.toNumber(left) * this.toNumber(right);
+      case '/':
+        const divisor = this.toNumber(right);
+        return divisor === 0 ? '#DIV/0' : this.toNumber(left) / divisor;
+      case '&': return this.toString(left) + this.toString(right);
+      case '=': return this.isEqual(left, right);
+      case '!=': return !this.isEqual(left, right);
+      case '<': return this.toNumber(left) < this.toNumber(right);
+      case '>': return this.toNumber(left) > this.toNumber(right);
+      case '<=': return this.toNumber(left) <= this.toNumber(right);
+      case '>=': return this.toNumber(left) >= this.toNumber(right);
+      default: return null;
+    }
+  },
+
+  // Execute function call
+  execFunction(name, args) {
+    switch (name) {
+      // Logical
+      case 'IF':
+        return args[0] ? args[1] : (args[2] ?? null);
+      case 'AND':
+        return args.every(a => this.toBool(a));
+      case 'OR':
+        return args.some(a => this.toBool(a));
+      case 'NOT':
+        return !this.toBool(args[0]);
+      case 'BLANK':
+        return null;
+      case 'ERROR':
+        return '#ERROR';
+      case 'ISERROR':
+        return typeof args[0] === 'string' && args[0].startsWith('#');
+
+      // Math
+      case 'SUM':
+        return args.flat().reduce((a, b) => this.toNumber(a) + this.toNumber(b), 0);
+      case 'AVERAGE':
+        const nums = args.flat().filter(n => n !== null && n !== '');
+        return nums.length ? nums.reduce((a, b) => this.toNumber(a) + this.toNumber(b), 0) / nums.length : null;
+      case 'MAX':
+        return Math.max(...args.flat().map(n => this.toNumber(n)));
+      case 'MIN':
+        return Math.min(...args.flat().map(n => this.toNumber(n)));
+      case 'ABS':
+        return Math.abs(this.toNumber(args[0]));
+      case 'ROUND':
+        const places = args[1] ?? 0;
+        const factor = Math.pow(10, this.toNumber(places));
+        return Math.round(this.toNumber(args[0]) * factor) / factor;
+      case 'ROUNDUP':
+        const upFactor = Math.pow(10, this.toNumber(args[1] ?? 0));
+        return Math.ceil(this.toNumber(args[0]) * upFactor) / upFactor;
+      case 'ROUNDDOWN':
+        const downFactor = Math.pow(10, this.toNumber(args[1] ?? 0));
+        return Math.floor(this.toNumber(args[0]) * downFactor) / downFactor;
+      case 'CEILING':
+        return Math.ceil(this.toNumber(args[0]));
+      case 'FLOOR':
+        return Math.floor(this.toNumber(args[0]));
+      case 'MOD':
+        return this.toNumber(args[0]) % this.toNumber(args[1]);
+      case 'POWER':
+        return Math.pow(this.toNumber(args[0]), this.toNumber(args[1]));
+      case 'SQRT':
+        return Math.sqrt(this.toNumber(args[0]));
+      case 'LOG':
+        return args[1] ? Math.log(this.toNumber(args[0])) / Math.log(this.toNumber(args[1])) : Math.log10(this.toNumber(args[0]));
+      case 'EXP':
+        return Math.exp(this.toNumber(args[0]));
+      case 'INT':
+        return Math.trunc(this.toNumber(args[0]));
+      case 'EVEN':
+        const n = Math.ceil(Math.abs(this.toNumber(args[0])));
+        return (n % 2 === 0 ? n : n + 1) * Math.sign(this.toNumber(args[0]) || 1);
+      case 'ODD':
+        const o = Math.ceil(Math.abs(this.toNumber(args[0])));
+        return (o % 2 === 1 ? o : o + 1) * Math.sign(this.toNumber(args[0]) || 1);
+      case 'VALUE':
+        return this.toNumber(args[0]);
+
+      // Text
+      case 'CONCATENATE':
+        return args.map(a => this.toString(a)).join('');
+      case 'LEN':
+        return this.toString(args[0]).length;
+      case 'UPPER':
+        return this.toString(args[0]).toUpperCase();
+      case 'LOWER':
+        return this.toString(args[0]).toLowerCase();
+      case 'TRIM':
+        return this.toString(args[0]).trim();
+      case 'LEFT':
+        return this.toString(args[0]).slice(0, this.toNumber(args[1]) || 1);
+      case 'RIGHT':
+        const str = this.toString(args[0]);
+        const len = this.toNumber(args[1]) || 1;
+        return str.slice(-len);
+      case 'MID':
+        return this.toString(args[0]).slice(this.toNumber(args[1]) - 1, this.toNumber(args[1]) - 1 + this.toNumber(args[2]));
+      case 'SUBSTITUTE':
+        return this.toString(args[0]).split(this.toString(args[1])).join(this.toString(args[2] ?? ''));
+      case 'REPLACE':
+        const orig = this.toString(args[0]);
+        const start = this.toNumber(args[1]) - 1;
+        const count = this.toNumber(args[2]);
+        const replacement = this.toString(args[3] ?? '');
+        return orig.slice(0, start) + replacement + orig.slice(start + count);
+      case 'REPT':
+        return this.toString(args[0]).repeat(Math.max(0, this.toNumber(args[1])));
+      case 'T':
+        return typeof args[0] === 'string' ? args[0] : '';
+      case 'FIND':
+        const idx = this.toString(args[1]).indexOf(this.toString(args[0]), this.toNumber(args[2] ?? 1) - 1);
+        return idx === -1 ? 0 : idx + 1;
+      case 'SEARCH':
+        const sIdx = this.toString(args[1]).toLowerCase().indexOf(this.toString(args[0]).toLowerCase(), this.toNumber(args[2] ?? 1) - 1);
+        return sIdx === -1 ? 0 : sIdx + 1;
+      case 'ENCODE_URL_COMPONENT':
+        return encodeURIComponent(this.toString(args[0]));
+
+      // Date/Time
+      case 'TODAY':
+        return new Date().toISOString().split('T')[0];
+      case 'NOW':
+        return new Date().toISOString();
+      case 'YEAR':
+        return new Date(args[0]).getFullYear();
+      case 'MONTH':
+        return new Date(args[0]).getMonth() + 1;
+      case 'DAY':
+        return new Date(args[0]).getDate();
+      case 'HOUR':
+        return new Date(args[0]).getHours();
+      case 'MINUTE':
+        return new Date(args[0]).getMinutes();
+      case 'SECOND':
+        return new Date(args[0]).getSeconds();
+      case 'WEEKDAY':
+        return new Date(args[0]).getDay();
+      case 'WEEKNUM':
+        const d = new Date(args[0]);
+        const start = new Date(d.getFullYear(), 0, 1);
+        return Math.ceil((((d - start) / 86400000) + start.getDay() + 1) / 7);
+      case 'DATEADD':
+        const date = new Date(args[0]);
+        const amount = this.toNumber(args[1]);
+        const unit = this.toString(args[2]).toLowerCase();
+        if (unit === 'days' || unit === 'day') date.setDate(date.getDate() + amount);
+        else if (unit === 'months' || unit === 'month') date.setMonth(date.getMonth() + amount);
+        else if (unit === 'years' || unit === 'year') date.setFullYear(date.getFullYear() + amount);
+        else if (unit === 'hours' || unit === 'hour') date.setHours(date.getHours() + amount);
+        else if (unit === 'minutes' || unit === 'minute') date.setMinutes(date.getMinutes() + amount);
+        return date.toISOString();
+      case 'DATETIME_DIFF':
+        const d1 = new Date(args[0]);
+        const d2 = new Date(args[1]);
+        const diffUnit = this.toString(args[2]).toLowerCase();
+        const diffMs = d1 - d2;
+        if (diffUnit === 'days' || diffUnit === 'day') return Math.floor(diffMs / 86400000);
+        if (diffUnit === 'hours' || diffUnit === 'hour') return Math.floor(diffMs / 3600000);
+        if (diffUnit === 'minutes' || diffUnit === 'minute') return Math.floor(diffMs / 60000);
+        if (diffUnit === 'seconds' || diffUnit === 'second') return Math.floor(diffMs / 1000);
+        if (diffUnit === 'months' || diffUnit === 'month') return (d1.getFullYear() - d2.getFullYear()) * 12 + (d1.getMonth() - d2.getMonth());
+        if (diffUnit === 'years' || diffUnit === 'year') return d1.getFullYear() - d2.getFullYear();
+        return diffMs;
+      case 'DATETIME_FORMAT':
+        return new Date(args[0]).toLocaleString();
+      case 'DATETIME_PARSE':
+        return new Date(args[0]).toISOString();
+      case 'IS_AFTER':
+        return new Date(args[0]) > new Date(args[1]);
+      case 'IS_BEFORE':
+        return new Date(args[0]) < new Date(args[1]);
+      case 'IS_SAME':
+        const unit1 = this.toString(args[2] ?? 'day').toLowerCase();
+        const da = new Date(args[0]), db = new Date(args[1]);
+        if (unit1.startsWith('year')) return da.getFullYear() === db.getFullYear();
+        if (unit1.startsWith('month')) return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth();
+        return da.toDateString() === db.toDateString();
+
+      // Record info
+      case 'RECORD_ID':
+        return args[0]?._recordId || '';
+      case 'CREATED_TIME':
+        return args[0]?._createdTime || '';
+
+      // Array/counting
+      case 'COUNT':
+        return args.flat().filter(v => v !== null && v !== '' && v !== undefined).length;
+      case 'COUNTA':
+        return args.flat().filter(v => v !== null && v !== '' && v !== undefined).length;
+      case 'COUNTALL':
+        return args.flat().length;
+
+      default:
+        console.warn('Unknown formula function:', name);
+        return null;
+    }
+  },
+
+  // Type coercion helpers
+  toNumber(val) {
+    if (val === null || val === undefined || val === '') return 0;
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (typeof val === 'boolean') return val ? 1 : 0;
+    const n = parseFloat(val);
+    return isNaN(n) ? 0 : n;
+  },
+
+  toString(val) {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'object') return JSON.stringify(val);
+    return String(val);
+  },
+
+  toBool(val) {
+    if (val === null || val === undefined || val === '' || val === 0 || val === false) return false;
+    return true;
+  },
+
+  isEqual(a, b) {
+    if (a === b) return true;
+    if (a === null || a === undefined) return b === null || b === undefined;
+    if (typeof a === 'string' && typeof b === 'string') return a.toLowerCase() === b.toLowerCase();
+    return this.toNumber(a) === this.toNumber(b);
+  }
+};
+
+// ============================================================
 // AIRTABLE API
 // ============================================================
 const Airtable = {
@@ -2519,14 +3072,28 @@ function updateRecordCount(count, syncInfo = null) {
 // DATA PAGE
 // ============================================================
 
-function transformRecordForGrid(record) {
+function transformRecordForGrid(record, fields = currentFields) {
   if (!record) return null;
+
+  const merged = ExperienceEngine.getMergedFields(record);
+
+  // Calculate formula fields locally
+  for (const field of fields) {
+    if (field.type === 'formula' && field.options?.formula) {
+      const calculated = FormulaEngine.evaluate(field.options.formula, merged, fields);
+      if (calculated !== null && calculated !== undefined) {
+        merged[field.name] = calculated;
+        // Mark as locally calculated for styling
+        merged[`_calc_${field.name}`] = true;
+      }
+    }
+  }
 
   return {
     _id: record._id,
     _status: record._status,
     _recordId: record.recordId,
-    ...ExperienceEngine.getMergedFields(record)
+    ...merged
   };
 }
 
@@ -2587,19 +3154,32 @@ function getEditorParams(field) {
 }
 
 function buildColumns(fields) {
-  return fields.map(field => ({
-    title: field.name,
-    field: field.name,
-    editor: getEditor(field),
-    editorParams: getEditorParams(field),
-    formatter: (cell) => {
-      try {
-        return formatValue(cell.getValue());
-      } catch (e) {
-        return '';
-      }
-    }
-  }));
+  return fields.map(field => {
+    const isFormula = field.type === 'formula';
+
+    return {
+      title: isFormula ? `${field.name} ƒ` : field.name,
+      field: field.name,
+      editor: getEditor(field),
+      editorParams: getEditorParams(field),
+      formatter: (cell) => {
+        try {
+          const value = formatValue(cell.getValue());
+          const rowData = cell.getRow().getData();
+          const isCalculated = rowData[`_calc_${field.name}`];
+
+          // Add visual indicator for locally calculated formulas
+          if (isFormula && isCalculated) {
+            return `<span class="formula-calculated" title="Calculated locally">${value}</span>`;
+          }
+          return value;
+        } catch (e) {
+          return '';
+        }
+      },
+      cssClass: isFormula ? 'formula-cell' : ''
+    };
+  });
 }
 
 async function loadTable(tableId, viewId = null, viewName = null) {
@@ -2613,6 +3193,16 @@ async function loadTable(tableId, viewId = null, viewName = null) {
   currentViewName = viewName;
   const tableSchema = schema.tables.find(t => t.id === tableId);
   currentFields = tableSchema.fields;
+
+  // Debug: Log formula fields to verify API returns formula expressions
+  const formulaFields = currentFields.filter(f => f.type === 'formula');
+  if (formulaFields.length > 0) {
+    console.log('Formula fields found:', formulaFields.map(f => ({
+      name: f.name,
+      formula: f.options?.formula || '(no formula in options)',
+      result: f.options?.result?.type
+    })));
+  }
 
   // Update left panel counts
   updateTableCounts();
@@ -2677,6 +3267,27 @@ async function loadTable(tableId, viewId = null, viewName = null) {
       try {
         await ExperienceEngine.updateLocal(rowData._id, { [fieldName]: newValue });
         cell.getRow().getElement().classList.add('row-pending');
+
+        // Recalculate dependent formula fields
+        const row = cell.getRow();
+        const currentData = { ...row.getData(), [fieldName]: newValue };
+
+        for (const field of currentFields) {
+          if (field.type === 'formula' && field.options?.formula) {
+            // Check if this formula depends on the edited field
+            const formulaStr = field.options.formula;
+            if (formulaStr.includes(`{${fieldName}}`)) {
+              const calculated = FormulaEngine.evaluate(formulaStr, currentData, currentFields);
+              if (calculated !== null && calculated !== undefined) {
+                currentData[field.name] = calculated;
+                currentData[`_calc_${field.name}`] = true;
+              }
+            }
+          }
+        }
+
+        // Update the row with recalculated values
+        row.update(currentData);
         await updateBadges();
       } catch (e) {
         console.error('Edit failed:', e);
