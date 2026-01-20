@@ -572,6 +572,215 @@
       background: var(--accent);
       transition: width 0.3s;
     }
+
+    /* ==================== MAIN LAYOUT ==================== */
+    .app-layout {
+      display: flex;
+      height: calc(100vh - 53px);
+    }
+
+    /* ==================== LEFT PANEL ==================== */
+    .left-panel {
+      width: 260px;
+      min-width: 260px;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .left-panel-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .left-panel-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .left-panel-section {
+      margin-bottom: 8px;
+    }
+
+    .left-panel-section-title {
+      padding: 8px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Table Item */
+    .table-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: background 0.15s;
+      user-select: none;
+    }
+
+    .table-item:hover {
+      background: var(--bg-input);
+    }
+
+    .table-item.active {
+      background: rgba(99, 102, 241, 0.15);
+      border-right: 2px solid var(--accent);
+    }
+
+    .table-item-icon {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .table-item-name {
+      flex: 1;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .table-item-count {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 2px 6px;
+      background: var(--bg-input);
+      border-radius: 10px;
+    }
+
+    .table-item-expand {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 10px;
+      transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+
+    .table-item-expand.expanded {
+      transform: rotate(90deg);
+    }
+
+    /* Views List */
+    .views-list {
+      display: none;
+      padding-left: 28px;
+    }
+
+    .views-list.expanded {
+      display: block;
+    }
+
+    .view-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      cursor: pointer;
+      transition: background 0.15s;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .view-item:hover {
+      background: var(--bg-input);
+      color: var(--text);
+    }
+
+    .view-item.active {
+      color: var(--accent);
+      background: rgba(99, 102, 241, 0.1);
+    }
+
+    .view-item-icon {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+    }
+
+    .view-item-name {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Main Content Area */
+    .main-content {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .main-content .page {
+      flex: 1;
+      overflow: auto;
+    }
+
+    .main-content .page.active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .main-content #page-data {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .main-content #page-data .data-controls {
+      flex-shrink: 0;
+    }
+
+    .main-content #grid {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* Left panel scrollbar styling */
+    .left-panel-content::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .left-panel-content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .left-panel-content::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+
+    .left-panel-content::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
   </style>
 </head>
 <body>
@@ -626,30 +835,39 @@
   </div>
 </div>
 
-<!-- Data Page -->
-<div class="page" id="page-data">
-  <div class="data-controls">
-    <select id="table-select">
-      <option value="">Select Table...</option>
-    </select>
+<!-- App Layout (Left Panel + Main Content) -->
+<div class="app-layout" id="app-layout" style="display: none;">
 
-    <input type="text" id="search" placeholder="Search (Enter)...">
+  <!-- Left Panel -->
+  <aside class="left-panel" id="left-panel">
+    <div class="left-panel-header">Tables</div>
+    <div class="left-panel-content" id="tables-list">
+      <!-- Tables will be populated here -->
+    </div>
+  </aside>
 
-    <select id="group-by">
-      <option value="">Group by...</option>
-    </select>
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Data Page -->
+    <div class="page" id="page-data">
+      <div class="data-controls">
+        <input type="text" id="search" placeholder="Search (Enter)...">
 
-    <button id="add-row-btn">+ Add Row</button>
+        <select id="group-by">
+          <option value="">Group by...</option>
+        </select>
 
-    <span class="spacer"></span>
+        <button id="add-row-btn">+ Add Row</button>
 
-    <span class="table-status" id="table-status"></span>
-  </div>
+        <span class="spacer"></span>
 
-  <div id="grid"></div>
-</div>
+        <span class="table-status" id="table-status"></span>
+      </div>
 
-<!-- Sync Page -->
+      <div id="grid"></div>
+    </div>
+
+    <!-- Sync Page -->
 <div class="page" id="page-sync">
   <div class="sync-page">
     <div class="sync-header">
@@ -712,6 +930,9 @@
     </div>
   </div>
 </div>
+
+  </main><!-- /main-content -->
+</div><!-- /app-layout -->
 
 <!-- Add Row Modal -->
 <div class="modal hidden" id="add-modal">
@@ -1585,6 +1806,8 @@ document.getElementById('live-toggle').addEventListener('click', () => {
 
 let schema = null;
 let currentTableId = null;
+let currentViewId = null;
+let currentViewName = null;
 let currentFields = [];
 let table = null;
 
@@ -1643,11 +1866,21 @@ async function updateBadges() {
 }
 
 function showPage(pageName) {
+  const connectPage = document.getElementById('page-connect');
+  const appLayout = document.getElementById('app-layout');
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
 
-  document.getElementById(`page-${pageName}`).classList.add('active');
-  document.querySelector(`.nav-tab[data-page="${pageName}"]`)?.classList.add('active');
+  if (pageName === 'connect') {
+    connectPage.classList.add('active');
+    appLayout.style.display = 'none';
+  } else {
+    connectPage.classList.remove('active');
+    appLayout.style.display = 'flex';
+    document.getElementById(`page-${pageName}`).classList.add('active');
+    document.querySelector(`.nav-tab[data-page="${pageName}"]`)?.classList.add('active');
+  }
 
   if (pageName === 'sync') {
     renderSyncPage();
@@ -1754,15 +1987,20 @@ function buildColumns(fields) {
   }));
 }
 
-async function loadTable(tableId) {
+async function loadTable(tableId, viewId = null, viewName = null) {
   if (table) {
     table.destroy();
     table = null;
   }
 
   currentTableId = tableId;
+  currentViewId = viewId;
+  currentViewName = viewName;
   const tableSchema = schema.tables.find(t => t.id === tableId);
   currentFields = tableSchema.fields;
+
+  // Update left panel counts
+  updateTableCounts();
 
   // Update group-by dropdown
   const groupByEl = document.getElementById('group-by');
@@ -1798,7 +2036,7 @@ async function loadTable(tableId) {
     data: gridData,
     columns: columns,
     layout: 'fitDataFill',
-    height: 'calc(100vh - 140px)',
+    height: '100%',
     pagination: true,
     paginationSize: 50,
     paginationSizeSelector: [25, 50, 100],
@@ -2050,10 +2288,6 @@ document.querySelectorAll('.nav-tab[data-page]').forEach(tab => {
   tab.addEventListener('click', () => showPage(tab.dataset.page));
 });
 
-// Table select
-document.getElementById('table-select').addEventListener('change', (e) => {
-  if (e.target.value) loadTable(e.target.value);
-});
 
 // Search
 document.getElementById('search').addEventListener('keydown', (e) => {
@@ -2300,15 +2534,159 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
   }
 });
 
-function populateTableDropdown() {
-  const tableSelect = document.getElementById('table-select');
-  tableSelect.innerHTML = '<option value="">Select Table...</option>';
-  schema.tables.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t.id;
-    opt.textContent = t.name;
-    tableSelect.appendChild(opt);
+function populateLeftPanel() {
+  const tablesListEl = document.getElementById('tables-list');
+  tablesListEl.innerHTML = '';
+
+  schema.tables.forEach(tableSchema => {
+    // Table item container
+    const tableContainer = document.createElement('div');
+    tableContainer.className = 'left-panel-section';
+    tableContainer.dataset.tableId = tableSchema.id;
+
+    // Table row (clickable)
+    const tableRow = document.createElement('div');
+    tableRow.className = 'table-item';
+    tableRow.dataset.tableId = tableSchema.id;
+
+    // Get views for this table
+    const views = tableSchema.views || [];
+    const hasViews = views.length > 0;
+
+    tableRow.innerHTML = `
+      <span class="table-item-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v1h14V2a1 1 0 0 0-1-1H2zM1 5v9a1 1 0 0 0 1 1h5V5H1zm7 0v10h6a1 1 0 0 0 1-1V5H8z"/>
+        </svg>
+      </span>
+      <span class="table-item-name">${tableSchema.name}</span>
+      <span class="table-item-count" id="count-${tableSchema.id}">-</span>
+      ${hasViews ? '<span class="table-item-expand">&#9658;</span>' : ''}
+    `;
+
+    // Views list (hidden by default)
+    const viewsList = document.createElement('div');
+    viewsList.className = 'views-list';
+    viewsList.dataset.tableId = tableSchema.id;
+
+    views.forEach(view => {
+      const viewItem = document.createElement('div');
+      viewItem.className = 'view-item';
+      viewItem.dataset.tableId = tableSchema.id;
+      viewItem.dataset.viewId = view.id;
+      viewItem.dataset.viewName = view.name;
+
+      // Different icons for different view types
+      const viewIcon = getViewIcon(view.type);
+
+      viewItem.innerHTML = `
+        <span class="view-item-icon">${viewIcon}</span>
+        <span class="view-item-name">${view.name}</span>
+      `;
+
+      viewsList.appendChild(viewItem);
+    });
+
+    tableContainer.appendChild(tableRow);
+    if (hasViews) {
+      tableContainer.appendChild(viewsList);
+    }
+    tablesListEl.appendChild(tableContainer);
   });
+
+  // Add click handlers for tables
+  tablesListEl.querySelectorAll('.table-item').forEach(item => {
+    item.addEventListener('click', async (e) => {
+      const tableId = item.dataset.tableId;
+      const expandBtn = item.querySelector('.table-item-expand');
+      const viewsList = item.nextElementSibling;
+
+      // Toggle views list if clicking on expand button area
+      if (e.target.closest('.table-item-expand') && viewsList) {
+        expandBtn.classList.toggle('expanded');
+        viewsList.classList.toggle('expanded');
+        return;
+      }
+
+      // Select table
+      selectTable(tableId);
+
+      // Expand views if present
+      if (expandBtn && viewsList && !viewsList.classList.contains('expanded')) {
+        expandBtn.classList.add('expanded');
+        viewsList.classList.add('expanded');
+      }
+    });
+  });
+
+  // Add click handlers for views
+  tablesListEl.querySelectorAll('.view-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tableId = item.dataset.tableId;
+      const viewId = item.dataset.viewId;
+      const viewName = item.dataset.viewName;
+
+      selectTable(tableId, viewId, viewName);
+    });
+  });
+
+  // Update record counts
+  updateTableCounts();
+}
+
+function getViewIcon(viewType) {
+  switch (viewType) {
+    case 'grid':
+      return '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm5 0v6h6V2H5zm6 7H5v5h6V9zM4 2H2a1 1 0 0 0-1 1v2h3V2zM1 6v3h3V6H1zm0 4v3a1 1 0 0 0 1 1h2v-4H1zm11-8h2a1 1 0 0 1 1 1v2h-3V2zm3 4h-3v3h3V6zm0 4h-3v4h2a1 1 0 0 0 1-1v-3z"/></svg>';
+    case 'kanban':
+      return '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3V3H2zm4 0v10h4V3H6zm5 0v10h3a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-3z"/></svg>';
+    case 'calendar':
+      return '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z"/></svg>';
+    case 'gallery':
+      return '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/><path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/></svg>';
+    case 'form':
+      return '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H2z"/><path d="M4 5.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 0 1h-4a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5z"/></svg>';
+    default:
+      return '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 3zm8 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zm-13.5.5a.5.5 0 0 0 0-1h-2a.5.5 0 0 0 0 1h2zm11.157-6.157a.5.5 0 0 1 0 .707l-1.414 1.414a.5.5 0 1 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm-9.9 2.121a.5.5 0 0 0 .707-.707L3.05 5.343a.5.5 0 1 0-.707.707l1.414 1.414zM8 7a4 4 0 0 0-4 4 .5.5 0 0 0 1 0 3 3 0 1 1 6 0 .5.5 0 0 0 1 0 4 4 0 0 0-4-4z"/></svg>';
+  }
+}
+
+async function updateTableCounts() {
+  if (!schema) return;
+
+  const stats = await ExperienceEngine.getStats();
+
+  for (const tableSchema of schema.tables) {
+    const tableKey = `${CONFIG.BASE_ID}:${tableSchema.id}`;
+    const tableStats = stats.byTable[tableKey] || { total: 0 };
+    const countEl = document.getElementById(`count-${tableSchema.id}`);
+    if (countEl) {
+      countEl.textContent = tableStats.total > 0 ? tableStats.total : '-';
+    }
+  }
+}
+
+function selectTable(tableId, viewId = null, viewName = null) {
+  // Update active state in left panel
+  document.querySelectorAll('.table-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.tableId === tableId);
+  });
+
+  document.querySelectorAll('.view-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.tableId === tableId && item.dataset.viewId === viewId);
+  });
+
+  // Load table
+  loadTable(tableId, viewId, viewName);
+
+  // Make sure we're on the data page
+  showPage('data');
+}
+
+// Keep backwards compatibility
+function populateTableDropdown() {
+  populateLeftPanel();
 }
 
 // Disconnect
@@ -2329,8 +2707,11 @@ document.getElementById('disconnect-btn').addEventListener('click', async () => 
   }
   schema = null;
   currentTableId = null;
+  currentViewId = null;
+  currentViewName = null;
 
   navEl.style.display = 'none';
+  document.getElementById('tables-list').innerHTML = '';
   showPage('connect');
 });
 
