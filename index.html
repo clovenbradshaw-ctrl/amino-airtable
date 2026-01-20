@@ -2443,12 +2443,13 @@ const FormulaEngine = {
         return this.toString(args[0]).slice(this.toNumber(args[1]) - 1, this.toNumber(args[1]) - 1 + this.toNumber(args[2]));
       case 'SUBSTITUTE':
         return this.toString(args[0]).split(this.toString(args[1])).join(this.toString(args[2] ?? ''));
-      case 'REPLACE':
+      case 'REPLACE': {
         const orig = this.toString(args[0]);
         const start = this.toNumber(args[1]) - 1;
         const count = this.toNumber(args[2]);
         const replacement = this.toString(args[3] ?? '');
         return orig.slice(0, start) + replacement + orig.slice(start + count);
+      }
       case 'REPT':
         return this.toString(args[0]).repeat(Math.max(0, this.toNumber(args[1])));
       case 'T':
@@ -2481,10 +2482,11 @@ const FormulaEngine = {
         return new Date(args[0]).getSeconds();
       case 'WEEKDAY':
         return new Date(args[0]).getDay();
-      case 'WEEKNUM':
+      case 'WEEKNUM': {
         const d = new Date(args[0]);
-        const start = new Date(d.getFullYear(), 0, 1);
-        return Math.ceil((((d - start) / 86400000) + start.getDay() + 1) / 7);
+        const yearStart = new Date(d.getFullYear(), 0, 1);
+        return Math.ceil((((d - yearStart) / 86400000) + yearStart.getDay() + 1) / 7);
+      }
       case 'DATEADD':
         const date = new Date(args[0]);
         const amount = this.toNumber(args[1]);
