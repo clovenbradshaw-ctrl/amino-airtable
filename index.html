@@ -5482,6 +5482,22 @@ async function loadTestPage() {
     // Sample a value that should exist
     const sampleField = columnFields[1]; // Second column
     log(`Sample field "${sampleField}" value in data: ${JSON.stringify(gridData[0][sampleField])}`);
+
+    // Show first 3 fields from schema with their exact names
+    log('--- Schema field samples ---');
+    for (let i = 0; i < Math.min(5, fields.length); i++) {
+      const f = fields[i];
+      const dataVal = gridData[0][f.name];
+      log(`Schema[${i}]: "${f.name}" (${f.type}) => data value: ${JSON.stringify(dataVal)}`);
+    }
+
+    // Show first 5 data keys and their values
+    log('--- Data key samples ---');
+    const sampleKeys = Object.keys(gridData[0]).filter(k => !k.startsWith('_')).slice(0, 5);
+    for (const key of sampleKeys) {
+      const schemaField = fields.find(f => f.name === key);
+      log(`Data["${key}"]: ${JSON.stringify(gridData[0][key])} | schema match: ${schemaField ? 'YES' : 'NO'}`);
+    }
   }
 
   // Update count
