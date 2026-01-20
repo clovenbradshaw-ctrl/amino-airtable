@@ -1,1 +1,2374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Airtable Grid</title>
+  <link href="https://unpkg.com/tabulator-tables@6.2.1/dist/css/tabulator_midnight.min.css" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
 
+    :root {
+      --bg-dark: #1a1a2e;
+      --bg-card: #252542;
+      --bg-input: #1e1e38;
+      --border: #333;
+      --text: #e5e7eb;
+      --text-muted: #9ca3af;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: var(--bg-dark);
+      color: var(--text);
+    }
+
+    /* ==================== NAV ==================== */
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 20px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-brand {
+      font-weight: 600;
+      font-size: 16px;
+      color: var(--accent);
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 4px;
+    }
+
+    .nav-tab {
+      padding: 8px 16px;
+      border-radius: 6px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .nav-tab:hover { background: var(--bg-input); }
+    .nav-tab.active { background: var(--accent); color: white; }
+
+    .nav-status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+    }
+
+    .sync-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: var(--bg-input);
+    }
+
+    .sync-indicator.syncing { color: var(--warning); }
+    .sync-indicator.synced { color: var(--success); }
+    .sync-indicator.offline { color: var(--text-muted); }
+    .sync-indicator.error { color: var(--danger); }
+
+    .sync-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .sync-indicator.syncing .sync-dot {
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .pending-badge {
+      background: var(--warning);
+      color: black;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .conflict-badge {
+      background: var(--danger);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .live-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .live-toggle:hover {
+      border-color: var(--accent);
+    }
+
+    .live-toggle.active {
+      background: rgba(34, 197, 94, 0.2);
+      border-color: #22c55e;
+      color: #22c55e;
+    }
+
+    .live-toggle .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: all 0.2s;
+    }
+
+    .live-toggle.active .live-dot {
+      background: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+      animation: live-pulse 2s infinite;
+    }
+
+    @keyframes live-pulse {
+      0%, 100% { box-shadow: 0 0 4px #22c55e; }
+      50% { box-shadow: 0 0 12px #22c55e; }
+    }
+
+    .live-toggle.flash .live-dot {
+      animation: live-flash 0.3s ease-out;
+    }
+
+    @keyframes live-flash {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.5); background: white; }
+      100% { transform: scale(1); }
+    }
+
+    /* ==================== PAGES ==================== */
+    .page { display: none; padding: 20px; }
+    .page.active { display: block; }
+
+    /* ==================== CONNECT PAGE ==================== */
+    .connect-card {
+      max-width: 400px;
+      margin: 60px auto;
+      padding: 32px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .connect-card h2 { margin-top: 0; font-size: 20px; }
+    .connect-card .form-group { margin-bottom: 16px; }
+    .connect-card label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 13px; }
+
+    .connect-card input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .connect-card input:focus { outline: none; border-color: var(--accent); }
+
+    .connect-card button {
+      width: 100%;
+      padding: 12px;
+      border-radius: 6px;
+      border: none;
+      background: var(--accent);
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .connect-card button:hover { background: var(--accent-hover); }
+    .connect-card .hint { margin-top: 16px; font-size: 12px; color: var(--text-muted); }
+
+    /* ==================== DATA PAGE ==================== */
+    .data-controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .data-controls select,
+    .data-controls input,
+    .data-controls button {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .data-controls button {
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .data-controls button:hover { background: var(--accent-hover); }
+    .data-controls button.secondary { background: #374151; }
+    .data-controls button.secondary:hover { background: #4b5563; }
+
+    .data-controls .spacer { flex: 1; }
+
+    .table-status {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    #grid { border-radius: 8px; overflow: hidden; }
+
+    /* Tabulator overrides */
+    .tabulator { background: var(--bg-card); border: 1px solid var(--border); }
+    .tabulator .tabulator-header { background: var(--bg-input); border-bottom: 2px solid var(--accent); }
+    .tabulator .tabulator-col { background: var(--bg-input); border-right: 1px solid var(--border); }
+    .tabulator .tabulator-col-title { color: var(--text); font-weight: 600; }
+    .tabulator .tabulator-row { border-bottom: 1px solid var(--border); max-height: 42px; }
+    .tabulator .tabulator-row:hover { background: #2d2d4a !important; }
+    .tabulator .tabulator-row.tabulator-selected { background: #3730a3 !important; }
+    .tabulator .tabulator-cell {
+      border-right: 1px solid var(--border);
+      color: var(--text);
+      max-height: 42px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tabulator .tabulator-cell.tabulator-editing { background: var(--bg-input); border: 2px solid var(--accent); }
+    .tabulator .tabulator-cell.tabulator-editing input { background: var(--bg-input); color: white; border: none; }
+    .tabulator .tabulator-group { background: var(--bg-input); border-bottom: 1px solid var(--accent); color: #a5b4fc; font-weight: 600; }
+    .tabulator .tabulator-footer { background: var(--bg-input); border-top: 1px solid var(--border); color: var(--text-muted); }
+    .tabulator .tabulator-footer .tabulator-page { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); }
+    .tabulator .tabulator-footer .tabulator-page.active { background: var(--accent); border-color: var(--accent); }
+
+    /* Row status indicators */
+    .tabulator .tabulator-row.row-pending { border-left: 3px solid var(--warning); }
+    .tabulator .tabulator-row.row-conflict { border-left: 3px solid var(--danger); }
+    .tabulator .tabulator-row.row-new { border-left: 3px solid var(--success); }
+
+    /* ==================== SYNC PAGE ==================== */
+    .sync-page { max-width: 900px; margin: 0 auto; }
+
+    .sync-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .sync-header h2 { margin: 0; }
+
+    .sync-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+    }
+
+    .sync-actions button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: #374151; color: white; }
+    .btn-secondary:hover { background: #4b5563; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { background: #dc2626; }
+
+    .sync-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .stat-card .stat-value {
+      font-size: 28px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .stat-card .stat-label {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .stat-card.pending .stat-value { color: var(--warning); }
+    .stat-card.conflicts .stat-value { color: var(--danger); }
+    .stat-card.synced .stat-value { color: var(--success); }
+
+    .sync-section {
+      background: var(--bg-card);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .sync-section-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sync-section-content {
+      padding: 16px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .sync-table-row {
+      display: flex;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sync-table-row:last-child { border-bottom: none; }
+
+    .sync-table-name { flex: 1; font-weight: 500; }
+
+    .sync-table-stats {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .sync-table-time { font-size: 12px; color: var(--text-muted); }
+
+    .sync-table-actions {
+      margin-left: 16px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .sync-table-actions button {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 4px;
+      border: none;
+      background: var(--bg-input);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .sync-table-actions button:hover { background: #374151; }
+
+    .queue-item, .conflict-item {
+      padding: 12px;
+      background: var(--bg-input);
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+
+    .queue-item:last-child, .conflict-item:last-child { margin-bottom: 0; }
+
+    .queue-item-header, .conflict-item-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .queue-item-op {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .queue-item-op.update { background: var(--warning); color: black; }
+    .queue-item-op.create { background: var(--success); color: black; }
+    .queue-item-op.delete { background: var(--danger); color: white; }
+
+    .queue-item-record { font-weight: 500; }
+    .queue-item-time { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+
+    .queue-item-fields {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .conflict-versions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 12px 0;
+    }
+
+    .conflict-version {
+      padding: 10px;
+      background: var(--bg-dark);
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .conflict-version-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .conflict-version.given .conflict-version-label { color: var(--accent); }
+    .conflict-version.meant .conflict-version-label { color: var(--warning); }
+
+    .conflict-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 24px;
+      color: var(--text-muted);
+    }
+
+    /* ==================== MODAL ==================== */
+    .modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal.hidden { display: none; }
+
+    .modal-content {
+      background: var(--bg-card);
+      padding: 24px;
+      border-radius: 12px;
+      min-width: 400px;
+      max-width: 90vw;
+      max-height: 80vh;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+    }
+
+    .modal-content h3 { margin-top: 0; }
+    .modal-content .form-group { margin-bottom: 16px; }
+    .modal-content label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 13px; }
+
+    .modal-content input,
+    .modal-content select,
+    .modal-content textarea {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+
+    /* ==================== LOADING ==================== */
+    .loading-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(26, 26, 46, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      gap: 16px;
+    }
+
+    .loading-overlay.hidden { display: none; }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .progress-bar {
+      width: 300px;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.3s;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay hidden" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">Loading...</div>
+  <div class="progress-bar" id="progress-bar" style="display: none;">
+    <div class="progress-bar-fill" id="progress-fill"></div>
+  </div>
+</div>
+
+<!-- Navigation -->
+<nav class="nav" id="nav" style="display: none;">
+  <span class="nav-brand">Airtable Grid</span>
+
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-page="data">Data</button>
+    <button class="nav-tab" data-page="sync">Sync</button>
+  </div>
+
+  <div class="nav-status">
+    <button class="live-toggle" id="live-toggle" title="Toggle Live Sync">
+      <span class="live-dot"></span>
+      <span id="live-toggle-text">Live</span>
+    </button>
+    <div class="sync-indicator synced" id="sync-indicator">
+      <span class="sync-dot"></span>
+      <span id="sync-status-text">Synced</span>
+    </div>
+    <span class="pending-badge" id="pending-badge" style="display: none;">0 pending</span>
+    <span class="conflict-badge" id="conflict-badge" style="display: none;">0 conflicts</span>
+    <button class="nav-tab" id="disconnect-btn">Disconnect</button>
+  </div>
+</nav>
+
+<!-- Connect Page -->
+<div class="page active" id="page-connect">
+  <div class="connect-card">
+    <h2>Connect to Airtable</h2>
+    <div class="form-group">
+      <label>Personal Access Token</label>
+      <input type="password" id="api-key" placeholder="patXXXXXXXX.XXXXXXXX...">
+    </div>
+    <div class="form-group">
+      <label>Base ID</label>
+      <input type="text" id="base-id" placeholder="appXXXXXXXXXXXXXX">
+    </div>
+    <button id="connect-btn">Connect</button>
+    <p class="hint">Find your Base ID in the Airtable URL: airtable.com/<strong>appXXXXX</strong>/...</p>
+  </div>
+</div>
+
+<!-- Data Page -->
+<div class="page" id="page-data">
+  <div class="data-controls">
+    <select id="table-select">
+      <option value="">Select Table...</option>
+    </select>
+
+    <input type="text" id="search" placeholder="Search (Enter)...">
+
+    <select id="group-by">
+      <option value="">Group by...</option>
+    </select>
+
+    <button id="add-row-btn">+ Add Row</button>
+
+    <span class="spacer"></span>
+
+    <span class="table-status" id="table-status"></span>
+  </div>
+
+  <div id="grid"></div>
+</div>
+
+<!-- Sync Page -->
+<div class="page" id="page-sync">
+  <div class="sync-page">
+    <div class="sync-header">
+      <h2>Sync Manager</h2>
+      <div class="sync-actions">
+        <button class="btn-secondary" id="sync-delta-btn">Delta Sync</button>
+        <button class="btn-primary" id="sync-full-btn">Full Sync</button>
+        <button class="btn-danger" id="clear-cache-btn">Clear Cache</button>
+      </div>
+    </div>
+
+    <div class="sync-stats">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">Total Records</div>
+      </div>
+      <div class="stat-card synced">
+        <div class="stat-value" id="stat-synced">0</div>
+        <div class="stat-label">Synced</div>
+      </div>
+      <div class="stat-card pending">
+        <div class="stat-value" id="stat-pending">0</div>
+        <div class="stat-label">Pending</div>
+      </div>
+      <div class="stat-card conflicts">
+        <div class="stat-value" id="stat-conflicts">0</div>
+        <div class="stat-label">Conflicts</div>
+      </div>
+    </div>
+
+    <!-- Tables Section -->
+    <div class="sync-section">
+      <div class="sync-section-header">
+        Tables
+      </div>
+      <div class="sync-section-content" id="sync-tables-list">
+        <div class="empty-state">Loading tables...</div>
+      </div>
+    </div>
+
+    <!-- Pending Queue Section -->
+    <div class="sync-section">
+      <div class="sync-section-header">
+        Pending Changes
+        <button class="btn-primary" style="margin-left: auto; padding: 4px 12px; font-size: 12px;" id="flush-queue-btn">Push All</button>
+      </div>
+      <div class="sync-section-content" id="sync-queue-list">
+        <div class="empty-state">No pending changes</div>
+      </div>
+    </div>
+
+    <!-- Conflicts Section -->
+    <div class="sync-section">
+      <div class="sync-section-header">
+        Conflicts
+      </div>
+      <div class="sync-section-content" id="sync-conflicts-list">
+        <div class="empty-state">No conflicts</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Row Modal -->
+<div class="modal hidden" id="add-modal">
+  <div class="modal-content">
+    <h3>Add New Record</h3>
+    <div id="modal-fields"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="modal-cancel">Cancel</button>
+      <button class="btn-primary" id="modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tabulator -->
+<script src="https://unpkg.com/tabulator-tables@6.2.1/dist/js/tabulator.min.js"></script>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const CONFIG = {
+  API_KEY: '',
+  BASE_ID: '',
+  // Live sync settings
+  LIVE_SYNC_URL: '', // e.g., 'https://your-n8n.com/webhook/airtable-changes'
+  LIVE_POLL_INTERVAL: 5000 // 5 seconds
+};
+
+// ============================================================
+// EXPERIENCE ENGINE - IndexedDB Store
+// ============================================================
+const ExperienceEngine = {
+  db: null,
+  DB_NAME: 'experience-engine',
+  DB_VERSION: 1, // NEVER change this without migration logic
+
+  // ========== INITIALIZATION ==========
+  async init() {
+    if (this.db) return this.db;
+
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
+
+      request.onerror = () => {
+        console.error('IndexedDB open failed:', request.error);
+        reject(request.error);
+      };
+
+      request.onsuccess = () => {
+        this.db = request.result;
+        console.log('IndexedDB opened, stores:', [...this.db.objectStoreNames]);
+        resolve(this.db);
+      };
+
+      request.onupgradeneeded = (e) => {
+        console.log('IndexedDB upgrade needed:', e.oldVersion, '->', e.newVersion);
+        const db = e.target.result;
+
+        // Records store - the main cache
+        if (!db.objectStoreNames.contains('records')) {
+          const records = db.createObjectStore('records', { keyPath: '_id' });
+          records.createIndex('byTable', ['baseId', 'tableId']);
+          records.createIndex('byStatus', '_status');
+        }
+
+        // Sync queue - pending operations
+        if (!db.objectStoreNames.contains('syncQueue')) {
+          db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
+        }
+
+        // Conflicts - diverged records
+        if (!db.objectStoreNames.contains('conflicts')) {
+          db.createObjectStore('conflicts', { keyPath: 'id', autoIncrement: true });
+        }
+
+        // Metadata - sync times, schema cache
+        if (!db.objectStoreNames.contains('meta')) {
+          db.createObjectStore('meta', { keyPath: 'key' });
+        }
+      };
+    });
+  },
+
+  // ========== RECORD OPERATIONS ==========
+
+  // Create composite ID
+  _recordId(baseId, tableId, recordId) {
+    return `${baseId}:${tableId}:${recordId}`;
+  },
+
+  // Store a record from Airtable (the "Given")
+  async storeGiven(baseId, tableId, airtableRecord) {
+    await this.init();
+
+    const id = this._recordId(baseId, tableId, airtableRecord.id);
+    const now = Date.now();
+
+    // Check if we have local changes
+    const existing = await this.getRecord(id);
+
+    const record = {
+      _id: id,
+      baseId,
+      tableId,
+      recordId: airtableRecord.id,
+
+      // Provenance (Rule 7)
+      _provenance: {
+        source: 'airtable',
+        recordId: airtableRecord.id,
+        baseId,
+        tableId,
+        witnessedAt: existing?._provenance?.witnessedAt || now
+      },
+
+      // The Given - what server said (Rule 3: ineliminable)
+      _given: {
+        fields: airtableRecord.fields || {},
+        createdTime: airtableRecord.createdTime
+      },
+
+      // Server's modification time
+      _serverModifiedAt: airtableRecord.fields?.['Last Modified']
+        ? new Date(airtableRecord.fields['Last Modified']).getTime()
+        : now,
+
+      // When we synced
+      _syncedAt: now,
+
+      // The Meant - our local interpretation
+      _meant: existing?._meant || { fields: {}, modifiedAt: null },
+
+      // Status
+      _status: existing?._status === 'pending' ? 'pending' : 'synced'
+    };
+
+    // Check for conflict: we have pending changes AND server changed
+    if (existing?._status === 'pending' &&
+        existing._syncedAt < record._serverModifiedAt) {
+      record._status = 'conflict';
+      await this.createConflict(id, existing._meant, record._given);
+    }
+
+    return this._put('records', record);
+  },
+
+  // Store a locally created record (starts as "Meant" only)
+  async storeLocal(baseId, tableId, fields) {
+    await this.init();
+
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = this._recordId(baseId, tableId, tempId);
+    const now = Date.now();
+
+    const record = {
+      _id: id,
+      baseId,
+      tableId,
+      recordId: tempId,
+
+      _provenance: {
+        source: 'local',
+        tempId,
+        baseId,
+        tableId,
+        createdAt: now
+      },
+
+      _given: null, // No server truth yet
+      _serverModifiedAt: null,
+      _syncedAt: null,
+
+      _meant: {
+        fields,
+        modifiedAt: now
+      },
+
+      _status: 'new'
+    };
+
+    await this._put('records', record);
+    await this.queueOperation(baseId, tableId, tempId, 'create', fields);
+
+    return record;
+  },
+
+  // Update a record locally
+  async updateLocal(recordId, fieldChanges) {
+    await this.init();
+
+    const record = await this.getRecord(recordId);
+    if (!record) throw new Error('Record not found');
+
+    const now = Date.now();
+
+    // Merge changes into meant
+    record._meant.fields = { ...record._meant.fields, ...fieldChanges };
+    record._meant.modifiedAt = now;
+    record._status = record._status === 'new' ? 'new' : 'pending';
+
+    await this._put('records', record);
+
+    // Queue the update
+    if (record._status !== 'new') { // New records already have a create queued
+      await this.queueOperation(
+        record.baseId,
+        record.tableId,
+        record.recordId,
+        'update',
+        fieldChanges
+      );
+    }
+
+    return record;
+  },
+
+  // Get a record
+  async getRecord(id) {
+    await this.init();
+    return this._get('records', id);
+  },
+
+  // Get all records for a table
+  async getTableRecords(baseId, tableId) {
+    await this.init();
+
+    return new Promise((resolve, reject) => {
+      try {
+        const tx = this.db.transaction('records', 'readonly');
+        const store = tx.objectStore('records');
+        const index = store.index('byTable');
+        const request = index.getAll([baseId, tableId]);
+
+        request.onsuccess = () => {
+          const results = request.result || [];
+          console.log(`getTableRecords(${tableId}): found ${results.length} records`);
+          resolve(results);
+        };
+        request.onerror = () => {
+          console.error('getTableRecords error:', request.error);
+          reject(request.error);
+        };
+      } catch (e) {
+        console.error('getTableRecords exception:', e);
+        resolve([]); // Return empty on error, don't block
+      }
+    });
+  },
+
+  // Get merged view (Given + Meant) for display
+  getMergedFields(record) {
+    if (!record) return {};
+    const given = record._given?.fields || {};
+    const meant = record._meant?.fields || {};
+    return { ...given, ...meant };
+  },
+
+  // ========== SYNC QUEUE ==========
+
+  async queueOperation(baseId, tableId, recordId, operation, fields) {
+    await this.init();
+
+    const item = {
+      baseId,
+      tableId,
+      recordId,
+      operation,
+      fields,
+      createdAt: Date.now(),
+      attempts: 0,
+      lastError: null
+    };
+
+    return this._add('syncQueue', item);
+  },
+
+  async getQueue() {
+    await this.init();
+    return this._getAll('syncQueue');
+  },
+
+  async removeFromQueue(id) {
+    await this.init();
+    return this._delete('syncQueue', id);
+  },
+
+  async clearQueue() {
+    await this.init();
+    return this._clear('syncQueue');
+  },
+
+  // ========== CONFLICTS ==========
+
+  async createConflict(recordId, meant, given) {
+    await this.init();
+
+    const conflict = {
+      recordId,
+      meant,
+      given,
+      detectedAt: Date.now(),
+      resolution: null
+    };
+
+    return this._add('conflicts', conflict);
+  },
+
+  async getConflicts() {
+    await this.init();
+    return this._getAll('conflicts');
+  },
+
+  async resolveConflict(id, resolution, record) {
+    await this.init();
+
+    // Update conflict record
+    const conflict = await this._get('conflicts', id);
+    if (conflict) {
+      conflict.resolution = resolution;
+      conflict.resolvedAt = Date.now();
+      await this._put('conflicts', conflict);
+    }
+
+    // Update the record based on resolution
+    if (record) {
+      if (resolution === 'keep_given') {
+        record._meant = { fields: {}, modifiedAt: null };
+        record._status = 'synced';
+      } else if (resolution === 'keep_meant') {
+        // Re-queue the push
+        await this.queueOperation(
+          record.baseId,
+          record.tableId,
+          record.recordId,
+          'update',
+          record._meant.fields
+        );
+        record._status = 'pending';
+      }
+      await this._put('records', record);
+    }
+
+    // Remove resolved conflict
+    await this._delete('conflicts', id);
+  },
+
+  // ========== METADATA ==========
+
+  async getMeta(key) {
+    await this.init();
+    const item = await this._get('meta', key);
+    return item?.value;
+  },
+
+  async setMeta(key, value) {
+    await this.init();
+    return this._put('meta', { key, value, updatedAt: Date.now() });
+  },
+
+  async getTableSyncTime(tableId) {
+    return this.getMeta(`sync:${CONFIG.BASE_ID}:${tableId}`);
+  },
+
+  async setTableSyncTime(tableId, time) {
+    return this.setMeta(`sync:${CONFIG.BASE_ID}:${tableId}`, time);
+  },
+
+  // ========== STATS ==========
+
+  async getStats() {
+    await this.init();
+
+    const records = await this._getAll('records');
+    const queue = await this.getQueue();
+    const conflicts = await this.getConflicts();
+
+    const byStatus = { synced: 0, pending: 0, new: 0, conflict: 0 };
+    const byTable = {};
+
+    for (const r of records) {
+      byStatus[r._status] = (byStatus[r._status] || 0) + 1;
+
+      const tableKey = `${r.baseId}:${r.tableId}`;
+      if (!byTable[tableKey]) {
+        byTable[tableKey] = { total: 0, synced: 0, pending: 0 };
+      }
+      byTable[tableKey].total++;
+      byTable[tableKey][r._status] = (byTable[tableKey][r._status] || 0) + 1;
+    }
+
+    return {
+      total: records.length,
+      synced: byStatus.synced,
+      pending: byStatus.pending + byStatus.new,
+      conflicts: conflicts.length,
+      queueLength: queue.length,
+      byTable
+    };
+  },
+
+  // ========== CLEAR ==========
+
+  async clearAll() {
+    await this.init();
+    await this._clear('records');
+    await this._clear('syncQueue');
+    await this._clear('conflicts');
+    await this._clear('meta');
+    console.log('Cache cleared');
+  },
+
+  async clearTable(baseId, tableId) {
+    await this.init();
+
+    // Get all records for this table and delete them
+    const records = await this.getTableRecords(baseId, tableId);
+    for (const record of records) {
+      await this._delete('records', record._id);
+    }
+
+    // Clear sync time
+    await this._delete('meta', `sync:${baseId}:${tableId}`);
+
+    console.log(`Cleared table ${tableId}: ${records.length} records`);
+  },
+
+  // ========== LOW-LEVEL HELPERS ==========
+
+  _get(storeName, key) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeName, 'readonly');
+      const request = tx.objectStore(storeName).get(key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  _getAll(storeName) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeName, 'readonly');
+      const request = tx.objectStore(storeName).getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  _put(storeName, item) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeName, 'readwrite');
+      const request = tx.objectStore(storeName).put(item);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  _add(storeName, item) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeName, 'readwrite');
+      const request = tx.objectStore(storeName).add(item);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  _delete(storeName, key) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeName, 'readwrite');
+      const request = tx.objectStore(storeName).delete(key);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  _clear(storeName) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(storeName, 'readwrite');
+      const request = tx.objectStore(storeName).clear();
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+};
+
+// ============================================================
+// AIRTABLE API
+// ============================================================
+const Airtable = {
+  baseUrl: 'https://api.airtable.com/v0',
+
+  headers() {
+    return {
+      'Authorization': `Bearer ${CONFIG.API_KEY}`,
+      'Content-Type': 'application/json'
+    };
+  },
+
+  async getSchema() {
+    const res = await fetch(`https://api.airtable.com/v0/meta/bases/${CONFIG.BASE_ID}/tables`, {
+      headers: this.headers()
+    });
+    if (!res.ok) throw new Error(`Schema fetch failed: ${res.status}`);
+    return res.json();
+  },
+
+  async getPage(tableId, { offset = null, pageSize = 100, filterFormula = null } = {}) {
+    const params = new URLSearchParams();
+    params.set('pageSize', pageSize);
+    if (offset) params.set('offset', offset);
+    if (filterFormula) params.set('filterByFormula', filterFormula);
+
+    const url = `${this.baseUrl}/${CONFIG.BASE_ID}/${encodeURIComponent(tableId)}?${params}`;
+    const res = await fetch(url, { headers: this.headers() });
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    return res.json();
+  },
+
+  async getAllRecords(tableId, { filterFormula = null, onProgress = null } = {}) {
+    const allRecords = [];
+    let offset = null;
+    let page = 0;
+
+    do {
+      const data = await this.getPage(tableId, { offset, filterFormula });
+      allRecords.push(...data.records);
+      offset = data.offset;
+      page++;
+
+      if (onProgress) onProgress(allRecords.length, page, !!offset);
+      if (offset) await new Promise(r => setTimeout(r, 200));
+    } while (offset);
+
+    return allRecords;
+  },
+
+  async createRecord(tableId, fields) {
+    const res = await fetch(`${this.baseUrl}/${CONFIG.BASE_ID}/${encodeURIComponent(tableId)}`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ fields, typecast: true })
+    });
+    if (!res.ok) throw new Error(`Create failed: ${res.status}`);
+    return res.json();
+  },
+
+  async updateRecord(tableId, recordId, fields) {
+    const res = await fetch(`${this.baseUrl}/${CONFIG.BASE_ID}/${encodeURIComponent(tableId)}/${recordId}`, {
+      method: 'PATCH',
+      headers: this.headers(),
+      body: JSON.stringify({ fields, typecast: true })
+    });
+    if (!res.ok) throw new Error(`Update failed: ${res.status}`);
+    return res.json();
+  },
+
+  async deleteRecord(tableId, recordId) {
+    const res = await fetch(`${this.baseUrl}/${CONFIG.BASE_ID}/${encodeURIComponent(tableId)}/${recordId}`, {
+      method: 'DELETE',
+      headers: this.headers()
+    });
+    if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+    return res.json();
+  }
+};
+
+// ============================================================
+// SYNC MANAGER
+// ============================================================
+const SyncManager = {
+  isSyncing: false,
+
+  // Full sync - download everything
+  async fullSync(tableId) {
+    if (this.isSyncing) return 0;
+    this.isSyncing = true;
+    updateSyncIndicator('syncing', 'Syncing...');
+
+    try {
+      const records = await Airtable.getAllRecords(tableId);
+
+      // Store all as Given
+      for (const record of records) {
+        await ExperienceEngine.storeGiven(CONFIG.BASE_ID, tableId, record);
+      }
+
+      await ExperienceEngine.setTableSyncTime(tableId, Date.now());
+
+      updateSyncIndicator('synced', 'Synced');
+      await updateBadges();
+
+      return records.length;
+    } catch (e) {
+      console.error('Full sync failed:', e);
+      updateSyncIndicator('error', 'Sync failed');
+      return 0;
+    } finally {
+      this.isSyncing = false;
+    }
+  },
+
+  // Delta sync - only fetch changed records
+  async deltaSync(tableId) {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+    updateSyncIndicator('syncing', 'Syncing...');
+
+    try {
+      const lastSync = await ExperienceEngine.getTableSyncTime(tableId);
+
+      if (!lastSync) {
+        // No previous sync - do full
+        return this.fullSync(tableId);
+      }
+
+      // Fetch records modified since last sync
+      const lastSyncDate = new Date(lastSync).toISOString();
+      const filterFormula = `LAST_MODIFIED_TIME() > '${lastSyncDate}'`;
+
+      let records = [];
+      try {
+        records = await Airtable.getAllRecords(tableId, { filterFormula });
+      } catch (e) {
+        // If LAST_MODIFIED_TIME doesn't exist, fall back to full sync
+        console.warn('Delta sync failed, falling back to full sync:', e);
+        return this.fullSync(tableId);
+      }
+
+      // Store updated records
+      for (const record of records) {
+        await ExperienceEngine.storeGiven(CONFIG.BASE_ID, tableId, record);
+      }
+
+      await ExperienceEngine.setTableSyncTime(tableId, Date.now());
+
+      updateSyncIndicator('synced', `Synced (${records.length} updated)`);
+      await updateBadges();
+
+      return records.length;
+    } finally {
+      this.isSyncing = false;
+    }
+  },
+
+  // Push local changes to server
+  async flushQueue() {
+    const queue = await ExperienceEngine.getQueue();
+    if (queue.length === 0) return;
+
+    updateSyncIndicator('syncing', 'Pushing changes...');
+
+    let success = 0;
+    let failed = 0;
+
+    for (const item of queue) {
+      try {
+        if (item.operation === 'create') {
+          const newRecord = await Airtable.createRecord(item.tableId, item.fields);
+
+          // Update local record with real ID
+          const oldId = ExperienceEngine._recordId(item.baseId, item.tableId, item.recordId);
+          const oldRecord = await ExperienceEngine.getRecord(oldId);
+
+          if (oldRecord) {
+            // Delete temp record
+            await ExperienceEngine._delete('records', oldId);
+
+            // Store with real ID
+            await ExperienceEngine.storeGiven(item.baseId, item.tableId, newRecord);
+          }
+
+        } else if (item.operation === 'update') {
+          await Airtable.updateRecord(item.tableId, item.recordId, item.fields);
+
+          // Update local record status
+          const id = ExperienceEngine._recordId(item.baseId, item.tableId, item.recordId);
+          const record = await ExperienceEngine.getRecord(id);
+          if (record) {
+            record._status = 'synced';
+            record._meant = { fields: {}, modifiedAt: null };
+            await ExperienceEngine._put('records', record);
+          }
+        }
+
+        await ExperienceEngine.removeFromQueue(item.id);
+        success++;
+
+      } catch (e) {
+        console.error('Queue item failed:', e);
+        failed++;
+      }
+    }
+
+    updateSyncIndicator('synced', `Pushed ${success} changes`);
+    await updateBadges();
+
+    return { success, failed };
+  }
+};
+
+// ============================================================
+// LIVE SYNC MANAGER (Real-time via n8n relay)
+// ============================================================
+const LiveSync = {
+  isEnabled: false,
+  pollInterval: null,
+  lastCheck: 0,
+
+  async start() {
+    if (this.isEnabled || !CONFIG.LIVE_SYNC_URL) return;
+
+    this.isEnabled = true;
+    this.lastCheck = Date.now();
+
+    console.log('LiveSync started');
+    updateLiveSyncIndicator(true);
+
+    // Start polling
+    this.poll();
+    this.pollInterval = setInterval(() => this.poll(), CONFIG.LIVE_POLL_INTERVAL);
+  },
+
+  stop() {
+    this.isEnabled = false;
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+    console.log('LiveSync stopped');
+    updateLiveSyncIndicator(false);
+  },
+
+  async poll() {
+    if (!this.isEnabled || !CONFIG.LIVE_SYNC_URL) return;
+
+    try {
+      const url = `${CONFIG.LIVE_SYNC_URL}?since=${this.lastCheck}`;
+      const res = await fetch(url);
+
+      if (!res.ok) {
+        console.warn('LiveSync poll failed:', res.status);
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data.hasChanges) {
+        console.log('LiveSync detected changes:', data.changes.length);
+
+        // Update last check time
+        this.lastCheck = data.serverTime || Date.now();
+
+        // Trigger delta sync for current table
+        if (currentTableId) {
+          await SyncManager.deltaSync(currentTableId);
+
+          // Refresh grid
+          const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
+          const gridData = records.map(transformRecordForGrid).filter(Boolean);
+          if (table) {
+            table.replaceData(gridData);
+          }
+        }
+
+        // Flash indicator
+        flashLiveSyncIndicator();
+      }
+
+    } catch (e) {
+      console.warn('LiveSync poll error:', e);
+    }
+  },
+
+  toggle() {
+    if (this.isEnabled) {
+      this.stop();
+    } else {
+      this.start();
+    }
+    return this.isEnabled;
+  }
+};
+
+// ============================================================
+// DIRECT POLLING (No n8n required - polls Airtable directly)
+// ============================================================
+const DirectPoll = {
+  isEnabled: false,
+  pollInterval: null,
+
+  async start() {
+    if (this.isEnabled) return;
+
+    this.isEnabled = true;
+    console.log('DirectPoll started');
+    updateLiveSyncIndicator(true, 'polling');
+
+    // Poll every 15 seconds
+    this.pollInterval = setInterval(() => this.poll(), 15000);
+  },
+
+  stop() {
+    this.isEnabled = false;
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+    console.log('DirectPoll stopped');
+    updateLiveSyncIndicator(false);
+  },
+
+  async poll() {
+    if (!this.isEnabled || !currentTableId) return;
+
+    try {
+      const updated = await SyncManager.deltaSync(currentTableId);
+
+      if (updated > 0) {
+        // Refresh grid
+        const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
+        const gridData = records.map(transformRecordForGrid).filter(Boolean);
+        if (table) {
+          table.replaceData(gridData);
+        }
+        flashLiveSyncIndicator();
+      }
+    } catch (e) {
+      console.warn('DirectPoll error:', e);
+    }
+  },
+
+  toggle() {
+    if (this.isEnabled) {
+      this.stop();
+    } else {
+      this.start();
+    }
+    return this.isEnabled;
+  }
+};
+
+// ============================================================
+// LIVE SYNC UI HELPERS
+// ============================================================
+function updateLiveSyncIndicator(active, mode = 'live') {
+  const toggle = document.getElementById('live-toggle');
+  const text = document.getElementById('live-toggle-text');
+
+  if (active) {
+    toggle.classList.add('active');
+    text.textContent = mode === 'polling' ? 'Polling' : 'Live';
+  } else {
+    toggle.classList.remove('active');
+    text.textContent = 'Live';
+  }
+}
+
+function flashLiveSyncIndicator() {
+  const toggle = document.getElementById('live-toggle');
+  toggle.classList.add('flash');
+  setTimeout(() => toggle.classList.remove('flash'), 300);
+}
+
+// Live toggle click handler
+document.getElementById('live-toggle').addEventListener('click', () => {
+  // Use DirectPoll if no LIVE_SYNC_URL configured
+  if (CONFIG.LIVE_SYNC_URL) {
+    LiveSync.toggle();
+  } else {
+    DirectPoll.toggle();
+  }
+});
+
+let schema = null;
+let currentTableId = null;
+let currentFields = [];
+let table = null;
+
+// DOM Elements
+const loadingEl = document.getElementById('loading');
+const loadingTextEl = document.getElementById('loading-text');
+const progressBarEl = document.getElementById('progress-bar');
+const progressFillEl = document.getElementById('progress-fill');
+const navEl = document.getElementById('nav');
+const syncIndicatorEl = document.getElementById('sync-indicator');
+const syncStatusTextEl = document.getElementById('sync-status-text');
+const pendingBadgeEl = document.getElementById('pending-badge');
+const conflictBadgeEl = document.getElementById('conflict-badge');
+
+// ============================================================
+// UI HELPERS
+// ============================================================
+
+function setLoading(show, text = 'Loading...', showProgress = false) {
+  loadingEl.classList.toggle('hidden', !show);
+  loadingTextEl.textContent = text;
+  progressBarEl.style.display = showProgress ? 'block' : 'none';
+}
+
+function setProgress(percent) {
+  progressFillEl.style.width = `${percent}%`;
+}
+
+function updateSyncIndicator(state, text) {
+  syncIndicatorEl.className = `sync-indicator ${state}`;
+  syncStatusTextEl.textContent = text;
+}
+
+async function updateBadges() {
+  const stats = await ExperienceEngine.getStats();
+
+  if (stats.pending > 0) {
+    pendingBadgeEl.textContent = `${stats.pending} pending`;
+    pendingBadgeEl.style.display = 'inline';
+  } else {
+    pendingBadgeEl.style.display = 'none';
+  }
+
+  if (stats.conflicts > 0) {
+    conflictBadgeEl.textContent = `${stats.conflicts} conflicts`;
+    conflictBadgeEl.style.display = 'inline';
+  } else {
+    conflictBadgeEl.style.display = 'none';
+  }
+
+  // Update sync page stats
+  document.getElementById('stat-total').textContent = stats.total;
+  document.getElementById('stat-synced').textContent = stats.synced;
+  document.getElementById('stat-pending').textContent = stats.pending;
+  document.getElementById('stat-conflicts').textContent = stats.conflicts;
+}
+
+function showPage(pageName) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+
+  document.getElementById(`page-${pageName}`).classList.add('active');
+  document.querySelector(`.nav-tab[data-page="${pageName}"]`)?.classList.add('active');
+
+  if (pageName === 'sync') {
+    renderSyncPage();
+  }
+}
+
+function formatTimeAgo(timestamp) {
+  if (!timestamp) return 'Never';
+  const diff = Date.now() - timestamp;
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
+// ============================================================
+// DATA PAGE
+// ============================================================
+
+function transformRecordForGrid(record) {
+  if (!record) return null;
+
+  return {
+    _id: record._id,
+    _status: record._status,
+    _recordId: record.recordId,
+    ...ExperienceEngine.getMergedFields(record)
+  };
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) {
+    return value.map(v => {
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'object') return v.name || v.filename || v.email || v.id || JSON.stringify(v);
+      return String(v);
+    }).filter(Boolean).join(', ');
+  }
+  if (typeof value === 'object') {
+    return value.name || value.filename || value.email || value.id || JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function getEditor(field) {
+  if (!field || !field.type) return false;
+  const readonlyTypes = ['formula', 'rollup', 'count', 'lookup', 'autoNumber', 'createdTime', 'lastModifiedTime', 'createdBy', 'lastModifiedBy', 'multipleAttachments', 'multipleRecordLinks'];
+  if (readonlyTypes.includes(field.type)) return false;
+
+  switch (field.type) {
+    case 'singleLineText':
+    case 'email':
+    case 'url':
+    case 'phoneNumber':
+      return 'input';
+    case 'multilineText':
+      return 'textarea';
+    case 'number':
+    case 'currency':
+    case 'percent':
+      return 'number';
+    case 'date':
+    case 'dateTime':
+      return 'date';
+    case 'checkbox':
+      return 'tickCross';
+    case 'singleSelect':
+    case 'multipleSelects':
+      return 'list';
+    default:
+      return false;
+  }
+}
+
+function getEditorParams(field) {
+  if (!field || !field.options) return {};
+  if (field.type === 'singleSelect' && field.options.choices) {
+    return { values: field.options.choices.map(c => c?.name || '').filter(Boolean), clearable: true };
+  }
+  if (field.type === 'multipleSelects' && field.options.choices) {
+    return { values: field.options.choices.map(c => c?.name || '').filter(Boolean), multiselect: true };
+  }
+  return {};
+}
+
+function buildColumns(fields) {
+  return fields.map(field => ({
+    title: field.name,
+    field: field.name,
+    editor: getEditor(field),
+    editorParams: getEditorParams(field),
+    formatter: (cell) => {
+      try {
+        return formatValue(cell.getValue());
+      } catch (e) {
+        return '';
+      }
+    }
+  }));
+}
+
+async function loadTable(tableId) {
+  if (table) {
+    table.destroy();
+    table = null;
+  }
+
+  currentTableId = tableId;
+  const tableSchema = schema.tables.find(t => t.id === tableId);
+  currentFields = tableSchema.fields;
+
+  // Update group-by dropdown
+  const groupByEl = document.getElementById('group-by');
+  groupByEl.innerHTML = '<option value="">Group by...</option>';
+  currentFields.forEach(f => {
+    if (['singleSelect', 'singleLineText', 'checkbox'].includes(f.type)) {
+      const opt = document.createElement('option');
+      opt.value = f.name;
+      opt.textContent = f.name;
+      groupByEl.appendChild(opt);
+    }
+  });
+
+  // Build columns first
+  const columns = buildColumns(currentFields);
+
+  // Try to load from cache FIRST - never block on network
+  let records = [];
+  let cacheHit = false;
+
+  try {
+    records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, tableId);
+    cacheHit = records.length > 0;
+    console.log(`Cache ${cacheHit ? 'HIT' : 'MISS'}: ${records.length} records for ${tableId}`);
+  } catch (e) {
+    console.error('Cache read failed:', e);
+  }
+
+  // Show whatever we have immediately (even if empty)
+  const gridData = records.map(transformRecordForGrid).filter(Boolean);
+
+  table = new Tabulator('#grid', {
+    data: gridData,
+    columns: columns,
+    layout: 'fitDataFill',
+    height: 'calc(100vh - 140px)',
+    pagination: true,
+    paginationSize: 50,
+    paginationSizeSelector: [25, 50, 100],
+    movableColumns: true,
+    placeholder: cacheHit ? 'No records found' : 'Loading from server...',
+    groupBy: false,
+    groupStartOpen: true,
+    groupHeader: (value, count) => `${value || '(empty)'} <span style="color:var(--accent)">(${count})</span>`,
+
+    rowFormatter: (row) => {
+      const data = row.getData();
+      row.getElement().classList.remove('row-pending', 'row-conflict', 'row-new');
+      if (data._status === 'pending') row.getElement().classList.add('row-pending');
+      if (data._status === 'conflict') row.getElement().classList.add('row-conflict');
+      if (data._status === 'new') row.getElement().classList.add('row-new');
+    },
+
+    cellEdited: async (cell) => {
+      const rowData = cell.getRow().getData();
+      const fieldName = cell.getField();
+      const newValue = cell.getValue();
+
+      try {
+        await ExperienceEngine.updateLocal(rowData._id, { [fieldName]: newValue });
+        cell.getRow().getElement().classList.add('row-pending');
+        await updateBadges();
+      } catch (e) {
+        console.error('Edit failed:', e);
+        cell.restoreOldValue();
+      }
+    }
+  });
+
+  // Update status with cache info
+  const syncTime = await ExperienceEngine.getTableSyncTime(tableId);
+
+  if (cacheHit) {
+    document.getElementById('table-status').textContent =
+      `${gridData.length} records | Synced ${formatTimeAgo(syncTime)}`;
+
+    // Background delta sync
+    syncInBackground(tableId);
+  } else {
+    document.getElementById('table-status').textContent = 'Loading from server...';
+
+    // No cache - need to fetch, but do it async and update table
+    syncAndUpdateTable(tableId);
+  }
+}
+
+// Background sync - doesn't block UI
+async function syncInBackground(tableId) {
+  try {
+    const count = await SyncManager.deltaSync(tableId);
+
+    // Reload data if we got updates
+    if (count > 0 && currentTableId === tableId) {
+      const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, tableId);
+      const gridData = records.map(transformRecordForGrid).filter(Boolean);
+      table.replaceData(gridData);
+
+      const syncTime = await ExperienceEngine.getTableSyncTime(tableId);
+      document.getElementById('table-status').textContent =
+        `${gridData.length} records | Synced ${formatTimeAgo(syncTime)} (${count} updated)`;
+    }
+  } catch (e) {
+    console.error('Background sync failed:', e);
+  }
+}
+
+// Initial sync with progress - updates table as data arrives
+async function syncAndUpdateTable(tableId) {
+  updateSyncIndicator('syncing', 'Downloading...');
+
+  let totalCount = 0;
+
+  try {
+    const records = await Airtable.getAllRecords(tableId, {
+      onProgress: async (count, page, hasMore) => {
+        totalCount = count;
+        document.getElementById('table-status').textContent =
+          `Downloading... ${count} records (page ${page})`;
+      }
+    });
+
+    // Store all records
+    for (const record of records) {
+      await ExperienceEngine.storeGiven(CONFIG.BASE_ID, tableId, record);
+    }
+
+    await ExperienceEngine.setTableSyncTime(tableId, Date.now());
+
+    // Update table with all data
+    if (currentTableId === tableId) {
+      const cachedRecords = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, tableId);
+      const gridData = cachedRecords.map(transformRecordForGrid).filter(Boolean);
+      table.replaceData(gridData);
+      table.options.placeholder = 'No records found';
+
+      document.getElementById('table-status').textContent =
+        `${gridData.length} records | Synced just now`;
+    }
+
+    updateSyncIndicator('synced', 'Synced');
+    await updateBadges();
+
+  } catch (e) {
+    console.error('Initial sync failed:', e);
+    updateSyncIndicator('error', 'Sync failed');
+    document.getElementById('table-status').textContent = 'Failed to load - check connection';
+  }
+}
+
+// ============================================================
+// SYNC PAGE
+// ============================================================
+
+async function renderSyncPage() {
+  await updateBadges();
+
+  // Render tables list
+  const tablesListEl = document.getElementById('sync-tables-list');
+  tablesListEl.innerHTML = '';
+
+  if (!schema) {
+    tablesListEl.innerHTML = '<div class="empty-state">Not connected</div>';
+    return;
+  }
+
+  const stats = await ExperienceEngine.getStats();
+
+  for (const t of schema.tables) {
+    const tableKey = `${CONFIG.BASE_ID}:${t.id}`;
+    const tableStats = stats.byTable[tableKey] || { total: 0, synced: 0, pending: 0 };
+    const syncTime = await ExperienceEngine.getTableSyncTime(t.id);
+
+    const row = document.createElement('div');
+    row.className = 'sync-table-row';
+    row.innerHTML = `
+      <span class="sync-table-name">${t.name}</span>
+      <span class="sync-table-stats">
+        <span>${tableStats.total} records</span>
+        ${tableStats.pending > 0 ? `<span style="color: var(--warning)">${tableStats.pending} pending</span>` : ''}
+      </span>
+      <span class="sync-table-time">${formatTimeAgo(syncTime)}</span>
+      <div class="sync-table-actions">
+        <button data-action="delta" data-table="${t.id}">Delta</button>
+        <button data-action="full" data-table="${t.id}">Full</button>
+      </div>
+    `;
+    tablesListEl.appendChild(row);
+  }
+
+  // Add click handlers
+  tablesListEl.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.action;
+      const tableId = btn.dataset.table;
+
+      setLoading(true, `Syncing ${action}...`);
+      try {
+        if (action === 'delta') {
+          await SyncManager.deltaSync(tableId);
+        } else {
+          await SyncManager.fullSync(tableId);
+        }
+        renderSyncPage();
+      } finally {
+        setLoading(false);
+      }
+    });
+  });
+
+  // Render queue
+  const queueListEl = document.getElementById('sync-queue-list');
+  const queue = await ExperienceEngine.getQueue();
+
+  if (queue.length === 0) {
+    queueListEl.innerHTML = '<div class="empty-state">No pending changes</div>';
+  } else {
+    queueListEl.innerHTML = queue.map(item => `
+      <div class="queue-item">
+        <div class="queue-item-header">
+          <span class="queue-item-op ${item.operation}">${item.operation}</span>
+          <span class="queue-item-record">${item.recordId}</span>
+          <span class="queue-item-time">${formatTimeAgo(item.createdAt)}</span>
+        </div>
+        <div class="queue-item-fields">
+          ${Object.keys(item.fields || {}).join(', ')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Render conflicts
+  const conflictsListEl = document.getElementById('sync-conflicts-list');
+  const conflicts = await ExperienceEngine.getConflicts();
+
+  if (conflicts.length === 0) {
+    conflictsListEl.innerHTML = '<div class="empty-state">No conflicts</div>';
+  } else {
+    conflictsListEl.innerHTML = conflicts.map(conflict => `
+      <div class="conflict-item" data-conflict-id="${conflict.id}">
+        <div class="conflict-item-header">
+          <strong>${conflict.recordId}</strong>
+          <span class="queue-item-time">${formatTimeAgo(conflict.detectedAt)}</span>
+        </div>
+        <div class="conflict-versions">
+          <div class="conflict-version given">
+            <div class="conflict-version-label">Server (Given)</div>
+            <div>${JSON.stringify(conflict.given?.fields || {}, null, 2).slice(0, 200)}...</div>
+          </div>
+          <div class="conflict-version meant">
+            <div class="conflict-version-label">Local (Meant)</div>
+            <div>${JSON.stringify(conflict.meant?.fields || {}, null, 2).slice(0, 200)}...</div>
+          </div>
+        </div>
+        <div class="conflict-actions">
+          <button class="btn-secondary" data-resolve="keep_given">Keep Server</button>
+          <button class="btn-primary" data-resolve="keep_meant">Keep Local</button>
+        </div>
+      </div>
+    `).join('');
+
+    // Add conflict resolution handlers
+    conflictsListEl.querySelectorAll('button[data-resolve]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const conflictEl = btn.closest('.conflict-item');
+        const conflictId = parseInt(conflictEl.dataset.conflictId);
+        const resolution = btn.dataset.resolve;
+
+        const conflict = conflicts.find(c => c.id === conflictId);
+        if (conflict) {
+          const record = await ExperienceEngine.getRecord(conflict.recordId);
+          await ExperienceEngine.resolveConflict(conflictId, resolution, record);
+          renderSyncPage();
+        }
+      });
+    });
+  }
+}
+
+// ============================================================
+// INITIALIZATION
+// ============================================================
+
+// Nav tab clicks
+document.querySelectorAll('.nav-tab[data-page]').forEach(tab => {
+  tab.addEventListener('click', () => showPage(tab.dataset.page));
+});
+
+// Table select
+document.getElementById('table-select').addEventListener('change', (e) => {
+  if (e.target.value) loadTable(e.target.value);
+});
+
+// Search
+document.getElementById('search').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && table) {
+    const term = e.target.value.trim().toLowerCase();
+    if (term) {
+      table.setFilter((data) => {
+        return Object.values(data).some(v => String(v).toLowerCase().includes(term));
+      });
+    } else {
+      table.clearFilter();
+    }
+  }
+});
+
+// Group by
+document.getElementById('group-by').addEventListener('change', (e) => {
+  if (table) {
+    table.setGroupBy(e.target.value || false);
+  }
+});
+
+// Add row
+document.getElementById('add-row-btn').addEventListener('click', () => {
+  if (!currentFields.length) return;
+
+  const modalFieldsEl = document.getElementById('modal-fields');
+  modalFieldsEl.innerHTML = '';
+
+  const editableFields = currentFields.filter(f =>
+    !['formula', 'rollup', 'count', 'lookup', 'autoNumber', 'createdTime', 'lastModifiedTime', 'createdBy', 'lastModifiedBy'].includes(f.type)
+  );
+
+  for (const field of editableFields) {
+    const div = document.createElement('div');
+    div.className = 'form-group';
+    div.innerHTML = `<label>${field.name}</label>`;
+
+    let input;
+    if (field.type === 'singleSelect' && field.options?.choices) {
+      input = document.createElement('select');
+      input.innerHTML = '<option value="">Select...</option>' +
+        field.options.choices.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+    } else if (field.type === 'multilineText') {
+      input = document.createElement('textarea');
+      input.rows = 3;
+    } else if (field.type === 'checkbox') {
+      input = document.createElement('input');
+      input.type = 'checkbox';
+    } else if (['number', 'currency', 'percent'].includes(field.type)) {
+      input = document.createElement('input');
+      input.type = 'number';
+    } else {
+      input = document.createElement('input');
+      input.type = 'text';
+    }
+
+    input.dataset.field = field.name;
+    input.dataset.type = field.type;
+    div.appendChild(input);
+    modalFieldsEl.appendChild(div);
+  }
+
+  document.getElementById('add-modal').classList.remove('hidden');
+});
+
+// Modal cancel
+document.getElementById('modal-cancel').addEventListener('click', () => {
+  document.getElementById('add-modal').classList.add('hidden');
+});
+
+// Modal save
+document.getElementById('modal-save').addEventListener('click', async () => {
+  const inputs = document.querySelectorAll('#modal-fields input, #modal-fields select, #modal-fields textarea');
+  const fields = {};
+
+  inputs.forEach(input => {
+    const fieldName = input.dataset.field;
+    const fieldType = input.dataset.type;
+    let value = fieldType === 'checkbox' ? input.checked :
+                ['number', 'currency', 'percent'].includes(fieldType) ? (input.value ? parseFloat(input.value) : null) :
+                input.value || null;
+    if (value !== null && value !== '') fields[fieldName] = value;
+  });
+
+  document.getElementById('add-modal').classList.add('hidden');
+
+  try {
+    const record = await ExperienceEngine.storeLocal(CONFIG.BASE_ID, currentTableId, fields);
+    const gridRow = transformRecordForGrid(record);
+    table.addRow(gridRow, true);
+    await updateBadges();
+  } catch (e) {
+    console.error('Create failed:', e);
+  }
+});
+
+// Modal outside click
+document.getElementById('add-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'add-modal') {
+    e.target.classList.add('hidden');
+  }
+});
+
+// Flush queue button
+document.getElementById('flush-queue-btn').addEventListener('click', async () => {
+  setLoading(true, 'Pushing changes...');
+  try {
+    await SyncManager.flushQueue();
+    renderSyncPage();
+    if (currentTableId) loadTable(currentTableId);
+  } finally {
+    setLoading(false);
+  }
+});
+
+// Delta sync button
+document.getElementById('sync-delta-btn').addEventListener('click', async () => {
+  if (!schema) return;
+  setLoading(true, 'Delta syncing all tables...');
+  try {
+    for (const t of schema.tables) {
+      await SyncManager.deltaSync(t.id);
+    }
+    renderSyncPage();
+  } finally {
+    setLoading(false);
+  }
+});
+
+// Full sync button
+document.getElementById('sync-full-btn').addEventListener('click', async () => {
+  if (!schema) return;
+  if (!confirm('Full sync will re-download all tables. This may take a while. Continue?')) return;
+
+  setLoading(true, 'Full sync...', true);
+  try {
+    const total = schema.tables.length;
+    for (let i = 0; i < total; i++) {
+      const t = schema.tables[i];
+      setProgress(((i + 0.5) / total) * 100);
+      loadingTextEl.textContent = `Syncing ${t.name} (${i + 1}/${total})...`;
+      await SyncManager.fullSync(t.id);
+    }
+    setProgress(100);
+    loadingTextEl.textContent = 'Done!';
+    await new Promise(r => setTimeout(r, 500));
+    renderSyncPage();
+
+    // Reload current table if any
+    if (currentTableId) {
+      const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
+      const gridData = records.map(transformRecordForGrid).filter(Boolean);
+      if (table) table.replaceData(gridData);
+    }
+  } finally {
+    setLoading(false);
+  }
+});
+
+// Clear cache button
+document.getElementById('clear-cache-btn').addEventListener('click', async () => {
+  if (!confirm('This will delete ALL cached data. You will need to re-download everything. Continue?')) return;
+
+  setLoading(true, 'Clearing cache...');
+  try {
+    await ExperienceEngine.clearAll();
+
+    if (table) {
+      table.clearData();
+    }
+
+    renderSyncPage();
+    document.getElementById('table-status').textContent = 'Cache cleared';
+    updateSyncIndicator('synced', 'Cache cleared');
+  } finally {
+    setLoading(false);
+  }
+});
+
+// Connect
+document.getElementById('connect-btn').addEventListener('click', async () => {
+  const apiKey = document.getElementById('api-key').value.trim();
+  const baseId = document.getElementById('base-id').value.trim();
+
+  if (!apiKey || !baseId) {
+    alert('Please enter both API Key and Base ID');
+    return;
+  }
+
+  CONFIG.API_KEY = apiKey;
+  CONFIG.BASE_ID = baseId;
+
+  try {
+    await ExperienceEngine.init();
+
+    // Try to load cached schema first
+    const cachedSchema = await ExperienceEngine.getMeta(`schema:${baseId}`);
+
+    if (cachedSchema) {
+      console.log('Using cached schema');
+      schema = cachedSchema;
+
+      // Populate table dropdown
+      populateTableDropdown();
+
+      // Show main UI immediately
+      localStorage.setItem('airtable_api_key', apiKey);
+      localStorage.setItem('airtable_base_id', baseId);
+      navEl.style.display = 'flex';
+      showPage('data');
+      await updateBadges();
+
+      // Refresh schema in background
+      Airtable.getSchema().then(async freshSchema => {
+        schema = freshSchema;
+        await ExperienceEngine.setMeta(`schema:${baseId}`, freshSchema);
+        populateTableDropdown();
+      }).catch(e => console.warn('Schema refresh failed:', e));
+
+    } else {
+      // No cached schema - must fetch
+      setLoading(true, 'Connecting...');
+
+      schema = await Airtable.getSchema();
+      await ExperienceEngine.setMeta(`schema:${baseId}`, schema);
+
+      localStorage.setItem('airtable_api_key', apiKey);
+      localStorage.setItem('airtable_base_id', baseId);
+
+      populateTableDropdown();
+
+      navEl.style.display = 'flex';
+      showPage('data');
+      await updateBadges();
+
+      setLoading(false);
+    }
+
+  } catch (e) {
+    console.error('Connect failed:', e);
+    setLoading(false);
+    alert('Failed to connect. Check your API key and Base ID.');
+  }
+});
+
+function populateTableDropdown() {
+  const tableSelect = document.getElementById('table-select');
+  tableSelect.innerHTML = '<option value="">Select Table...</option>';
+  schema.tables.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name;
+    tableSelect.appendChild(opt);
+  });
+}
+
+// Disconnect
+document.getElementById('disconnect-btn').addEventListener('click', async () => {
+  if (!confirm('Disconnect? Your cached data will be preserved for next time.')) return;
+
+  CONFIG.API_KEY = '';
+  CONFIG.BASE_ID = '';
+  localStorage.removeItem('airtable_api_key');
+  localStorage.removeItem('airtable_base_id');
+
+  // Don't clear cache - user might reconnect
+  // await ExperienceEngine.clearAll();
+
+  if (table) {
+    table.destroy();
+    table = null;
+  }
+  schema = null;
+  currentTableId = null;
+
+  navEl.style.display = 'none';
+  showPage('connect');
+});
+
+// Auto-connect
+async function init() {
+  try {
+    const savedApiKey = localStorage.getItem('airtable_api_key');
+    const savedBaseId = localStorage.getItem('airtable_base_id');
+
+    if (savedApiKey && savedBaseId) {
+      document.getElementById('api-key').value = savedApiKey;
+      document.getElementById('base-id').value = savedBaseId;
+      document.getElementById('connect-btn').click();
+    }
+  } catch (e) {
+    console.error('Auto-connect failed:', e);
+  }
+}
+
+// Online/offline handlers
+window.addEventListener('online', () => {
+  updateSyncIndicator('synced', 'Online');
+  SyncManager.flushQueue();
+});
+
+window.addEventListener('offline', () => {
+  updateSyncIndicator('offline', 'Offline');
+});
+
+// Visibility change - delta sync when tab becomes visible
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && currentTableId && navigator.onLine) {
+    SyncManager.deltaSync(currentTableId);
+  }
+});
+
+init();
+</script>
+
+</body>
+</html>
