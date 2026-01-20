@@ -482,10 +482,13 @@
     .tabulator .tabulator-header {
       background: var(--bg-surface);
       border-bottom: 1px solid var(--border);
+      height: 36px !important;
+      min-height: 36px !important;
     }
     .tabulator .tabulator-col {
       background: var(--bg-surface);
       border-right: 1px solid var(--border);
+      height: 36px !important;
     }
     .tabulator .tabulator-col-title {
       color: var(--text-muted);
@@ -493,13 +496,16 @@
       font-size: 12px;
     }
     .tabulator .tabulator-col-content {
-      padding: 0 16px;
+      padding: 0 12px;
+      height: 36px !important;
+      display: flex;
+      align-items: center;
     }
     .tabulator .tabulator-row {
       border-bottom: 1px solid var(--border-light);
-      min-height: 44px;
-      max-height: 80px;
-      overflow: hidden;
+      min-height: 36px !important;
+      max-height: 36px !important;
+      height: 36px !important;
     }
     .tabulator .tabulator-row:hover {
       background: var(--bg-surface) !important;
@@ -510,13 +516,19 @@
     .tabulator .tabulator-cell {
       border-right: 1px solid var(--border-light);
       color: var(--text);
-      padding: 0 16px;
+      padding: 0 12px;
       display: flex;
       align-items: center;
-      max-height: 80px;
+      height: 36px !important;
+      min-height: 36px !important;
+      max-height: 36px !important;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .tabulator .tabulator-col {
+      min-width: 100px;
+      max-width: 300px;
     }
     .tabulator .tabulator-cell.tabulator-editing {
       background: var(--bg-main);
@@ -3720,12 +3732,19 @@ async function loadTable(tableId, viewId = null, viewName = null) {
   table = new Tabulator('#grid', {
     data: gridData,
     columns: columns,
-    layout: 'fitDataFill',
+    layout: 'fitDataStretch',
     height: '100%',
+    rowHeight: 36,
     pagination: true,
     paginationSize: 50,
     paginationSizeSelector: [25, 50, 100],
     movableColumns: true,
+    resizableColumns: true,
+    columnDefaults: {
+      width: 150,
+      minWidth: 80,
+      maxWidth: 400,
+    },
     placeholder: cacheHit ? 'No records found' : 'Loading from server...',
     groupBy: false,
     groupStartOpen: true,
