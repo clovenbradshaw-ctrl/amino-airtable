@@ -3611,17 +3611,10 @@ function transformRecordForGrid(record, fields = currentFields) {
 
   const merged = ExperienceEngine.getMergedFields(record);
 
-  // Calculate formula fields locally
-  for (const field of fields) {
-    if (field.type === 'formula' && field.options?.formula) {
-      const calculated = FormulaEngine.evaluate(field.options.formula, merged, fields);
-      if (calculated !== null && calculated !== undefined) {
-        merged[field.name] = calculated;
-        // Mark as locally calculated for styling
-        merged[`_calc_${field.name}`] = true;
-      }
-    }
-  }
+  // Note: We use Airtable's computed values for formula/rollup/lookup/count fields
+  // rather than recalculating locally. Airtable already provides these values
+  // in the API response, and our local FormulaEngine doesn't support all functions.
+  // Local formula calculation only happens in cellEdited for optimistic updates.
 
   return {
     _id: record._id,
@@ -4049,11 +4042,17 @@ async function loadTable(tableId, viewId = null, viewName = null) {
     groupHeader: (value, count) => `${value || '(empty)'} <span style="color:var(--accent)">(${count})</span>`,
 
     rowFormatter: (row) => {
-      const data = row.getData();
-      row.getElement().classList.remove('row-pending', 'row-conflict', 'row-new');
-      if (data._status === 'pending') row.getElement().classList.add('row-pending');
-      if (data._status === 'conflict') row.getElement().classList.add('row-conflict');
-      if (data._status === 'new') row.getElement().classList.add('row-new');
+      try {
+        const data = row.getData();
+        const el = row.getElement();
+        if (!el) return;
+        el.classList.remove('row-pending', 'row-conflict', 'row-new');
+        if (data._status === 'pending') el.classList.add('row-pending');
+        if (data._status === 'conflict') el.classList.add('row-conflict');
+        if (data._status === 'new') el.classList.add('row-new');
+      } catch (e) {
+        console.warn('Row formatter error:', e);
+      }
     },
 
     cellEdited: async (cell) => {
