@@ -3089,11 +3089,12 @@ const Airtable = {
     return res.json();
   },
 
-  async getPage(tableId, { offset = null, pageSize = 100, filterFormula = null } = {}) {
+  async getPage(tableId, { offset = null, pageSize = 100, filterFormula = null, view = null } = {}) {
     const params = new URLSearchParams();
     params.set('pageSize', pageSize);
     if (offset) params.set('offset', offset);
     if (filterFormula) params.set('filterByFormula', filterFormula);
+    if (view) params.set('view', view);
 
     const url = `${this.baseUrl}/${CONFIG.BASE_ID}/${encodeURIComponent(tableId)}?${params}`;
     const res = await fetch(url, { headers: this.headers() });
@@ -3101,13 +3102,13 @@ const Airtable = {
     return res.json();
   },
 
-  async getAllRecords(tableId, { filterFormula = null, onProgress = null } = {}) {
+  async getAllRecords(tableId, { filterFormula = null, view = null, onProgress = null } = {}) {
     const allRecords = [];
     let offset = null;
     let page = 0;
 
     do {
-      const data = await this.getPage(tableId, { offset, filterFormula });
+      const data = await this.getPage(tableId, { offset, filterFormula, view });
       allRecords.push(...data.records);
       offset = data.offset;
       page++;
@@ -3374,11 +3375,21 @@ const LiveSync = {
         if (currentTableId) {
           await SyncManager.deltaSync(currentTableId);
 
-          // Refresh grid
-          const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
-          const gridData = records.map(transformRecordForGrid).filter(Boolean);
-          if (table) {
-            table.replaceData(gridData);
+          // Refresh grid - apply view filter if a view is selected
+          if (currentViewId) {
+            // Fetch view-filtered records from server
+            const records = await Airtable.getAllRecords(currentTableId, { view: currentViewId });
+            const gridData = records.map(transformRecordForGrid).filter(Boolean);
+            if (table) {
+              table.replaceData(gridData);
+            }
+          } else {
+            // No view selected - show all cached records
+            const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
+            const gridData = records.map(transformRecordForGrid).filter(Boolean);
+            if (table) {
+              table.replaceData(gridData);
+            }
           }
         }
 
@@ -3436,9 +3447,15 @@ const DirectPoll = {
       const updated = await SyncManager.deltaSync(currentTableId);
 
       if (updated > 0) {
-        // Refresh grid
-        const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
-        const gridData = records.map(transformRecordForGrid).filter(Boolean);
+        // Refresh grid - apply view filter if a view is selected
+        let gridData;
+        if (currentViewId) {
+          const records = await Airtable.getAllRecords(currentTableId, { view: currentViewId });
+          gridData = records.map(transformRecordForGrid).filter(Boolean);
+        } else {
+          const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
+          gridData = records.map(transformRecordForGrid).filter(Boolean);
+        }
         if (table) {
           table.replaceData(gridData);
         }
@@ -4095,19 +4112,28 @@ async function loadTable(tableId, viewId = null, viewName = null) {
   // Update status with cache info
   const syncTime = await ExperienceEngine.getTableSyncTime(tableId);
 
-  if (cacheHit) {
+  if (cacheHit && !viewId) {
+    // Cache hit with no specific view - show all cached records
     document.getElementById('table-status').textContent =
       `${gridData.length} records | Synced ${formatTimeAgo(syncTime)}`;
     updateRecordCount(gridData.length, formatTimeAgo(syncTime));
 
     // Background delta sync
     syncInBackground(tableId);
+  } else if (cacheHit && viewId) {
+    // Cache hit with a view selected - show cache immediately, then fetch view-filtered data
+    document.getElementById('table-status').textContent =
+      `${gridData.length} records | Loading view...`;
+    updateRecordCount(gridData.length, 'loading view...');
+
+    // Fetch view-filtered records from server
+    syncAndUpdateTable(tableId, viewId);
   } else {
     document.getElementById('table-status').textContent = 'Loading from server...';
     updateRecordCount(null, 'loading...');
 
     // No cache - need to fetch, but do it async and update table
-    syncAndUpdateTable(tableId);
+    syncAndUpdateTable(tableId, viewId);
   }
 }
 
@@ -4133,13 +4159,14 @@ async function syncInBackground(tableId) {
 }
 
 // Initial sync with progress - updates table as data arrives
-async function syncAndUpdateTable(tableId) {
+async function syncAndUpdateTable(tableId, viewId = null) {
   updateSyncIndicator('syncing', 'Downloading...');
 
   let totalCount = 0;
 
   try {
     const records = await Airtable.getAllRecords(tableId, {
+      view: viewId,
       onProgress: async (count, page, hasMore) => {
         totalCount = count;
         document.getElementById('table-status').textContent =
