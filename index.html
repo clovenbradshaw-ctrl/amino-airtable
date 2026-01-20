@@ -1827,6 +1827,17 @@
       <!-- Tables will be populated here -->
     </div>
 
+    <!-- Test Page Link -->
+    <div class="left-panel-header" style="margin-top: 16px;">Debug</div>
+    <div class="left-panel-content">
+      <div class="table-item" id="nav-test-page" style="cursor: pointer;">
+        <span class="table-item-icon">
+          <i class="ph ph-flask"></i>
+        </span>
+        <span class="table-item-name">Data Test</span>
+      </div>
+    </div>
+
     <!-- Footer with Sync Status -->
     <div class="left-panel-footer">
       <div class="sync-footer">
@@ -1979,6 +1990,32 @@
     </div>
   </div>
 </div>
+
+    <!-- Test Page - Sanity Check for Table Rendering -->
+    <div class="page" id="page-test">
+      <header class="header">
+        <div class="header-title">
+          <div class="header-icon">
+            <i class="ph ph-flask"></i>
+          </div>
+          <h1>Test Table Rendering</h1>
+          <span class="header-count" id="test-record-count"></span>
+        </div>
+        <div class="header-actions">
+          <button class="btn-secondary" id="test-refresh-btn">
+            <i class="ph ph-arrows-clockwise"></i>
+            Refresh
+          </button>
+        </div>
+      </header>
+      <div class="toolbar">
+        <span style="font-size: 13px; color: var(--text-muted);">
+          Single table source: <strong>tblgynOzESGvAXAsK</strong>
+        </span>
+      </div>
+      <div id="test-grid"></div>
+      <div id="test-debug" style="padding: 16px; font-family: monospace; font-size: 12px; background: var(--bg-surface-100); border-top: 1px solid var(--border); max-height: 200px; overflow: auto;"></div>
+    </div>
 
   </main><!-- /main-content -->
 </div><!-- /app-layout -->
@@ -3571,6 +3608,10 @@ function showPage(pageName) {
 
   if (pageName === 'sync') {
     renderSyncPage();
+  }
+
+  if (pageName === 'test') {
+    loadTestPage();
   }
 }
 
@@ -5339,6 +5380,152 @@ async function handleDisconnect() {
 // Disconnect buttons (nav and sidebar)
 document.getElementById('disconnect-btn')?.addEventListener('click', handleDisconnect);
 document.getElementById('sidebar-disconnect-btn')?.addEventListener('click', handleDisconnect);
+
+// ============================================================
+// TEST PAGE - Sanity check for table rendering
+// ============================================================
+let testTable = null;
+const TEST_TABLE_ID = 'tblgynOzESGvAXAsK';
+
+async function loadTestPage() {
+  const debugEl = document.getElementById('test-debug');
+  const countEl = document.getElementById('test-record-count');
+
+  function log(msg) {
+    const time = new Date().toLocaleTimeString();
+    debugEl.innerHTML += `<div>[${time}] ${msg}</div>`;
+    debugEl.scrollTop = debugEl.scrollHeight;
+    console.log(`[TestPage] ${msg}`);
+  }
+
+  debugEl.innerHTML = '';
+  log('Starting test page load...');
+  log(`Target table ID: ${TEST_TABLE_ID}`);
+
+  // Destroy existing table if any
+  if (testTable) {
+    testTable.destroy();
+    testTable = null;
+    log('Destroyed existing table instance');
+  }
+
+  // Get schema for the test table
+  const tableSchema = schema?.tables?.find(t => t.id === TEST_TABLE_ID);
+  if (!tableSchema) {
+    log(`ERROR: Table schema not found for ${TEST_TABLE_ID}`);
+    log(`Available tables: ${schema?.tables?.map(t => `${t.name} (${t.id})`).join(', ') || 'none'}`);
+    return;
+  }
+
+  log(`Found table schema: ${tableSchema.name}`);
+  log(`Fields: ${tableSchema.fields?.length || 0}`);
+
+  // Build columns
+  const fields = tableSchema.fields || [];
+  const columns = buildColumns(fields);
+  log(`Built ${columns.length} columns`);
+
+  // Load from cache first
+  let records = [];
+  try {
+    records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, TEST_TABLE_ID);
+    log(`Cache: ${records.length} records`);
+  } catch (e) {
+    log(`Cache error: ${e.message}`);
+  }
+
+  // Transform records
+  const gridData = records.map(r => {
+    if (!r) return null;
+    const merged = ExperienceEngine.getMergedFields(r);
+    return {
+      _id: r._id,
+      _status: r._status,
+      _recordId: r.recordId,
+      ...merged
+    };
+  }).filter(Boolean);
+
+  log(`Transformed ${gridData.length} records for grid`);
+
+  if (gridData.length > 0) {
+    log(`First record keys: ${Object.keys(gridData[0]).join(', ')}`);
+  }
+
+  // Update count
+  countEl.textContent = `${gridData.length} records`;
+
+  // Create Tabulator
+  try {
+    testTable = new Tabulator('#test-grid', {
+      data: gridData,
+      columns: columns,
+      layout: 'fitDataStretch',
+      height: 'calc(100vh - 300px)',
+      rowHeight: 36,
+      pagination: true,
+      paginationSize: 50,
+      placeholder: records.length === 0 ? 'Loading from server...' : 'No records found',
+    });
+
+    log('Tabulator instance created successfully');
+  } catch (e) {
+    log(`Tabulator error: ${e.message}`);
+    log(`Stack: ${e.stack}`);
+  }
+
+  // Now fetch fresh data from Airtable
+  log('Fetching fresh data from Airtable...');
+  try {
+    const freshRecords = await Airtable.getAllRecords(TEST_TABLE_ID, {
+      onProgress: (loaded, total) => {
+        log(`Progress: ${loaded}/${total || '?'} records`);
+      }
+    });
+
+    log(`Fetched ${freshRecords.length} records from API`);
+
+    // Store in cache
+    for (const record of freshRecords) {
+      await ExperienceEngine.storeGiven(CONFIG.BASE_ID, TEST_TABLE_ID, record);
+    }
+
+    // Refresh the grid
+    const updatedRecords = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, TEST_TABLE_ID);
+    const updatedGridData = updatedRecords.map(r => {
+      if (!r) return null;
+      const merged = ExperienceEngine.getMergedFields(r);
+      return {
+        _id: r._id,
+        _status: r._status,
+        _recordId: r.recordId,
+        ...merged
+      };
+    }).filter(Boolean);
+
+    if (testTable) {
+      testTable.setData(updatedGridData);
+      countEl.textContent = `${updatedGridData.length} records`;
+      log(`Grid updated with ${updatedGridData.length} records`);
+    }
+  } catch (e) {
+    log(`API fetch error: ${e.message}`);
+  }
+
+  log('Test page load complete');
+}
+
+// Test page refresh button
+document.getElementById('test-refresh-btn')?.addEventListener('click', loadTestPage);
+
+// Test page sidebar navigation
+document.getElementById('nav-test-page')?.addEventListener('click', () => {
+  // Remove active from all table items
+  document.querySelectorAll('.table-item').forEach(item => item.classList.remove('active'));
+  // Add active to test page link
+  document.getElementById('nav-test-page')?.classList.add('active');
+  showPage('test');
+});
 
 // Auto-connect
 async function init() {
