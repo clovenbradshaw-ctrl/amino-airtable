@@ -585,6 +585,70 @@
       opacity: 0.7;
     }
 
+    /* Error cells */
+    .cell-error {
+      color: var(--danger);
+      font-weight: 500;
+      font-size: 11px;
+    }
+
+    /* Number cells - right align */
+    .tabulator .tabulator-cell.number-cell {
+      justify-content: flex-end;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Link cells */
+    .cell-link {
+      color: var(--accent);
+      text-decoration: none;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cell-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Timestamp cells */
+    .cell-timestamp {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    /* Attachment indicator */
+    .attachment-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    .attachment-indicator i {
+      font-size: 14px;
+    }
+
+    /* Select tags (single and multi) */
+    .select-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-right: 4px;
+      white-space: nowrap;
+    }
+    .select-blueLight, .select-blue { background: #dbeafe; color: #1e40af; }
+    .select-greenLight, .select-green { background: #dcfce7; color: #166534; }
+    .select-yellowLight, .select-yellow { background: #fef9c3; color: #854d0e; }
+    .select-redLight, .select-red { background: #fee2e2; color: #991b1b; }
+    .select-grayLight, .select-gray { background: #f3f4f6; color: #374151; }
+    .select-tealLight, .select-teal { background: #ccfbf1; color: #115e59; }
+    .select-cyanLight, .select-cyan { background: #cffafe; color: #155e75; }
+    .select-orangeLight, .select-orange { background: #ffedd5; color: #9a3412; }
+    .select-pinkLight, .select-pink { background: #fce7f3; color: #9d174d; }
+    .select-purpleLight, .select-purple { background: #f3e8ff; color: #6b21a8; }
+
     /* Status badges in cells */
     .badge {
       display: inline-flex;
@@ -3567,19 +3631,67 @@ function transformRecordForGrid(record, fields = currentFields) {
   };
 }
 
+// Format a single value (non-array) for display
+function formatSingleValue(value) {
+  if (value === null || value === undefined) return '';
+
+  // Handle primitive types
+  if (typeof value !== 'object') {
+    return String(value);
+  }
+
+  // Handle Airtable error objects like {error: "#ERROR!"} or {specialValue: "NaN"}
+  if (value.error) {
+    return `#ERROR`;
+  }
+  if (value.specialValue) {
+    return value.specialValue === 'NaN' ? '' : value.specialValue;
+  }
+
+  // Handle linked record objects
+  if (value.id && value.name) {
+    return value.name;
+  }
+
+  // Handle collaborator/user objects
+  if (value.email) {
+    return value.name || value.email;
+  }
+
+  // Handle attachment objects
+  if (value.filename || value.url) {
+    return value.filename || 'Attachment';
+  }
+
+  // Handle barcode objects
+  if (value.text !== undefined) {
+    return value.text;
+  }
+
+  // Handle button objects
+  if (value.label) {
+    return value.label;
+  }
+
+  // Fallback: try common properties, then empty string
+  // Avoid JSON.stringify which produces ugly output like {"error":"#ERROR!"}
+  return value.name || value.id || '';
+}
+
+// Format any value (including arrays) for display
 function formatValue(value) {
   if (value === null || value === undefined) return '';
+
+  // Handle string "#ERROR" from FormulaEngine
+  if (value === '#ERROR') return '#ERROR';
+
+  // Handle arrays (linked records, attachments, multi-select, etc.)
   if (Array.isArray(value)) {
-    return value.map(v => {
-      if (v === null || v === undefined) return '';
-      if (typeof v === 'object') return v.name || v.filename || v.email || v.id || JSON.stringify(v);
-      return String(v);
-    }).filter(Boolean).join(', ');
+    if (value.length === 0) return '';
+    return value.map(formatSingleValue).filter(v => v !== '').join(', ');
   }
-  if (typeof value === 'object') {
-    return value.name || value.filename || value.email || value.id || JSON.stringify(value);
-  }
-  return String(value);
+
+  return formatSingleValue(value);
 }
 
 function getEditor(field) {
@@ -3623,31 +3735,219 @@ function getEditorParams(field) {
   return {};
 }
 
+// Get type-specific formatter for a field
+function getFormatterForField(field) {
+  const fieldType = field.type;
+  const fieldName = field.name;
+
+  return function(cell) {
+    try {
+      const rawValue = cell.getValue();
+
+      // Handle null/undefined
+      if (rawValue === null || rawValue === undefined) {
+        return '';
+      }
+
+      // Handle error values from Airtable
+      if (typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+        if (rawValue.error) {
+          return `<span class="cell-error" title="${rawValue.error}">#ERROR</span>`;
+        }
+        if (rawValue.specialValue) {
+          return rawValue.specialValue === 'NaN' ? '' : rawValue.specialValue;
+        }
+      }
+
+      // Handle FormulaEngine errors
+      if (rawValue === '#ERROR') {
+        return `<span class="cell-error">#ERROR</span>`;
+      }
+
+      // Type-specific formatting
+      switch (fieldType) {
+        case 'checkbox':
+          return rawValue ? '<i class="ph ph-check-square" style="color: var(--success);"></i>' : '<i class="ph ph-square" style="color: var(--text-muted);"></i>';
+
+        case 'number':
+        case 'currency':
+        case 'percent':
+          if (typeof rawValue === 'number') {
+            if (fieldType === 'currency') {
+              return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(rawValue);
+            }
+            if (fieldType === 'percent') {
+              return `${(rawValue * 100).toFixed(1)}%`;
+            }
+            return rawValue.toLocaleString();
+          }
+          return formatValue(rawValue);
+
+        case 'date':
+        case 'dateTime':
+          if (rawValue) {
+            const date = new Date(rawValue);
+            if (!isNaN(date.getTime())) {
+              return fieldType === 'dateTime'
+                ? date.toLocaleString()
+                : date.toLocaleDateString();
+            }
+          }
+          return formatValue(rawValue);
+
+        case 'singleSelect':
+          if (rawValue) {
+            const color = field.options?.choices?.find(c => c.name === rawValue)?.color || 'gray';
+            return `<span class="select-tag select-${color}">${rawValue}</span>`;
+          }
+          return '';
+
+        case 'multipleSelects':
+          if (Array.isArray(rawValue) && rawValue.length > 0) {
+            return rawValue.map(v => {
+              const color = field.options?.choices?.find(c => c.name === v)?.color || 'gray';
+              return `<span class="select-tag select-${color}">${v}</span>`;
+            }).join(' ');
+          }
+          return '';
+
+        case 'multipleRecordLinks':
+          if (Array.isArray(rawValue)) {
+            return rawValue.map(v => formatSingleValue(v)).filter(Boolean).join(', ');
+          }
+          return formatValue(rawValue);
+
+        case 'multipleAttachments':
+          if (Array.isArray(rawValue) && rawValue.length > 0) {
+            const count = rawValue.length;
+            return `<span class="attachment-indicator"><i class="ph ph-paperclip"></i> ${count} file${count > 1 ? 's' : ''}</span>`;
+          }
+          return '';
+
+        case 'url':
+          if (rawValue) {
+            const displayUrl = String(rawValue).replace(/^https?:\/\//, '').substring(0, 40);
+            return `<a href="${rawValue}" target="_blank" class="cell-link" onclick="event.stopPropagation()">${displayUrl}${rawValue.length > 40 ? '...' : ''}</a>`;
+          }
+          return '';
+
+        case 'email':
+          if (rawValue) {
+            return `<a href="mailto:${rawValue}" class="cell-link" onclick="event.stopPropagation()">${rawValue}</a>`;
+          }
+          return '';
+
+        case 'phoneNumber':
+          if (rawValue) {
+            return `<a href="tel:${rawValue}" class="cell-link" onclick="event.stopPropagation()">${rawValue}</a>`;
+          }
+          return '';
+
+        case 'formula':
+        case 'rollup':
+        case 'lookup':
+        case 'count':
+          // Check if locally calculated
+          const rowData = cell.getRow().getData();
+          const isCalculated = rowData[`_calc_${fieldName}`];
+          const displayValue = formatValue(rawValue);
+
+          if (isCalculated) {
+            return `<span class="formula-calculated" title="Calculated locally">${displayValue}</span>`;
+          }
+          return displayValue;
+
+        case 'createdTime':
+        case 'lastModifiedTime':
+          if (rawValue) {
+            const date = new Date(rawValue);
+            if (!isNaN(date.getTime())) {
+              return `<span class="cell-timestamp">${date.toLocaleString()}</span>`;
+            }
+          }
+          return '';
+
+        case 'createdBy':
+        case 'lastModifiedBy':
+          if (rawValue && typeof rawValue === 'object') {
+            return rawValue.name || rawValue.email || '';
+          }
+          return formatValue(rawValue);
+
+        default:
+          return formatValue(rawValue);
+      }
+    } catch (e) {
+      console.warn('Cell formatter error:', e, fieldName);
+      return '';
+    }
+  };
+}
+
+// Get CSS class for a field type
+function getCssClassForField(field) {
+  const classes = [];
+  switch (field.type) {
+    case 'formula':
+    case 'rollup':
+    case 'lookup':
+    case 'count':
+      classes.push('formula-cell');
+      break;
+    case 'number':
+    case 'currency':
+    case 'percent':
+      classes.push('number-cell');
+      break;
+  }
+  return classes.join(' ');
+}
+
+// Build table columns from field definitions
 function buildColumns(fields) {
   return fields.map(field => {
-    const isFormula = field.type === 'formula';
+    const isComputedField = ['formula', 'rollup', 'lookup', 'count'].includes(field.type);
+
+    // Determine column width based on field type
+    let width = 180;
+    switch (field.type) {
+      case 'checkbox':
+        width = 80;
+        break;
+      case 'number':
+      case 'currency':
+      case 'percent':
+        width = 120;
+        break;
+      case 'date':
+        width = 120;
+        break;
+      case 'dateTime':
+      case 'createdTime':
+      case 'lastModifiedTime':
+        width = 180;
+        break;
+      case 'multilineText':
+        width = 250;
+        break;
+      case 'url':
+        width = 220;
+        break;
+      case 'multipleAttachments':
+        width = 120;
+        break;
+    }
 
     return {
-      title: isFormula ? `${field.name} ƒ` : field.name,
+      title: isComputedField ? `${field.name} ƒ` : field.name,
       field: field.name,
       editor: getEditor(field),
       editorParams: getEditorParams(field),
-      formatter: (cell) => {
-        try {
-          const value = formatValue(cell.getValue());
-          const rowData = cell.getRow().getData();
-          const isCalculated = rowData[`_calc_${field.name}`];
-
-          // Add visual indicator for locally calculated formulas
-          if (isFormula && isCalculated) {
-            return `<span class="formula-calculated" title="Calculated locally">${value}</span>`;
-          }
-          return value;
-        } catch (e) {
-          return '';
-        }
-      },
-      cssClass: isFormula ? 'formula-cell' : ''
+      formatter: getFormatterForField(field),
+      cssClass: getCssClassForField(field),
+      width: width,
+      minWidth: 80,
+      headerTooltip: `${field.name} (${field.type})`,
     };
   });
 }
@@ -3731,7 +4031,7 @@ async function loadTable(tableId, viewId = null, viewName = null) {
   table = new Tabulator('#grid', {
     data: gridData,
     columns: columns,
-    layout: 'fitData',
+    layout: 'fitDataStretch',  // Columns stretch to fill available width
     height: '100%',
     rowHeight: 36,
     pagination: true,
@@ -3740,8 +4040,8 @@ async function loadTable(tableId, viewId = null, viewName = null) {
     movableColumns: true,
     resizableColumns: true,
     columnDefaults: {
-      width: 180,
-      minWidth: 100,
+      minWidth: 80,
+      resizable: true,
     },
     placeholder: cacheHit ? 'No records found' : 'Loading from server...',
     groupBy: false,
