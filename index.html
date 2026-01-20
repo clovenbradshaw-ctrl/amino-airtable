@@ -5409,7 +5409,7 @@ document.getElementById('disconnect-btn')?.addEventListener('click', handleDisco
 document.getElementById('sidebar-disconnect-btn')?.addEventListener('click', handleDisconnect);
 
 // ============================================================
-// TEST PAGE - Sanity check for table rendering
+// TEST PAGE - Minimal table rendering from schema + API
 // ============================================================
 let testTable = null;
 const TEST_TABLE_ID = 'tblgynOzESGvAXAsK';
@@ -5417,129 +5417,63 @@ const TEST_TABLE_ID = 'tblgynOzESGvAXAsK';
 async function loadTestPage() {
   const debugEl = document.getElementById('test-debug');
   const countEl = document.getElementById('test-record-count');
-
-  function log(msg) {
-    const time = new Date().toLocaleTimeString();
-    debugEl.innerHTML += `<div>[${time}] ${msg}</div>`;
+  const log = msg => {
+    debugEl.innerHTML += `<div>${msg}</div>`;
     debugEl.scrollTop = debugEl.scrollHeight;
-    console.log(`[TestPage] ${msg}`);
-  }
+  };
 
   debugEl.innerHTML = '';
-  log('Starting test page load...');
-  log(`Target table ID: ${TEST_TABLE_ID}`);
+  if (testTable) { testTable.destroy(); testTable = null; }
 
-  // Destroy existing table if any
-  if (testTable) {
-    testTable.destroy();
-    testTable = null;
-    log('Destroyed existing table instance');
-  }
-
-  // Get schema for the test table
+  // 1. Get schema fields for this table
   const tableSchema = schema?.tables?.find(t => t.id === TEST_TABLE_ID);
   if (!tableSchema) {
-    log(`ERROR: Table schema not found for ${TEST_TABLE_ID}`);
-    log(`Available tables: ${schema?.tables?.map(t => `${t.name} (${t.id})`).join(', ') || 'none'}`);
+    log('ERROR: Table not found in schema');
     return;
   }
 
-  log(`Found table schema: ${tableSchema.name}`);
-  log(`Fields: ${tableSchema.fields?.length || 0}`);
+  const schemaFields = tableSchema.fields.slice(0, 10); // First 10 fields only
+  log(`Schema fields: ${schemaFields.map(f => f.name).join(', ')}`);
 
-  // Build columns
-  const fields = tableSchema.fields || [];
-  const columns = buildColumns(fields);
-  log(`Built ${columns.length} columns`);
+  // 2. Build columns from schema
+  const columns = schemaFields.map(f => ({
+    title: f.name,
+    field: f.name,
+    width: 150,
+  }));
 
-  // Load from cache first
-  let records = [];
-  try {
-    records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, TEST_TABLE_ID);
-    log(`Cache: ${records.length} records`);
-  } catch (e) {
-    log(`Cache error: ${e.message}`);
-  }
+  // 3. Fetch records directly from Airtable API (skip cache)
+  log('Fetching from Airtable API...');
+  const response = await fetch(
+    `https://api.airtable.com/v0/${CONFIG.BASE_ID}/${TEST_TABLE_ID}?pageSize=50`,
+    { headers: { 'Authorization': `Bearer ${CONFIG.API_KEY}` } }
+  );
+  const apiData = await response.json();
+  const records = apiData.records || [];
+  log(`Fetched ${records.length} records`);
 
-  // Transform records
-  const gridData = records.map(r => {
-    if (!r) return null;
-    const merged = ExperienceEngine.getMergedFields(r);
-    return {
-      _id: r._id,
-      _status: r._status,
-      _recordId: r.recordId,
-      ...merged
-    };
-  }).filter(Boolean);
+  // 4. Transform: map each record's fields to row data
+  const gridData = records.map(rec => {
+    const row = { _id: rec.id };
+    // For each schema field, get the value from record.fields
+    schemaFields.forEach(f => {
+      row[f.name] = rec.fields[f.name] ?? '';
+    });
+    return row;
+  });
 
-  log(`Transformed ${gridData.length} records for grid`);
-
-  if (gridData.length > 0) {
-    log(`First record keys: ${Object.keys(gridData[0]).join(', ')}`);
-  }
-
-  // Update count
+  log(`First row: ${JSON.stringify(gridData[0])}`);
   countEl.textContent = `${gridData.length} records`;
 
-  // Create Tabulator
-  try {
-    testTable = new Tabulator('#test-grid', {
-      data: gridData,
-      columns: columns,
-      layout: 'fitDataStretch',
-      height: 'calc(100vh - 300px)',
-      rowHeight: 36,
-      pagination: true,
-      paginationSize: 50,
-      placeholder: records.length === 0 ? 'Loading from server...' : 'No records found',
-    });
+  // 5. Create table
+  testTable = new Tabulator('#test-grid', {
+    data: gridData,
+    columns: columns,
+    layout: 'fitColumns',
+    height: 'calc(100vh - 300px)',
+  });
 
-    log('Tabulator instance created successfully');
-  } catch (e) {
-    log(`Tabulator error: ${e.message}`);
-    log(`Stack: ${e.stack}`);
-  }
-
-  // Now fetch fresh data from Airtable
-  log('Fetching fresh data from Airtable...');
-  try {
-    const freshRecords = await Airtable.getAllRecords(TEST_TABLE_ID, {
-      onProgress: (loaded, total) => {
-        log(`Progress: ${loaded}/${total || '?'} records`);
-      }
-    });
-
-    log(`Fetched ${freshRecords.length} records from API`);
-
-    // Store in cache
-    for (const record of freshRecords) {
-      await ExperienceEngine.storeGiven(CONFIG.BASE_ID, TEST_TABLE_ID, record);
-    }
-
-    // Refresh the grid
-    const updatedRecords = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, TEST_TABLE_ID);
-    const updatedGridData = updatedRecords.map(r => {
-      if (!r) return null;
-      const merged = ExperienceEngine.getMergedFields(r);
-      return {
-        _id: r._id,
-        _status: r._status,
-        _recordId: r.recordId,
-        ...merged
-      };
-    }).filter(Boolean);
-
-    if (testTable) {
-      testTable.setData(updatedGridData);
-      countEl.textContent = `${updatedGridData.length} records`;
-      log(`Grid updated with ${updatedGridData.length} records`);
-    }
-  } catch (e) {
-    log(`API fetch error: ${e.message}`);
-  }
-
-  log('Test page load complete');
+  log('Done');
 }
 
 // Test page refresh button
