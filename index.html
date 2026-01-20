@@ -1316,6 +1316,270 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
+
+    /* ==================== TOOLBAR BUTTON ACTIVE STATES ==================== */
+    .toolbar-btn.active {
+      background: var(--accent-light);
+      border-color: var(--accent);
+      color: var(--accent-dark);
+    }
+
+    .toolbar-btn .filter-count,
+    .toolbar-btn .sort-count,
+    .toolbar-btn .hidden-count {
+      background: var(--accent);
+      color: white;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      font-size: 11px;
+      margin-left: 4px;
+    }
+
+    /* ==================== FILTER/SORT/HIDE MODAL STYLES ==================== */
+    .modal-content.modal-wide {
+      min-width: 500px;
+      max-width: 600px;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+    }
+
+    .modal-header .modal-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 4px;
+    }
+
+    .modal-header .modal-close:hover {
+      color: var(--text);
+    }
+
+    /* Filter conditions */
+    .filter-conditions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .filter-condition {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      background: var(--bg-surface);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .filter-condition select,
+    .filter-condition input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .filter-condition .filter-conjunction {
+      width: 60px;
+      flex: none;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .filter-condition .remove-condition {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px;
+      font-size: 16px;
+    }
+
+    .filter-condition .remove-condition:hover {
+      color: var(--danger);
+    }
+
+    .add-condition-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: var(--bg-surface);
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .add-condition-btn:hover {
+      background: var(--bg-surface-100);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* Sort rules */
+    .sort-rules {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .sort-rule {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      background: var(--bg-surface);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .sort-rule select {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .sort-rule .sort-direction {
+      width: 130px;
+      flex: none;
+    }
+
+    .sort-rule .sort-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      width: 50px;
+      flex: none;
+    }
+
+    .sort-rule .remove-sort {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px;
+      font-size: 16px;
+    }
+
+    .sort-rule .remove-sort:hover {
+      color: var(--danger);
+    }
+
+    /* Hide fields */
+    .hide-fields-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 16px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .hide-field-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: var(--bg-surface);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .hide-field-item:hover {
+      background: var(--bg-surface-100);
+    }
+
+    .hide-field-item input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .hide-field-item .field-name {
+      flex: 1;
+      font-size: 14px;
+    }
+
+    .hide-field-item .field-type {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 2px 8px;
+      background: var(--bg-surface-200);
+      border-radius: 4px;
+    }
+
+    .hide-fields-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .hide-fields-actions button {
+      padding: 6px 12px;
+      font-size: 12px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-main);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .hide-fields-actions button:hover {
+      background: var(--bg-surface);
+    }
+
+    /* Search clear button */
+    .toolbar-search {
+      position: relative;
+    }
+
+    .toolbar-search .search-clear {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-light);
+      cursor: pointer;
+      padding: 2px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .toolbar-search .search-clear:hover {
+      color: var(--text);
+    }
+
+    .toolbar-search.has-value .search-clear {
+      display: block;
+    }
+
+    .toolbar-search.has-value input {
+      padding-right: 30px;
+    }
   </style>
 </head>
 <body>
@@ -1446,9 +1710,10 @@
 
       <!-- Toolbar -->
       <div class="toolbar" id="data-toolbar">
-        <div class="toolbar-search">
+        <div class="toolbar-search" id="toolbar-search-container">
           <i class="ph ph-magnifying-glass"></i>
           <input type="text" id="search" placeholder="Search records...">
+          <button class="search-clear" id="search-clear" title="Clear search"><i class="ph ph-x"></i></button>
         </div>
         <div class="toolbar-divider"></div>
         <button class="toolbar-btn" id="filter-btn">
@@ -1557,6 +1822,68 @@
     <div class="modal-actions">
       <button class="btn-secondary" id="modal-cancel">Cancel</button>
       <button class="btn-primary" id="modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Filter Modal -->
+<div class="modal hidden" id="filter-modal">
+  <div class="modal-content modal-wide">
+    <div class="modal-header">
+      <h3>Filter records</h3>
+      <button class="modal-close" id="filter-modal-close"><i class="ph ph-x"></i></button>
+    </div>
+    <div class="filter-conditions" id="filter-conditions">
+      <!-- Filter conditions will be added here -->
+    </div>
+    <button class="add-condition-btn" id="add-filter-condition">
+      <i class="ph ph-plus"></i>
+      Add condition
+    </button>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="filter-clear">Clear all</button>
+      <button class="btn-primary" id="filter-apply">Apply filters</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sort Modal -->
+<div class="modal hidden" id="sort-modal">
+  <div class="modal-content modal-wide">
+    <div class="modal-header">
+      <h3>Sort records</h3>
+      <button class="modal-close" id="sort-modal-close"><i class="ph ph-x"></i></button>
+    </div>
+    <div class="sort-rules" id="sort-rules">
+      <!-- Sort rules will be added here -->
+    </div>
+    <button class="add-condition-btn" id="add-sort-rule">
+      <i class="ph ph-plus"></i>
+      Add sort
+    </button>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="sort-clear">Clear all</button>
+      <button class="btn-primary" id="sort-apply">Apply sort</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hide Fields Modal -->
+<div class="modal hidden" id="hide-fields-modal">
+  <div class="modal-content modal-wide">
+    <div class="modal-header">
+      <h3>Hide fields</h3>
+      <button class="modal-close" id="hide-fields-modal-close"><i class="ph ph-x"></i></button>
+    </div>
+    <div class="hide-fields-actions">
+      <button id="hide-fields-show-all">Show all</button>
+      <button id="hide-fields-hide-all">Hide all</button>
+    </div>
+    <div class="hide-fields-list" id="hide-fields-list">
+      <!-- Field checkboxes will be added here -->
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="hide-fields-apply">Done</button>
     </div>
   </div>
 </div>
@@ -3190,6 +3517,22 @@ async function loadTable(tableId, viewId = null, viewName = null) {
     table = null;
   }
 
+  // Reset filters, sorts, and hidden fields when switching tables
+  activeFilters = [];
+  activeSorts = [];
+  hiddenFields.clear();
+  searchInput.value = '';
+  searchContainer.classList.remove('has-value');
+
+  // Reset toolbar button states
+  document.getElementById('filter-btn').classList.remove('active');
+  document.getElementById('filter-btn').innerHTML = '<i class="ph ph-funnel"></i> Filter';
+  document.getElementById('sort-btn').classList.remove('active');
+  document.getElementById('sort-btn').innerHTML = '<i class="ph ph-sort-ascending"></i> Sort';
+  document.getElementById('hide-fields-btn').classList.remove('active');
+  document.getElementById('hide-fields-btn').innerHTML = '<i class="ph ph-eye-slash"></i> Hide fields';
+  document.getElementById('group-by').value = '';
+
   currentTableId = tableId;
   currentViewId = viewId;
   currentViewName = viewName;
@@ -3522,18 +3865,480 @@ document.querySelectorAll('.nav-tab[data-page]').forEach(tab => {
 });
 
 
-// Search
-document.getElementById('search').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && table) {
-    const term = e.target.value.trim().toLowerCase();
-    if (term) {
-      table.setFilter((data) => {
-        return Object.values(data).some(v => String(v).toLowerCase().includes(term));
-      });
-    } else {
-      table.clearFilter();
-    }
+// ============================================================
+// SEARCH - Real-time with debounce
+// ============================================================
+let searchDebounceTimer = null;
+const searchInput = document.getElementById('search');
+const searchContainer = document.getElementById('toolbar-search-container');
+const searchClearBtn = document.getElementById('search-clear');
+
+function performSearch(term) {
+  if (!table) return;
+
+  if (term) {
+    searchContainer.classList.add('has-value');
+    table.setFilter((data) => {
+      return Object.values(data).some(v =>
+        v !== null && v !== undefined && String(v).toLowerCase().includes(term)
+      );
+    });
+  } else {
+    searchContainer.classList.remove('has-value');
+    table.clearFilter();
   }
+}
+
+searchInput.addEventListener('input', (e) => {
+  clearTimeout(searchDebounceTimer);
+  const term = e.target.value.trim().toLowerCase();
+
+  // Debounce: wait 200ms after user stops typing
+  searchDebounceTimer = setTimeout(() => {
+    performSearch(term);
+  }, 200);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    searchInput.value = '';
+    performSearch('');
+    searchInput.blur();
+  }
+});
+
+searchClearBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  performSearch('');
+  searchInput.focus();
+});
+
+// ============================================================
+// FILTER FUNCTIONALITY
+// ============================================================
+let activeFilters = [];
+
+const filterOperators = {
+  text: [
+    { value: 'contains', label: 'contains' },
+    { value: 'not_contains', label: 'does not contain' },
+    { value: 'equals', label: 'is' },
+    { value: 'not_equals', label: 'is not' },
+    { value: 'empty', label: 'is empty' },
+    { value: 'not_empty', label: 'is not empty' },
+    { value: 'starts_with', label: 'starts with' },
+    { value: 'ends_with', label: 'ends with' }
+  ],
+  number: [
+    { value: 'equals', label: '=' },
+    { value: 'not_equals', label: '!=' },
+    { value: 'greater', label: '>' },
+    { value: 'greater_equal', label: '>=' },
+    { value: 'less', label: '<' },
+    { value: 'less_equal', label: '<=' },
+    { value: 'empty', label: 'is empty' },
+    { value: 'not_empty', label: 'is not empty' }
+  ],
+  select: [
+    { value: 'equals', label: 'is' },
+    { value: 'not_equals', label: 'is not' },
+    { value: 'empty', label: 'is empty' },
+    { value: 'not_empty', label: 'is not empty' }
+  ],
+  checkbox: [
+    { value: 'checked', label: 'is checked' },
+    { value: 'unchecked', label: 'is unchecked' }
+  ],
+  date: [
+    { value: 'equals', label: 'is' },
+    { value: 'before', label: 'is before' },
+    { value: 'after', label: 'is after' },
+    { value: 'empty', label: 'is empty' },
+    { value: 'not_empty', label: 'is not empty' }
+  ]
+};
+
+function getFieldOperatorType(fieldType) {
+  if (['number', 'currency', 'percent', 'rating', 'duration'].includes(fieldType)) return 'number';
+  if (['singleSelect', 'multipleSelects'].includes(fieldType)) return 'select';
+  if (fieldType === 'checkbox') return 'checkbox';
+  if (['date', 'dateTime', 'createdTime', 'lastModifiedTime'].includes(fieldType)) return 'date';
+  return 'text';
+}
+
+function renderFilterConditions() {
+  const container = document.getElementById('filter-conditions');
+  container.innerHTML = '';
+
+  activeFilters.forEach((filter, index) => {
+    const field = currentFields.find(f => f.name === filter.field);
+    const opType = field ? getFieldOperatorType(field.type) : 'text';
+    const operators = filterOperators[opType];
+    const needsValue = !['empty', 'not_empty', 'checked', 'unchecked'].includes(filter.operator);
+
+    const div = document.createElement('div');
+    div.className = 'filter-condition';
+    div.innerHTML = `
+      ${index > 0 ? '<span class="filter-conjunction">AND</span>' : '<span class="filter-conjunction">Where</span>'}
+      <select class="filter-field" data-index="${index}">
+        <option value="">Select field...</option>
+        ${currentFields.map(f => `<option value="${f.name}" ${f.name === filter.field ? 'selected' : ''}>${f.name}</option>`).join('')}
+      </select>
+      <select class="filter-operator" data-index="${index}">
+        ${operators.map(op => `<option value="${op.value}" ${op.value === filter.operator ? 'selected' : ''}>${op.label}</option>`).join('')}
+      </select>
+      ${needsValue ? `<input type="text" class="filter-value" data-index="${index}" value="${filter.value || ''}" placeholder="Enter value...">` : ''}
+      <button class="remove-condition" data-index="${index}"><i class="ph ph-x"></i></button>
+    `;
+    container.appendChild(div);
+  });
+
+  // Add event listeners
+  container.querySelectorAll('.filter-field').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const index = parseInt(e.target.dataset.index);
+      const fieldName = e.target.value;
+      const field = currentFields.find(f => f.name === fieldName);
+      const opType = field ? getFieldOperatorType(field.type) : 'text';
+      activeFilters[index].field = fieldName;
+      activeFilters[index].operator = filterOperators[opType][0].value;
+      activeFilters[index].value = '';
+      renderFilterConditions();
+    });
+  });
+
+  container.querySelectorAll('.filter-operator').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const index = parseInt(e.target.dataset.index);
+      activeFilters[index].operator = e.target.value;
+      renderFilterConditions();
+    });
+  });
+
+  container.querySelectorAll('.filter-value').forEach(input => {
+    input.addEventListener('input', (e) => {
+      const index = parseInt(e.target.dataset.index);
+      activeFilters[index].value = e.target.value;
+    });
+  });
+
+  container.querySelectorAll('.remove-condition').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = parseInt(e.currentTarget.dataset.index);
+      activeFilters.splice(index, 1);
+      renderFilterConditions();
+    });
+  });
+}
+
+function applyFilters() {
+  if (!table) return;
+
+  const validFilters = activeFilters.filter(f => f.field && f.operator);
+
+  if (validFilters.length === 0) {
+    table.clearFilter();
+    document.getElementById('filter-btn').classList.remove('active');
+    document.getElementById('filter-btn').innerHTML = '<i class="ph ph-funnel"></i> Filter';
+    return;
+  }
+
+  table.setFilter((data) => {
+    return validFilters.every(filter => {
+      const value = data[filter.field];
+      const filterValue = filter.value?.toLowerCase() || '';
+      const cellValue = value !== null && value !== undefined ? String(value).toLowerCase() : '';
+
+      switch (filter.operator) {
+        case 'contains': return cellValue.includes(filterValue);
+        case 'not_contains': return !cellValue.includes(filterValue);
+        case 'equals': return cellValue === filterValue;
+        case 'not_equals': return cellValue !== filterValue;
+        case 'empty': return value === null || value === undefined || value === '';
+        case 'not_empty': return value !== null && value !== undefined && value !== '';
+        case 'starts_with': return cellValue.startsWith(filterValue);
+        case 'ends_with': return cellValue.endsWith(filterValue);
+        case 'greater': return parseFloat(value) > parseFloat(filter.value);
+        case 'greater_equal': return parseFloat(value) >= parseFloat(filter.value);
+        case 'less': return parseFloat(value) < parseFloat(filter.value);
+        case 'less_equal': return parseFloat(value) <= parseFloat(filter.value);
+        case 'checked': return value === true;
+        case 'unchecked': return value !== true;
+        case 'before': return new Date(value) < new Date(filter.value);
+        case 'after': return new Date(value) > new Date(filter.value);
+        default: return true;
+      }
+    });
+  });
+
+  // Update button state
+  document.getElementById('filter-btn').classList.add('active');
+  document.getElementById('filter-btn').innerHTML = `<i class="ph ph-funnel"></i> Filter <span class="filter-count">${validFilters.length}</span>`;
+}
+
+// Filter modal handlers
+document.getElementById('filter-btn').addEventListener('click', () => {
+  if (activeFilters.length === 0) {
+    activeFilters.push({ field: '', operator: 'contains', value: '' });
+  }
+  renderFilterConditions();
+  document.getElementById('filter-modal').classList.remove('hidden');
+});
+
+document.getElementById('filter-modal-close').addEventListener('click', () => {
+  document.getElementById('filter-modal').classList.add('hidden');
+});
+
+document.getElementById('filter-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'filter-modal') {
+    document.getElementById('filter-modal').classList.add('hidden');
+  }
+});
+
+document.getElementById('add-filter-condition').addEventListener('click', () => {
+  activeFilters.push({ field: '', operator: 'contains', value: '' });
+  renderFilterConditions();
+});
+
+document.getElementById('filter-clear').addEventListener('click', () => {
+  activeFilters = [];
+  renderFilterConditions();
+  applyFilters();
+  document.getElementById('filter-modal').classList.add('hidden');
+});
+
+document.getElementById('filter-apply').addEventListener('click', () => {
+  applyFilters();
+  document.getElementById('filter-modal').classList.add('hidden');
+});
+
+// ============================================================
+// SORT FUNCTIONALITY
+// ============================================================
+let activeSorts = [];
+
+function renderSortRules() {
+  const container = document.getElementById('sort-rules');
+  container.innerHTML = '';
+
+  activeSorts.forEach((sort, index) => {
+    const div = document.createElement('div');
+    div.className = 'sort-rule';
+    div.innerHTML = `
+      <span class="sort-label">${index === 0 ? 'Sort by' : 'Then by'}</span>
+      <select class="sort-field" data-index="${index}">
+        <option value="">Select field...</option>
+        ${currentFields.map(f => `<option value="${f.name}" ${f.name === sort.field ? 'selected' : ''}>${f.name}</option>`).join('')}
+      </select>
+      <select class="sort-direction" data-index="${index}">
+        <option value="asc" ${sort.direction === 'asc' ? 'selected' : ''}>A → Z (Ascending)</option>
+        <option value="desc" ${sort.direction === 'desc' ? 'selected' : ''}>Z → A (Descending)</option>
+      </select>
+      <button class="remove-sort" data-index="${index}"><i class="ph ph-x"></i></button>
+    `;
+    container.appendChild(div);
+  });
+
+  // Add event listeners
+  container.querySelectorAll('.sort-field').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const index = parseInt(e.target.dataset.index);
+      activeSorts[index].field = e.target.value;
+    });
+  });
+
+  container.querySelectorAll('.sort-direction').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const index = parseInt(e.target.dataset.index);
+      activeSorts[index].direction = e.target.value;
+    });
+  });
+
+  container.querySelectorAll('.remove-sort').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const index = parseInt(e.currentTarget.dataset.index);
+      activeSorts.splice(index, 1);
+      renderSortRules();
+    });
+  });
+}
+
+function applySorts() {
+  if (!table) return;
+
+  const validSorts = activeSorts.filter(s => s.field);
+
+  if (validSorts.length === 0) {
+    table.clearSort();
+    document.getElementById('sort-btn').classList.remove('active');
+    document.getElementById('sort-btn').innerHTML = '<i class="ph ph-sort-ascending"></i> Sort';
+    return;
+  }
+
+  const sorters = validSorts.map(s => ({
+    column: s.field,
+    dir: s.direction
+  }));
+
+  table.setSort(sorters);
+
+  // Update button state
+  document.getElementById('sort-btn').classList.add('active');
+  document.getElementById('sort-btn').innerHTML = `<i class="ph ph-sort-ascending"></i> Sort <span class="sort-count">${validSorts.length}</span>`;
+}
+
+// Sort modal handlers
+document.getElementById('sort-btn').addEventListener('click', () => {
+  if (activeSorts.length === 0) {
+    activeSorts.push({ field: '', direction: 'asc' });
+  }
+  renderSortRules();
+  document.getElementById('sort-modal').classList.remove('hidden');
+});
+
+document.getElementById('sort-modal-close').addEventListener('click', () => {
+  document.getElementById('sort-modal').classList.add('hidden');
+});
+
+document.getElementById('sort-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'sort-modal') {
+    document.getElementById('sort-modal').classList.add('hidden');
+  }
+});
+
+document.getElementById('add-sort-rule').addEventListener('click', () => {
+  activeSorts.push({ field: '', direction: 'asc' });
+  renderSortRules();
+});
+
+document.getElementById('sort-clear').addEventListener('click', () => {
+  activeSorts = [];
+  renderSortRules();
+  applySorts();
+  document.getElementById('sort-modal').classList.add('hidden');
+});
+
+document.getElementById('sort-apply').addEventListener('click', () => {
+  applySorts();
+  document.getElementById('sort-modal').classList.add('hidden');
+});
+
+// ============================================================
+// HIDE FIELDS FUNCTIONALITY
+// ============================================================
+let hiddenFields = new Set();
+
+function renderHideFieldsList() {
+  const container = document.getElementById('hide-fields-list');
+  container.innerHTML = '';
+
+  currentFields.forEach(field => {
+    const isHidden = hiddenFields.has(field.name);
+    const div = document.createElement('div');
+    div.className = 'hide-field-item';
+    div.innerHTML = `
+      <input type="checkbox" data-field="${field.name}" ${!isHidden ? 'checked' : ''}>
+      <span class="field-name">${field.name}</span>
+      <span class="field-type">${field.type}</span>
+    `;
+
+    // Make the whole row clickable
+    div.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'INPUT') {
+        const checkbox = div.querySelector('input');
+        checkbox.checked = !checkbox.checked;
+        updateFieldVisibility(field.name, checkbox.checked);
+      }
+    });
+
+    div.querySelector('input').addEventListener('change', (e) => {
+      updateFieldVisibility(field.name, e.target.checked);
+    });
+
+    container.appendChild(div);
+  });
+}
+
+function updateFieldVisibility(fieldName, isVisible) {
+  if (isVisible) {
+    hiddenFields.delete(fieldName);
+  } else {
+    hiddenFields.add(fieldName);
+  }
+  applyHiddenFields();
+}
+
+function applyHiddenFields() {
+  if (!table) return;
+
+  currentFields.forEach(field => {
+    if (hiddenFields.has(field.name)) {
+      table.hideColumn(field.name);
+    } else {
+      table.showColumn(field.name);
+    }
+  });
+
+  // Update button state
+  if (hiddenFields.size > 0) {
+    document.getElementById('hide-fields-btn').classList.add('active');
+    document.getElementById('hide-fields-btn').innerHTML = `<i class="ph ph-eye-slash"></i> Hide fields <span class="hidden-count">${hiddenFields.size}</span>`;
+  } else {
+    document.getElementById('hide-fields-btn').classList.remove('active');
+    document.getElementById('hide-fields-btn').innerHTML = '<i class="ph ph-eye-slash"></i> Hide fields';
+  }
+}
+
+// Hide fields modal handlers
+document.getElementById('hide-fields-btn').addEventListener('click', () => {
+  renderHideFieldsList();
+  document.getElementById('hide-fields-modal').classList.remove('hidden');
+});
+
+document.getElementById('hide-fields-modal-close').addEventListener('click', () => {
+  document.getElementById('hide-fields-modal').classList.add('hidden');
+});
+
+document.getElementById('hide-fields-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'hide-fields-modal') {
+    document.getElementById('hide-fields-modal').classList.add('hidden');
+  }
+});
+
+document.getElementById('hide-fields-show-all').addEventListener('click', () => {
+  hiddenFields.clear();
+  renderHideFieldsList();
+  applyHiddenFields();
+});
+
+document.getElementById('hide-fields-hide-all').addEventListener('click', () => {
+  currentFields.forEach(f => hiddenFields.add(f.name));
+  renderHideFieldsList();
+  applyHiddenFields();
+});
+
+document.getElementById('hide-fields-apply').addEventListener('click', () => {
+  document.getElementById('hide-fields-modal').classList.add('hidden');
+});
+
+// ============================================================
+// DOWNLOAD/EXPORT FUNCTIONALITY
+// ============================================================
+document.getElementById('download-btn').addEventListener('click', () => {
+  if (!table) return;
+
+  const tableName = schema?.tables.find(t => t.id === currentTableId)?.name || 'data';
+  const filename = `${tableName}_${new Date().toISOString().split('T')[0]}.csv`;
+
+  // Get visible columns only
+  const visibleColumns = currentFields
+    .filter(f => !hiddenFields.has(f.name))
+    .map(f => f.name);
+
+  table.download('csv', filename, {
+    delimiter: ',',
+    columns: visibleColumns
+  });
 });
 
 // Group by
