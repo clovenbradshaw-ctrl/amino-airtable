@@ -5503,11 +5503,21 @@ async function loadTestPage() {
   // Update count
   countEl.textContent = `${gridData.length} records`;
 
+  // Use ACTUAL data keys for columns (not schema) to test alignment
+  const dataKeys = Object.keys(gridData[0] || {}).filter(k => !k.startsWith('_'));
+  const testColumns = dataKeys.slice(0, 10).map(key => ({
+    title: key,
+    field: key,
+  }));
+
+  log(`Creating Tabulator with columns from DATA keys (not schema)`);
+  log(`Test column fields: ${testColumns.map(c => c.field).join(', ')}`);
+
   // Create Tabulator
   try {
     testTable = new Tabulator('#test-grid', {
       data: gridData,
-      columns: columns,
+      columns: testColumns,  // Use data keys directly as columns
       layout: 'fitDataStretch',
       height: 'calc(100vh - 300px)',
       rowHeight: 36,
@@ -5517,6 +5527,18 @@ async function loadTestPage() {
     });
 
     log('Tabulator instance created successfully');
+
+    // After table is built, log what Tabulator sees for first row
+    testTable.on('tableBuilt', () => {
+      const rows = testTable.getRows();
+      if (rows.length > 0) {
+        const firstRowData = rows[0].getData();
+        log(`Tabulator first row data keys: ${Object.keys(firstRowData).join(', ')}`);
+        testColumns.forEach(col => {
+          log(`Tabulator sees "${col.field}": ${JSON.stringify(firstRowData[col.field])}`);
+        });
+      }
+    });
   } catch (e) {
     log(`Tabulator error: ${e.message}`);
     log(`Stack: ${e.stack}`);
