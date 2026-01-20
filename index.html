@@ -257,6 +257,25 @@
       color: var(--text-muted);
     }
 
+    .table-status.stale {
+      color: var(--warning);
+    }
+
+    .table-status .stale-badge {
+      background: var(--warning);
+      color: black;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      margin-left: 8px;
+      animation: stale-pulse 2s infinite;
+    }
+
+    @keyframes stale-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
     #grid { border-radius: 8px; overflow: hidden; }
 
     /* Tabulator overrides */
@@ -958,13 +977,20 @@ const CONFIG = {
   BASE_ID: '',
   // Live sync settings
   LIVE_SYNC_URL: '', // e.g., 'https://your-n8n.com/webhook/airtable-changes'
-  LIVE_POLL_INTERVAL: 5000 // 5 seconds
+  LIVE_POLL_INTERVAL: 5000, // 5 seconds
+  // Performance settings
+  PAGINATION_THROTTLE: 100, // ms between API pages (Airtable rate limit is 5/sec)
+  BATCH_SIZE: 10, // Max records per batch operation (Airtable limit)
+  SCHEMA_CACHE_TTL: 3600000, // 1 hour in ms
+  PRELOAD_TABLES: true // Preload frequently used tables on connect
 };
 
 // ============================================================
 // EXPERIENCE ENGINE - IndexedDB Store
 // ============================================================
 const ExperienceEngine = {
+  // Track record IDs for differential updates
+  _lastSyncedRecordIds: new Map(), // tableId -> Set of record IDs
   db: null,
   DB_NAME: 'experience-engine',
   DB_VERSION: 1, // NEVER change this without migration logic
@@ -1449,7 +1475,7 @@ const Airtable = {
     return res.json();
   },
 
-  async getAllRecords(tableId, { filterFormula = null, onProgress = null } = {}) {
+  async getAllRecords(tableId, { filterFormula = null, onProgress = null, streamToCache = null } = {}) {
     const allRecords = [];
     let offset = null;
     let page = 0;
@@ -1460,11 +1486,76 @@ const Airtable = {
       offset = data.offset;
       page++;
 
+      // Stream records to cache as they arrive (faster perceived loading)
+      if (streamToCache && data.records.length > 0) {
+        await streamToCache(data.records);
+      }
+
       if (onProgress) onProgress(allRecords.length, page, !!offset);
-      if (offset) await new Promise(r => setTimeout(r, 200));
+      if (offset) await new Promise(r => setTimeout(r, CONFIG.PAGINATION_THROTTLE));
     } while (offset);
 
     return allRecords;
+  },
+
+  // Batch create records (up to 10 at a time)
+  async batchCreate(tableId, recordsFields) {
+    const results = [];
+    const batches = [];
+
+    for (let i = 0; i < recordsFields.length; i += CONFIG.BATCH_SIZE) {
+      batches.push(recordsFields.slice(i, i + CONFIG.BATCH_SIZE));
+    }
+
+    for (const batch of batches) {
+      const res = await fetch(`${this.baseUrl}/${CONFIG.BASE_ID}/${encodeURIComponent(tableId)}`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          records: batch.map(fields => ({ fields })),
+          typecast: true
+        })
+      });
+      if (!res.ok) throw new Error(`Batch create failed: ${res.status}`);
+      const data = await res.json();
+      results.push(...data.records);
+
+      if (batches.length > 1) {
+        await new Promise(r => setTimeout(r, CONFIG.PAGINATION_THROTTLE));
+      }
+    }
+
+    return results;
+  },
+
+  // Batch update records (up to 10 at a time)
+  async batchUpdate(tableId, updates) {
+    const results = [];
+    const batches = [];
+
+    for (let i = 0; i < updates.length; i += CONFIG.BATCH_SIZE) {
+      batches.push(updates.slice(i, i + CONFIG.BATCH_SIZE));
+    }
+
+    for (const batch of batches) {
+      const res = await fetch(`${this.baseUrl}/${CONFIG.BASE_ID}/${encodeURIComponent(tableId)}`, {
+        method: 'PATCH',
+        headers: this.headers(),
+        body: JSON.stringify({
+          records: batch.map(({ recordId, fields }) => ({ id: recordId, fields })),
+          typecast: true
+        })
+      });
+      if (!res.ok) throw new Error(`Batch update failed: ${res.status}`);
+      const data = await res.json();
+      results.push(...data.records);
+
+      if (batches.length > 1) {
+        await new Promise(r => setTimeout(r, CONFIG.PAGINATION_THROTTLE));
+      }
+    }
+
+    return results;
   },
 
   async createRecord(tableId, fields) {
@@ -1576,36 +1667,74 @@ const SyncManager = {
   },
 
   // Push local changes to server
+  // Push local changes to server (with batching for efficiency)
   async flushQueue() {
     const queue = await ExperienceEngine.getQueue();
-    if (queue.length === 0) return;
+    if (queue.length === 0) return { success: 0, failed: 0 };
 
     updateSyncIndicator('syncing', 'Pushing changes...');
 
     let success = 0;
     let failed = 0;
 
+    // Group queue items by table and operation for batch processing
+    const grouped = {
+      creates: {}, // tableId -> [{ queueItem, fields }]
+      updates: {}  // tableId -> [{ queueItem, recordId, fields }]
+    };
+
     for (const item of queue) {
+      if (item.operation === 'create') {
+        if (!grouped.creates[item.tableId]) grouped.creates[item.tableId] = [];
+        grouped.creates[item.tableId].push(item);
+      } else if (item.operation === 'update') {
+        if (!grouped.updates[item.tableId]) grouped.updates[item.tableId] = [];
+        grouped.updates[item.tableId].push(item);
+      }
+    }
+
+    // Process batch creates
+    for (const [tableId, items] of Object.entries(grouped.creates)) {
       try {
-        if (item.operation === 'create') {
-          const newRecord = await Airtable.createRecord(item.tableId, item.fields);
+        const fieldsArray = items.map(item => item.fields);
+        const newRecords = await Airtable.batchCreate(tableId, fieldsArray);
 
-          // Update local record with real ID
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const newRecord = newRecords[i];
+
           const oldId = ExperienceEngine._recordId(item.baseId, item.tableId, item.recordId);
-          const oldRecord = await ExperienceEngine.getRecord(oldId);
-
-          if (oldRecord) {
-            // Delete temp record
+          await ExperienceEngine._delete('records', oldId);
+          await ExperienceEngine.storeGiven(item.baseId, item.tableId, newRecord);
+          await ExperienceEngine.removeFromQueue(item.id);
+          success++;
+        }
+      } catch (e) {
+        console.error('Batch create failed:', e);
+        // Fallback to individual creates
+        for (const item of items) {
+          try {
+            const newRecord = await Airtable.createRecord(item.tableId, item.fields);
+            const oldId = ExperienceEngine._recordId(item.baseId, item.tableId, item.recordId);
             await ExperienceEngine._delete('records', oldId);
-
-            // Store with real ID
             await ExperienceEngine.storeGiven(item.baseId, item.tableId, newRecord);
+            await ExperienceEngine.removeFromQueue(item.id);
+            success++;
+          } catch (e2) {
+            console.error('Individual create failed:', e2);
+            failed++;
           }
+        }
+      }
+    }
 
-        } else if (item.operation === 'update') {
-          await Airtable.updateRecord(item.tableId, item.recordId, item.fields);
+    // Process batch updates
+    for (const [tableId, items] of Object.entries(grouped.updates)) {
+      try {
+        const updates = items.map(item => ({ recordId: item.recordId, fields: item.fields }));
+        await Airtable.batchUpdate(tableId, updates);
 
-          // Update local record status
+        for (const item of items) {
           const id = ExperienceEngine._recordId(item.baseId, item.tableId, item.recordId);
           const record = await ExperienceEngine.getRecord(id);
           if (record) {
@@ -1613,14 +1742,29 @@ const SyncManager = {
             record._meant = { fields: {}, modifiedAt: null };
             await ExperienceEngine._put('records', record);
           }
+          await ExperienceEngine.removeFromQueue(item.id);
+          success++;
         }
-
-        await ExperienceEngine.removeFromQueue(item.id);
-        success++;
-
       } catch (e) {
-        console.error('Queue item failed:', e);
-        failed++;
+        console.error('Batch update failed:', e);
+        // Fallback to individual updates
+        for (const item of items) {
+          try {
+            await Airtable.updateRecord(item.tableId, item.recordId, item.fields);
+            const id = ExperienceEngine._recordId(item.baseId, item.tableId, item.recordId);
+            const record = await ExperienceEngine.getRecord(id);
+            if (record) {
+              record._status = 'synced';
+              record._meant = { fields: {}, modifiedAt: null };
+              await ExperienceEngine._put('records', record);
+            }
+            await ExperienceEngine.removeFromQueue(item.id);
+            success++;
+          } catch (e2) {
+            console.error('Individual update failed:', e2);
+            failed++;
+          }
+        }
       }
     }
 
@@ -1687,11 +1831,11 @@ const LiveSync = {
         if (currentTableId) {
           await SyncManager.deltaSync(currentTableId);
 
-          // Refresh grid
+          // Use differential update for better performance
           const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
           const gridData = records.map(transformRecordForGrid).filter(Boolean);
           if (table) {
-            table.replaceData(gridData);
+            await differentialGridUpdate(gridData);
           }
         }
 
@@ -1749,11 +1893,11 @@ const DirectPoll = {
       const updated = await SyncManager.deltaSync(currentTableId);
 
       if (updated > 0) {
-        // Refresh grid
+        // Use differential update for better performance
         const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
         const gridData = records.map(transformRecordForGrid).filter(Boolean);
         if (table) {
-          table.replaceData(gridData);
+          await differentialGridUpdate(gridData);
         }
         flashLiveSyncIndicator();
       }
@@ -1771,6 +1915,51 @@ const DirectPoll = {
     return this.isEnabled;
   }
 };
+
+// Differential grid update - only updates changed rows
+async function differentialGridUpdate(newData) {
+  if (!table) return;
+
+  const currentData = table.getData();
+  const currentMap = new Map(currentData.map(row => [row._id, row]));
+  const newMap = new Map(newData.map(row => [row._id, row]));
+
+  const toUpdate = [];
+  const toAdd = [];
+  const toDelete = [];
+
+  // Find records to update or add
+  for (const [id, newRow] of newMap) {
+    const existingRow = currentMap.get(id);
+    if (!existingRow) {
+      toAdd.push(newRow);
+    } else if (JSON.stringify(existingRow) !== JSON.stringify(newRow)) {
+      toUpdate.push(newRow);
+    }
+  }
+
+  // Find records to delete
+  for (const [id] of currentMap) {
+    if (!newMap.has(id)) {
+      toDelete.push(id);
+    }
+  }
+
+  // Apply updates efficiently
+  if (toUpdate.length > 0) {
+    table.updateData(toUpdate);
+  }
+  if (toAdd.length > 0) {
+    table.addData(toAdd);
+  }
+  if (toDelete.length > 0) {
+    for (const id of toDelete) {
+      table.deleteRow(id);
+    }
+  }
+
+  console.log(`Differential update: ${toUpdate.length} updated, ${toAdd.length} added, ${toDelete.length} deleted`);
+}
 
 // ============================================================
 // LIVE SYNC UI HELPERS
@@ -2035,6 +2224,7 @@ async function loadTable(tableId, viewId = null, viewName = null) {
   table = new Tabulator('#grid', {
     data: gridData,
     columns: columns,
+    index: "_id", // Required for updateData/deleteRow to work properly
     layout: 'fitDataFill',
     height: '100%',
     pagination: true,
@@ -2072,72 +2262,108 @@ async function loadTable(tableId, viewId = null, viewName = null) {
 
   // Update status with cache info
   const syncTime = await ExperienceEngine.getTableSyncTime(tableId);
+  const tableStatusEl = document.getElementById('table-status');
 
   if (cacheHit) {
-    document.getElementById('table-status').textContent =
-      `${gridData.length} records | Synced ${formatTimeAgo(syncTime)}`;
+    // Check if data is stale (older than 5 minutes)
+    const isStale = syncTime && (Date.now() - syncTime > 5 * 60 * 1000);
+
+    if (isStale) {
+      tableStatusEl.className = 'table-status stale';
+      tableStatusEl.innerHTML =
+        `${gridData.length} records | Synced ${formatTimeAgo(syncTime)} <span class="stale-badge">Updating...</span>`;
+    } else {
+      tableStatusEl.className = 'table-status';
+      tableStatusEl.textContent =
+        `${gridData.length} records | Synced ${formatTimeAgo(syncTime)}`;
+    }
 
     // Background delta sync
     syncInBackground(tableId);
   } else {
-    document.getElementById('table-status').textContent = 'Loading from server...';
+    tableStatusEl.className = 'table-status';
+    tableStatusEl.textContent = 'Loading from server...';
 
     // No cache - need to fetch, but do it async and update table
     syncAndUpdateTable(tableId);
   }
 }
 
-// Background sync - doesn't block UI
+// Background sync - uses differential updates for better performance
 async function syncInBackground(tableId) {
   try {
     const count = await SyncManager.deltaSync(tableId);
+    const tableStatusEl = document.getElementById('table-status');
 
-    // Reload data if we got updates
-    if (count > 0 && currentTableId === tableId) {
-      const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, tableId);
-      const gridData = records.map(transformRecordForGrid).filter(Boolean);
-      table.replaceData(gridData);
+    // Update UI after sync completes
+    if (currentTableId === tableId) {
+      tableStatusEl.className = 'table-status';
 
-      const syncTime = await ExperienceEngine.getTableSyncTime(tableId);
-      document.getElementById('table-status').textContent =
-        `${gridData.length} records | Synced ${formatTimeAgo(syncTime)} (${count} updated)`;
+      if (count > 0) {
+        // Use differential update instead of full replace
+        const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, tableId);
+        const gridData = records.map(transformRecordForGrid).filter(Boolean);
+
+        if (table) {
+          await differentialGridUpdate(gridData);
+        }
+
+        const syncTime = await ExperienceEngine.getTableSyncTime(tableId);
+        tableStatusEl.textContent =
+          `${gridData.length} records | Synced ${formatTimeAgo(syncTime)} (${count} updated)`;
+      } else {
+        const syncTime = await ExperienceEngine.getTableSyncTime(tableId);
+        const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, tableId);
+        tableStatusEl.textContent =
+          `${records.length} records | Synced ${formatTimeAgo(syncTime)}`;
+      }
     }
   } catch (e) {
     console.error('Background sync failed:', e);
   }
 }
 
-// Initial sync with progress - updates table as data arrives
+// Initial sync with progress - streams data to grid as it arrives
 async function syncAndUpdateTable(tableId) {
   updateSyncIndicator('syncing', 'Downloading...');
 
   let totalCount = 0;
 
   try {
-    const records = await Airtable.getAllRecords(tableId, {
+    // Stream records to cache and grid as they arrive
+    const streamToCache = async (pageRecords) => {
+      for (const record of pageRecords) {
+        await ExperienceEngine.storeGiven(CONFIG.BASE_ID, tableId, record);
+      }
+
+      // Update grid incrementally as data arrives
+      if (currentTableId === tableId && table) {
+        const gridData = pageRecords.map(r => ({
+          _id: ExperienceEngine._recordId(CONFIG.BASE_ID, tableId, r.id),
+          _status: 'synced',
+          _recordId: r.id,
+          ...r.fields
+        })).filter(Boolean);
+        table.addData(gridData);
+      }
+    };
+
+    await Airtable.getAllRecords(tableId, {
       onProgress: async (count, page, hasMore) => {
         totalCount = count;
         document.getElementById('table-status').textContent =
           `Downloading... ${count} records (page ${page})`;
-      }
+      },
+      streamToCache
     });
-
-    // Store all records
-    for (const record of records) {
-      await ExperienceEngine.storeGiven(CONFIG.BASE_ID, tableId, record);
-    }
 
     await ExperienceEngine.setTableSyncTime(tableId, Date.now());
 
-    // Update table with all data
+    // Final update
     if (currentTableId === tableId) {
-      const cachedRecords = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, tableId);
-      const gridData = cachedRecords.map(transformRecordForGrid).filter(Boolean);
-      table.replaceData(gridData);
       table.options.placeholder = 'No records found';
-
       document.getElementById('table-status').textContent =
-        `${gridData.length} records | Synced just now`;
+        `${totalCount} records | Synced just now`;
     }
 
     updateSyncIndicator('synced', 'Synced');
@@ -2469,6 +2695,43 @@ document.getElementById('clear-cache-btn').addEventListener('click', async () =>
 });
 
 // Connect
+// Background preload tables (runs after connection)
+async function preloadTables() {
+  if (!CONFIG.PRELOAD_TABLES || !schema) return;
+
+  console.log('Starting background preload of tables...');
+
+  // Get last accessed table from localStorage
+  const lastTableId = localStorage.getItem('airtable_last_table');
+
+  // Prioritize: last accessed table first, then others
+  const tablesToPreload = [...schema.tables];
+  if (lastTableId) {
+    const lastTableIndex = tablesToPreload.findIndex(t => t.id === lastTableId);
+    if (lastTableIndex > 0) {
+      const [lastTable] = tablesToPreload.splice(lastTableIndex, 1);
+      tablesToPreload.unshift(lastTable);
+    }
+  }
+
+  // Preload tables in background
+  for (const tbl of tablesToPreload) {
+    const syncTime = await ExperienceEngine.getTableSyncTime(tbl.id);
+    const isStale = !syncTime || (Date.now() - syncTime > 5 * 60 * 1000);
+
+    if (isStale) {
+      console.log(`Preloading table: ${tbl.name}`);
+      try {
+        await SyncManager.deltaSync(tbl.id);
+      } catch (e) {
+        console.warn(`Failed to preload ${tbl.name}:`, e);
+      }
+    }
+  }
+
+  console.log('Background preload complete');
+}
+
 document.getElementById('connect-btn').addEventListener('click', async () => {
   const apiKey = document.getElementById('api-key').value.trim();
   const baseId = document.getElementById('base-id').value.trim();
@@ -2484,11 +2747,14 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
   try {
     await ExperienceEngine.init();
 
-    // Try to load cached schema first
-    const cachedSchema = await ExperienceEngine.getMeta(`schema:${baseId}`);
+    // Try to load cached schema first (with TTL validation)
+    const schemaMeta = await ExperienceEngine._get('meta', `schema:${baseId}`);
+    const cachedSchema = schemaMeta?.value;
+    const schemaAge = schemaMeta?.updatedAt ? Date.now() - schemaMeta.updatedAt : Infinity;
+    const schemaIsValid = cachedSchema && schemaAge < CONFIG.SCHEMA_CACHE_TTL;
 
     if (cachedSchema) {
-      console.log('Using cached schema');
+      console.log(`Using cached schema (age: ${Math.round(schemaAge / 1000)}s, valid: ${schemaIsValid})`);
       schema = cachedSchema;
 
       // Populate table dropdown
@@ -2501,12 +2767,17 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
       showPage('data');
       await updateBadges();
 
-      // Refresh schema in background
-      Airtable.getSchema().then(async freshSchema => {
-        schema = freshSchema;
-        await ExperienceEngine.setMeta(`schema:${baseId}`, freshSchema);
-        populateTableDropdown();
-      }).catch(e => console.warn('Schema refresh failed:', e));
+      // Refresh schema in background only if it's stale
+      if (!schemaIsValid) {
+        Airtable.getSchema().then(async freshSchema => {
+          schema = freshSchema;
+          await ExperienceEngine.setMeta(`schema:${baseId}`, freshSchema);
+          populateTableDropdown();
+        }).catch(e => console.warn('Schema refresh failed:', e));
+      }
+
+      // Start background preloading
+      preloadTables();
 
     } else {
       // No cached schema - must fetch
@@ -2525,6 +2796,9 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
       await updateBadges();
 
       setLoading(false);
+
+      // Start background preloading
+      preloadTables();
     }
 
   } catch (e) {
@@ -2668,6 +2942,9 @@ async function updateTableCounts() {
 }
 
 function selectTable(tableId, viewId = null, viewName = null) {
+  // Save last accessed table for preloading priority
+  localStorage.setItem('airtable_last_table', tableId);
+
   // Update active state in left panel
   document.querySelectorAll('.table-item').forEach(item => {
     item.classList.toggle('active', item.dataset.tableId === tableId);
