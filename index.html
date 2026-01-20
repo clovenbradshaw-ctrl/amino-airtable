@@ -1151,6 +1151,91 @@
       text-overflow: ellipsis;
     }
 
+    /* View sections/folders */
+    .view-section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      margin: 4px 8px 2px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-size: 12px;
+      color: var(--sidebar-text);
+      opacity: 0.8;
+      font-weight: 500;
+    }
+
+    .view-section-header:hover {
+      background: var(--sidebar-hover);
+      color: var(--sidebar-text-hover);
+      opacity: 1;
+    }
+
+    .view-section-header.expanded {
+      opacity: 1;
+    }
+
+    .view-section-icon {
+      width: 14px;
+      height: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: var(--primary);
+    }
+
+    .view-section-header.expanded .view-section-icon i {
+      transform: rotate(0deg);
+    }
+
+    .view-section-header .view-section-icon i.ph-folder::before {
+      content: "\e9a9"; /* folder icon */
+    }
+
+    .view-section-header.expanded .view-section-icon i.ph-folder::before {
+      content: "\e9a7"; /* folder-open icon */
+    }
+
+    .view-section-name {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .view-section-expand {
+      width: 14px;
+      height: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      transition: transform 0.2s;
+    }
+
+    .view-section-header.expanded .view-section-expand {
+      transform: rotate(90deg);
+    }
+
+    .view-section-views {
+      display: none;
+      padding-left: 8px;
+    }
+
+    .view-section-views.expanded {
+      display: block;
+    }
+
+    .view-section-views .view-item {
+      padding-left: 16px;
+      font-size: 12px;
+    }
+
     /* Sidebar footer */
     .left-panel-footer {
       padding: 12px;
@@ -2986,8 +3071,43 @@ const Airtable = {
     });
     if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
     return res.json();
+  },
+
+  // Fetch detailed view metadata including sections/folders
+  async getViews(tableId) {
+    const res = await fetch(`https://api.airtable.com/v0/meta/bases/${CONFIG.BASE_ID}/tables/${tableId}/views`, {
+      headers: this.headers()
+    });
+    if (!res.ok) {
+      console.warn(`Views fetch failed for ${tableId}: ${res.status}`);
+      return null;
+    }
+    return res.json();
   }
 };
+
+// Enrich schema with detailed view data including sections/folders
+async function enrichSchemaWithViewDetails(schema) {
+  if (!schema || !schema.tables) return schema;
+
+  // Fetch detailed view info for each table in parallel
+  const viewPromises = schema.tables.map(async (tableSchema) => {
+    try {
+      const viewsData = await Airtable.getViews(tableSchema.id);
+      if (viewsData && viewsData.views) {
+        // Store the enriched view data
+        tableSchema.viewsDetailed = viewsData.views;
+        // Log to see what we get back
+        console.log(`Views for ${tableSchema.name}:`, viewsData);
+      }
+    } catch (e) {
+      console.warn(`Failed to fetch views for ${tableSchema.name}:`, e);
+    }
+  });
+
+  await Promise.all(viewPromises);
+  return schema;
+}
 
 // ============================================================
 // SYNC MANAGER
@@ -4554,8 +4674,10 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
       showPage('data');
       await updateBadges();
 
-      // Refresh schema in background
+      // Refresh schema in background with view details
       Airtable.getSchema().then(async freshSchema => {
+        // Enrich with detailed view info (including sections/folders)
+        await enrichSchemaWithViewDetails(freshSchema);
         schema = freshSchema;
         await ExperienceEngine.setMeta(`schema:${baseId}`, freshSchema);
         populateTableDropdown();
@@ -4566,6 +4688,8 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
       setLoading(true, 'Connecting...');
 
       schema = await Airtable.getSchema();
+      // Enrich with detailed view info (including sections/folders)
+      await enrichSchemaWithViewDetails(schema);
       await ExperienceEngine.setMeta(`schema:${baseId}`, schema);
 
       localStorage.setItem('airtable_api_key', apiKey);
@@ -4602,8 +4726,8 @@ function populateLeftPanel() {
     tableRow.className = 'table-item';
     tableRow.dataset.tableId = tableSchema.id;
 
-    // Get views for this table
-    const views = tableSchema.views || [];
+    // Use detailed views if available, otherwise fallback to basic views
+    const views = tableSchema.viewsDetailed || tableSchema.views || [];
     const hasViews = views.length > 0;
 
     // Get appropriate icon based on table name
@@ -4623,23 +4747,52 @@ function populateLeftPanel() {
     viewsList.className = 'views-list';
     viewsList.dataset.tableId = tableSchema.id;
 
-    views.forEach(view => {
-      const viewItem = document.createElement('div');
-      viewItem.className = 'view-item';
-      viewItem.dataset.tableId = tableSchema.id;
-      viewItem.dataset.viewId = view.id;
-      viewItem.dataset.viewName = view.name;
+    // Organize views by section if section info is available
+    const viewsBySection = organizeViewsBySection(views);
 
-      // Different icons for different view types
-      const viewIcon = getViewIcon(view.type);
+    if (viewsBySection.hasSections) {
+      // Render views organized by sections/folders
+      viewsBySection.sections.forEach(section => {
+        // Section header (folder)
+        const sectionHeader = document.createElement('div');
+        sectionHeader.className = 'view-section-header';
+        sectionHeader.innerHTML = `
+          <span class="view-section-icon"><i class="ph ph-folder"></i></span>
+          <span class="view-section-name">${section.name}</span>
+          <span class="view-section-expand"><i class="ph ph-caret-right"></i></span>
+        `;
 
-      viewItem.innerHTML = `
-        <span class="view-item-icon"><i class="ph ${viewIcon}"></i></span>
-        <span class="view-item-name">${view.name}</span>
-      `;
+        const sectionViews = document.createElement('div');
+        sectionViews.className = 'view-section-views';
 
-      viewsList.appendChild(viewItem);
-    });
+        section.views.forEach(view => {
+          const viewItem = createViewItem(view, tableSchema.id);
+          sectionViews.appendChild(viewItem);
+        });
+
+        viewsList.appendChild(sectionHeader);
+        viewsList.appendChild(sectionViews);
+
+        // Add click handler for section expand/collapse
+        sectionHeader.addEventListener('click', (e) => {
+          e.stopPropagation();
+          sectionHeader.classList.toggle('expanded');
+          sectionViews.classList.toggle('expanded');
+        });
+      });
+
+      // Render unsectioned views (if any)
+      viewsBySection.unsectioned.forEach(view => {
+        const viewItem = createViewItem(view, tableSchema.id);
+        viewsList.appendChild(viewItem);
+      });
+    } else {
+      // No sections - render flat list
+      views.forEach(view => {
+        const viewItem = createViewItem(view, tableSchema.id);
+        viewsList.appendChild(viewItem);
+      });
+    }
 
     tableContainer.appendChild(tableRow);
     if (hasViews) {
@@ -4647,6 +4800,61 @@ function populateLeftPanel() {
     }
     tablesListEl.appendChild(tableContainer);
   });
+
+  // Helper function to create a view item element
+  function createViewItem(view, tableId) {
+    const viewItem = document.createElement('div');
+    viewItem.className = 'view-item';
+    viewItem.dataset.tableId = tableId;
+    viewItem.dataset.viewId = view.id;
+    viewItem.dataset.viewName = view.name;
+
+    const viewIcon = getViewIcon(view.type);
+    viewItem.innerHTML = `
+      <span class="view-item-icon"><i class="ph ${viewIcon}"></i></span>
+      <span class="view-item-name">${view.name}</span>
+    `;
+
+    return viewItem;
+  }
+
+  // Helper function to organize views by section
+  function organizeViewsBySection(views) {
+    const sections = new Map();
+    const unsectioned = [];
+    let hasSections = false;
+
+    views.forEach(view => {
+      // Check for section info - Airtable may use 'sectionId' and 'sectionName'
+      // or the view might have a 'personalForUserId' for personal views
+      const sectionId = view.sectionId || view.viewSectionId;
+      const sectionName = view.sectionName || view.viewSectionName;
+
+      if (sectionId && sectionName) {
+        hasSections = true;
+        if (!sections.has(sectionId)) {
+          sections.set(sectionId, { id: sectionId, name: sectionName, views: [] });
+        }
+        sections.get(sectionId).views.push(view);
+      } else if (view.personalForUserId) {
+        // Personal view - group under "Personal Views"
+        hasSections = true;
+        const personalKey = 'personal';
+        if (!sections.has(personalKey)) {
+          sections.set(personalKey, { id: personalKey, name: 'Personal Views', views: [] });
+        }
+        sections.get(personalKey).views.push(view);
+      } else {
+        unsectioned.push(view);
+      }
+    });
+
+    return {
+      hasSections,
+      sections: Array.from(sections.values()),
+      unsectioned
+    };
+  }
 
   // Add click handlers for tables
   tablesListEl.querySelectorAll('.table-item').forEach(item => {
