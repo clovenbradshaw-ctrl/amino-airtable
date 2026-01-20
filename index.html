@@ -5434,11 +5434,11 @@ async function loadTestPage() {
   debugEl.innerHTML = `Fields: ${fieldNames.join(', ')}<br>First row: ${JSON.stringify(data[0])}`;
   countEl.textContent = `${data.length} records`;
 
-  // 5. Create Tabulator with minimal config
+  // 5. Create Tabulator - let it auto-generate columns from data
   testTable = new Tabulator('#test-grid', {
     data: data,
-    columns: columns,
-    layout: 'fitColumns',
+    autoColumns: true,
+    layout: 'fitData',
     height: 400,
   });
 }
