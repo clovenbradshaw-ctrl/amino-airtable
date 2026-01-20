@@ -3079,6 +3079,7 @@ function updateRecordCount(count, syncInfo = null) {
 
 function transformRecordForGrid(record, fields = currentFields) {
   if (!record) return null;
+  if (!fields || !Array.isArray(fields)) fields = [];
 
   const merged = ExperienceEngine.getMergedFields(record);
 
@@ -3197,7 +3198,12 @@ async function loadTable(tableId, viewId = null, viewName = null) {
   currentViewId = viewId;
   currentViewName = viewName;
   const tableSchema = schema.tables.find(t => t.id === tableId);
-  currentFields = tableSchema.fields;
+  if (!tableSchema) {
+    console.error('Table schema not found for tableId:', tableId);
+    currentFields = [];
+    return;
+  }
+  currentFields = tableSchema.fields || [];
 
   // Debug: Log formula fields to verify API returns formula expressions
   const formulaFields = currentFields.filter(f => f.type === 'formula');
