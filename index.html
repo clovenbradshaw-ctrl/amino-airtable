@@ -3069,6 +3069,44 @@ const FormulaEngine = {
 };
 
 // ============================================================
+// VIEW FILTERING
+// ============================================================
+
+// Filter records based on view configuration (client-side)
+function filterRecordsByView(records, viewId, tableSchema, fields) {
+  if (!viewId || !tableSchema?.viewsDetailed) {
+    return records; // No view selected or no view details - return all records
+  }
+
+  const view = tableSchema.viewsDetailed.find(v => v.id === viewId);
+  if (!view) {
+    console.warn('View not found:', viewId);
+    return records;
+  }
+
+  // Check if view has a filter formula
+  const filterFormula = view.filterByFormula;
+  if (!filterFormula) {
+    // No filter formula - return all records (view might just have sorting/hidden fields)
+    return records;
+  }
+
+  console.log('Applying view filter:', filterFormula);
+
+  // Filter records using the formula engine
+  return records.filter(record => {
+    try {
+      const result = FormulaEngine.evaluate(filterFormula, record.fields || record, fields);
+      // Filter formula should return truthy for records to include
+      return FormulaEngine.toBool(result);
+    } catch (e) {
+      console.warn('Filter evaluation error for record:', record.id, e);
+      return true; // Include records that fail to evaluate (safer default)
+    }
+  });
+}
+
+// ============================================================
 // AIRTABLE API
 // ============================================================
 const Airtable = {
@@ -3375,21 +3413,13 @@ const LiveSync = {
         if (currentTableId) {
           await SyncManager.deltaSync(currentTableId);
 
-          // Refresh grid - apply view filter if a view is selected
-          if (currentViewId) {
-            // Fetch view-filtered records from server
-            const records = await Airtable.getAllRecords(currentTableId, { view: currentViewId });
-            const gridData = records.map(transformRecordForGrid).filter(Boolean);
-            if (table) {
-              table.replaceData(gridData);
-            }
-          } else {
-            // No view selected - show all cached records
-            const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
-            const gridData = records.map(transformRecordForGrid).filter(Boolean);
-            if (table) {
-              table.replaceData(gridData);
-            }
+          // Refresh grid with local view filtering
+          const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
+          const tableSchema = schema.tables.find(t => t.id === currentTableId);
+          const filteredRecords = filterRecordsByView(records, currentViewId, tableSchema, currentFields);
+          const gridData = filteredRecords.map(transformRecordForGrid).filter(Boolean);
+          if (table) {
+            table.replaceData(gridData);
           }
         }
 
@@ -3447,15 +3477,11 @@ const DirectPoll = {
       const updated = await SyncManager.deltaSync(currentTableId);
 
       if (updated > 0) {
-        // Refresh grid - apply view filter if a view is selected
-        let gridData;
-        if (currentViewId) {
-          const records = await Airtable.getAllRecords(currentTableId, { view: currentViewId });
-          gridData = records.map(transformRecordForGrid).filter(Boolean);
-        } else {
-          const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
-          gridData = records.map(transformRecordForGrid).filter(Boolean);
-        }
+        // Refresh grid with local view filtering
+        const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, currentTableId);
+        const tableSchema = schema.tables.find(t => t.id === currentTableId);
+        const filteredRecords = filterRecordsByView(records, currentViewId, tableSchema, currentFields);
+        const gridData = filteredRecords.map(transformRecordForGrid).filter(Boolean);
         if (table) {
           table.replaceData(gridData);
         }
@@ -4042,8 +4068,11 @@ async function loadTable(tableId, viewId = null, viewName = null) {
     console.error('Cache read failed:', e);
   }
 
+  // Apply view filtering if a view is selected
+  const filteredRecords = filterRecordsByView(records, viewId, tableSchema, currentFields);
+
   // Show whatever we have immediately (even if empty)
-  const gridData = records.map(transformRecordForGrid).filter(Boolean);
+  const gridData = filteredRecords.map(transformRecordForGrid).filter(Boolean);
 
   table = new Tabulator('#grid', {
     data: gridData,
@@ -4113,28 +4142,20 @@ async function loadTable(tableId, viewId = null, viewName = null) {
   // Update status with cache info
   const syncTime = await ExperienceEngine.getTableSyncTime(tableId);
 
-  if (cacheHit && !viewId) {
-    // Cache hit with no specific view - show all cached records
+  if (cacheHit) {
+    // Cache hit - show filtered records and do background sync
     document.getElementById('table-status').textContent =
       `${gridData.length} records | Synced ${formatTimeAgo(syncTime)}`;
     updateRecordCount(gridData.length, formatTimeAgo(syncTime));
 
     // Background delta sync
     syncInBackground(tableId);
-  } else if (cacheHit && viewId) {
-    // Cache hit with a view selected - show cache immediately, then fetch view-filtered data
-    document.getElementById('table-status').textContent =
-      `${gridData.length} records | Loading view...`;
-    updateRecordCount(gridData.length, 'loading view...');
-
-    // Fetch view-filtered records from server
-    syncAndUpdateTable(tableId, viewId);
   } else {
     document.getElementById('table-status').textContent = 'Loading from server...';
     updateRecordCount(null, 'loading...');
 
     // No cache - need to fetch, but do it async and update table
-    syncAndUpdateTable(tableId, viewId);
+    syncAndUpdateTable(tableId);
   }
 }
 
@@ -4146,7 +4167,11 @@ async function syncInBackground(tableId) {
     // Reload data if we got updates
     if (count > 0 && currentTableId === tableId) {
       const records = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, tableId);
-      const gridData = records.map(transformRecordForGrid).filter(Boolean);
+
+      // Apply view filtering if a view is selected
+      const tableSchema = schema.tables.find(t => t.id === tableId);
+      const filteredRecords = filterRecordsByView(records, currentViewId, tableSchema, currentFields);
+      const gridData = filteredRecords.map(transformRecordForGrid).filter(Boolean);
       table.replaceData(gridData);
 
       const syncTime = await ExperienceEngine.getTableSyncTime(tableId);
@@ -4160,14 +4185,13 @@ async function syncInBackground(tableId) {
 }
 
 // Initial sync with progress - updates table as data arrives
-async function syncAndUpdateTable(tableId, viewId = null) {
+async function syncAndUpdateTable(tableId) {
   updateSyncIndicator('syncing', 'Downloading...');
 
   let totalCount = 0;
 
   try {
     const records = await Airtable.getAllRecords(tableId, {
-      view: viewId,
       onProgress: async (count, page, hasMore) => {
         totalCount = count;
         document.getElementById('table-status').textContent =
@@ -4182,10 +4206,14 @@ async function syncAndUpdateTable(tableId, viewId = null) {
 
     await ExperienceEngine.setTableSyncTime(tableId, Date.now());
 
-    // Update table with all data
+    // Update table with all data (apply view filtering if needed)
     if (currentTableId === tableId) {
       const cachedRecords = await ExperienceEngine.getTableRecords(CONFIG.BASE_ID, tableId);
-      const gridData = cachedRecords.map(transformRecordForGrid).filter(Boolean);
+
+      // Apply view filtering if a view is selected
+      const tableSchema = schema.tables.find(t => t.id === tableId);
+      const filteredRecords = filterRecordsByView(cachedRecords, currentViewId, tableSchema, currentFields);
+      const gridData = filteredRecords.map(transformRecordForGrid).filter(Boolean);
       table.replaceData(gridData);
       table.options.placeholder = 'No records found';
 
