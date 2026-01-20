@@ -5439,12 +5439,22 @@ async function loadTestPage() {
   // 2. Use just 4 fields for simplicity
   const fieldNames = Object.keys(records[0].fields).slice(0, 4);
 
-  // 3. Simple data - just strings
+  // 3. Flatten all values to display strings
   const data = records.map(rec => {
     const row = { id: rec.id };
     fieldNames.forEach(name => {
-      let val = rec.fields[name] ?? '';
-      if (typeof val !== 'string') val = JSON.stringify(val);
+      let val = rec.fields[name];
+      if (val === null || val === undefined) {
+        val = '';
+      } else if (Array.isArray(val)) {
+        // Join arrays (handles multiselect, linked records, etc.)
+        val = val.map(v => typeof v === 'object' ? (v.name || v.id || JSON.stringify(v)) : v).join(', ');
+      } else if (typeof val === 'object') {
+        // Handle objects (attachments, etc.)
+        val = val.name || val.url || val.id || JSON.stringify(val);
+      } else {
+        val = String(val);
+      }
       row[name] = val;
     });
     return row;
