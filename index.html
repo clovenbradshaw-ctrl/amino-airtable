@@ -5409,9 +5409,10 @@ document.getElementById('disconnect-btn')?.addEventListener('click', handleDisco
 document.getElementById('sidebar-disconnect-btn')?.addEventListener('click', handleDisconnect);
 
 // ============================================================
-// TEST PAGE - Pure HTML table (no Tabulator)
+// TEST PAGE - HTML table + Tabulator comparison
 // ============================================================
 const TEST_TABLE_ID = 'tblgynOzESGvAXAsK';
+let testTable = null;
 
 async function loadTestPage() {
   const gridEl = document.getElementById('test-grid');
@@ -5420,6 +5421,7 @@ async function loadTestPage() {
 
   debugEl.innerHTML = 'Loading...';
   gridEl.innerHTML = '';
+  if (testTable) { testTable.destroy(); testTable = null; }
 
   // 1. Fetch directly from Airtable
   const res = await fetch(
@@ -5437,35 +5439,35 @@ async function loadTestPage() {
   // 2. Get field names from first record
   const fieldNames = Object.keys(records[0].fields).slice(0, 8);
 
-  // 3. Build plain HTML table
-  let html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
-
-  // Header row
-  html += '<thead><tr style="background:#f3f4f6;">';
-  fieldNames.forEach(name => {
-    html += `<th style="border:1px solid #e5e7eb; padding:8px; text-align:left;">${name}</th>`;
-  });
-  html += '</tr></thead>';
-
-  // Data rows
-  html += '<tbody>';
-  records.forEach(rec => {
-    html += '<tr>';
+  // 3. Transform data - flatten values to strings
+  const data = records.map(rec => {
+    const row = {};
     fieldNames.forEach(name => {
       let val = rec.fields[name];
-      // Handle arrays and objects
       if (Array.isArray(val)) val = val.join(', ');
       else if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
       else if (val === undefined || val === null) val = '';
-      html += `<td style="border:1px solid #e5e7eb; padding:8px;">${val}</td>`;
+      row[name] = String(val);
     });
-    html += '</tr>';
+    return row;
   });
-  html += '</tbody></table>';
 
-  gridEl.innerHTML = html;
-  countEl.textContent = `${records.length} records`;
-  debugEl.innerHTML = `Fields: ${fieldNames.join(', ')}`;
+  // 4. Build columns
+  const columns = fieldNames.map(name => ({
+    title: name,
+    field: name,
+  }));
+
+  debugEl.innerHTML = `Fields: ${fieldNames.join(', ')}<br>First row: ${JSON.stringify(data[0])}`;
+  countEl.textContent = `${data.length} records`;
+
+  // 5. Create Tabulator with minimal config
+  testTable = new Tabulator('#test-grid', {
+    data: data,
+    columns: columns,
+    layout: 'fitColumns',
+    height: 400,
+  });
 }
 
 // Test page refresh button
