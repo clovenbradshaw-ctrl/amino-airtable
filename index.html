@@ -5,265 +5,296 @@
     <title>DB Viewer</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; display: flex; height: 100vh; }
-        .sidebar { width: 220px; background: #161b22; border-right: 1px solid #30363d; overflow-y: auto; }
-        .sidebar div { padding: 10px 15px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #30363d; }
-        .sidebar div:hover { background: #21262d; }
-        .sidebar div.active { background: #1f6feb; }
-        .sidebar div.table-header { font-weight: bold; background: #21262d; }
-        .sidebar div.view-item { padding-left: 25px; font-size: 12px; color: #8b949e; }
-        .sidebar div.view-item:hover { color: #e6edf3; }
-        .main { flex: 1; overflow: auto; padding: 20px; }
-        h1 { font-size: 18px; margin-bottom: 10px; }
-        #status { color: #8b949e; font-size: 12px; margin-bottom: 15px; }
-        .loading { color: #f0883e; }
-        .synced { color: #3fb950; }
-        table { border-collapse: collapse; font-size: 12px; }
-        th, td { border: 1px solid #30363d; padding: 6px 10px; text-align: left; max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        th { background: #21262d; position: sticky; top: 0; }
-        tr:hover td { background: #161b22; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f5f5f5; color: #333; display: flex; height: 100vh; }
 
-        /* Header controls */
-        .header-row {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 10px;
-        }
-        .header-row h1 {
-            margin-bottom: 0;
-            flex: 1;
-        }
-        .btn-small {
-            padding: 4px 10px;
-            background: #21262d;
-            border: 1px solid #30363d;
-            border-radius: 4px;
-            color: #8b949e;
-            font-size: 11px;
-            cursor: pointer;
-        }
-        .btn-small:hover {
-            background: #30363d;
-            color: #e6edf3;
-        }
+        /* Sidebar - Airtable dark style */
+        .sidebar { width: 260px; background: #1d1f25; border-right: 1px solid #2d2f36; overflow-y: auto; flex-shrink: 0; }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid #2d2f36; }
+        .sidebar-header h2 { color: #fff; font-size: 14px; font-weight: 600; }
+        .sidebar div.table-item { padding: 8px 16px; cursor: pointer; font-size: 13px; color: #b3b3b3; display: flex; align-items: center; gap: 8px; }
+        .sidebar div.table-item:hover { background: #2d2f36; color: #fff; }
+        .sidebar div.table-item.active { background: #2d6cdf; color: #fff; }
+        .sidebar div.table-item .count { margin-left: auto; font-size: 11px; color: #666; }
+        .sidebar div.table-item.active .count { color: rgba(255,255,255,0.7); }
+        .table-icon { width: 16px; height: 16px; background: #2d6cdf; border-radius: 3px; flex-shrink: 0; }
+
+        /* Main content - Airtable light style */
+        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
+
+        /* Toolbar */
+        .toolbar { padding: 12px 20px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 12px; background: #fff; }
+        .toolbar h1 { font-size: 18px; font-weight: 600; color: #333; flex: 1; }
+        .btn { padding: 6px 12px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; color: #333; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .btn:hover { background: #e8e8e8; }
+        .btn-primary { background: #2d6cdf; border-color: #2d6cdf; color: #fff; }
+        .btn-primary:hover { background: #2560c9; }
+
+        /* Status bar */
+        .status-bar { padding: 8px 20px; background: #fafafa; border-bottom: 1px solid #e0e0e0; font-size: 12px; color: #666; display: flex; align-items: center; gap: 12px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .status-dot.synced { background: #20c933; }
+        .status-dot.loading { background: #fcb400; }
+
+        /* Table container */
+        .table-container { flex: 1; overflow: auto; }
+
+        /* Airtable-style table */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #f5f5f5; border-bottom: 2px solid #ddd; padding: 8px 12px; text-align: left; font-weight: 500; color: #333; position: sticky; top: 0; z-index: 10; white-space: nowrap; }
+        th:first-child { width: 120px; color: #666; }
+        td { border-bottom: 1px solid #eee; padding: 8px 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
+        tr:hover td { background: #f8f9fa; }
+        tr.selected td { background: #e8f0fe; }
+
+        /* Cell content styling */
+        .cell-empty { color: #ccc; }
+        .cell-array { color: #333; }
+        .cell-array .tag { display: inline-block; background: #e8f0fe; color: #2d6cdf; padding: 2px 8px; border-radius: 12px; margin: 1px 2px 1px 0; font-size: 12px; }
+        .cell-link { color: #2d6cdf; text-decoration: none; }
+        .cell-link:hover { text-decoration: underline; }
+        .cell-number { font-family: "SF Mono", Monaco, monospace; }
+        .cell-bool { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+        .cell-bool.true { background: #d4edda; color: #155724; }
+        .cell-bool.false { background: #f8d7da; color: #721c24; }
+
+        /* Pagination */
+        .pagination { padding: 12px 20px; border-top: 1px solid #e0e0e0; background: #fafafa; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+        .pagination button { padding: 6px 12px; background: #fff; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; }
+        .pagination button:hover:not(:disabled) { background: #f5f5f5; }
+        .pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pagination .page-info { color: #666; }
 
         /* Auth screen */
-        #auth-screen {
-            position: fixed;
-            inset: 0;
-            background: #0d1117;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-        }
-        .auth-box {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 30px;
-            width: 340px;
-        }
-        .auth-box h2 {
-            font-size: 16px;
-            margin-bottom: 20px;
-            color: #e6edf3;
-        }
-        .auth-box input {
-            width: 100%;
-            padding: 10px 12px;
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            color: #e6edf3;
-            font-size: 14px;
-            margin-bottom: 15px;
-        }
-        .auth-box input:focus {
-            outline: none;
-            border-color: #1f6feb;
-        }
-        .auth-box button {
-            width: 100%;
-            padding: 10px;
-            background: #238636;
-            border: none;
-            border-radius: 6px;
-            color: #fff;
-            font-size: 14px;
-            cursor: pointer;
-            margin-bottom: 10px;
-        }
-        .auth-box button:hover {
-            background: #2ea043;
-        }
-        .auth-box button:disabled {
-            background: #21262d;
-            cursor: not-allowed;
-        }
-        .auth-box button.secondary {
-            background: #21262d;
-        }
-        .auth-box button.secondary:hover {
-            background: #30363d;
-        }
-        .auth-error {
-            color: #f85149;
-            font-size: 13px;
-            margin-bottom: 15px;
-            display: none;
-        }
-        .auth-info {
-            color: #8b949e;
-            font-size: 12px;
-            margin-top: 10px;
-            text-align: center;
-        }
+        #auth-screen { position: fixed; inset: 0; background: #1d1f25; display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .auth-box { background: #fff; border-radius: 8px; padding: 32px; width: 360px; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+        .auth-box h2 { font-size: 20px; margin-bottom: 8px; color: #333; }
+        .auth-box p { font-size: 13px; color: #666; margin-bottom: 24px; }
+        .auth-box input { width: 100%; padding: 10px 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px; color: #333; font-size: 14px; margin-bottom: 12px; }
+        .auth-box input:focus { outline: none; border-color: #2d6cdf; box-shadow: 0 0 0 3px rgba(45,108,223,0.1); }
+        .auth-box button { width: 100%; padding: 10px; background: #2d6cdf; border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; margin-bottom: 8px; font-weight: 500; }
+        .auth-box button:hover { background: #2560c9; }
+        .auth-box button:disabled { background: #ccc; cursor: not-allowed; }
+        .auth-box button.secondary { background: #f5f5f5; color: #333; }
+        .auth-box button.secondary:hover { background: #e8e8e8; }
+        .auth-error { color: #dc3545; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: #f8d7da; border-radius: 4px; display: none; }
+        .auth-info { color: #666; font-size: 12px; margin-top: 16px; text-align: center; }
         .hidden { display: none !important; }
+
+        /* Empty state */
+        .empty-state { padding: 60px 20px; text-align: center; color: #666; }
+        .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: #333; }
     </style>
 </head>
 <body>
     <div id="auth-screen">
         <div class="auth-box">
             <h2>Amino Viewer</h2>
+            <p>Connect to your Amino event stream</p>
             <div id="auth-error" class="auth-error"></div>
-            <input type="password" id="api-key-input" placeholder="API Key (UUID)" autocomplete="off">
+            <input type="password" id="api-key-input" placeholder="API Key" autocomplete="off">
             <input type="text" id="set-filter-input" placeholder="Filter by set (optional)" autocomplete="off">
-            <input type="text" id="record-filter-input" placeholder="Filter by recordId (optional)" autocomplete="off">
             <button id="auth-submit">Connect</button>
-            <button id="auth-debug" class="secondary" onclick="debugFetch()">Debug Fetch</button>
             <button id="auth-clear" class="secondary hidden">Clear Local Data</button>
             <div id="auth-info" class="auth-info"></div>
         </div>
     </div>
 
-    <div class="sidebar" id="sidebar"></div>
-    <div class="main">
-        <div class="header-row">
-            <h1 id="title">Select a table</h1>
-            <button class="btn-small" onclick="manualSync()">↻ Sync</button>
-            <button class="btn-small" onclick="logout()">Logout</button>
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>Tables</h2>
         </div>
-        <div id="status"></div>
-        <table id="table"></table>
+        <div id="table-list"></div>
     </div>
+
+    <div class="main">
+        <div class="toolbar">
+            <h1 id="title">Select a table</h1>
+            <button class="btn" onclick="manualSync()">Sync</button>
+            <button class="btn" onclick="logout()">Logout</button>
+        </div>
+        <div class="status-bar">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Ready</span>
+        </div>
+        <div class="table-container" id="table-container">
+            <table id="table"></table>
+        </div>
+        <div class="pagination" id="pagination">
+            <button id="prev-btn" onclick="prevPage()">Previous</button>
+            <span class="page-info" id="page-info">Page 1</span>
+            <button id="next-btn" onclick="nextPage()">Next</button>
+        </div>
+    </div>
+
     <script>
 var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
 var DB_NAME = 'aminostream';
-var DB_VERSION = 1;
+var DB_VERSION = 2;
+var PAGE_SIZE = 100;
 
 var API_KEY = null;
 var SET_FILTER = null;
-var RECORD_FILTER = null;
 var db = null;
 
-// Metadata from event stream
-var META_TABLES = {};  // tableId -> { tableName, primaryFieldId, ... }
-var META_FIELDS = {};  // tableId -> { fieldId -> { fieldName, fieldType, options, ... } }
-var META_VIEWS = {};   // tableId -> { viewId -> { viewName, viewType, ... } }
-
-// Actual data records
-var DATA = {};         // tableId -> { recordId -> { field values } }
+// Only keep lightweight metadata in memory
+var META_TABLES = {};
+var META_FIELDS = {};
 
 var currentTable = null;
-var currentView = null;
-var totalEvents = 0;
+var currentPage = 0;
+var currentRecordIds = [];
+var totalRecords = 0;
 var lastEventId = 0;
 var pollInterval = null;
-var syncStartTime = null;
-var syncItemsTotal = 0;
 
 // ============ IndexedDB ============
 
 function openDB() {
     return new Promise((resolve, reject) => {
         var req = indexedDB.open(DB_NAME, DB_VERSION);
-
         req.onerror = () => reject(req.error);
-
         req.onsuccess = () => resolve(req.result);
-
         req.onupgradeneeded = (e) => {
             var db = e.target.result;
 
-            // Store materialized table state: { set, recordId, data }
-            if (!db.objectStoreNames.contains('records')) {
-                var store = db.createObjectStore('records', { keyPath: ['set', 'recordId'] });
-                store.createIndex('by_set', 'set');
+            // Delete old stores if they exist
+            if (db.objectStoreNames.contains('records')) {
+                db.deleteObjectStore('records');
+            }
+            if (db.objectStoreNames.contains('meta')) {
+                db.deleteObjectStore('meta');
             }
 
-            // Store sync metadata
-            if (!db.objectStoreNames.contains('meta')) {
-                db.createObjectStore('meta', { keyPath: 'key' });
-            }
+            // Data records: keyed by [tableId, recordId]
+            var dataStore = db.createObjectStore('data', { keyPath: ['tableId', 'recordId'] });
+            dataStore.createIndex('by_table', 'tableId');
+
+            // Table metadata
+            db.createObjectStore('tables', { keyPath: 'tableId' });
+
+            // Field metadata: keyed by [tableId, fieldId]
+            var fieldStore = db.createObjectStore('fields', { keyPath: ['tableId', 'fieldId'] });
+            fieldStore.createIndex('by_table', 'tableId');
+
+            // Sync state
+            db.createObjectStore('sync', { keyPath: 'key' });
         };
     });
 }
 
-function getMeta(key) {
+function getSyncMeta(key) {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction('meta', 'readonly');
-        var req = tx.objectStore('meta').get(key);
+        var tx = db.transaction('sync', 'readonly');
+        var req = tx.objectStore('sync').get(key);
         req.onsuccess = () => resolve(req.result ? req.result.value : null);
         req.onerror = () => reject(req.error);
     });
 }
 
-function setMeta(key, value) {
+function setSyncMeta(key, value) {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction('meta', 'readwrite');
-        tx.objectStore('meta').put({ key, value });
+        var tx = db.transaction('sync', 'readwrite');
+        tx.objectStore('sync').put({ key, value });
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
 }
 
-function getAllRecords() {
+function getAllTables() {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction('records', 'readonly');
-        var req = tx.objectStore('records').getAll();
-        req.onsuccess = () => resolve(req.result);
+        var tx = db.transaction('tables', 'readonly');
+        var req = tx.objectStore('tables').getAll();
+        req.onsuccess = () => resolve(req.result || []);
         req.onerror = () => reject(req.error);
     });
 }
 
-function saveRecords(changed) {
+function getFieldsForTable(tableId) {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction('records', 'readwrite');
-        var store = tx.objectStore('records');
+        var tx = db.transaction('fields', 'readonly');
+        var index = tx.objectStore('fields').index('by_table');
+        var req = index.getAll(tableId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
 
-        for (var r of changed) {
-            // Create a unique key based on type
-            var key, record;
+function getRecordIdsForTable(tableId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('data', 'readonly');
+        var index = tx.objectStore('data').index('by_table');
+        var req = index.getAllKeys(tableId);
+        req.onsuccess = () => {
+            // Keys are [tableId, recordId], extract recordIds
+            var recordIds = (req.result || []).map(k => k[1]);
+            resolve(recordIds);
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
 
-            if (r.type === 'table') {
-                key = ['_meta_table', r.tableId];
-                record = { set: '_meta_table', recordId: r.tableId, data: r.data, recType: 'table' };
-            } else if (r.type === 'field') {
-                key = ['_meta_field:' + r.tableId, r.fieldId];
-                record = { set: '_meta_field:' + r.tableId, recordId: r.fieldId, data: r.data, recType: 'field', tableId: r.tableId };
-            } else if (r.type === 'view') {
-                key = ['_meta_view:' + r.tableId, r.viewId];
-                record = { set: '_meta_view:' + r.tableId, recordId: r.viewId, data: r.data, recType: 'view', tableId: r.tableId };
-            } else {
-                // data record
-                key = ['data:' + r.tableId, r.recordId];
-                record = { set: 'data:' + r.tableId, recordId: r.recordId, data: r.data, recType: 'data', tableId: r.tableId };
-            }
+function getRecordsByIds(tableId, recordIds) {
+    return new Promise((resolve, reject) => {
+        if (!recordIds.length) return resolve([]);
+        var tx = db.transaction('data', 'readonly');
+        var store = tx.objectStore('data');
+        var results = [];
+        var pending = recordIds.length;
 
-            store.put(record);
-        }
+        recordIds.forEach(rid => {
+            var req = store.get([tableId, rid]);
+            req.onsuccess = () => {
+                if (req.result) results.push(req.result);
+                if (--pending === 0) resolve(results);
+            };
+            req.onerror = () => {
+                if (--pending === 0) resolve(results);
+            };
+        });
+    });
+}
 
+function saveTable(table) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('tables', 'readwrite');
+        tx.objectStore('tables').put(table);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
 }
 
-function deleteRecord(set, recordId) {
+function saveField(field) {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction('records', 'readwrite');
-        tx.objectStore('records').delete([set, recordId]);
+        var tx = db.transaction('fields', 'readwrite');
+        tx.objectStore('fields').put(field);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function saveDataRecord(record) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('data', 'readwrite');
+        tx.objectStore('data').put(record);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function saveBatch(tables, fields, dataRecords) {
+    return new Promise((resolve, reject) => {
+        var stores = [];
+        if (tables.length) stores.push('tables');
+        if (fields.length) stores.push('fields');
+        if (dataRecords.length) stores.push('data');
+        if (!stores.length) return resolve();
+
+        var tx = db.transaction(stores, 'readwrite');
+
+        tables.forEach(t => tx.objectStore('tables').put(t));
+        fields.forEach(f => tx.objectStore('fields').put(f));
+        dataRecords.forEach(d => tx.objectStore('data').put(d));
+
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
@@ -271,9 +302,11 @@ function deleteRecord(set, recordId) {
 
 function clearAllData() {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction(['records', 'meta'], 'readwrite');
-        tx.objectStore('records').clear();
-        tx.objectStore('meta').clear();
+        var tx = db.transaction(['data', 'tables', 'fields', 'sync'], 'readwrite');
+        tx.objectStore('data').clear();
+        tx.objectStore('tables').clear();
+        tx.objectStore('fields').clear();
+        tx.objectStore('sync').clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
@@ -283,22 +316,22 @@ function getLocalStats() {
     return new Promise(async (resolve) => {
         try {
             var tempDb = await openDB();
-            var records = await new Promise((res, rej) => {
-                var tx = tempDb.transaction('records', 'readonly');
-                var req = tx.objectStore('records').count();
+            var count = await new Promise((res, rej) => {
+                var tx = tempDb.transaction('data', 'readonly');
+                var req = tx.objectStore('data').count();
                 req.onsuccess = () => res(req.result);
-                req.onerror = () => rej(req.error);
+                req.onerror = () => res(0);
             });
             var lastId = await new Promise((res, rej) => {
-                var tx = tempDb.transaction('meta', 'readonly');
-                var req = tx.objectStore('meta').get('lastEventId');
+                var tx = tempDb.transaction('sync', 'readonly');
+                var req = tx.objectStore('sync').get('lastEventId');
                 req.onsuccess = () => res(req.result ? req.result.value : 0);
-                req.onerror = () => rej(req.error);
+                req.onerror = () => res(0);
             });
             tempDb.close();
-            resolve({ records, lastId });
+            resolve({ count, lastId });
         } catch (e) {
-            resolve({ records: 0, lastId: 0 });
+            resolve({ count: 0, lastId: 0 });
         }
     });
 }
@@ -306,15 +339,8 @@ function getLocalStats() {
 // ============ Auth ============
 
 document.getElementById('auth-submit').onclick = tryAuth;
-document.getElementById('api-key-input').onkeydown = function(e) {
-    if (e.key === 'Enter') tryAuth();
-};
-document.getElementById('set-filter-input').onkeydown = function(e) {
-    if (e.key === 'Enter') tryAuth();
-};
-document.getElementById('record-filter-input').onkeydown = function(e) {
-    if (e.key === 'Enter') tryAuth();
-};
+document.getElementById('api-key-input').onkeydown = (e) => { if (e.key === 'Enter') tryAuth(); };
+document.getElementById('set-filter-input').onkeydown = (e) => { if (e.key === 'Enter') tryAuth(); };
 document.getElementById('auth-clear').onclick = clearLocalAndReset;
 
 async function initAuthScreen() {
@@ -322,17 +348,17 @@ async function initAuthScreen() {
     var infoEl = document.getElementById('auth-info');
     var clearBtn = document.getElementById('auth-clear');
 
-    if (stats.records > 0) {
-        infoEl.textContent = 'Local: ' + stats.records + ' records, synced to event #' + stats.lastId;
+    if (stats.count > 0) {
+        infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
         clearBtn.classList.remove('hidden');
     } else {
-        infoEl.textContent = 'No local data — full sync required';
+        infoEl.textContent = 'No local data';
         clearBtn.classList.add('hidden');
     }
 }
 
 async function clearLocalAndReset() {
-    if (!confirm('Clear all local data? Next connect will do a full sync.')) return;
+    if (!confirm('Clear all local data?')) return;
     try {
         db = await openDB();
         await clearAllData();
@@ -358,12 +384,15 @@ async function tryAuth() {
 
     API_KEY = key;
     SET_FILTER = document.getElementById('set-filter-input').value.trim() || null;
-    RECORD_FILTER = document.getElementById('record-filter-input').value.trim() || null;
 
     try {
         await init();
     } catch (err) {
         console.error('Init error:', err);
+        showAuthError('Connection failed: ' + err.message);
+        btn.textContent = 'Connect';
+        btn.disabled = false;
+        return;
     }
 
     btn.textContent = 'Connect';
@@ -383,8 +412,6 @@ function hideAuthScreen() {
 function showAuthScreen() {
     document.getElementById('auth-screen').classList.remove('hidden');
     if (pollInterval) clearInterval(pollInterval);
-    document.getElementById('auth-submit').textContent = 'Connect';
-    document.getElementById('auth-submit').disabled = false;
     initAuthScreen();
 }
 
@@ -392,7 +419,6 @@ function logout() {
     if (pollInterval) clearInterval(pollInterval);
     API_KEY = null;
     SET_FILTER = null;
-    RECORD_FILTER = null;
     showAuthScreen();
 }
 
@@ -405,127 +431,71 @@ async function manualSync() {
 
 function parsePayload(payload) {
     if (typeof payload === 'string') {
-        try { payload = JSON.parse(payload); } catch { return null; }
+        try { return JSON.parse(payload); } catch { return null; }
     }
     return payload;
 }
 
-function processEvents(events) {
-    if (!events || !Array.isArray(events)) return [];
+async function processEvents(events) {
+    if (!events || !Array.isArray(events)) return;
 
-    var changed = [];
-    var debugged = false;
+    var tables = [];
+    var fields = [];
+    var dataRecords = [];
+    var tableDataMap = {}; // tableId -> { recordId -> fields }
 
-    for (var i = 0; i < events.length; i++) {
-        var e = events[i];
-        if (!e) continue;
-
-        var setName = e.set;
-        var recordId = e.recordId;
-
-        if (!setName || !recordId || recordId === '') continue;
+    for (var e of events) {
+        if (!e || !e.set || !e.recordId) continue;
 
         var payload = parsePayload(e.payload);
         if (!payload || typeof payload !== 'object') continue;
 
-        var recordType = payload._set;  // 'table', 'field', 'view', or human-readable name
-
-        // Debug first few events
-        if (!debugged && (recordType === 'table' || recordType === 'field' || recordType === 'view')) {
-            console.log('=== META EVENT ===', recordType);
-            console.log('set:', setName, 'recordId:', recordId);
-            console.log('payload:', payload);
-            debugged = true;
-        }
+        var recordType = payload._set;
+        var setName = e.set;
+        var recordId = e.recordId;
 
         if (recordType === 'table') {
-            // TABLE definition - lives in airtable:{baseId}, recordId is tableId
             var tableId = recordId;
-            if (!META_TABLES[tableId]) META_TABLES[tableId] = {};
-
-            applyPayloadFields(META_TABLES[tableId], payload);
-
-            // Also store direct payload fields
-            META_TABLES[tableId].tableId = payload.tableId || tableId;
-            META_TABLES[tableId].tableName = payload.tableName;
-            META_TABLES[tableId].primaryFieldId = payload.primaryFieldId;
-
-            changed.push({ type: 'table', tableId, data: META_TABLES[tableId] });
+            var tableData = { tableId };
+            applyPayloadFields(tableData, payload);
+            if (payload.tableName) tableData.tableName = payload.tableName;
+            if (payload.primaryFieldId) tableData.primaryFieldId = payload.primaryFieldId;
+            tables.push(tableData);
+            META_TABLES[tableId] = tableData;
 
         } else if (recordType === 'field') {
-            // FIELD definition - lives in airtable:{tableId}, recordId is fieldId
             var tableId = setName.replace('airtable:', '');
             var fieldId = recordId;
-
+            var fieldData = { tableId, fieldId };
+            applyPayloadFields(fieldData, payload);
+            if (payload.fieldName) fieldData.fieldName = payload.fieldName;
+            if (payload.fieldType) fieldData.fieldType = payload.fieldType;
+            fields.push(fieldData);
             if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
-            if (!META_FIELDS[tableId][fieldId]) META_FIELDS[tableId][fieldId] = {};
-
-            applyPayloadFields(META_FIELDS[tableId][fieldId], payload);
-
-            // Also store direct payload fields
-            META_FIELDS[tableId][fieldId].fieldId = payload.fieldId || fieldId;
-            META_FIELDS[tableId][fieldId].fieldName = payload.fieldName;
-            META_FIELDS[tableId][fieldId].fieldType = payload.fieldType;
-            META_FIELDS[tableId][fieldId].options = payload.options;
-
-            changed.push({ type: 'field', tableId, fieldId, data: META_FIELDS[tableId][fieldId] });
+            META_FIELDS[tableId][fieldId] = fieldData;
 
         } else if (recordType === 'view') {
-            // VIEW definition - lives in airtable:{tableId}, recordId is viewId
-            var tableId = setName.replace('airtable:', '');
-            var viewId = recordId;
-
-            if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
-            if (!META_VIEWS[tableId][viewId]) META_VIEWS[tableId][viewId] = {};
-
-            applyPayloadFields(META_VIEWS[tableId][viewId], payload);
-
-            // Also store direct payload fields
-            META_VIEWS[tableId][viewId].viewId = payload.viewId || viewId;
-            META_VIEWS[tableId][viewId].viewName = payload.viewName;
-            META_VIEWS[tableId][viewId].viewType = payload.viewType;
-            META_VIEWS[tableId][viewId].tableId = payload.tableId;
-            META_VIEWS[tableId][viewId].tableName = payload.tableName;
-
-            changed.push({ type: 'view', tableId, viewId, data: META_VIEWS[tableId][viewId] });
+            // Skip views for now
 
         } else {
-            // DATA record - lives in airtable:{tableId}
-            // recordType here is the human-readable table name like "Client Info"
+            // Data record
             var tableId = setName.replace('airtable:', '');
+            var pfields = payload.fields;
+            if (!pfields || typeof pfields !== 'object') continue;
 
-            var fields = payload.fields;
-            if (!fields || typeof fields !== 'object') {
-                console.log('=== DATA RECORD SKIPPED (no fields) ===');
-                console.log('set:', setName, 'recordId:', recordId);
-                console.log('payload keys:', Object.keys(payload));
-                continue;
+            if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
+            if (!tableDataMap[tableId][recordId]) {
+                // Try to get existing record from db
+                tableDataMap[tableId][recordId] = {};
             }
 
-            if (!DATA[tableId]) DATA[tableId] = {};
-            if (!DATA[tableId][recordId]) DATA[tableId][recordId] = {};
+            var state = tableDataMap[tableId][recordId];
 
-            var state = DATA[tableId][recordId];
-
-            if (fields.INS && typeof fields.INS === 'object') {
-                for (var key in fields.INS) {
-                    state[key] = fields.INS[key];
-                }
+            if (pfields.INS) Object.assign(state, pfields.INS);
+            if (pfields.ALT) Object.assign(state, pfields.ALT);
+            if (pfields.NUL && Array.isArray(pfields.NUL)) {
+                pfields.NUL.forEach(k => delete state[k]);
             }
-
-            if (fields.ALT && typeof fields.ALT === 'object') {
-                for (var key in fields.ALT) {
-                    state[key] = fields.ALT[key];
-                }
-            }
-
-            if (fields.NUL && Array.isArray(fields.NUL)) {
-                for (var j = 0; j < fields.NUL.length; j++) {
-                    delete state[fields.NUL[j]];
-                }
-            }
-
-            changed.push({ type: 'data', tableId, recordId, data: state });
         }
 
         if (e.id && e.id > lastEventId) {
@@ -533,382 +503,324 @@ function processEvents(events) {
         }
     }
 
-    totalEvents += events.length;
-    return changed;
+    // Convert tableDataMap to dataRecords array
+    for (var tableId in tableDataMap) {
+        for (var recordId in tableDataMap[tableId]) {
+            dataRecords.push({
+                tableId,
+                recordId,
+                fields: tableDataMap[tableId][recordId]
+            });
+        }
+    }
+
+    // Save batch
+    if (tables.length || fields.length || dataRecords.length) {
+        await saveBatch(tables, fields, dataRecords);
+    }
 }
 
-// Helper to apply INS/ALT/NUL from payload.fields if present
 function applyPayloadFields(target, payload) {
     if (!payload.fields) return;
     var fields = payload.fields;
-
-    if (fields.INS && typeof fields.INS === 'object') {
-        for (var key in fields.INS) {
-            target[key] = fields.INS[key];
-        }
-    }
-    if (fields.ALT && typeof fields.ALT === 'object') {
-        for (var key in fields.ALT) {
-            target[key] = fields.ALT[key];
-        }
-    }
+    if (fields.INS) Object.assign(target, fields.INS);
+    if (fields.ALT) Object.assign(target, fields.ALT);
     if (fields.NUL && Array.isArray(fields.NUL)) {
-        for (var j = 0; j < fields.NUL.length; j++) {
-            delete target[fields.NUL[j]];
-        }
-    }
-}
-
-function loadFromLocal(records) {
-    for (var r of records) {
-        var recType = r.recType;
-
-        if (recType === 'table') {
-            META_TABLES[r.recordId] = r.data;
-        } else if (recType === 'field') {
-            var tableId = r.tableId;
-            if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
-            META_FIELDS[tableId][r.recordId] = r.data;
-        } else if (recType === 'view') {
-            var tableId = r.tableId;
-            if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
-            META_VIEWS[tableId][r.recordId] = r.data;
-        } else if (recType === 'data') {
-            var tableId = r.tableId;
-            if (!DATA[tableId]) DATA[tableId] = {};
-            DATA[tableId][r.recordId] = r.data;
-        } else {
-            // Legacy format fallback
-            if (r.isView) {
-                var tableId = r.set.replace('airtable:', '');
-                if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
-                META_VIEWS[tableId][r.recordId] = r.data;
-            } else {
-                var tableId = r.set.replace('airtable:', '');
-                if (!DATA[tableId]) DATA[tableId] = {};
-                DATA[tableId][r.recordId] = r.data;
-            }
-        }
+        fields.NUL.forEach(k => delete target[k]);
     }
 }
 
 // ============ UI ============
 
-function renderSidebar() {
-    var sidebar = document.getElementById('sidebar');
-    sidebar.innerHTML = '';
+async function renderSidebar() {
+    var tableList = document.getElementById('table-list');
+    tableList.innerHTML = '';
 
-    // Get all tables - from META_TABLES or inferred from DATA/META_FIELDS/META_VIEWS
-    var allTableIds = new Set([
-        ...Object.keys(META_TABLES),
-        ...Object.keys(DATA),
-        ...Object.keys(META_FIELDS),
-        ...Object.keys(META_VIEWS)
-    ]);
-    var tableIds = Array.from(allTableIds).sort();
+    var tables = await getAllTables();
 
-    for (var i = 0; i < tableIds.length; i++) {
-        var tableId = tableIds[i];
-        var tableMeta = META_TABLES[tableId] || {};
-        var tableName = tableMeta.tableName || tableId;
-        var recordCount = DATA[tableId] ? Object.keys(DATA[tableId]).length : 0;
-        var views = META_VIEWS[tableId] || {};
-        var viewIds = Object.keys(views);
-
-        // Table header
-        var tableDiv = document.createElement('div');
-        tableDiv.className = 'table-header' + (tableId === currentTable && !currentView ? ' active' : '');
-        tableDiv.textContent = tableName + ' (' + recordCount + ')';
-        tableDiv.onclick = (function(t) {
-            return function() { showTable(t, null); };
-        })(tableId);
-        sidebar.appendChild(tableDiv);
-
-        // Views under this table
-        for (var j = 0; j < viewIds.length; j++) {
-            var viewId = viewIds[j];
-            var view = views[viewId];
-            var viewDiv = document.createElement('div');
-            viewDiv.className = 'view-item' + (tableId === currentTable && viewId === currentView ? ' active' : '');
-            viewDiv.textContent = '↳ ' + (view.viewName || viewId);
-            viewDiv.onclick = (function(t, v) {
-                return function() { showTable(t, v); };
-            })(tableId, viewId);
-            sidebar.appendChild(viewDiv);
+    // Also get tables from META_TABLES (in-memory from current session)
+    for (var tid in META_TABLES) {
+        if (!tables.find(t => t.tableId === tid)) {
+            tables.push(META_TABLES[tid]);
         }
     }
 
-    return tableIds;
+    tables.sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
+
+    for (var table of tables) {
+        var tableId = table.tableId;
+        var tableName = table.tableName || tableId;
+
+        var div = document.createElement('div');
+        div.className = 'table-item' + (tableId === currentTable ? ' active' : '');
+        div.innerHTML = '<span class="table-icon"></span>' + esc(tableName) + '<span class="count" id="count-' + tableId + '"></span>';
+        div.onclick = ((t) => () => showTable(t))(tableId);
+        tableList.appendChild(div);
+    }
+
+    // Update counts asynchronously
+    for (var table of tables) {
+        getRecordIdsForTable(table.tableId).then(((tid) => (ids) => {
+            var el = document.getElementById('count-' + tid);
+            if (el) el.textContent = ids.length.toLocaleString();
+        })(table.tableId));
+    }
 }
 
-function updateStatus(msg, synced) {
-    var recordCount = 0;
-    for (var t in DATA) recordCount += Object.keys(DATA[t]).length;
+function updateStatus(msg, isSynced) {
+    var dot = document.getElementById('status-dot');
+    var text = document.getElementById('status-text');
 
-    var tableCount = Object.keys(META_TABLES).length || Object.keys(DATA).length;
-    var base = tableCount + ' tables, ' + recordCount + ' records';
-    if (synced) {
-        base = '<span class="synced">●</span> ' + base + ' — synced to #' + lastEventId;
-    }
-    if (msg) {
-        base = '<span class="loading">' + msg + '</span> ' + base;
-    }
-    document.getElementById('status').innerHTML = base;
+    dot.className = 'status-dot ' + (isSynced ? 'synced' : 'loading');
+    text.textContent = msg;
 }
 
-function formatDuration(ms) {
-    var secs = Math.floor(ms / 1000);
-    if (secs < 60) return secs + 's';
-    var mins = Math.floor(secs / 60);
-    secs = secs % 60;
-    return mins + 'm ' + secs + 's';
-}
-
-function updateSyncProgress(page, eventsLoaded) {
-    var recordCount = 0;
-    for (var t in DATA) recordCount += Object.keys(DATA[t]).length;
-
-    var elapsed = Date.now() - syncStartTime;
-    var rate = eventsLoaded > 0 ? Math.round(eventsLoaded / (elapsed / 1000)) : 0;
-
-    var status = '<span class="loading">Syncing...</span> ';
-    if (syncItemsTotal > 0) {
-        var pct = Math.round(eventsLoaded / syncItemsTotal * 100);
-        status += pct + '% · ';
-    }
-    status += 'Page ' + page + ' · ';
-    status += eventsLoaded.toLocaleString();
-    if (syncItemsTotal > 0) {
-        status += ' / ' + syncItemsTotal.toLocaleString();
-    }
-    status += ' events · ';
-    status += recordCount.toLocaleString() + ' records · ';
-    status += rate.toLocaleString() + ' evt/s · ';
-    status += formatDuration(elapsed);
-
-    document.getElementById('status').innerHTML = status;
-}
-
-function showTable(tableId, viewId) {
+async function showTable(tableId) {
     currentTable = tableId;
-    currentView = viewId;
+    currentPage = 0;
 
-    var tableMeta = META_TABLES[tableId] || {};
-    var tableName = tableMeta.tableName || tableId;
-    var title = tableName;
+    var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
+    var tableName = table.tableName || tableId;
 
-    if (viewId && META_VIEWS[tableId] && META_VIEWS[tableId][viewId]) {
-        title += ' → ' + META_VIEWS[tableId][viewId].viewName;
+    document.getElementById('title').textContent = tableName;
+
+    // Update sidebar
+    document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
+    var activeItem = [...document.querySelectorAll('.table-item')].find(el => el.textContent.includes(tableName));
+    if (activeItem) activeItem.classList.add('active');
+
+    // Load record IDs
+    currentRecordIds = await getRecordIdsForTable(tableId);
+    totalRecords = currentRecordIds.length;
+
+    // Load fields
+    var fields = await getFieldsForTable(tableId);
+    META_FIELDS[tableId] = {};
+    fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
+
+    await renderTable();
+}
+
+async function renderTable() {
+    if (!currentTable) return;
+
+    var tableEl = document.getElementById('table');
+    var pageRecordIds = currentRecordIds.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+    if (pageRecordIds.length === 0) {
+        tableEl.innerHTML = '';
+        document.getElementById('table-container').innerHTML = '<div class="empty-state"><h3>No records</h3><p>This table is empty</p></div>';
+        document.getElementById('pagination').style.display = 'none';
+        return;
     }
 
-    document.getElementById('title').textContent = title;
+    document.getElementById('table-container').innerHTML = '<table id="table"></table>';
+    tableEl = document.getElementById('table');
 
-    // Update sidebar active states
-    renderSidebar();
+    // Get records for current page
+    var records = await getRecordsByIds(currentTable, pageRecordIds);
+    var recordMap = {};
+    records.forEach(r => recordMap[r.recordId] = r.fields || {});
 
-    var records = DATA[tableId] || {};
-    var rids = Object.keys(records);
-
-    // Get columns from field definitions if available
-    var fields = META_FIELDS[tableId] || {};
+    // Get columns
+    var fields = META_FIELDS[currentTable] || {};
     var fieldIds = Object.keys(fields);
 
-    // Build column list: use field definitions for names, fall back to discovering from data
     var colList = [];
-    var colNames = {};  // fieldId/key -> display name
+    var colNames = {};
 
     if (fieldIds.length > 0) {
-        // Use field definitions
-        for (var i = 0; i < fieldIds.length; i++) {
-            var fieldId = fieldIds[i];
-            var field = fields[fieldId];
-            colList.push(fieldId);
-            colNames[fieldId] = field.fieldName || fieldId;
-        }
+        fieldIds.forEach(fid => {
+            colList.push(fid);
+            colNames[fid] = fields[fid].fieldName || fid;
+        });
     } else {
-        // Discover columns from data
+        // Discover from data
         var colSet = {};
-        for (var i = 0; i < rids.length; i++) {
-            var keys = Object.keys(records[rids[i]]);
-            for (var j = 0; j < keys.length; j++) {
-                colSet[keys[j]] = true;
-            }
-        }
+        records.forEach(r => {
+            if (r.fields) Object.keys(r.fields).forEach(k => colSet[k] = true);
+        });
         colList = Object.keys(colSet).sort();
-        for (var i = 0; i < colList.length; i++) {
-            colNames[colList[i]] = colList[i];
-        }
+        colList.forEach(c => colNames[c] = c);
     }
 
     // Build table
-    var html = '<tr><th>recordId</th>';
-    for (var i = 0; i < colList.length; i++) {
-        html += '<th title="' + esc(colList[i]) + '">' + esc(colNames[colList[i]]) + '</th>';
-    }
-    html += '</tr>';
+    var html = '<thead><tr><th>ID</th>';
+    colList.forEach(col => {
+        html += '<th title="' + esc(col) + '">' + esc(colNames[col]) + '</th>';
+    });
+    html += '</tr></thead><tbody>';
 
-    for (var i = 0; i < rids.length; i++) {
-        var rid = rids[i];
-        var row = records[rid];
-        html += '<tr><td>' + esc(rid) + '</td>';
-        for (var j = 0; j < colList.length; j++) {
-            var colKey = colList[j];
-            // Data might be keyed by fieldId or fieldName, try both
-            var value = row[colKey];
-            if (value === undefined && colNames[colKey]) {
-                value = row[colNames[colKey]];
-            }
-            html += '<td>' + fmt(value) + '</td>';
-        }
+    pageRecordIds.forEach(rid => {
+        var row = recordMap[rid] || {};
+        html += '<tr><td>' + esc(rid.slice(-8)) + '</td>';
+        colList.forEach(col => {
+            var value = row[col];
+            if (value === undefined) value = row[colNames[col]];
+            html += '<td>' + formatCell(value) + '</td>';
+        });
         html += '</tr>';
+    });
+
+    html += '</tbody>';
+    tableEl.innerHTML = html;
+
+    // Update pagination
+    updatePagination();
+}
+
+function formatCell(v) {
+    if (v == null || v === '') {
+        return '<span class="cell-empty">—</span>';
     }
 
-    if (rids.length === 0) {
-        html += '<tr><td colspan="' + (colList.length + 1) + '" style="color:#8b949e;text-align:center;">No records</td></tr>';
+    if (Array.isArray(v)) {
+        if (v.length === 0) return '<span class="cell-empty">—</span>';
+
+        // Check if it's an array of objects (linked records, attachments, etc.)
+        if (typeof v[0] === 'object' && v[0] !== null) {
+            var items = v.map(item => {
+                if (item.name) return item.name;
+                if (item.filename) return item.filename;
+                if (item.email) return item.email;
+                if (item.id) return item.id;
+                return JSON.stringify(item).slice(0, 30);
+            });
+            return '<span class="cell-array">' + items.map(i => '<span class="tag">' + esc(i) + '</span>').join('') + '</span>';
+        }
+
+        // Simple array - join with commas
+        return '<span class="cell-array">' + v.map(i => '<span class="tag">' + esc(String(i)) + '</span>').join('') + '</span>';
     }
 
-    document.getElementById('table').innerHTML = html;
+    if (typeof v === 'object') {
+        // Single object
+        if (v.name) return esc(v.name);
+        if (v.filename) return esc(v.filename);
+        if (v.email) return esc(v.email);
+        if (v.url) return '<a class="cell-link" href="' + esc(v.url) + '" target="_blank">' + esc(v.url.slice(0, 40)) + '</a>';
+        return esc(JSON.stringify(v).slice(0, 50));
+    }
+
+    if (typeof v === 'boolean') {
+        return '<span class="cell-bool ' + v + '">' + (v ? 'Yes' : 'No') + '</span>';
+    }
+
+    if (typeof v === 'number') {
+        return '<span class="cell-number">' + v.toLocaleString() + '</span>';
+    }
+
+    // String - check for URLs
+    var str = String(v);
+    if (str.startsWith('http://') || str.startsWith('https://')) {
+        return '<a class="cell-link" href="' + esc(str) + '" target="_blank">' + esc(str.slice(0, 50)) + '</a>';
+    }
+
+    return esc(str);
+}
+
+function updatePagination() {
+    var totalPages = Math.ceil(totalRecords / PAGE_SIZE);
+    var start = currentPage * PAGE_SIZE + 1;
+    var end = Math.min((currentPage + 1) * PAGE_SIZE, totalRecords);
+
+    document.getElementById('page-info').textContent = start + '-' + end + ' of ' + totalRecords.toLocaleString();
+    document.getElementById('prev-btn').disabled = currentPage === 0;
+    document.getElementById('next-btn').disabled = currentPage >= totalPages - 1;
+    document.getElementById('pagination').style.display = totalRecords > PAGE_SIZE ? 'flex' : 'none';
+}
+
+function prevPage() {
+    if (currentPage > 0) {
+        currentPage--;
+        renderTable();
+    }
+}
+
+function nextPage() {
+    var totalPages = Math.ceil(totalRecords / PAGE_SIZE);
+    if (currentPage < totalPages - 1) {
+        currentPage++;
+        renderTable();
+    }
 }
 
 // ============ API ============
 
 async function fetchPage(page, afterId) {
     var url = API + '?page=' + page + '&per_page=500';
-    if (API_KEY) {
-        url += '&apiKey=' + encodeURIComponent(API_KEY);
-    }
-    if (afterId) {
-        url += '&id=' + afterId;
-    }
-    if (SET_FILTER) {
-        url += '&set=' + encodeURIComponent(SET_FILTER);
-    }
-    if (RECORD_FILTER) {
-        url += '&recordId=' + encodeURIComponent(RECORD_FILTER);
-    }
-    console.log('Fetching page', page, afterId ? '(after id #' + afterId + ')' : '');
+    if (API_KEY) url += '&apiKey=' + encodeURIComponent(API_KEY);
+    if (afterId) url += '&id=' + afterId;
+    if (SET_FILTER) url += '&set=' + encodeURIComponent(SET_FILTER);
 
     var res = await fetch(url);
 
-    console.log('Response status:', res.status);
-
     if (res.status === 401 || res.status === 403) {
-        throw new Error('AUTH');
+        throw new Error('Invalid API key');
     }
 
-    var text = await res.text();
-    console.log('Response length:', text.length, 'chars');
-
-    if (!text || text.length === 0) {
-        throw new Error('Empty response from server');
-    }
-
-    var data;
-    try {
-        data = JSON.parse(text);
-    } catch (e) {
-        console.error('JSON parse failed:', text.slice(0, 500));
-        throw new Error('Invalid JSON: ' + e.message);
-    }
+    var data = await res.json();
 
     if (!res.ok) {
         throw new Error(data.message || data.error || 'HTTP ' + res.status);
     }
 
-    if (data && data.error) {
-        throw new Error(data.error);
-    }
-
-    // Handle both array and paginated response formats
     var events = Array.isArray(data) ? data : (data.items || data.data || []);
     var hasMore = Array.isArray(data) ? events.length >= 500 : !!data.nextPage;
     var nextPage = Array.isArray(data) ? page + 1 : data.nextPage;
-
-    console.log('Got', events.length, 'events, hasMore:', hasMore);
 
     return { events, hasMore, nextPage };
 }
 
 async function fullSync() {
-    syncStartTime = Date.now();
-    var eventsLoaded = 0;
     var page = 1;
+    var eventsLoaded = 0;
 
     while (true) {
-        updateSyncProgress(page, eventsLoaded);
+        updateStatus('Syncing page ' + page + '...', false);
 
         var result = await fetchPage(page, null);
-        var events = result.events;
+        if (!result.events || result.events.length === 0) break;
 
-        if (!events || events.length === 0) break;
+        eventsLoaded += result.events.length;
+        result.events.sort((a, b) => (a.id || 0) - (b.id || 0));
 
-        eventsLoaded += events.length;
+        await processEvents(result.events);
 
-        // Sort by id ascending
-        events.sort((a, b) => (a.id || 0) - (b.id || 0));
-
-        var changed = processEvents(events);
-        if (changed.length > 0) {
-            await saveRecords(changed);
+        // Update UI periodically
+        if (page % 5 === 0) {
+            await renderSidebar();
         }
-
-        renderSidebar();
-        if (currentTable) showTable(currentTable, currentView);
-
-        updateSyncProgress(page, eventsLoaded);
 
         if (!result.hasMore) break;
         page = result.nextPage || page + 1;
-
-        if (page > 500) break; // Safety limit
+        if (page > 500) break;
     }
 
-    await setMeta('lastEventId', lastEventId);
-
-    var elapsed = formatDuration(Date.now() - syncStartTime);
-    console.log('Full sync complete:', eventsLoaded, 'events in', elapsed);
+    await setSyncMeta('lastEventId', lastEventId);
+    updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true);
 }
 
 async function incrementalSync() {
     try {
-        updateStatus('Checking for updates... ', true);
+        updateStatus('Checking for updates...', false);
 
-        // Fetch events where id > lastEventId
         var result = await fetchPage(1, lastEventId);
-        var events = result.events;
 
-        if (events && events.length > 0) {
-            events.sort((a, b) => (a.id || 0) - (b.id || 0));
+        if (result.events && result.events.length > 0) {
+            result.events.sort((a, b) => (a.id || 0) - (b.id || 0));
+            await processEvents(result.events);
+            await setSyncMeta('lastEventId', lastEventId);
 
-            var changed = processEvents(events);
-            if (changed.length > 0) {
-                await saveRecords(changed);
-                await setMeta('lastEventId', lastEventId);
-
-                renderSidebar();
-                if (currentTable) showTable(currentTable, currentView);
-
-                console.log('Synced', events.length, 'new events, now at id #' + lastEventId);
-            }
-
-            // Fetch more pages if available
-            while (result.hasMore) {
-                result = await fetchPage(result.nextPage, lastEventId);
-                events = result.events;
-                if (events && events.length > 0) {
-                    events.sort((a, b) => (a.id || 0) - (b.id || 0));
-                    changed = processEvents(events);
-                    if (changed.length > 0) {
-                        await saveRecords(changed);
-                        await setMeta('lastEventId', lastEventId);
-                        renderSidebar();
-                        if (currentTable) showTable(currentTable, currentView);
-                    }
-                }
+            await renderSidebar();
+            if (currentTable) {
+                currentRecordIds = await getRecordIdsForTable(currentTable);
+                totalRecords = currentRecordIds.length;
+                await renderTable();
             }
         }
 
-        updateStatus(null, true);
+        updateStatus('Up to date', true);
     } catch (err) {
         console.error('Sync error:', err);
         updateStatus('Sync error: ' + err.message, false);
@@ -920,151 +832,48 @@ async function incrementalSync() {
 async function init() {
     META_TABLES = {};
     META_FIELDS = {};
-    META_VIEWS = {};
-    DATA = {};
     currentTable = null;
-    currentView = null;
-    totalEvents = 0;
+    currentPage = 0;
+    currentRecordIds = [];
+    totalRecords = 0;
     lastEventId = 0;
-    syncItemsTotal = 0;
-    document.getElementById('sidebar').innerHTML = '';
-    document.getElementById('table').innerHTML = '';
-    document.getElementById('title').textContent = 'Select a table';
 
-    try {
-        db = await openDB();
+    db = await openDB();
 
-        // Load local state
-        var localRecords = await getAllRecords();
-        var storedLastId = await getMeta('lastEventId');
+    var storedLastId = await getSyncMeta('lastEventId');
+    var tables = await getAllTables();
 
-        if (localRecords.length > 0) {
-            updateStatus('Loading from cache... ', false);
-            loadFromLocal(localRecords);
-            lastEventId = storedLastId || 0;
+    // Load table metadata into memory
+    tables.forEach(t => META_TABLES[t.tableId] = t);
 
-            var names = renderSidebar();
-            if (names.length > 0) showTable(names[0], null);
+    hideAuthScreen();
+    await renderSidebar();
 
-            hideAuthScreen();
-
-            // Incremental sync
-            await incrementalSync();
-        } else {
-            // First load — do full sync
-            hideAuthScreen();
-            await fullSync();
+    if (tables.length > 0) {
+        lastEventId = storedLastId || 0;
+        await showTable(tables[0].tableId);
+        await incrementalSync();
+    } else {
+        await fullSync();
+        await renderSidebar();
+        var newTables = await getAllTables();
+        if (newTables.length > 0) {
+            await showTable(newTables[0].tableId);
         }
-
-        updateStatus(null, true);
-
-        // Start polling
-        if (pollInterval) clearInterval(pollInterval);
-        pollInterval = setInterval(incrementalSync, 60000);
-
-    } catch (err) {
-        console.error('Init error:', err);
-        showAuthScreen();
-        showAuthError('Error: ' + err.message);
     }
+
+    updateStatus('Up to date', true);
+
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(incrementalSync, 60000);
 }
 
 function esc(s) {
     if (s == null) return '';
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function fmt(v) {
-    if (v == null) return '<span style="color:#6e7681">—</span>';
-    if (typeof v === 'object') return esc(JSON.stringify(v).slice(0,200));
-    return esc(String(v));
-}
-
-// Show auth screen on load
 initAuthScreen();
-
-// Debug: test specific recordIds
-var DEBUG_RECORDS = [
-    'rec00ORjAj01dmUyW',
-    'rec00TJLBT06tDdn4',
-    'rec00VYwwhAwgX6cO',
-    'rec00ydJe0zXIL8Kd',
-    'rec01F5KmIcbKfnlv',
-    'rec01gXPN7CkqjBQO',
-    'rec028b2iBjFqDMvZ',
-    'rec02fFCwBn3Qr1Ut',
-    'rec02gBtgOTB6dS0B',
-    'rec02jHerKlqdxVMO',
-    'rec02zqECdi0QAcDd',
-    'rec039Y5fw0GJYNsv',
-    'rec03G8q4tTQ9Ztnp'
-];
-
-async function debugFetch() {
-    API_KEY = document.getElementById('api-key-input').value.trim() || null;
-    SET_FILTER = document.getElementById('set-filter-input').value.trim() || null;
-    RECORD_FILTER = document.getElementById('record-filter-input').value.trim() || null;
-
-    console.log('=== DEBUG FETCH ===');
-    console.log('API:', API);
-    console.log('API Key:', API_KEY ? API_KEY.slice(0,8) + '...' : '(none)');
-    console.log('Set filter:', SET_FILTER || '(none)');
-    console.log('RecordId filter:', RECORD_FILTER || '(none)');
-
-    try {
-        var url = API + '?page=1&per_page=10';
-        if (API_KEY) {
-            url += '&apiKey=' + encodeURIComponent(API_KEY);
-        }
-        if (SET_FILTER) {
-            url += '&set=' + encodeURIComponent(SET_FILTER);
-        }
-        if (RECORD_FILTER) {
-            url += '&recordId=' + encodeURIComponent(RECORD_FILTER);
-        }
-        console.log('Fetching:', url.replace(API_KEY || '', '***'));
-
-        var res = await fetch(url);
-        console.log('Status:', res.status);
-
-        var text = await res.text();
-        console.log('Response length:', text.length, 'chars');
-        console.log('Raw response:', text.slice(0, 2000));
-
-        var data;
-        try {
-            data = JSON.parse(text);
-        } catch (e) {
-            console.error('JSON parse error:', e);
-            return;
-        }
-
-        console.log('Response type:', Array.isArray(data) ? 'array' : 'object');
-        console.log('Keys:', Object.keys(data));
-
-        var events = Array.isArray(data) ? data : (data.items || data.data || []);
-        console.log('Events count:', events.length);
-
-        if (events.length > 0) {
-            console.log('First event:', events[0]);
-            console.log('Last event:', events[events.length - 1]);
-        }
-
-        // Look for debug records
-        var found = events.filter(e => DEBUG_RECORDS.includes(e.recordId));
-        console.log('Found debug records:', found.length);
-        if (found.length > 0) {
-            console.log('Found:', found);
-        }
-
-    } catch (err) {
-        console.error('Debug fetch error:', err);
-    }
-}
-
-// Run debug on load after a short delay
-// Or call debugFetch() from console
-console.log('Call debugFetch() to test API');
     </script>
 </body>
 </html>
