@@ -329,6 +329,191 @@
 
         /* View-specific toolbar wrapper */
         .toolbar-views { display: flex; align-items: center; gap: 8px; position: relative; }
+
+        /* Initial Loading Overlay */
+        #loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(135deg, #1d1f25 0%, #2d3748 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+        #loading-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+        .loading-content {
+            text-align: center;
+            max-width: 400px;
+            padding: 40px;
+        }
+        .loading-logo {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 24px;
+            position: relative;
+        }
+        .loading-logo-inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #2d6cdf 0%, #7c3aed 100%);
+            animation: pulse-glow 2s ease-in-out infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            color: white;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(45, 108, 223, 0.4); transform: scale(1); }
+            50% { box-shadow: 0 0 40px rgba(124, 58, 237, 0.6); transform: scale(1.05); }
+        }
+        .loading-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        .loading-subtitle {
+            font-size: 14px;
+            color: #a0aec0;
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+        .loading-progress-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .loading-progress-bar {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+        .loading-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2d6cdf, #7c3aed, #2d6cdf);
+            background-size: 200% 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            animation: shimmer-progress 1.5s linear infinite;
+        }
+        @keyframes shimmer-progress {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .loading-status {
+            font-size: 13px;
+            color: #e2e8f0;
+            margin-bottom: 4px;
+        }
+        .loading-detail {
+            font-size: 12px;
+            color: #718096;
+            font-family: "SF Mono", Monaco, monospace;
+        }
+        .loading-facts {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .loading-fact {
+            text-align: center;
+        }
+        .loading-fact-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1;
+        }
+        .loading-fact-label {
+            font-size: 11px;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+        .loading-note {
+            font-size: 12px;
+            color: #4a5568;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px 16px;
+            border-radius: 8px;
+            border-left: 3px solid #2d6cdf;
+        }
+        .loading-note strong {
+            color: #a0aec0;
+        }
+        /* Floating particles animation */
+        .loading-particles {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: rgba(45, 108, 223, 0.3);
+            border-radius: 50%;
+            animation: float-up 8s ease-in-out infinite;
+        }
+        .particle:nth-child(1) { left: 10%; animation-delay: 0s; }
+        .particle:nth-child(2) { left: 20%; animation-delay: 1s; }
+        .particle:nth-child(3) { left: 30%; animation-delay: 2s; }
+        .particle:nth-child(4) { left: 40%; animation-delay: 3s; }
+        .particle:nth-child(5) { left: 50%; animation-delay: 4s; }
+        .particle:nth-child(6) { left: 60%; animation-delay: 5s; }
+        .particle:nth-child(7) { left: 70%; animation-delay: 6s; }
+        .particle:nth-child(8) { left: 80%; animation-delay: 7s; }
+        .particle:nth-child(9) { left: 90%; animation-delay: 0.5s; }
+        .particle:nth-child(10) { left: 15%; animation-delay: 2.5s; }
+        @keyframes float-up {
+            0%, 100% { transform: translateY(100vh) scale(0); opacity: 0; }
+            10% { opacity: 1; transform: translateY(90vh) scale(1); }
+            90% { opacity: 1; transform: translateY(10vh) scale(1); }
+            100% { transform: translateY(0) scale(0); opacity: 0; }
+        }
+
+        /* Refresh indicator for incremental syncs */
+        .refresh-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #999;
+            padding: 2px 8px;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+        .refresh-indicator.syncing {
+            color: #2d6cdf;
+            background: rgba(45, 108, 223, 0.1);
+        }
+        .refresh-indicator .refresh-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #999;
+            transition: all 0.3s;
+        }
+        .refresh-indicator.syncing .refresh-dot {
+            background: #2d6cdf;
+            animation: pulse-dot 1s ease-in-out infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.5; }
+        }
     </style>
 </head>
 <body>
@@ -342,6 +527,56 @@
             <button id="auth-submit">Connect</button>
             <button id="auth-clear" class="secondary hidden">Clear Local Data</button>
             <div id="auth-info" class="auth-info"></div>
+        </div>
+    </div>
+
+    <!-- Initial Data Loading Overlay -->
+    <div id="loading-overlay" class="hidden">
+        <div class="loading-particles">
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+        </div>
+        <div class="loading-content">
+            <div class="loading-logo">
+                <div class="loading-logo-inner">A</div>
+            </div>
+            <h1 class="loading-title">Setting Up Your Workspace</h1>
+            <p class="loading-subtitle">We're downloading your data to this device for lightning-fast access.</p>
+
+            <div class="loading-facts">
+                <div class="loading-fact">
+                    <div class="loading-fact-value" id="loading-tables">0</div>
+                    <div class="loading-fact-label">Tables</div>
+                </div>
+                <div class="loading-fact">
+                    <div class="loading-fact-value" id="loading-fields">0</div>
+                    <div class="loading-fact-label">Fields</div>
+                </div>
+                <div class="loading-fact">
+                    <div class="loading-fact-value" id="loading-records">0</div>
+                    <div class="loading-fact-label">Records</div>
+                </div>
+            </div>
+
+            <div class="loading-progress-container">
+                <div class="loading-progress-bar">
+                    <div class="loading-progress-fill" id="loading-progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="loading-status" id="loading-status">Connecting to server...</div>
+                <div class="loading-detail" id="loading-detail">Page 1</div>
+            </div>
+
+            <div class="loading-note">
+                <strong>One-time setup:</strong> This only happens once per device. After this, your data loads instantly from local storage.
+            </div>
         </div>
     </div>
 
@@ -525,6 +760,11 @@
                     <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
                 </div>
                 <span id="status-detail" style="color: #999; font-size: 11px;"></span>
+                <span style="flex: 1;"></span>
+                <span class="refresh-indicator" id="refresh-indicator">
+                    <span class="refresh-dot"></span>
+                    <span id="last-refresh-text">Auto-refresh in 60s</span>
+                </span>
             </div>
             <div class="table-container" id="table-container">
                 <table id="table"></table>
@@ -1600,6 +1840,73 @@ function updateStatus(msg, isSynced, progress, detail) {
     statusDetail.textContent = detail || '';
 }
 
+// ============ Loading Overlay ============
+
+var refreshCountdownInterval = null;
+var lastSyncTime = null;
+
+function showLoadingOverlay() {
+    var overlay = document.getElementById('loading-overlay');
+    overlay.classList.remove('hidden');
+}
+
+function hideLoadingOverlay() {
+    var overlay = document.getElementById('loading-overlay');
+    overlay.classList.add('hidden');
+}
+
+function updateLoadingOverlay(status, detail, progress, tables, fields, records) {
+    var statusEl = document.getElementById('loading-status');
+    var detailEl = document.getElementById('loading-detail');
+    var progressEl = document.getElementById('loading-progress-fill');
+    var tablesEl = document.getElementById('loading-tables');
+    var fieldsEl = document.getElementById('loading-fields');
+    var recordsEl = document.getElementById('loading-records');
+
+    if (statusEl) statusEl.textContent = status || 'Loading...';
+    if (detailEl) detailEl.textContent = detail || '';
+    if (progressEl) progressEl.style.width = Math.min(100, progress || 0) + '%';
+    if (tablesEl) tablesEl.textContent = (tables || 0).toLocaleString();
+    if (fieldsEl) fieldsEl.textContent = (fields || 0).toLocaleString();
+    if (recordsEl) recordsEl.textContent = (records || 0).toLocaleString();
+}
+
+function setRefreshIndicatorSyncing(isSyncing) {
+    var indicator = document.getElementById('refresh-indicator');
+    var textEl = document.getElementById('last-refresh-text');
+    if (!indicator) return;
+
+    if (isSyncing) {
+        indicator.classList.add('syncing');
+        textEl.textContent = 'Checking for updates...';
+    } else {
+        indicator.classList.remove('syncing');
+        lastSyncTime = Date.now();
+        startRefreshCountdown();
+    }
+}
+
+function startRefreshCountdown() {
+    if (refreshCountdownInterval) clearInterval(refreshCountdownInterval);
+
+    var textEl = document.getElementById('last-refresh-text');
+    if (!textEl) return;
+
+    function updateCountdown() {
+        var elapsed = Math.floor((Date.now() - lastSyncTime) / 1000);
+        var remaining = Math.max(0, 60 - elapsed);
+
+        if (remaining > 0) {
+            textEl.textContent = 'Auto-refresh in ' + remaining + 's';
+        } else {
+            textEl.textContent = 'Refreshing soon...';
+        }
+    }
+
+    updateCountdown();
+    refreshCountdownInterval = setInterval(updateCountdown, 1000);
+}
+
 async function showTable(tableId) {
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
@@ -1954,11 +2261,26 @@ async function fullSync() {
     var viewsFound = 0;
     var recordsFound = 0;
 
+    // Show the loading overlay for initial sync
+    showLoadingOverlay();
+
     while (true) {
         // Show progress with estimates (assume ~50 pages max for progress bar)
         var progressPct = Math.min(95, (page / 50) * 100);
         var detail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
         updateStatus('Syncing page ' + page + '...', false, progressPct, detail);
+
+        // Update the loading overlay
+        var statusMessages = [
+            'Fetching your data...',
+            'Building your workspace...',
+            'Organizing records...',
+            'Almost there...',
+            'Processing data...',
+            'Loading tables...'
+        ];
+        var statusMsg = statusMessages[page % statusMessages.length];
+        updateLoadingOverlay(statusMsg, 'Page ' + page, progressPct, tablesFound, fieldsFound, recordsFound);
 
         var result = await fetchPage(page, null);
         if (!result.events || result.events.length === 0) break;
@@ -1997,6 +2319,13 @@ async function fullSync() {
         if (page > 500) break;
     }
 
+    // Final update and hide overlay
+    updateLoadingOverlay('Setup complete!', eventsLoaded.toLocaleString() + ' events synced', 100, tablesFound, fieldsFound, recordsFound);
+
+    // Brief pause to show completion before hiding
+    await new Promise(resolve => setTimeout(resolve, 500));
+    hideLoadingOverlay();
+
     await setSyncMeta('lastEventId', lastEventId);
     var finalDetail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
     updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
@@ -2004,6 +2333,8 @@ async function fullSync() {
 
 async function incrementalSync() {
     try {
+        // Show syncing indicator
+        setRefreshIndicatorSyncing(true);
         updateStatus('Checking for updates...', false, null, null);
 
         var result = await fetchPage(1, lastEventId);
@@ -2029,9 +2360,13 @@ async function incrementalSync() {
         } else {
             updateStatus('Up to date', true, null, null);
         }
+
+        // Reset indicator and start countdown
+        setRefreshIndicatorSyncing(false);
     } catch (err) {
         console.error('Sync error:', err);
         updateStatus('Sync error: ' + err.message, false, null, null);
+        setRefreshIndicatorSyncing(false);
     }
 }
 
@@ -2090,6 +2425,10 @@ async function init() {
     }
 
     updateStatus('Up to date', true, null, null);
+
+    // Start the refresh indicator countdown
+    lastSyncTime = Date.now();
+    startRefreshCountdown();
 
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(incrementalSync, 60000);
