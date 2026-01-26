@@ -102,6 +102,30 @@
         /* Table loading indicator */
         .table-loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
         .table-container { position: relative; }
+
+        /* Views in sidebar */
+        .table-group { }
+        .table-group.expanded .view-list { display: block; }
+        .table-group .view-list { display: none; }
+        .table-item .expand-icon { margin-left: 4px; font-size: 10px; color: #666; transition: transform 0.2s; }
+        .table-group.expanded .table-item .expand-icon { transform: rotate(90deg); }
+        .view-item { padding: 6px 16px 6px 40px; cursor: pointer; font-size: 12px; color: #999; display: flex; align-items: center; gap: 6px; }
+        .view-item:hover { background: #2d2f36; color: #ccc; }
+        .view-item.active { background: #1e5bb5; color: #fff; }
+        .view-icon { width: 12px; height: 12px; border: 1px solid currentColor; border-radius: 2px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 8px; }
+
+        /* Fields dropdown */
+        .fields-dropdown { position: relative; }
+        .fields-menu { position: absolute; top: 100%; right: 0; margin-top: 4px; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 240px; max-height: 400px; overflow-y: auto; z-index: 100; display: none; }
+        .fields-menu.open { display: block; }
+        .fields-menu-header { padding: 12px; border-bottom: 1px solid #eee; font-weight: 500; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+        .fields-menu-header .toggle-all { font-size: 11px; color: #2d6cdf; cursor: pointer; }
+        .fields-menu-header .toggle-all:hover { text-decoration: underline; }
+        .field-toggle { padding: 8px 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+        .field-toggle:hover { background: #f5f5f5; }
+        .field-toggle input { width: 16px; height: 16px; cursor: pointer; }
+        .field-toggle label { flex: 1; cursor: pointer; }
+        .field-toggle .field-type { font-size: 11px; color: #999; }
     </style>
 </head>
 <body>
@@ -128,6 +152,10 @@
     <div class="main">
         <div class="toolbar">
             <h1 id="title">Select a table</h1>
+            <div class="fields-dropdown" id="fields-dropdown">
+                <button class="btn" onclick="toggleFieldsMenu()">Fields</button>
+                <div class="fields-menu" id="fields-menu"></div>
+            </div>
             <button class="btn" onclick="manualSync()">Sync</button>
             <button class="btn" onclick="logout()">Logout</button>
         </div>
@@ -152,7 +180,7 @@
     <script>
 var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
 var DB_NAME = 'aminostream';
-var DB_VERSION = 2;
+var DB_VERSION = 3;
 var PAGE_SIZE = 100;
 
 var API_KEY = null;
@@ -162,8 +190,10 @@ var db = null;
 // Only keep lightweight metadata in memory
 var META_TABLES = {};
 var META_FIELDS = {};
+var META_VIEWS = {};
 
 var currentTable = null;
+var currentView = null;
 var currentPage = 0;
 var currentRecordIds = [];
 var totalRecords = 0;
@@ -198,6 +228,12 @@ function openDB() {
             // Field metadata: keyed by [tableId, fieldId]
             var fieldStore = db.createObjectStore('fields', { keyPath: ['tableId', 'fieldId'] });
             fieldStore.createIndex('by_table', 'tableId');
+
+            // View metadata: keyed by [tableId, viewId]
+            if (!db.objectStoreNames.contains('views')) {
+                var viewStore = db.createObjectStore('views', { keyPath: ['tableId', 'viewId'] });
+                viewStore.createIndex('by_table', 'tableId');
+            }
 
             // Sync state
             db.createObjectStore('sync', { keyPath: 'key' });
@@ -304,12 +340,14 @@ function saveDataRecord(record) {
     });
 }
 
-function saveBatch(tables, fields, dataRecords) {
+function saveBatch(tables, fields, dataRecords, views) {
     return new Promise((resolve, reject) => {
+        views = views || [];
         var stores = [];
         if (tables.length) stores.push('tables');
         if (fields.length) stores.push('fields');
         if (dataRecords.length) stores.push('data');
+        if (views.length && db.objectStoreNames.contains('views')) stores.push('views');
         if (!stores.length) return resolve();
 
         var tx = db.transaction(stores, 'readwrite');
@@ -317,6 +355,9 @@ function saveBatch(tables, fields, dataRecords) {
         tables.forEach(t => tx.objectStore('tables').put(t));
         fields.forEach(f => tx.objectStore('fields').put(f));
         dataRecords.forEach(d => tx.objectStore('data').put(d));
+        if (views.length && db.objectStoreNames.contains('views')) {
+            views.forEach(v => tx.objectStore('views').put(v));
+        }
 
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -325,13 +366,47 @@ function saveBatch(tables, fields, dataRecords) {
 
 function clearAllData() {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction(['data', 'tables', 'fields', 'sync'], 'readwrite');
+        var stores = ['data', 'tables', 'fields', 'sync'];
+        if (db.objectStoreNames.contains('views')) stores.push('views');
+        var tx = db.transaction(stores, 'readwrite');
         tx.objectStore('data').clear();
         tx.objectStore('tables').clear();
         tx.objectStore('fields').clear();
+        if (db.objectStoreNames.contains('views')) tx.objectStore('views').clear();
         tx.objectStore('sync').clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
+    });
+}
+
+function getViewsForTable(tableId) {
+    return new Promise((resolve, reject) => {
+        if (!db.objectStoreNames.contains('views')) return resolve([]);
+        var tx = db.transaction('views', 'readonly');
+        var index = tx.objectStore('views').index('by_table');
+        var req = index.getAll(tableId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function saveView(view) {
+    return new Promise((resolve, reject) => {
+        if (!db.objectStoreNames.contains('views')) return resolve();
+        var tx = db.transaction('views', 'readwrite');
+        tx.objectStore('views').put(view);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function getAllViews() {
+    return new Promise((resolve, reject) => {
+        if (!db.objectStoreNames.contains('views')) return resolve([]);
+        var tx = db.transaction('views', 'readonly');
+        var req = tx.objectStore('views').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
     });
 }
 
@@ -464,6 +539,7 @@ async function processEvents(events) {
 
     var tables = [];
     var fields = [];
+    var views = [];
     var dataRecords = [];
     var tableDataMap = {}; // tableId -> { recordId -> fields }
 
@@ -498,7 +574,17 @@ async function processEvents(events) {
             META_FIELDS[tableId][fieldId] = fieldData;
 
         } else if (recordType === 'view') {
-            // Skip views for now
+            var tableId = setName.replace('airtable:', '');
+            var viewId = recordId;
+            var viewData = { tableId, viewId };
+            applyPayloadFields(viewData, payload);
+            if (payload.viewName) viewData.viewName = payload.viewName;
+            if (payload.viewType) viewData.viewType = payload.viewType;
+            // Initialize hiddenFields if not present (for local customization)
+            if (!viewData.hiddenFields) viewData.hiddenFields = [];
+            views.push(viewData);
+            if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+            META_VIEWS[tableId][viewId] = viewData;
 
         } else {
             // Data record
@@ -538,8 +624,8 @@ async function processEvents(events) {
     }
 
     // Save batch
-    if (tables.length || fields.length || dataRecords.length) {
-        await saveBatch(tables, fields, dataRecords);
+    if (tables.length || fields.length || dataRecords.length || views.length) {
+        await saveBatch(tables, fields, dataRecords, views);
     }
 }
 
@@ -560,6 +646,7 @@ async function renderSidebar() {
     tableList.innerHTML = '';
 
     var tables = await getAllTables();
+    var allViews = await getAllViews();
 
     // Also get tables from META_TABLES (in-memory from current session)
     for (var tid in META_TABLES) {
@@ -568,17 +655,69 @@ async function renderSidebar() {
         }
     }
 
+    // Also get views from META_VIEWS
+    for (var tid in META_VIEWS) {
+        for (var vid in META_VIEWS[tid]) {
+            if (!allViews.find(v => v.viewId === vid)) {
+                allViews.push(META_VIEWS[tid][vid]);
+            }
+        }
+    }
+
     tables.sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
 
     for (var table of tables) {
         var tableId = table.tableId;
         var tableName = table.tableName || tableId;
+        var tableViews = allViews.filter(v => v.tableId === tableId);
+        tableViews.sort((a, b) => (a.viewName || a.viewId).localeCompare(b.viewName || b.viewId));
 
+        var hasViews = tableViews.length > 0;
+        var isExpanded = currentTable === tableId;
+        var isTableActive = currentTable === tableId && !currentView;
+
+        // Create table group container
+        var group = document.createElement('div');
+        group.className = 'table-group' + (isExpanded ? ' expanded' : '');
+        group.dataset.tableId = tableId;
+
+        // Table item
         var div = document.createElement('div');
-        div.className = 'table-item' + (tableId === currentTable ? ' active' : '');
-        div.innerHTML = '<span class="table-icon"></span>' + esc(tableName) + '<span class="count" id="count-' + tableId + '"></span>';
-        div.onclick = ((t) => () => showTable(t))(tableId);
-        tableList.appendChild(div);
+        div.className = 'table-item' + (isTableActive ? ' active' : '');
+        var expandIcon = hasViews ? '<span class="expand-icon">&#9654;</span>' : '';
+        div.innerHTML = '<span class="table-icon"></span>' + esc(tableName) + expandIcon + '<span class="count" id="count-' + tableId + '"></span>';
+        div.onclick = ((t, hasV) => (e) => {
+            e.stopPropagation();
+            if (hasV) {
+                // Toggle expand/collapse
+                var grp = document.querySelector('.table-group[data-table-id="' + t + '"]');
+                if (grp) grp.classList.toggle('expanded');
+            }
+            showTable(t, null);
+        })(tableId, hasViews);
+        group.appendChild(div);
+
+        // View list
+        if (hasViews) {
+            var viewList = document.createElement('div');
+            viewList.className = 'view-list';
+
+            for (var view of tableViews) {
+                var viewDiv = document.createElement('div');
+                viewDiv.className = 'view-item' + (currentView === view.viewId ? ' active' : '');
+                var viewIcon = getViewIcon(view.viewType);
+                viewDiv.innerHTML = '<span class="view-icon">' + viewIcon + '</span>' + esc(view.viewName || view.viewId);
+                viewDiv.onclick = ((t, v) => (e) => {
+                    e.stopPropagation();
+                    showTable(t, v);
+                })(tableId, view.viewId);
+                viewList.appendChild(viewDiv);
+            }
+
+            group.appendChild(viewList);
+        }
+
+        tableList.appendChild(group);
     }
 
     // Update counts asynchronously
@@ -587,6 +726,17 @@ async function renderSidebar() {
             var el = document.getElementById('count-' + tid);
             if (el) el.textContent = ids.length.toLocaleString();
         })(table.tableId));
+    }
+}
+
+function getViewIcon(viewType) {
+    switch (viewType) {
+        case 'grid': return '&#9638;';
+        case 'calendar': return '&#128197;';
+        case 'gallery': return '&#9638;';
+        case 'kanban': return '&#9638;';
+        case 'form': return '&#9638;';
+        default: return '&#9638;';
     }
 }
 
@@ -610,19 +760,46 @@ function updateStatus(msg, isSynced, progress, detail) {
     statusDetail.textContent = detail || '';
 }
 
-async function showTable(tableId) {
+async function showTable(tableId, viewId) {
     currentTable = tableId;
+    currentView = viewId || null;
     currentPage = 0;
 
     var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
     var tableName = table.tableName || tableId;
 
-    document.getElementById('title').textContent = tableName;
+    // Get view name if a view is selected
+    var viewName = null;
+    if (currentView) {
+        var view = (META_VIEWS[tableId] && META_VIEWS[tableId][currentView]) ||
+                   (await getViewsForTable(tableId)).find(v => v.viewId === currentView);
+        if (view) viewName = view.viewName;
+    }
+
+    var title = viewName ? tableName + ' / ' + viewName : tableName;
+    document.getElementById('title').textContent = title;
 
     // Update sidebar
     document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
-    var activeItem = [...document.querySelectorAll('.table-item')].find(el => el.textContent.includes(tableName));
-    if (activeItem) activeItem.classList.add('active');
+    document.querySelectorAll('.view-item').forEach(el => el.classList.remove('active'));
+
+    if (currentView) {
+        // Highlight the active view
+        var viewItems = document.querySelectorAll('.view-item');
+        viewItems.forEach(el => {
+            if (el.textContent.includes(viewName)) el.classList.add('active');
+        });
+        // Expand the table group
+        var grp = document.querySelector('.table-group[data-table-id="' + tableId + '"]');
+        if (grp) grp.classList.add('expanded');
+    } else {
+        // Highlight the table
+        var grp = document.querySelector('.table-group[data-table-id="' + tableId + '"]');
+        if (grp) {
+            var tableItem = grp.querySelector('.table-item');
+            if (tableItem) tableItem.classList.add('active');
+        }
+    }
 
     // Show loading state immediately
     showTableLoading('Loading table structure...');
@@ -632,8 +809,16 @@ async function showTable(tableId) {
     META_FIELDS[tableId] = {};
     fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
 
+    // Load views for this table
+    var views = await getViewsForTable(tableId);
+    META_VIEWS[tableId] = {};
+    views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+
     // Show table headers immediately with skeleton rows (even before data loads)
     renderTableHeaders();
+
+    // Update Fields menu
+    renderFieldsMenu();
 
     // Update status (don't overwrite table headers with loading spinner)
     updateStatus('Loading records...', false, null, null);
@@ -658,6 +843,7 @@ function renderTableHeaders() {
     var container = document.getElementById('table-container');
     var fields = META_FIELDS[currentTable] || {};
     var fieldIds = Object.keys(fields);
+    var hiddenFields = getHiddenFields();
 
     if (fieldIds.length === 0) {
         // No fields yet, show loading
@@ -667,6 +853,8 @@ function renderTableHeaders() {
     var colList = [];
     var colNames = {};
     fieldIds.forEach(fid => {
+        // Skip hidden fields
+        if (hiddenFields.includes(fid)) return;
         colList.push(fid);
         colNames[fid] = fields[fid].fieldName || fid;
     });
@@ -696,6 +884,7 @@ async function renderTable() {
 
     var tableEl = document.getElementById('table');
     var pageRecordIds = currentRecordIds.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+    var hiddenFields = getHiddenFields();
 
     if (pageRecordIds.length === 0) {
         tableEl.innerHTML = '';
@@ -721,6 +910,8 @@ async function renderTable() {
 
     if (fieldIds.length > 0) {
         fieldIds.forEach(fid => {
+            // Skip hidden fields
+            if (hiddenFields.includes(fid)) return;
             colList.push(fid);
             colNames[fid] = fields[fid].fieldName || fid;
         });
@@ -731,6 +922,8 @@ async function renderTable() {
             if (r.fields) Object.keys(r.fields).forEach(k => colSet[k] = true);
         });
         colList = Object.keys(colSet).sort();
+        // Filter hidden fields even when discovered from data
+        colList = colList.filter(c => !hiddenFields.includes(c));
         colList.forEach(c => colNames[c] = c);
     }
 
@@ -835,6 +1028,122 @@ function nextPage() {
     }
 }
 
+// ============ Field Visibility ============
+
+function getHiddenFields() {
+    if (!currentTable) return [];
+    if (currentView && META_VIEWS[currentTable] && META_VIEWS[currentTable][currentView]) {
+        return META_VIEWS[currentTable][currentView].hiddenFields || [];
+    }
+    // For table-level (no view selected), use a localStorage key
+    var key = 'hiddenFields_' + currentTable;
+    try {
+        return JSON.parse(localStorage.getItem(key)) || [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function setHiddenFields(hiddenFields) {
+    if (!currentTable) return;
+    if (currentView && META_VIEWS[currentTable] && META_VIEWS[currentTable][currentView]) {
+        META_VIEWS[currentTable][currentView].hiddenFields = hiddenFields;
+        // Save to IndexedDB
+        saveView(META_VIEWS[currentTable][currentView]);
+    } else {
+        // Save to localStorage for table-level
+        var key = 'hiddenFields_' + currentTable;
+        localStorage.setItem(key, JSON.stringify(hiddenFields));
+    }
+}
+
+function toggleFieldsMenu() {
+    var menu = document.getElementById('fields-menu');
+    menu.classList.toggle('open');
+
+    // Close when clicking outside
+    if (menu.classList.contains('open')) {
+        setTimeout(() => {
+            document.addEventListener('click', closeFieldsMenuOnClickOutside);
+        }, 0);
+    }
+}
+
+function closeFieldsMenuOnClickOutside(e) {
+    var dropdown = document.getElementById('fields-dropdown');
+    if (!dropdown.contains(e.target)) {
+        document.getElementById('fields-menu').classList.remove('open');
+        document.removeEventListener('click', closeFieldsMenuOnClickOutside);
+    }
+}
+
+function renderFieldsMenu() {
+    var menu = document.getElementById('fields-menu');
+    if (!currentTable) {
+        menu.innerHTML = '<div class="fields-menu-header">No table selected</div>';
+        return;
+    }
+
+    var fields = META_FIELDS[currentTable] || {};
+    var fieldIds = Object.keys(fields);
+    var hiddenFields = getHiddenFields();
+
+    if (fieldIds.length === 0) {
+        menu.innerHTML = '<div class="fields-menu-header">No fields</div>';
+        return;
+    }
+
+    var html = '<div class="fields-menu-header">';
+    html += 'Toggle Fields';
+    html += '<span class="toggle-all" onclick="toggleAllFields()">' + (hiddenFields.length > 0 ? 'Show All' : 'Hide All') + '</span>';
+    html += '</div>';
+
+    fieldIds.forEach(fid => {
+        var field = fields[fid];
+        var isVisible = !hiddenFields.includes(fid);
+        html += '<div class="field-toggle" onclick="toggleFieldVisibility(\'' + fid + '\')">';
+        html += '<input type="checkbox" ' + (isVisible ? 'checked' : '') + ' onclick="event.stopPropagation(); toggleFieldVisibility(\'' + fid + '\')">';
+        html += '<label>' + esc(field.fieldName || fid) + '</label>';
+        if (field.fieldType) {
+            html += '<span class="field-type">' + esc(field.fieldType) + '</span>';
+        }
+        html += '</div>';
+    });
+
+    menu.innerHTML = html;
+}
+
+function toggleFieldVisibility(fieldId) {
+    var hiddenFields = getHiddenFields();
+    var idx = hiddenFields.indexOf(fieldId);
+    if (idx === -1) {
+        hiddenFields.push(fieldId);
+    } else {
+        hiddenFields.splice(idx, 1);
+    }
+    setHiddenFields(hiddenFields);
+    renderFieldsMenu();
+    renderTableHeaders();
+    renderTable();
+}
+
+function toggleAllFields() {
+    var fields = META_FIELDS[currentTable] || {};
+    var fieldIds = Object.keys(fields);
+    var hiddenFields = getHiddenFields();
+
+    if (hiddenFields.length > 0) {
+        // Show all
+        setHiddenFields([]);
+    } else {
+        // Hide all
+        setHiddenFields(fieldIds.slice());
+    }
+    renderFieldsMenu();
+    renderTableHeaders();
+    renderTable();
+}
+
 // ============ API ============
 
 async function fetchPage(page, afterId) {
@@ -897,7 +1206,7 @@ async function fullSync() {
         // If no table is selected but we have tables, show the first one
         if (!currentTable && Object.keys(META_TABLES).length > 0) {
             var firstTable = Object.keys(META_TABLES)[0];
-            await showTable(firstTable);
+            await showTable(firstTable, null);
         } else if (currentTable) {
             // Refresh current table view to show new data
             currentRecordIds = await getRecordIdsForTable(currentTable);
@@ -949,7 +1258,9 @@ async function incrementalSync() {
 async function init() {
     META_TABLES = {};
     META_FIELDS = {};
+    META_VIEWS = {};
     currentTable = null;
+    currentView = null;
     currentPage = 0;
     currentRecordIds = [];
     totalRecords = 0;
@@ -972,7 +1283,7 @@ async function init() {
         await renderSidebar();
 
         lastEventId = storedLastId || 0;
-        await showTable(tables[0].tableId);
+        await showTable(tables[0].tableId, null);
         await incrementalSync();
     } else {
         updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
@@ -981,7 +1292,7 @@ async function init() {
         await renderSidebar();
         var newTables = await getAllTables();
         if (newTables.length > 0) {
-            await showTable(newTables[0].tableId);
+            await showTable(newTables[0].tableId, null);
         }
     }
 
