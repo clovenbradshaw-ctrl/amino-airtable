@@ -18,6 +18,67 @@
         .sidebar div.table-item.active .count { color: rgba(255,255,255,0.7); }
         .table-icon { width: 16px; height: 16px; background: #2d6cdf; border-radius: 3px; flex-shrink: 0; }
 
+        /* Table item with expandable views */
+        .sidebar div.table-item { position: relative; }
+        .sidebar div.table-item .expand-arrow {
+            margin-left: auto;
+            font-size: 10px;
+            color: #666;
+            transition: transform 0.2s;
+            padding: 4px;
+        }
+        .sidebar div.table-item.expanded .expand-arrow { transform: rotate(90deg); }
+        .sidebar div.table-item .count { margin-left: 8px; }
+
+        /* Table views list (expandable) */
+        .table-views-list {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.25s ease-out;
+            background: #16181d;
+        }
+        .table-views-list.expanded {
+            max-height: 500px;
+        }
+        .table-view-item {
+            padding: 6px 16px 6px 44px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #8a8a8a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.15s;
+        }
+        .table-view-item:hover {
+            background: #2d2f36;
+            color: #fff;
+        }
+        .table-view-item.active {
+            background: #1e4fa8;
+            color: #fff;
+        }
+        .table-view-item .view-icon {
+            font-size: 12px;
+            width: 16px;
+            text-align: center;
+            color: #666;
+        }
+        .table-view-item:hover .view-icon,
+        .table-view-item.active .view-icon {
+            color: inherit;
+        }
+        .table-view-item .view-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .table-view-default {
+            color: #666;
+            font-style: italic;
+        }
+
         /* Main content - Airtable light style */
         .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
 
@@ -1606,11 +1667,31 @@ async function renderSidebar() {
         var tableId = table.tableId;
         var tableName = table.tableName || tableId;
 
+        // Create wrapper for table item and its views
+        var wrapper = document.createElement('div');
+        wrapper.className = 'table-wrapper';
+        wrapper.setAttribute('data-table-id', tableId);
+
+        // Create table item
         var div = document.createElement('div');
-        div.className = 'table-item' + (tableId === currentTable ? ' active' : '');
-        div.innerHTML = '<span class="table-icon"></span>' + esc(tableName) + '<span class="count" id="count-' + tableId + '"></span>';
-        div.onclick = ((t) => () => showTable(t))(tableId);
-        tableList.appendChild(div);
+        div.className = 'table-item' + (tableId === currentTable ? ' active expanded' : '');
+        div.innerHTML = '<span class="table-icon"></span>' + esc(tableName) +
+                        '<span class="count" id="count-' + tableId + '"></span>' +
+                        '<span class="expand-arrow">&#9654;</span>';
+        div.onclick = ((t) => (e) => toggleTableViews(t, e))(tableId);
+        wrapper.appendChild(div);
+
+        // Create views list container
+        var viewsList = document.createElement('div');
+        viewsList.className = 'table-views-list' + (tableId === currentTable ? ' expanded' : '');
+        viewsList.id = 'views-list-' + tableId;
+        viewsList.innerHTML = '<div class="table-view-item loading" style="color: #666; font-style: italic;">Loading views...</div>';
+        wrapper.appendChild(viewsList);
+
+        tableList.appendChild(wrapper);
+
+        // Load views for this table asynchronously
+        loadTableViewsAsync(tableId);
     }
 
     // Update counts asynchronously
@@ -1620,6 +1701,128 @@ async function renderSidebar() {
             if (el) el.textContent = ids.length.toLocaleString();
         })(table.tableId));
     }
+}
+
+// Load views for a table and populate the views list
+async function loadTableViewsAsync(tableId) {
+    var viewsList = document.getElementById('views-list-' + tableId);
+    if (!viewsList) return;
+
+    var views = await getViewsForTable(tableId);
+
+    // Cache views in META_VIEWS
+    if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+    views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+
+    var html = '';
+
+    // Add "All Fields" default option first
+    var isDefaultActive = currentTable === tableId && (!currentView || currentView === '_default');
+    html += '<div class="table-view-item' + (isDefaultActive ? ' active' : '') + '" onclick="selectTableView(\'' + esc(tableId) + '\', \'_default\')">' +
+            '<span class="view-icon">&#9638;</span>' +
+            '<span class="view-name table-view-default">All Fields</span>' +
+            '</div>';
+
+    // Add each view
+    var viewIds = Object.keys(META_VIEWS[tableId] || {});
+    for (var vid of viewIds) {
+        if (vid === '_default') continue;
+        var view = META_VIEWS[tableId][vid];
+        var isActive = currentTable === tableId && currentView === vid;
+        var viewName = view.viewName || vid;
+        var viewIcon = getViewTypeIcon(view.viewType);
+
+        html += '<div class="table-view-item' + (isActive ? ' active' : '') + '" onclick="selectTableView(\'' + esc(tableId) + '\', \'' + esc(vid) + '\')">' +
+                '<span class="view-icon">' + viewIcon + '</span>' +
+                '<span class="view-name">' + esc(viewName) + '</span>' +
+                '</div>';
+    }
+
+    viewsList.innerHTML = html;
+}
+
+// Toggle the expanded views list for a table
+function toggleTableViews(tableId, event) {
+    event.stopPropagation();
+
+    var wrapper = document.querySelector('.table-wrapper[data-table-id="' + tableId + '"]');
+    if (!wrapper) return;
+
+    var tableItem = wrapper.querySelector('.table-item');
+    var viewsList = wrapper.querySelector('.table-views-list');
+
+    if (tableItem.classList.contains('expanded')) {
+        // Collapse
+        tableItem.classList.remove('expanded');
+        viewsList.classList.remove('expanded');
+    } else {
+        // Expand
+        tableItem.classList.add('expanded');
+        viewsList.classList.add('expanded');
+    }
+}
+
+// Select a view from the sidebar and show the table
+async function selectTableView(tableId, viewId) {
+    // Update sidebar active states
+    document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.table-view-item').forEach(el => el.classList.remove('active'));
+
+    var wrapper = document.querySelector('.table-wrapper[data-table-id="' + tableId + '"]');
+    if (wrapper) {
+        wrapper.querySelector('.table-item').classList.add('active');
+        // Find and mark the selected view as active
+        var viewItems = wrapper.querySelectorAll('.table-view-item');
+        viewItems.forEach(item => {
+            var onclickAttr = item.getAttribute('onclick') || '';
+            if (onclickAttr.includes("'" + viewId + "'")) {
+                item.classList.add('active');
+            }
+        });
+    }
+
+    // Switch to data view mode
+    if (document.getElementById('schema-view').style.display !== 'none') {
+        toggleMode();
+    }
+
+    // If switching to a different table, load it first
+    if (currentTable !== tableId) {
+        currentTable = tableId;
+        currentPage = 0;
+
+        var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
+        var tableName = table.tableName || tableId;
+        document.getElementById('title').textContent = tableName;
+
+        // Show loading state immediately
+        showTableLoading('Loading table structure...');
+
+        // Load fields first (table structure)
+        var fields = await getFieldsForTable(tableId);
+        META_FIELDS[tableId] = {};
+        fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
+
+        // Load views for this table
+        var views = await getViewsForTable(tableId);
+        META_VIEWS[tableId] = {};
+        views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+
+        // Load record IDs
+        currentRecordIds = await getRecordIdsForTable(tableId);
+        totalRecords = currentRecordIds.length;
+    }
+
+    // Set the current view
+    currentView = viewId;
+
+    // Render view selector and fields dropdown
+    renderViewSelector();
+    renderFieldsDropdown();
+    updateFieldsCount();
+
+    // Render the table
+    await renderTable();
 }
 
 function updateStatus(msg, isSynced, progress, detail) {
@@ -1652,10 +1855,21 @@ async function showTable(tableId) {
 
     document.getElementById('title').textContent = tableName;
 
-    // Update sidebar
+    // Update sidebar - expand the selected table and highlight it
     document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
-    var activeItem = [...document.querySelectorAll('.table-item')].find(el => el.textContent.includes(tableName));
-    if (activeItem) activeItem.classList.add('active');
+    document.querySelectorAll('.table-view-item').forEach(el => el.classList.remove('active'));
+
+    var wrapper = document.querySelector('.table-wrapper[data-table-id="' + tableId + '"]');
+    if (wrapper) {
+        var tableItem = wrapper.querySelector('.table-item');
+        var viewsList = wrapper.querySelector('.table-views-list');
+        if (tableItem) {
+            tableItem.classList.add('active', 'expanded');
+        }
+        if (viewsList) {
+            viewsList.classList.add('expanded');
+        }
+    }
 
     // Show loading state immediately
     showTableLoading('Loading table structure...');
@@ -1679,6 +1893,9 @@ async function showTable(tableId) {
         currentView = '_default';
     }
 
+    // Update the view list to highlight the active view
+    updateSidebarViewActive(tableId, currentView);
+
     // Render view selector and fields dropdown
     renderViewSelector();
     renderFieldsDropdown();
@@ -1696,6 +1913,21 @@ async function showTable(tableId) {
 
     // Now render full table with data
     await renderTable();
+}
+
+// Update the sidebar to highlight the active view
+function updateSidebarViewActive(tableId, viewId) {
+    var wrapper = document.querySelector('.table-wrapper[data-table-id="' + tableId + '"]');
+    if (!wrapper) return;
+
+    var viewItems = wrapper.querySelectorAll('.table-view-item');
+    viewItems.forEach(item => {
+        item.classList.remove('active');
+        var onclickAttr = item.getAttribute('onclick') || '';
+        if (onclickAttr.includes("'" + viewId + "'")) {
+            item.classList.add('active');
+        }
+    });
 }
 
 function showTableLoading(message) {
@@ -2388,6 +2620,11 @@ function renderViewSelector() {
 async function selectView(viewId) {
     currentView = viewId;
     closeAllDropdowns();
+
+    // Update sidebar to reflect the new active view
+    if (currentTable) {
+        updateSidebarViewActive(currentTable, viewId);
+    }
 
     // Render view selector to update current view display
     renderViewSelector();
