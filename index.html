@@ -1563,7 +1563,8 @@ async function selectTableView(tableId, viewId) {
         views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
 
         // Load record IDs
-        currentRecordIds = await getRecordIdsForTable(tableId);
+        originalRecordIds = await getRecordIdsForTable(tableId);
+        currentRecordIds = originalRecordIds.slice();
         totalRecords = currentRecordIds.length;
     }
 
@@ -1683,7 +1684,8 @@ async function showTable(tableId) {
     updateStatus('Loading records...', false, null, null);
 
     // Load record IDs
-    currentRecordIds = await getRecordIdsForTable(tableId);
+    originalRecordIds = await getRecordIdsForTable(tableId);
+    currentRecordIds = originalRecordIds.slice();
     totalRecords = currentRecordIds.length;
 
     // Now render full table with data
@@ -1755,12 +1757,30 @@ function renderTableHeaders() {
 async function renderTable() {
     if (!currentTable) return;
 
+    // Apply filters, search, and sorts
+    var needsFiltering = currentFilters.length > 0 || currentSearchQuery || currentSorts.length > 0;
+    if (needsFiltering) {
+        currentRecordIds = await getFilteredSortedRecords();
+    } else {
+        currentRecordIds = originalRecordIds.slice();
+    }
+    totalRecords = currentRecordIds.length;
+
     var tableEl = document.getElementById('table');
     var pageRecordIds = currentRecordIds.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
+    // Check if we're on a page beyond available data (can happen after filtering)
+    if (pageRecordIds.length === 0 && currentPage > 0) {
+        currentPage = 0;
+        pageRecordIds = currentRecordIds.slice(0, PAGE_SIZE);
+    }
+
     if (pageRecordIds.length === 0) {
         tableEl.innerHTML = '';
-        document.getElementById('table-container').innerHTML = '<div class="empty-state"><h3>No records</h3><p>This table is empty</p></div>';
+        var emptyMsg = (currentFilters.length > 0 || currentSearchQuery)
+            ? '<div class="empty-state"><h3>No matching records</h3><p>Try adjusting your filters or search</p></div>'
+            : '<div class="empty-state"><h3>No records</h3><p>This table is empty</p></div>';
+        document.getElementById('table-container').innerHTML = emptyMsg;
         document.getElementById('pagination').style.display = 'none';
         return;
     }
@@ -1966,7 +1986,8 @@ async function fullSync() {
             await showTable(firstTable);
         } else if (currentTable) {
             // Refresh current table view to show new data
-            currentRecordIds = await getRecordIdsForTable(currentTable);
+            originalRecordIds = await getRecordIdsForTable(currentTable);
+            currentRecordIds = originalRecordIds.slice();
             totalRecords = currentRecordIds.length;
             await renderTable();
         }
@@ -1998,7 +2019,8 @@ async function incrementalSync() {
 
             // Update data view if table is selected
             if (currentTable) {
-                currentRecordIds = await getRecordIdsForTable(currentTable);
+                originalRecordIds = await getRecordIdsForTable(currentTable);
+                currentRecordIds = originalRecordIds.slice();
                 totalRecords = currentRecordIds.length;
                 await renderTable();
             }
@@ -2022,6 +2044,7 @@ async function init() {
     currentTable = null;
     currentPage = 0;
     currentRecordIds = [];
+    originalRecordIds = [];
     totalRecords = 0;
     lastEventId = 0;
 
@@ -2476,6 +2499,149 @@ var currentGroupBy = null;
 var currentColorBy = null;
 var currentRowHeight = 'medium';
 var currentSearchQuery = '';
+
+// Original unfiltered/unsorted record IDs
+var originalRecordIds = [];
+
+// Get cell value from a record for filtering/sorting
+function getCellValue(record, fieldId) {
+    if (!record || !record.fields) return null;
+    var value = record.fields[fieldId];
+    if (value === undefined) {
+        // Try field name lookup
+        var fields = META_FIELDS[currentTable] || {};
+        var fieldName = fields[fieldId]?.fieldName;
+        if (fieldName) value = record.fields[fieldName];
+    }
+    return value;
+}
+
+// Convert value to string for comparison
+function valueToString(value) {
+    if (value == null) return '';
+    if (Array.isArray(value)) {
+        return value.map(v => {
+            if (typeof v === 'object' && v !== null) {
+                return v.name || v.filename || v.email || v.id || JSON.stringify(v);
+            }
+            return String(v);
+        }).join(' ');
+    }
+    if (typeof value === 'object') {
+        return value.name || value.filename || value.email || value.url || JSON.stringify(value);
+    }
+    return String(value);
+}
+
+// Check if a record matches a single filter
+function matchesFilter(record, filter) {
+    var value = getCellValue(record, filter.fieldId);
+    var strValue = valueToString(value).toLowerCase();
+    var filterValue = (filter.value || '').toLowerCase();
+
+    switch (filter.operator) {
+        case 'contains':
+            return strValue.includes(filterValue);
+        case 'equals':
+            return strValue === filterValue;
+        case 'not_equals':
+            return strValue !== filterValue;
+        case 'is_empty':
+            return value == null || value === '' || (Array.isArray(value) && value.length === 0);
+        case 'is_not_empty':
+            return value != null && value !== '' && !(Array.isArray(value) && value.length === 0);
+        default:
+            return true;
+    }
+}
+
+// Check if a record matches search query
+function matchesSearch(record, query) {
+    if (!query) return true;
+    var fields = record.fields || {};
+    for (var key in fields) {
+        var strValue = valueToString(fields[key]).toLowerCase();
+        if (strValue.includes(query)) return true;
+    }
+    return false;
+}
+
+// Compare two values for sorting
+function compareValues(a, b, direction) {
+    // Handle nulls
+    if (a == null && b == null) return 0;
+    if (a == null) return direction === 'asc' ? -1 : 1;
+    if (b == null) return direction === 'asc' ? 1 : -1;
+
+    // Convert to strings for comparison
+    var strA = valueToString(a).toLowerCase();
+    var strB = valueToString(b).toLowerCase();
+
+    // Try numeric comparison
+    var numA = parseFloat(strA);
+    var numB = parseFloat(strB);
+    if (!isNaN(numA) && !isNaN(numB)) {
+        var result = numA - numB;
+        return direction === 'asc' ? result : -result;
+    }
+
+    // String comparison
+    var result = strA.localeCompare(strB);
+    return direction === 'asc' ? result : -result;
+}
+
+// Apply all filters, search, and sorts to get filtered record IDs
+async function getFilteredSortedRecords() {
+    if (!currentTable) return [];
+
+    // Fetch all records for the table
+    var allRecords = await getRecordsByIds(currentTable, originalRecordIds);
+
+    // Build record map
+    var recordsById = {};
+    allRecords.forEach(r => {
+        recordsById[r.recordId] = r;
+    });
+
+    // Start with original order
+    var filteredIds = originalRecordIds.slice();
+
+    // Apply search filter
+    if (currentSearchQuery) {
+        filteredIds = filteredIds.filter(id => {
+            var record = recordsById[id];
+            return record && matchesSearch(record, currentSearchQuery);
+        });
+    }
+
+    // Apply custom filters
+    if (currentFilters.length > 0) {
+        filteredIds = filteredIds.filter(id => {
+            var record = recordsById[id];
+            if (!record) return false;
+            return currentFilters.every(filter => matchesFilter(record, filter));
+        });
+    }
+
+    // Apply sorts
+    if (currentSorts.length > 0) {
+        filteredIds.sort((idA, idB) => {
+            var recordA = recordsById[idA];
+            var recordB = recordsById[idB];
+
+            for (var i = 0; i < currentSorts.length; i++) {
+                var sort = currentSorts[i];
+                var valueA = getCellValue(recordA, sort.fieldId);
+                var valueB = getCellValue(recordB, sort.fieldId);
+                var cmp = compareValues(valueA, valueB, sort.direction);
+                if (cmp !== 0) return cmp;
+            }
+            return 0;
+        });
+    }
+
+    return filteredIds;
+}
 
 // Close all view control dropdowns
 function closeViewControlDropdowns() {
