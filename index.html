@@ -1162,6 +1162,41 @@ async function saveViewFieldConfig(tableId, viewId, config) {
     await saveView(META_VIEWS[tableId][viewId]);
 }
 
+// Save view filters and sorts to IndexedDB
+async function saveViewFiltersAndSorts(tableId, viewId, filters, sorts) {
+    if (!tableId || !viewId) return;
+
+    // Update META_VIEWS
+    if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+    if (!META_VIEWS[tableId][viewId]) {
+        // Create a synthetic view if it doesn't exist
+        META_VIEWS[tableId][viewId] = {
+            tableId: tableId,
+            viewId: viewId,
+            viewName: viewId === '_default' ? 'All Fields' : viewId,
+            viewType: 'grid'
+        };
+    }
+
+    // Store filters and sorts
+    META_VIEWS[tableId][viewId].filters = filters || [];
+    META_VIEWS[tableId][viewId].sorts = sorts || [];
+
+    // Persist to IndexedDB
+    await saveView(META_VIEWS[tableId][viewId]);
+}
+
+// Get view filters and sorts
+function getViewFiltersAndSorts(tableId, viewId) {
+    if (!tableId || !viewId) return { filters: [], sorts: [] };
+
+    var view = META_VIEWS[tableId]?.[viewId];
+    return {
+        filters: (view && view.filters) ? view.filters.slice() : [],
+        sorts: (view && view.sorts) ? view.sorts.slice() : []
+    };
+}
+
 // Get visible fields for current view in correct order
 function getVisibleFieldsForView(tableId, viewId) {
     var config = getViewFieldConfig(tableId, viewId || '_default');
@@ -1811,6 +1846,18 @@ async function selectTableView(tableId, viewId) {
     // Set the current view
     currentView = viewId;
 
+    // Load and apply view filters and sorts
+    var viewConfig = getViewFiltersAndSorts(tableId, viewId);
+    currentFilters = viewConfig.filters;
+    currentSorts = viewConfig.sorts;
+    currentSearchQuery = ''; // Reset search when switching views
+
+    // Update filter/sort button states
+    updateFilterCount();
+    updateSortCount();
+    var searchInput = document.getElementById('view-search-input');
+    if (searchInput) searchInput.value = '';
+
     // Render view selector and fields dropdown
     renderViewSelector();
     renderFieldsDropdown();
@@ -1912,26 +1959,18 @@ async function showTable(tableId) {
     currentView = null; // Reset view when switching tables
     currentPage = 0;
 
-    // Reset view controls when switching tables
-    if (typeof currentFilters !== 'undefined') currentFilters = [];
-    if (typeof currentSorts !== 'undefined') currentSorts = [];
+    // Reset search and other controls (filters/sorts will be loaded from view)
     if (typeof currentGroupBy !== 'undefined') currentGroupBy = null;
     if (typeof currentColorBy !== 'undefined') currentColorBy = null;
     if (typeof currentSearchQuery !== 'undefined') currentSearchQuery = '';
 
-    // Reset filter/sort/group button states
-    var filterBtn = document.getElementById('filter-btn');
-    var sortBtn = document.getElementById('sort-btn');
+    // Reset non-filter/sort button states and search input
     var groupBtn = document.getElementById('group-btn');
     var colorBtn = document.getElementById('color-btn');
     var searchInput = document.getElementById('view-search-input');
-    if (filterBtn) filterBtn.classList.remove('active');
-    if (sortBtn) sortBtn.classList.remove('active');
     if (groupBtn) groupBtn.classList.remove('active');
     if (colorBtn) colorBtn.classList.remove('active');
     if (searchInput) searchInput.value = '';
-    document.getElementById('filter-count')?.style.setProperty('display', 'none');
-    document.getElementById('sort-count')?.style.setProperty('display', 'none');
 
     var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
     var tableName = table.tableName || tableId;
@@ -1975,6 +2014,15 @@ async function showTable(tableId) {
     } else if (!currentView) {
         currentView = '_default';
     }
+
+    // Load and apply view filters and sorts
+    var viewConfig = getViewFiltersAndSorts(tableId, currentView);
+    currentFilters = viewConfig.filters;
+    currentSorts = viewConfig.sorts;
+
+    // Update filter/sort button states
+    updateFilterCount();
+    updateSortCount();
 
     // Update the view list to highlight the active view
     updateSidebarViewActive(tableId, currentView);
@@ -3132,6 +3180,10 @@ function updateFilterCount() {
 async function applyFilters() {
     updateFilterCount();
     await renderTable();
+    // Save filters to current view
+    if (currentTable && currentView) {
+        await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts);
+    }
 }
 
 // Render sort dropdown
@@ -3217,6 +3269,10 @@ function updateSortCount() {
 async function applySorts() {
     updateSortCount();
     await renderTable();
+    // Save sorts to current view
+    if (currentTable && currentView) {
+        await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts);
+    }
 }
 
 // Render group dropdown
