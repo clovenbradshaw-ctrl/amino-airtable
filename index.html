@@ -1123,6 +1123,31 @@ async function initAuthScreen() {
         infoEl.textContent = 'No local data';
         clearBtn.classList.add('hidden');
     }
+
+    // Check for saved credentials and auto-authenticate
+    var savedKey = localStorage.getItem('amino_api_key');
+    if (savedKey) {
+        var savedFilter = localStorage.getItem('amino_set_filter');
+        API_KEY = savedKey;
+        SET_FILTER = savedFilter || null;
+
+        infoEl.textContent = 'Reconnecting...';
+        try {
+            await init();
+        } catch (err) {
+            console.error('Auto-login failed:', err);
+            API_KEY = null;
+            SET_FILTER = null;
+            localStorage.removeItem('amino_api_key');
+            localStorage.removeItem('amino_set_filter');
+            showAuthError('Session expired. Please log in again.');
+            if (stats.count > 0) {
+                infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
+            } else {
+                infoEl.textContent = 'No local data';
+            }
+        }
+    }
 }
 
 async function clearLocalAndReset() {
@@ -1160,7 +1185,17 @@ async function tryAuth() {
         showAuthError('Connection failed: ' + err.message);
         btn.textContent = 'Connect';
         btn.disabled = false;
+        API_KEY = null;
+        SET_FILTER = null;
         return;
+    }
+
+    // Save credentials to localStorage on successful login
+    localStorage.setItem('amino_api_key', API_KEY);
+    if (SET_FILTER) {
+        localStorage.setItem('amino_set_filter', SET_FILTER);
+    } else {
+        localStorage.removeItem('amino_set_filter');
     }
 
     btn.textContent = 'Connect';
@@ -1187,6 +1222,9 @@ function logout() {
     if (pollInterval) clearInterval(pollInterval);
     API_KEY = null;
     SET_FILTER = null;
+    // Clear saved credentials from localStorage
+    localStorage.removeItem('amino_api_key');
+    localStorage.removeItem('amino_set_filter');
     showAuthScreen();
 }
 
