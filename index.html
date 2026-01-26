@@ -103,99 +103,74 @@
         .table-loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
         .table-container { position: relative; }
 
-        /* Schema Builder Styles */
-        .schema-builder { display: flex; flex-direction: column; height: 100%; }
-        .schema-tabs { display: flex; gap: 0; border-bottom: 2px solid #e0e0e0; background: #fafafa; padding: 0 20px; }
-        .schema-tab { padding: 12px 24px; cursor: pointer; font-size: 13px; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
-        .schema-tab:hover { color: #333; background: #f0f0f0; }
-        .schema-tab.active { color: #2d6cdf; border-bottom-color: #2d6cdf; background: #fff; }
-        .schema-tab .badge { background: #e8f0fe; color: #2d6cdf; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-        .schema-tab.active .badge { background: #2d6cdf; color: #fff; }
+        /* Airtable-style View Controls Bar */
+        .view-controls-bar { display: flex; align-items: center; gap: 4px; padding: 8px 20px; background: #fff; border-bottom: 1px solid #e0e0e0; }
+        .view-control-wrapper { position: relative; }
+        .view-control-btn { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: transparent; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; color: #555; transition: all 0.15s; }
+        .view-control-btn:hover { background: #f0f0f0; color: #333; }
+        .view-control-btn.active { background: #e8f0fe; color: #2d6cdf; }
+        .view-control-btn svg { flex-shrink: 0; }
+        .control-count { background: #2d6cdf; color: #fff; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 8px; min-width: 16px; text-align: center; }
+        .view-controls-spacer { flex: 1; }
 
-        .schema-content { flex: 1; overflow: auto; padding: 20px; background: #f5f5f5; }
+        /* View Search */
+        .view-search-wrapper { position: relative; display: flex; align-items: center; }
+        .view-search-wrapper .search-icon { position: absolute; left: 10px; color: #999; pointer-events: none; }
+        .view-search-input { padding: 6px 10px 6px 32px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; width: 180px; transition: all 0.15s; }
+        .view-search-input:focus { outline: none; border-color: #2d6cdf; box-shadow: 0 0 0 2px rgba(45,108,223,0.1); width: 220px; }
+        .view-search-input::placeholder { color: #aaa; }
 
-        /* Schema Cards */
-        .schema-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-        .schema-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; transition: box-shadow 0.2s, transform 0.2s; cursor: pointer; }
-        .schema-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-2px); }
-        .schema-card-header { padding: 16px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 12px; }
-        .schema-card-icon { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
-        .schema-card-icon.table { background: linear-gradient(135deg, #2d6cdf, #1e4fa8); color: #fff; }
-        .schema-card-icon.field { background: linear-gradient(135deg, #20c933, #15961f); color: #fff; }
-        .schema-card-icon.view { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; }
-        .schema-card-title { font-size: 15px; font-weight: 600; color: #333; }
-        .schema-card-id { font-size: 11px; color: #999; font-family: "SF Mono", Monaco, monospace; }
-        .schema-card-body { padding: 16px; }
-        .schema-card-meta { display: flex; flex-wrap: wrap; gap: 8px; }
-        .schema-meta-item { font-size: 12px; color: #666; background: #f5f5f5; padding: 4px 10px; border-radius: 4px; }
-        .schema-meta-item strong { color: #333; }
+        /* View Control Dropdowns */
+        .view-control-dropdown { position: absolute; top: 100%; left: 0; margin-top: 4px; background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 100; min-width: 280px; display: none; }
+        .view-control-dropdown.open { display: block; }
+        .dropdown-section { padding: 0; }
+        .dropdown-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #eee; background: #fafafa; border-radius: 8px 8px 0 0; }
+        .dropdown-header span { font-size: 13px; font-weight: 600; color: #333; }
+        .dropdown-action-btn { background: transparent; border: none; color: #2d6cdf; font-size: 12px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+        .dropdown-action-btn:hover { background: #e8f0fe; }
 
-        /* Field Type Badge */
-        .field-type-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 4px; }
-        .field-type-badge.text { background: #e8f0fe; color: #2d6cdf; }
-        .field-type-badge.number { background: #fef3c7; color: #d97706; }
-        .field-type-badge.select { background: #dbeafe; color: #1d4ed8; }
-        .field-type-badge.date { background: #ede9fe; color: #7c3aed; }
-        .field-type-badge.checkbox { background: #d1fae5; color: #059669; }
-        .field-type-badge.link { background: #fee2e2; color: #dc2626; }
-        .field-type-badge.attachment { background: #fce7f3; color: #db2777; }
-        .field-type-badge.formula { background: #e0e7ff; color: #4338ca; }
-        .field-type-badge.rollup { background: #ccfbf1; color: #0d9488; }
-        .field-type-badge.lookup { background: #fef9c3; color: #ca8a04; }
-        .field-type-badge.default { background: #f3f4f6; color: #6b7280; }
+        /* Filter Dropdown */
+        .filter-list { padding: 12px 16px; max-height: 300px; overflow-y: auto; }
+        .empty-filters, .empty-sorts { color: #999; font-size: 13px; text-align: center; padding: 20px 0; }
+        .filter-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+        .filter-row:last-child { border-bottom: none; }
+        .filter-row select, .filter-row input { padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
+        .filter-row select { min-width: 100px; }
+        .filter-row input { flex: 1; min-width: 80px; }
+        .filter-remove-btn { background: transparent; border: none; color: #999; cursor: pointer; padding: 4px; border-radius: 4px; }
+        .filter-remove-btn:hover { background: #fee2e2; color: #dc2626; }
 
-        /* View Type Badge */
-        .view-type-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 4px; }
-        .view-type-badge.grid { background: #e8f0fe; color: #2d6cdf; }
-        .view-type-badge.gallery { background: #fce7f3; color: #db2777; }
-        .view-type-badge.kanban { background: #dbeafe; color: #1d4ed8; }
-        .view-type-badge.calendar { background: #ede9fe; color: #7c3aed; }
-        .view-type-badge.timeline { background: #d1fae5; color: #059669; }
-        .view-type-badge.form { background: #fef3c7; color: #d97706; }
-        .view-type-badge.default { background: #f3f4f6; color: #6b7280; }
+        /* Sort Dropdown */
+        .sort-list { padding: 12px 16px; max-height: 300px; overflow-y: auto; }
+        .sort-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+        .sort-row:last-child { border-bottom: none; }
+        .sort-row select { padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; flex: 1; }
+        .sort-direction-btns { display: flex; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
+        .sort-direction-btn { padding: 6px 10px; background: #fff; border: none; cursor: pointer; font-size: 11px; color: #666; }
+        .sort-direction-btn.active { background: #2d6cdf; color: #fff; }
+        .sort-direction-btn:first-child { border-right: 1px solid #ddd; }
+        .sort-remove-btn { background: transparent; border: none; color: #999; cursor: pointer; padding: 4px; border-radius: 4px; }
+        .sort-remove-btn:hover { background: #fee2e2; color: #dc2626; }
 
-        /* Schema List View */
-        .schema-list { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .schema-list-header { display: grid; grid-template-columns: 1fr 1fr 150px 100px; padding: 12px 16px; background: #f9fafb; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e7eb; }
-        .schema-list-row { display: grid; grid-template-columns: 1fr 1fr 150px 100px; padding: 12px 16px; border-bottom: 1px solid #f3f4f6; align-items: center; cursor: pointer; transition: background 0.15s; }
-        .schema-list-row:hover { background: #f9fafb; }
-        .schema-list-row:last-child { border-bottom: none; }
-        .schema-list-name { font-weight: 500; color: #333; }
-        .schema-list-id { font-size: 12px; color: #9ca3af; font-family: "SF Mono", Monaco, monospace; }
+        /* Group Dropdown */
+        .group-options, .color-options { padding: 8px 0; }
+        .group-option, .color-option { display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer; font-size: 13px; transition: background 0.1s; }
+        .group-option:hover, .color-option:hover { background: #f5f5f5; }
+        .group-option .check-mark, .color-option .check-mark { color: #2d6cdf; font-size: 14px; width: 16px; visibility: hidden; }
+        .group-option.selected .check-mark, .color-option.selected .check-mark, .group-option.none-selected .check-mark, .color-option.none-selected .check-mark { visibility: visible; }
 
-        /* Toggle between grid/list view */
-        .view-toggle { display: flex; background: #f3f4f6; border-radius: 6px; padding: 2px; }
-        .view-toggle-btn { padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; color: #666; background: transparent; border: none; }
-        .view-toggle-btn.active { background: #fff; color: #333; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        /* Row Height Dropdown */
+        .row-height-option { display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer; font-size: 13px; transition: background 0.1s; }
+        .row-height-option:hover { background: #f5f5f5; }
+        .row-height-option.selected { background: #e8f0fe; color: #2d6cdf; }
+        .row-height-option svg { color: #666; }
+        .row-height-option.selected svg { color: #2d6cdf; }
 
-        /* Mode toggle in sidebar */
-        .sidebar-mode-toggle { padding: 12px 16px; border-bottom: 1px solid #2d2f36; }
-        .mode-toggle-btn { width: 100%; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; border: none; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; }
-        .mode-toggle-btn.schema { background: #8b5cf6; color: #fff; }
-        .mode-toggle-btn.schema:hover { background: #7c3aed; }
-        .mode-toggle-btn.data { background: #2d6cdf; color: #fff; }
-        .mode-toggle-btn.data:hover { background: #2560c9; }
-
-        /* Schema builder toolbar */
-        .schema-toolbar { padding: 16px 20px; background: #fff; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 16px; }
-        .schema-toolbar h1 { font-size: 18px; font-weight: 600; color: #333; margin: 0; }
-        .schema-toolbar .spacer { flex: 1; }
-
-        /* Empty state for schema */
-        .schema-empty { text-align: center; padding: 60px 20px; }
-        .schema-empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
-        .schema-empty h3 { font-size: 18px; color: #333; margin-bottom: 8px; }
-        .schema-empty p { color: #666; font-size: 14px; }
-
-        /* Table selector dropdown in schema builder */
-        .table-selector { position: relative; }
-        .table-selector-btn { padding: 8px 16px; background: #fff; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; min-width: 200px; }
-        .table-selector-btn:hover { border-color: #2d6cdf; }
-        .table-selector-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; max-height: 300px; overflow-y: auto; display: none; }
-        .table-selector-dropdown.open { display: block; }
-        .table-selector-option { padding: 10px 16px; cursor: pointer; font-size: 13px; }
-        .table-selector-option:hover { background: #f5f5f5; }
-        .table-selector-option.active { background: #e8f0fe; color: #2d6cdf; }
+        /* Row height variations */
+        table.row-height-short td { padding: 4px 12px; }
+        table.row-height-medium td { padding: 8px 12px; }
+        table.row-height-tall td { padding: 14px 12px; }
+        table.row-height-extra-tall td { padding: 20px 12px; white-space: normal; }
 
         /* Field History Modal */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; }
@@ -313,60 +288,12 @@
         <div class="sidebar-header">
             <h2>Amino Viewer</h2>
         </div>
-        <div class="sidebar-mode-toggle">
-            <button class="mode-toggle-btn schema" id="mode-toggle-btn" onclick="toggleMode()">
-                <span id="mode-icon">&#9638;</span>
-                <span id="mode-text">Schema Builder</span>
-            </button>
-        </div>
         <div id="table-list"></div>
     </div>
 
     <div class="main">
-        <!-- Schema Builder View -->
-        <div id="schema-view" class="schema-builder">
-            <div class="schema-toolbar">
-                <h1>Schema Builder</h1>
-                <div class="spacer"></div>
-                <div class="table-selector" id="table-selector-container" style="display: none;">
-                    <button class="table-selector-btn" id="table-selector-btn" onclick="toggleTableSelector()">
-                        <span id="selected-table-name">All Tables</span>
-                        <span style="margin-left: auto;">&#9662;</span>
-                    </button>
-                    <div class="table-selector-dropdown" id="table-selector-dropdown"></div>
-                </div>
-                <button class="btn" onclick="manualSync()">Sync</button>
-                <button class="btn" onclick="logout()">Logout</button>
-            </div>
-            <div class="schema-tabs">
-                <div class="schema-tab active" id="tab-tables" onclick="showSchemaTab('tables')">
-                    <span>Tables</span>
-                    <span class="badge" id="tables-count">0</span>
-                </div>
-                <div class="schema-tab" id="tab-fields" onclick="showSchemaTab('fields')">
-                    <span>Fields</span>
-                    <span class="badge" id="fields-count">0</span>
-                </div>
-                <div class="schema-tab" id="tab-views" onclick="showSchemaTab('views')">
-                    <span>Views</span>
-                    <span class="badge" id="views-count">0</span>
-                </div>
-            </div>
-            <div class="status-bar">
-                <span class="status-dot" id="schema-status-dot"></span>
-                <span id="schema-status-text">Ready</span>
-                <div class="progress-bar" id="schema-progress-bar" style="display: none; flex: 1; max-width: 200px;">
-                    <div class="progress-fill" id="schema-progress-fill" style="width: 0%"></div>
-                </div>
-                <span id="schema-status-detail" style="color: #999; font-size: 11px;"></span>
-            </div>
-            <div class="schema-content" id="schema-content">
-                <!-- Schema cards will be rendered here -->
-            </div>
-        </div>
-
-        <!-- Data Viewer View (hidden by default) -->
-        <div id="data-view" style="display: none; flex-direction: column; height: 100%;">
+        <!-- Data Viewer View -->
+        <div id="data-view" style="display: flex; flex-direction: column; height: 100%;">
             <div class="toolbar">
                 <h1 id="title">Select a table</h1>
 
@@ -408,6 +335,127 @@
 
                 <button class="btn" onclick="manualSync()">Sync</button>
                 <button class="btn" onclick="logout()">Logout</button>
+            </div>
+
+            <!-- Airtable-style View Controls Bar -->
+            <div class="view-controls-bar" id="view-controls-bar">
+                <!-- Filter Button -->
+                <div class="view-control-wrapper">
+                    <button class="view-control-btn" id="filter-btn" onclick="toggleFilterDropdown()">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                        <span>Filter</span>
+                        <span class="control-count" id="filter-count" style="display: none;">0</span>
+                    </button>
+                    <div class="view-control-dropdown filter-dropdown" id="filter-dropdown">
+                        <div class="dropdown-section">
+                            <div class="dropdown-header">
+                                <span>Filter records</span>
+                                <button class="dropdown-action-btn" onclick="addFilter()">+ Add filter</button>
+                            </div>
+                            <div class="filter-list" id="filter-list">
+                                <div class="empty-filters">No filters applied</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sort Button -->
+                <div class="view-control-wrapper">
+                    <button class="view-control-btn" id="sort-btn" onclick="toggleSortDropdown()">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 5l2-2 2 2M6 3v10M12 11l-2 2-2-2M10 13V3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <span>Sort</span>
+                        <span class="control-count" id="sort-count" style="display: none;">0</span>
+                    </button>
+                    <div class="view-control-dropdown sort-dropdown" id="sort-dropdown">
+                        <div class="dropdown-section">
+                            <div class="dropdown-header">
+                                <span>Sort records</span>
+                                <button class="dropdown-action-btn" onclick="addSort()">+ Add sort</button>
+                            </div>
+                            <div class="sort-list" id="sort-list">
+                                <div class="empty-sorts">No sorts applied</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group Button -->
+                <div class="view-control-wrapper">
+                    <button class="view-control-btn" id="group-btn" onclick="toggleGroupDropdown()">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="5" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="3" width="5" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="9" width="5" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="9" width="5" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
+                        <span>Group</span>
+                    </button>
+                    <div class="view-control-dropdown group-dropdown" id="group-dropdown">
+                        <div class="dropdown-section">
+                            <div class="dropdown-header">
+                                <span>Group records by</span>
+                            </div>
+                            <div class="group-options" id="group-options">
+                                <div class="group-option none-selected" onclick="setGroupBy(null)">
+                                    <span class="check-mark">&#10003;</span>
+                                    <span>None</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Color Button -->
+                <div class="view-control-wrapper">
+                    <button class="view-control-btn" id="color-btn" onclick="toggleColorDropdown()">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5"/></svg>
+                        <span>Color</span>
+                    </button>
+                    <div class="view-control-dropdown color-dropdown" id="color-dropdown">
+                        <div class="dropdown-section">
+                            <div class="dropdown-header">
+                                <span>Color records by</span>
+                            </div>
+                            <div class="color-options" id="color-options">
+                                <div class="color-option none-selected" onclick="setColorBy(null)">
+                                    <span class="check-mark">&#10003;</span>
+                                    <span>None</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row Height Button -->
+                <div class="view-control-wrapper">
+                    <button class="view-control-btn" id="row-height-btn" onclick="toggleRowHeightDropdown()">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                        <span>Row height</span>
+                    </button>
+                    <div class="view-control-dropdown row-height-dropdown" id="row-height-dropdown">
+                        <div class="dropdown-section">
+                            <div class="row-height-option" onclick="setRowHeight('short')">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 6h12M2 10h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                                <span>Short</span>
+                            </div>
+                            <div class="row-height-option selected" onclick="setRowHeight('medium')">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                                <span>Medium</span>
+                            </div>
+                            <div class="row-height-option" onclick="setRowHeight('tall')">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3h12M2 7h12M2 11h12M2 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                                <span>Tall</span>
+                            </div>
+                            <div class="row-height-option" onclick="setRowHeight('extra-tall')">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2h12M2 5h12M2 8h12M2 11h12M2 14h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                                <span>Extra tall</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="view-controls-spacer"></div>
+
+                <!-- Search -->
+                <div class="view-search-wrapper">
+                    <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    <input type="text" class="view-search-input" id="view-search-input" placeholder="Find in view" oninput="handleViewSearch(this.value)">
+                </div>
             </div>
             <div class="status-bar">
                 <span class="status-dot" id="status-dot"></span>
@@ -463,11 +511,6 @@ var db = null;
 var META_TABLES = {};
 var META_FIELDS = {};
 var META_VIEWS = {};
-
-// Schema builder mode
-var schemaMode = true; // Start in schema builder mode
-var currentSchemaTab = 'tables'; // 'tables', 'fields', 'views'
-var selectedSchemaTable = null; // Selected table in schema builder
 
 var currentTable = null;
 var currentView = null; // Current view ID or null for "All Fields" default
@@ -1263,328 +1306,6 @@ function applyPayloadFields(target, payload) {
     }
 }
 
-// ============ Schema Builder UI ============
-
-function toggleMode() {
-    schemaMode = !schemaMode;
-    var btn = document.getElementById('mode-toggle-btn');
-    var icon = document.getElementById('mode-icon');
-    var text = document.getElementById('mode-text');
-    var schemaView = document.getElementById('schema-view');
-    var dataView = document.getElementById('data-view');
-
-    if (schemaMode) {
-        btn.className = 'mode-toggle-btn schema';
-        icon.innerHTML = '&#9638;';
-        text.textContent = 'Schema Builder';
-        schemaView.style.display = 'flex';
-        dataView.style.display = 'none';
-        renderSchemaBuilder();
-    } else {
-        btn.className = 'mode-toggle-btn data';
-        icon.innerHTML = '&#9776;';
-        text.textContent = 'Data Viewer';
-        schemaView.style.display = 'none';
-        dataView.style.display = 'flex';
-        if (currentTable) {
-            showTable(currentTable);
-        }
-    }
-}
-
-function showSchemaTab(tab) {
-    currentSchemaTab = tab;
-
-    // Update tab UI
-    document.getElementById('tab-tables').className = 'schema-tab' + (tab === 'tables' ? ' active' : '');
-    document.getElementById('tab-fields').className = 'schema-tab' + (tab === 'fields' ? ' active' : '');
-    document.getElementById('tab-views').className = 'schema-tab' + (tab === 'views' ? ' active' : '');
-
-    // Show/hide table selector for fields and views tabs
-    var tableSelectorContainer = document.getElementById('table-selector-container');
-    if (tab === 'fields' || tab === 'views') {
-        tableSelectorContainer.style.display = 'block';
-        renderTableSelector();
-    } else {
-        tableSelectorContainer.style.display = 'none';
-    }
-
-    renderSchemaContent();
-}
-
-function toggleTableSelector() {
-    var dropdown = document.getElementById('table-selector-dropdown');
-    dropdown.classList.toggle('open');
-}
-
-function selectSchemaTable(tableId) {
-    selectedSchemaTable = tableId;
-    var tableName = tableId ? (META_TABLES[tableId]?.tableName || tableId) : 'All Tables';
-    document.getElementById('selected-table-name').textContent = tableName;
-    document.getElementById('table-selector-dropdown').classList.remove('open');
-    renderSchemaContent();
-}
-
-async function renderTableSelector() {
-    var dropdown = document.getElementById('table-selector-dropdown');
-    var tables = await getAllTables();
-
-    // Also get tables from META_TABLES
-    for (var tid in META_TABLES) {
-        if (!tables.find(t => t.tableId === tid)) {
-            tables.push(META_TABLES[tid]);
-        }
-    }
-
-    tables.sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
-
-    var html = '<div class="table-selector-option' + (!selectedSchemaTable ? ' active' : '') + '" onclick="selectSchemaTable(null)">All Tables</div>';
-    for (var table of tables) {
-        var isActive = selectedSchemaTable === table.tableId;
-        html += '<div class="table-selector-option' + (isActive ? ' active' : '') + '" onclick="selectSchemaTable(\'' + esc(table.tableId) + '\')">' + esc(table.tableName || table.tableId) + '</div>';
-    }
-
-    dropdown.innerHTML = html;
-}
-
-async function renderSchemaBuilder() {
-    await updateSchemaCounts();
-    renderSchemaContent();
-}
-
-async function updateSchemaCounts() {
-    var tables = await getSchemaByPrefix('tbl');
-    var fields = await getSchemaByPrefix('fld');
-    var views = await getSchemaByPrefix('viw');
-
-    document.getElementById('tables-count').textContent = tables.length;
-    document.getElementById('fields-count').textContent = fields.length;
-    document.getElementById('views-count').textContent = views.length;
-}
-
-async function renderSchemaContent() {
-    var content = document.getElementById('schema-content');
-
-    if (currentSchemaTab === 'tables') {
-        await renderTablesTab(content);
-    } else if (currentSchemaTab === 'fields') {
-        await renderFieldsTab(content);
-    } else if (currentSchemaTab === 'views') {
-        await renderViewsTab(content);
-    }
-}
-
-async function renderTablesTab(content) {
-    var tables = await getSchemaByPrefix('tbl');
-
-    if (tables.length === 0) {
-        content.innerHTML = '<div class="schema-empty"><div class="schema-empty-icon">&#128451;</div><h3>No Tables Found</h3><p>Sync data to see your Airtable schema</p></div>';
-        return;
-    }
-
-    // Sort by table name
-    tables.sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
-
-    var html = '<div class="schema-grid">';
-    for (var table of tables) {
-        var fieldCount = META_FIELDS[table.tableId] ? Object.keys(META_FIELDS[table.tableId]).length : 0;
-        var viewCount = META_VIEWS[table.tableId] ? Object.keys(META_VIEWS[table.tableId]).length : 0;
-
-        html += '<div class="schema-card" onclick="viewTableSchema(\'' + esc(table.tableId) + '\')">';
-        html += '<div class="schema-card-header">';
-        html += '<div class="schema-card-icon table">&#128451;</div>';
-        html += '<div>';
-        html += '<div class="schema-card-title">' + esc(table.tableName || table.tableId) + '</div>';
-        html += '<div class="schema-card-id">' + esc(table.tableId) + '</div>';
-        html += '</div>';
-        html += '</div>';
-        html += '<div class="schema-card-body">';
-        html += '<div class="schema-card-meta">';
-        html += '<span class="schema-meta-item"><strong>' + fieldCount + '</strong> fields</span>';
-        html += '<span class="schema-meta-item"><strong>' + viewCount + '</strong> views</span>';
-        if (table.primaryFieldId) {
-            html += '<span class="schema-meta-item">Primary: <strong>' + esc(table.primaryFieldId.slice(-8)) + '</strong></span>';
-        }
-        html += '</div>';
-        html += '</div>';
-        html += '</div>';
-    }
-    html += '</div>';
-
-    content.innerHTML = html;
-}
-
-async function renderFieldsTab(content) {
-    var fields = await getSchemaByPrefix('fld');
-
-    // Filter by selected table
-    if (selectedSchemaTable) {
-        fields = fields.filter(f => f.tableId === selectedSchemaTable);
-    }
-
-    if (fields.length === 0) {
-        var msg = selectedSchemaTable ? 'No fields found for this table' : 'No fields found';
-        content.innerHTML = '<div class="schema-empty"><div class="schema-empty-icon">&#128203;</div><h3>' + msg + '</h3><p>Sync data to see your field definitions</p></div>';
-        return;
-    }
-
-    // Sort by table, then field name
-    fields.sort((a, b) => {
-        var tableCompare = (a.tableId || '').localeCompare(b.tableId || '');
-        if (tableCompare !== 0) return tableCompare;
-        return (a.fieldName || a.fieldId).localeCompare(b.fieldName || b.fieldId);
-    });
-
-    var html = '<div class="schema-grid">';
-    for (var field of fields) {
-        var tableName = META_TABLES[field.tableId]?.tableName || field.tableId;
-        var fieldTypeClass = getFieldTypeClass(field.fieldType);
-
-        html += '<div class="schema-card" onclick="viewFieldDetails(\'' + esc(field.tableId) + '\', \'' + esc(field.fieldId) + '\')">';
-        html += '<div class="schema-card-header">';
-        html += '<div class="schema-card-icon field">&#128203;</div>';
-        html += '<div>';
-        html += '<div class="schema-card-title">' + esc(field.fieldName || field.fieldId) + '</div>';
-        html += '<div class="schema-card-id">' + esc(field.fieldId) + '</div>';
-        html += '</div>';
-        html += '</div>';
-        html += '<div class="schema-card-body">';
-        html += '<div class="schema-card-meta">';
-        html += '<span class="field-type-badge ' + fieldTypeClass + '">' + esc(field.fieldType || 'unknown') + '</span>';
-        html += '<span class="schema-meta-item">Table: <strong>' + esc(tableName) + '</strong></span>';
-        if (field.options && field.options.choices) {
-            html += '<span class="schema-meta-item"><strong>' + field.options.choices.length + '</strong> choices</span>';
-        }
-        html += '</div>';
-        html += '</div>';
-        html += '</div>';
-    }
-    html += '</div>';
-
-    content.innerHTML = html;
-}
-
-async function renderViewsTab(content) {
-    var views = await getSchemaByPrefix('viw');
-
-    // Filter by selected table
-    if (selectedSchemaTable) {
-        views = views.filter(v => v.tableId === selectedSchemaTable);
-    }
-
-    if (views.length === 0) {
-        var msg = selectedSchemaTable ? 'No views found for this table' : 'No views found';
-        content.innerHTML = '<div class="schema-empty"><div class="schema-empty-icon">&#128065;</div><h3>' + msg + '</h3><p>Sync data to see your view definitions</p></div>';
-        return;
-    }
-
-    // Sort by table, then view name
-    views.sort((a, b) => {
-        var tableCompare = (a.tableId || '').localeCompare(b.tableId || '');
-        if (tableCompare !== 0) return tableCompare;
-        return (a.viewName || a.viewId).localeCompare(b.viewName || b.viewId);
-    });
-
-    var html = '<div class="schema-grid">';
-    for (var view of views) {
-        var tableName = META_TABLES[view.tableId]?.tableName || view.tableId;
-        var viewTypeClass = getViewTypeClass(view.viewType);
-
-        html += '<div class="schema-card" onclick="viewViewDetails(\'' + esc(view.tableId) + '\', \'' + esc(view.viewId) + '\')">';
-        html += '<div class="schema-card-header">';
-        html += '<div class="schema-card-icon view">&#128065;</div>';
-        html += '<div>';
-        html += '<div class="schema-card-title">' + esc(view.viewName || view.viewId) + '</div>';
-        html += '<div class="schema-card-id">' + esc(view.viewId) + '</div>';
-        html += '</div>';
-        html += '</div>';
-        html += '<div class="schema-card-body">';
-        html += '<div class="schema-card-meta">';
-        html += '<span class="view-type-badge ' + viewTypeClass + '">' + esc(view.viewType || 'grid') + '</span>';
-        html += '<span class="schema-meta-item">Table: <strong>' + esc(tableName) + '</strong></span>';
-        html += '</div>';
-        html += '</div>';
-        html += '</div>';
-    }
-    html += '</div>';
-
-    content.innerHTML = html;
-}
-
-function getFieldTypeClass(fieldType) {
-    if (!fieldType) return 'default';
-    var type = fieldType.toLowerCase();
-    if (type.includes('text') || type.includes('string') || type === 'singlelinetext' || type === 'multilinetext' || type === 'richtext') return 'text';
-    if (type.includes('number') || type === 'currency' || type === 'percent' || type === 'autonumber') return 'number';
-    if (type.includes('select') || type === 'singleselect' || type === 'multipleselects') return 'select';
-    if (type.includes('date') || type === 'datetime' || type === 'createdtime' || type === 'lastmodifiedtime') return 'date';
-    if (type === 'checkbox') return 'checkbox';
-    if (type.includes('link') || type === 'multiplerecordlinks') return 'link';
-    if (type === 'attachment' || type === 'multipleattachments') return 'attachment';
-    if (type === 'formula') return 'formula';
-    if (type === 'rollup') return 'rollup';
-    if (type === 'lookup' || type === 'multiplelookupvalues') return 'lookup';
-    return 'default';
-}
-
-function getViewTypeClass(viewType) {
-    if (!viewType) return 'default';
-    var type = viewType.toLowerCase();
-    if (type === 'grid') return 'grid';
-    if (type === 'gallery') return 'gallery';
-    if (type === 'kanban') return 'kanban';
-    if (type === 'calendar') return 'calendar';
-    if (type === 'timeline') return 'timeline';
-    if (type === 'form') return 'form';
-    return 'default';
-}
-
-function viewTableSchema(tableId) {
-    // Switch to fields tab filtered by this table
-    selectedSchemaTable = tableId;
-    showSchemaTab('fields');
-}
-
-function viewFieldDetails(tableId, fieldId) {
-    // Could show a modal with field details in the future
-    var field = META_FIELDS[tableId]?.[fieldId];
-    if (field) {
-        console.log('Field details:', field);
-        alert('Field: ' + (field.fieldName || fieldId) + '\nType: ' + (field.fieldType || 'unknown') + '\nID: ' + fieldId);
-    }
-}
-
-function viewViewDetails(tableId, viewId) {
-    // Could show a modal with view details in the future
-    var view = META_VIEWS[tableId]?.[viewId];
-    if (view) {
-        console.log('View details:', view);
-        alert('View: ' + (view.viewName || viewId) + '\nType: ' + (view.viewType || 'grid') + '\nID: ' + viewId);
-    }
-}
-
-function updateSchemaStatus(msg, isSynced, progress, detail) {
-    var dot = document.getElementById('schema-status-dot');
-    var text = document.getElementById('schema-status-text');
-    var progressBar = document.getElementById('schema-progress-bar');
-    var progressFill = document.getElementById('schema-progress-fill');
-    var statusDetail = document.getElementById('schema-status-detail');
-
-    if (dot) dot.className = 'status-dot ' + (isSynced ? 'synced' : 'loading');
-    if (text) text.textContent = msg;
-
-    if (progressBar && progressFill) {
-        if (typeof progress === 'number' && progress >= 0) {
-            progressBar.style.display = 'block';
-            progressFill.style.width = Math.min(100, progress) + '%';
-        } else {
-            progressBar.style.display = 'none';
-        }
-    }
-
-    if (statusDetail) statusDetail.textContent = detail || '';
-}
-
 // ============ UI ============
 
 async function renderSidebar() {
@@ -1646,6 +1367,27 @@ async function showTable(tableId) {
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
     currentPage = 0;
+
+    // Reset view controls when switching tables
+    if (typeof currentFilters !== 'undefined') currentFilters = [];
+    if (typeof currentSorts !== 'undefined') currentSorts = [];
+    if (typeof currentGroupBy !== 'undefined') currentGroupBy = null;
+    if (typeof currentColorBy !== 'undefined') currentColorBy = null;
+    if (typeof currentSearchQuery !== 'undefined') currentSearchQuery = '';
+
+    // Reset filter/sort/group button states
+    var filterBtn = document.getElementById('filter-btn');
+    var sortBtn = document.getElementById('sort-btn');
+    var groupBtn = document.getElementById('group-btn');
+    var colorBtn = document.getElementById('color-btn');
+    var searchInput = document.getElementById('view-search-input');
+    if (filterBtn) filterBtn.classList.remove('active');
+    if (sortBtn) sortBtn.classList.remove('active');
+    if (groupBtn) groupBtn.classList.remove('active');
+    if (colorBtn) colorBtn.classList.remove('active');
+    if (searchInput) searchInput.value = '';
+    document.getElementById('filter-count')?.style.setProperty('display', 'none');
+    document.getElementById('sort-count')?.style.setProperty('display', 'none');
 
     var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
     var tableName = table.tableName || tableId;
@@ -1932,7 +1674,6 @@ async function fullSync() {
         var progressPct = Math.min(95, (page / 50) * 100);
         var detail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
         updateStatus('Syncing page ' + page + '...', false, progressPct, detail);
-        updateSchemaStatus('Syncing page ' + page + '...', false, progressPct, detail);
 
         var result = await fetchPage(page, null);
         if (!result.events || result.events.length === 0) break;
@@ -1954,23 +1695,15 @@ async function fullSync() {
         // Update sidebar after EVERY page to show tables/fields as they arrive
         await renderSidebar();
 
-        // Update schema builder if in schema mode
-        if (schemaMode) {
-            await updateSchemaCounts();
-            await renderSchemaContent();
-        }
-
-        // If in data mode and table is selected, refresh the view
-        if (!schemaMode) {
-            if (!currentTable && Object.keys(META_TABLES).length > 0) {
-                var firstTable = Object.keys(META_TABLES)[0];
-                await showTable(firstTable);
-            } else if (currentTable) {
-                // Refresh current table view to show new data
-                currentRecordIds = await getRecordIdsForTable(currentTable);
-                totalRecords = currentRecordIds.length;
-                await renderTable();
-            }
+        // Auto-select first table and refresh view
+        if (!currentTable && Object.keys(META_TABLES).length > 0) {
+            var firstTable = Object.keys(META_TABLES)[0];
+            await showTable(firstTable);
+        } else if (currentTable) {
+            // Refresh current table view to show new data
+            currentRecordIds = await getRecordIdsForTable(currentTable);
+            totalRecords = currentRecordIds.length;
+            await renderTable();
         }
 
         if (!result.hasMore) break;
@@ -1981,19 +1714,16 @@ async function fullSync() {
     await setSyncMeta('lastEventId', lastEventId);
     var finalDetail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
     updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
-    updateSchemaStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
 }
 
 async function incrementalSync() {
     try {
         updateStatus('Checking for updates...', false, null, null);
-        updateSchemaStatus('Checking for updates...', false, null, null);
 
         var result = await fetchPage(1, lastEventId);
 
         if (result.events && result.events.length > 0) {
             updateStatus('Processing ' + result.events.length + ' new events...', false, null, null);
-            updateSchemaStatus('Processing ' + result.events.length + ' new events...', false, null, null);
             result.events.sort((a, b) => (a.id || 0) - (b.id || 0));
             await processEvents(result.events);
             await setSyncMeta('lastEventId', lastEventId);
@@ -2001,29 +1731,20 @@ async function incrementalSync() {
             updateStatus('Updating views...', false, null, null);
             await renderSidebar();
 
-            // Update schema builder if in schema mode
-            if (schemaMode) {
-                await updateSchemaCounts();
-                await renderSchemaContent();
-            }
-
-            // Update data view if in data mode
-            if (!schemaMode && currentTable) {
+            // Update data view if table is selected
+            if (currentTable) {
                 currentRecordIds = await getRecordIdsForTable(currentTable);
                 totalRecords = currentRecordIds.length;
                 await renderTable();
             }
 
             updateStatus('Up to date', true, null, result.events.length + ' events synced');
-            updateSchemaStatus('Up to date', true, null, result.events.length + ' events synced');
         } else {
             updateStatus('Up to date', true, null, null);
-            updateSchemaStatus('Up to date', true, null, null);
         }
     } catch (err) {
         console.error('Sync error:', err);
         updateStatus('Sync error: ' + err.message, false, null, null);
-        updateSchemaStatus('Sync error: ' + err.message, false, null, null);
     }
 }
 
@@ -2038,12 +1759,10 @@ async function init() {
     currentRecordIds = [];
     totalRecords = 0;
     lastEventId = 0;
-    schemaMode = true; // Start in schema builder mode
 
     db = await openDB();
 
     updateStatus('Loading local data...', false, null, null);
-    updateSchemaStatus('Loading local data...', false, null, null);
 
     var storedLastId = await getSyncMeta('lastEventId');
     var tables = await getAllTables();
@@ -2063,27 +1782,26 @@ async function init() {
 
     hideAuthScreen();
 
-    // Always start with schema builder view
-    document.getElementById('schema-view').style.display = 'flex';
-    document.getElementById('data-view').style.display = 'none';
-
     if (tables.length > 0) {
-        updateSchemaStatus('Found ' + tables.length + ' tables', false, null, 'Loading schema...');
+        updateStatus('Found ' + tables.length + ' tables', false, null, 'Loading data...');
         await renderSidebar();
-        await renderSchemaBuilder();
+
+        // Auto-select first table
+        var firstTable = Object.keys(META_TABLES)[0];
+        if (firstTable) {
+            await showTable(firstTable);
+        }
 
         lastEventId = storedLastId || 0;
         await incrementalSync();
     } else {
-        updateSchemaStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
+        updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
         await renderSidebar();
         await fullSync();
         await renderSidebar();
-        await renderSchemaBuilder();
     }
 
     updateStatus('Up to date', true, null, null);
-    updateSchemaStatus('Up to date', true, null, null);
 
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(incrementalSync, 60000);
@@ -2479,6 +2197,373 @@ function esc(s) {
     if (s == null) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ============ View Controls (Filter, Sort, Group, etc.) ============
+
+var currentFilters = [];
+var currentSorts = [];
+var currentGroupBy = null;
+var currentColorBy = null;
+var currentRowHeight = 'medium';
+var currentSearchQuery = '';
+
+// Close all view control dropdowns
+function closeViewControlDropdowns() {
+    document.querySelectorAll('.view-control-dropdown').forEach(d => d.classList.remove('open'));
+}
+
+// Toggle filter dropdown
+function toggleFilterDropdown() {
+    var dropdown = document.getElementById('filter-dropdown');
+    var wasOpen = dropdown.classList.contains('open');
+    closeViewControlDropdowns();
+    if (!wasOpen) {
+        dropdown.classList.add('open');
+        renderFilterDropdown();
+    }
+}
+
+// Toggle sort dropdown
+function toggleSortDropdown() {
+    var dropdown = document.getElementById('sort-dropdown');
+    var wasOpen = dropdown.classList.contains('open');
+    closeViewControlDropdowns();
+    if (!wasOpen) {
+        dropdown.classList.add('open');
+        renderSortDropdown();
+    }
+}
+
+// Toggle group dropdown
+function toggleGroupDropdown() {
+    var dropdown = document.getElementById('group-dropdown');
+    var wasOpen = dropdown.classList.contains('open');
+    closeViewControlDropdowns();
+    if (!wasOpen) {
+        dropdown.classList.add('open');
+        renderGroupDropdown();
+    }
+}
+
+// Toggle color dropdown
+function toggleColorDropdown() {
+    var dropdown = document.getElementById('color-dropdown');
+    var wasOpen = dropdown.classList.contains('open');
+    closeViewControlDropdowns();
+    if (!wasOpen) {
+        dropdown.classList.add('open');
+        renderColorDropdown();
+    }
+}
+
+// Toggle row height dropdown
+function toggleRowHeightDropdown() {
+    var dropdown = document.getElementById('row-height-dropdown');
+    var wasOpen = dropdown.classList.contains('open');
+    closeViewControlDropdowns();
+    if (!wasOpen) {
+        dropdown.classList.add('open');
+        updateRowHeightDropdown();
+    }
+}
+
+// Render filter dropdown
+function renderFilterDropdown() {
+    if (!currentTable) return;
+    var list = document.getElementById('filter-list');
+
+    if (currentFilters.length === 0) {
+        list.innerHTML = '<div class="empty-filters">No filters applied</div>';
+        return;
+    }
+
+    var fields = META_FIELDS[currentTable] || {};
+    var html = '';
+
+    for (var i = 0; i < currentFilters.length; i++) {
+        var filter = currentFilters[i];
+        html += '<div class="filter-row">';
+        html += '<select onchange="updateFilter(' + i + ', \'field\', this.value)">';
+        for (var fid in fields) {
+            var sel = filter.fieldId === fid ? ' selected' : '';
+            html += '<option value="' + esc(fid) + '"' + sel + '>' + esc(fields[fid].fieldName || fid) + '</option>';
+        }
+        html += '</select>';
+        html += '<select onchange="updateFilter(' + i + ', \'operator\', this.value)">';
+        html += '<option value="contains"' + (filter.operator === 'contains' ? ' selected' : '') + '>contains</option>';
+        html += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>equals</option>';
+        html += '<option value="not_equals"' + (filter.operator === 'not_equals' ? ' selected' : '') + '>does not equal</option>';
+        html += '<option value="is_empty"' + (filter.operator === 'is_empty' ? ' selected' : '') + '>is empty</option>';
+        html += '<option value="is_not_empty"' + (filter.operator === 'is_not_empty' ? ' selected' : '') + '>is not empty</option>';
+        html += '</select>';
+        if (filter.operator !== 'is_empty' && filter.operator !== 'is_not_empty') {
+            html += '<input type="text" value="' + esc(filter.value || '') + '" onchange="updateFilter(' + i + ', \'value\', this.value)" placeholder="Value">';
+        }
+        html += '<button class="filter-remove-btn" onclick="removeFilter(' + i + ')" title="Remove">&times;</button>';
+        html += '</div>';
+    }
+
+    list.innerHTML = html;
+    updateFilterCount();
+}
+
+// Add filter
+function addFilter() {
+    if (!currentTable) return;
+    var fields = META_FIELDS[currentTable] || {};
+    var firstFieldId = Object.keys(fields)[0];
+    if (!firstFieldId) return;
+
+    currentFilters.push({
+        fieldId: firstFieldId,
+        operator: 'contains',
+        value: ''
+    });
+    renderFilterDropdown();
+    applyFilters();
+}
+
+// Update filter
+function updateFilter(index, prop, value) {
+    if (currentFilters[index]) {
+        currentFilters[index][prop] = value;
+        renderFilterDropdown();
+        applyFilters();
+    }
+}
+
+// Remove filter
+function removeFilter(index) {
+    currentFilters.splice(index, 1);
+    renderFilterDropdown();
+    applyFilters();
+}
+
+// Update filter count badge
+function updateFilterCount() {
+    var countEl = document.getElementById('filter-count');
+    var btn = document.getElementById('filter-btn');
+    if (currentFilters.length > 0) {
+        countEl.textContent = currentFilters.length;
+        countEl.style.display = 'inline-block';
+        btn.classList.add('active');
+    } else {
+        countEl.style.display = 'none';
+        btn.classList.remove('active');
+    }
+}
+
+// Apply filters (re-render table)
+async function applyFilters() {
+    updateFilterCount();
+    await renderTable();
+}
+
+// Render sort dropdown
+function renderSortDropdown() {
+    if (!currentTable) return;
+    var list = document.getElementById('sort-list');
+
+    if (currentSorts.length === 0) {
+        list.innerHTML = '<div class="empty-sorts">No sorts applied</div>';
+        return;
+    }
+
+    var fields = META_FIELDS[currentTable] || {};
+    var html = '';
+
+    for (var i = 0; i < currentSorts.length; i++) {
+        var sort = currentSorts[i];
+        html += '<div class="sort-row">';
+        html += '<select onchange="updateSort(' + i + ', \'field\', this.value)">';
+        for (var fid in fields) {
+            var sel = sort.fieldId === fid ? ' selected' : '';
+            html += '<option value="' + esc(fid) + '"' + sel + '>' + esc(fields[fid].fieldName || fid) + '</option>';
+        }
+        html += '</select>';
+        html += '<div class="sort-direction-btns">';
+        html += '<button class="sort-direction-btn' + (sort.direction === 'asc' ? ' active' : '') + '" onclick="updateSort(' + i + ', \'direction\', \'asc\')">A→Z</button>';
+        html += '<button class="sort-direction-btn' + (sort.direction === 'desc' ? ' active' : '') + '" onclick="updateSort(' + i + ', \'direction\', \'desc\')">Z→A</button>';
+        html += '</div>';
+        html += '<button class="sort-remove-btn" onclick="removeSort(' + i + ')" title="Remove">&times;</button>';
+        html += '</div>';
+    }
+
+    list.innerHTML = html;
+    updateSortCount();
+}
+
+// Add sort
+function addSort() {
+    if (!currentTable) return;
+    var fields = META_FIELDS[currentTable] || {};
+    var firstFieldId = Object.keys(fields)[0];
+    if (!firstFieldId) return;
+
+    currentSorts.push({
+        fieldId: firstFieldId,
+        direction: 'asc'
+    });
+    renderSortDropdown();
+    applySorts();
+}
+
+// Update sort
+function updateSort(index, prop, value) {
+    if (currentSorts[index]) {
+        currentSorts[index][prop] = value;
+        renderSortDropdown();
+        applySorts();
+    }
+}
+
+// Remove sort
+function removeSort(index) {
+    currentSorts.splice(index, 1);
+    renderSortDropdown();
+    applySorts();
+}
+
+// Update sort count badge
+function updateSortCount() {
+    var countEl = document.getElementById('sort-count');
+    var btn = document.getElementById('sort-btn');
+    if (currentSorts.length > 0) {
+        countEl.textContent = currentSorts.length;
+        countEl.style.display = 'inline-block';
+        btn.classList.add('active');
+    } else {
+        countEl.style.display = 'none';
+        btn.classList.remove('active');
+    }
+}
+
+// Apply sorts (re-render table)
+async function applySorts() {
+    updateSortCount();
+    await renderTable();
+}
+
+// Render group dropdown
+function renderGroupDropdown() {
+    if (!currentTable) return;
+    var container = document.getElementById('group-options');
+    var fields = META_FIELDS[currentTable] || {};
+
+    var html = '<div class="group-option' + (!currentGroupBy ? ' none-selected' : '') + '" onclick="setGroupBy(null)">';
+    html += '<span class="check-mark">&#10003;</span>';
+    html += '<span>None</span>';
+    html += '</div>';
+
+    for (var fid in fields) {
+        var field = fields[fid];
+        var isSelected = currentGroupBy === fid;
+        html += '<div class="group-option' + (isSelected ? ' selected' : '') + '" onclick="setGroupBy(\'' + esc(fid) + '\')">';
+        html += '<span class="check-mark">&#10003;</span>';
+        html += '<span>' + esc(field.fieldName || fid) + '</span>';
+        html += '</div>';
+    }
+
+    container.innerHTML = html;
+}
+
+// Set group by field
+async function setGroupBy(fieldId) {
+    currentGroupBy = fieldId;
+    closeViewControlDropdowns();
+    var btn = document.getElementById('group-btn');
+    if (fieldId) {
+        btn.classList.add('active');
+    } else {
+        btn.classList.remove('active');
+    }
+    await renderTable();
+}
+
+// Render color dropdown
+function renderColorDropdown() {
+    if (!currentTable) return;
+    var container = document.getElementById('color-options');
+    var fields = META_FIELDS[currentTable] || {};
+
+    var html = '<div class="color-option' + (!currentColorBy ? ' none-selected' : '') + '" onclick="setColorBy(null)">';
+    html += '<span class="check-mark">&#10003;</span>';
+    html += '<span>None</span>';
+    html += '</div>';
+
+    for (var fid in fields) {
+        var field = fields[fid];
+        var isSelected = currentColorBy === fid;
+        html += '<div class="color-option' + (isSelected ? ' selected' : '') + '" onclick="setColorBy(\'' + esc(fid) + '\')">';
+        html += '<span class="check-mark">&#10003;</span>';
+        html += '<span>' + esc(field.fieldName || fid) + '</span>';
+        html += '</div>';
+    }
+
+    container.innerHTML = html;
+}
+
+// Set color by field
+async function setColorBy(fieldId) {
+    currentColorBy = fieldId;
+    closeViewControlDropdowns();
+    var btn = document.getElementById('color-btn');
+    if (fieldId) {
+        btn.classList.add('active');
+    } else {
+        btn.classList.remove('active');
+    }
+    await renderTable();
+}
+
+// Update row height dropdown selection
+function updateRowHeightDropdown() {
+    document.querySelectorAll('.row-height-option').forEach(opt => {
+        opt.classList.remove('selected');
+    });
+    var options = document.querySelectorAll('.row-height-option');
+    options.forEach(opt => {
+        if (opt.textContent.trim().toLowerCase().replace(' ', '-') === currentRowHeight ||
+            (opt.textContent.trim() === 'Short' && currentRowHeight === 'short') ||
+            (opt.textContent.trim() === 'Medium' && currentRowHeight === 'medium') ||
+            (opt.textContent.trim() === 'Tall' && currentRowHeight === 'tall') ||
+            (opt.textContent.trim() === 'Extra tall' && currentRowHeight === 'extra-tall')) {
+            opt.classList.add('selected');
+        }
+    });
+}
+
+// Set row height
+function setRowHeight(height) {
+    currentRowHeight = height;
+    closeViewControlDropdowns();
+
+    var table = document.getElementById('table');
+    if (table) {
+        table.className = 'row-height-' + height;
+    }
+}
+
+// Handle view search
+function handleViewSearch(query) {
+    currentSearchQuery = query.toLowerCase();
+    renderTable();
+}
+
+// Update closeAllDropdowns to also close view control dropdowns
+var originalCloseAllDropdowns = closeAllDropdowns;
+closeAllDropdowns = function() {
+    originalCloseAllDropdowns();
+    closeViewControlDropdowns();
+};
+
+// Add click handler for view control dropdowns
+document.addEventListener('click', function(e) {
+    var wrapper = e.target.closest('.view-control-wrapper');
+    if (!wrapper) {
+        closeViewControlDropdowns();
+    }
+});
 
 initAuthScreen();
     </script>
