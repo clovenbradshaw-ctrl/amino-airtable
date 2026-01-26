@@ -102,6 +102,100 @@
         /* Table loading indicator */
         .table-loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
         .table-container { position: relative; }
+
+        /* Schema Builder Styles */
+        .schema-builder { display: flex; flex-direction: column; height: 100%; }
+        .schema-tabs { display: flex; gap: 0; border-bottom: 2px solid #e0e0e0; background: #fafafa; padding: 0 20px; }
+        .schema-tab { padding: 12px 24px; cursor: pointer; font-size: 13px; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
+        .schema-tab:hover { color: #333; background: #f0f0f0; }
+        .schema-tab.active { color: #2d6cdf; border-bottom-color: #2d6cdf; background: #fff; }
+        .schema-tab .badge { background: #e8f0fe; color: #2d6cdf; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+        .schema-tab.active .badge { background: #2d6cdf; color: #fff; }
+
+        .schema-content { flex: 1; overflow: auto; padding: 20px; background: #f5f5f5; }
+
+        /* Schema Cards */
+        .schema-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+        .schema-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; transition: box-shadow 0.2s, transform 0.2s; cursor: pointer; }
+        .schema-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-2px); }
+        .schema-card-header { padding: 16px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 12px; }
+        .schema-card-icon { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .schema-card-icon.table { background: linear-gradient(135deg, #2d6cdf, #1e4fa8); color: #fff; }
+        .schema-card-icon.field { background: linear-gradient(135deg, #20c933, #15961f); color: #fff; }
+        .schema-card-icon.view { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; }
+        .schema-card-title { font-size: 15px; font-weight: 600; color: #333; }
+        .schema-card-id { font-size: 11px; color: #999; font-family: "SF Mono", Monaco, monospace; }
+        .schema-card-body { padding: 16px; }
+        .schema-card-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+        .schema-meta-item { font-size: 12px; color: #666; background: #f5f5f5; padding: 4px 10px; border-radius: 4px; }
+        .schema-meta-item strong { color: #333; }
+
+        /* Field Type Badge */
+        .field-type-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 4px; }
+        .field-type-badge.text { background: #e8f0fe; color: #2d6cdf; }
+        .field-type-badge.number { background: #fef3c7; color: #d97706; }
+        .field-type-badge.select { background: #dbeafe; color: #1d4ed8; }
+        .field-type-badge.date { background: #ede9fe; color: #7c3aed; }
+        .field-type-badge.checkbox { background: #d1fae5; color: #059669; }
+        .field-type-badge.link { background: #fee2e2; color: #dc2626; }
+        .field-type-badge.attachment { background: #fce7f3; color: #db2777; }
+        .field-type-badge.formula { background: #e0e7ff; color: #4338ca; }
+        .field-type-badge.rollup { background: #ccfbf1; color: #0d9488; }
+        .field-type-badge.lookup { background: #fef9c3; color: #ca8a04; }
+        .field-type-badge.default { background: #f3f4f6; color: #6b7280; }
+
+        /* View Type Badge */
+        .view-type-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 4px; }
+        .view-type-badge.grid { background: #e8f0fe; color: #2d6cdf; }
+        .view-type-badge.gallery { background: #fce7f3; color: #db2777; }
+        .view-type-badge.kanban { background: #dbeafe; color: #1d4ed8; }
+        .view-type-badge.calendar { background: #ede9fe; color: #7c3aed; }
+        .view-type-badge.timeline { background: #d1fae5; color: #059669; }
+        .view-type-badge.form { background: #fef3c7; color: #d97706; }
+        .view-type-badge.default { background: #f3f4f6; color: #6b7280; }
+
+        /* Schema List View */
+        .schema-list { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .schema-list-header { display: grid; grid-template-columns: 1fr 1fr 150px 100px; padding: 12px 16px; background: #f9fafb; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e7eb; }
+        .schema-list-row { display: grid; grid-template-columns: 1fr 1fr 150px 100px; padding: 12px 16px; border-bottom: 1px solid #f3f4f6; align-items: center; cursor: pointer; transition: background 0.15s; }
+        .schema-list-row:hover { background: #f9fafb; }
+        .schema-list-row:last-child { border-bottom: none; }
+        .schema-list-name { font-weight: 500; color: #333; }
+        .schema-list-id { font-size: 12px; color: #9ca3af; font-family: "SF Mono", Monaco, monospace; }
+
+        /* Toggle between grid/list view */
+        .view-toggle { display: flex; background: #f3f4f6; border-radius: 6px; padding: 2px; }
+        .view-toggle-btn { padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; color: #666; background: transparent; border: none; }
+        .view-toggle-btn.active { background: #fff; color: #333; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+
+        /* Mode toggle in sidebar */
+        .sidebar-mode-toggle { padding: 12px 16px; border-bottom: 1px solid #2d2f36; }
+        .mode-toggle-btn { width: 100%; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; border: none; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; }
+        .mode-toggle-btn.schema { background: #8b5cf6; color: #fff; }
+        .mode-toggle-btn.schema:hover { background: #7c3aed; }
+        .mode-toggle-btn.data { background: #2d6cdf; color: #fff; }
+        .mode-toggle-btn.data:hover { background: #2560c9; }
+
+        /* Schema builder toolbar */
+        .schema-toolbar { padding: 16px 20px; background: #fff; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 16px; }
+        .schema-toolbar h1 { font-size: 18px; font-weight: 600; color: #333; margin: 0; }
+        .schema-toolbar .spacer { flex: 1; }
+
+        /* Empty state for schema */
+        .schema-empty { text-align: center; padding: 60px 20px; }
+        .schema-empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+        .schema-empty h3 { font-size: 18px; color: #333; margin-bottom: 8px; }
+        .schema-empty p { color: #666; font-size: 14px; }
+
+        /* Table selector dropdown in schema builder */
+        .table-selector { position: relative; }
+        .table-selector-btn { padding: 8px 16px; background: #fff; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; min-width: 200px; }
+        .table-selector-btn:hover { border-color: #2d6cdf; }
+        .table-selector-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; max-height: 300px; overflow-y: auto; display: none; }
+        .table-selector-dropdown.open { display: block; }
+        .table-selector-option { padding: 10px 16px; cursor: pointer; font-size: 13px; }
+        .table-selector-option:hover { background: #f5f5f5; }
+        .table-selector-option.active { background: #e8f0fe; color: #2d6cdf; }
     </style>
 </head>
 <body>
@@ -120,39 +214,90 @@
 
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <h2>Tables</h2>
+            <h2>Amino Viewer</h2>
+        </div>
+        <div class="sidebar-mode-toggle">
+            <button class="mode-toggle-btn schema" id="mode-toggle-btn" onclick="toggleMode()">
+                <span id="mode-icon">&#9638;</span>
+                <span id="mode-text">Schema Builder</span>
+            </button>
         </div>
         <div id="table-list"></div>
     </div>
 
     <div class="main">
-        <div class="toolbar">
-            <h1 id="title">Select a table</h1>
-            <button class="btn" onclick="manualSync()">Sync</button>
-            <button class="btn" onclick="logout()">Logout</button>
-        </div>
-        <div class="status-bar">
-            <span class="status-dot" id="status-dot"></span>
-            <span id="status-text">Ready</span>
-            <div class="progress-bar" id="progress-bar" style="display: none; flex: 1; max-width: 200px;">
-                <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+        <!-- Schema Builder View -->
+        <div id="schema-view" class="schema-builder">
+            <div class="schema-toolbar">
+                <h1>Schema Builder</h1>
+                <div class="spacer"></div>
+                <div class="table-selector" id="table-selector-container" style="display: none;">
+                    <button class="table-selector-btn" id="table-selector-btn" onclick="toggleTableSelector()">
+                        <span id="selected-table-name">All Tables</span>
+                        <span style="margin-left: auto;">&#9662;</span>
+                    </button>
+                    <div class="table-selector-dropdown" id="table-selector-dropdown"></div>
+                </div>
+                <button class="btn" onclick="manualSync()">Sync</button>
+                <button class="btn" onclick="logout()">Logout</button>
             </div>
-            <span id="status-detail" style="color: #999; font-size: 11px;"></span>
+            <div class="schema-tabs">
+                <div class="schema-tab active" id="tab-tables" onclick="showSchemaTab('tables')">
+                    <span>Tables</span>
+                    <span class="badge" id="tables-count">0</span>
+                </div>
+                <div class="schema-tab" id="tab-fields" onclick="showSchemaTab('fields')">
+                    <span>Fields</span>
+                    <span class="badge" id="fields-count">0</span>
+                </div>
+                <div class="schema-tab" id="tab-views" onclick="showSchemaTab('views')">
+                    <span>Views</span>
+                    <span class="badge" id="views-count">0</span>
+                </div>
+            </div>
+            <div class="status-bar">
+                <span class="status-dot" id="schema-status-dot"></span>
+                <span id="schema-status-text">Ready</span>
+                <div class="progress-bar" id="schema-progress-bar" style="display: none; flex: 1; max-width: 200px;">
+                    <div class="progress-fill" id="schema-progress-fill" style="width: 0%"></div>
+                </div>
+                <span id="schema-status-detail" style="color: #999; font-size: 11px;"></span>
+            </div>
+            <div class="schema-content" id="schema-content">
+                <!-- Schema cards will be rendered here -->
+            </div>
         </div>
-        <div class="table-container" id="table-container">
-            <table id="table"></table>
-        </div>
-        <div class="pagination" id="pagination">
-            <button id="prev-btn" onclick="prevPage()">Previous</button>
-            <span class="page-info" id="page-info">Page 1</span>
-            <button id="next-btn" onclick="nextPage()">Next</button>
+
+        <!-- Data Viewer View (hidden by default) -->
+        <div id="data-view" style="display: none; flex-direction: column; height: 100%;">
+            <div class="toolbar">
+                <h1 id="title">Select a table</h1>
+                <button class="btn" onclick="manualSync()">Sync</button>
+                <button class="btn" onclick="logout()">Logout</button>
+            </div>
+            <div class="status-bar">
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">Ready</span>
+                <div class="progress-bar" id="progress-bar" style="display: none; flex: 1; max-width: 200px;">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+                <span id="status-detail" style="color: #999; font-size: 11px;"></span>
+            </div>
+            <div class="table-container" id="table-container">
+                <table id="table"></table>
+            </div>
+            <div class="pagination" id="pagination">
+                <button id="prev-btn" onclick="prevPage()">Previous</button>
+                <span class="page-info" id="page-info">Page 1</span>
+                <button id="next-btn" onclick="nextPage()">Next</button>
+            </div>
         </div>
     </div>
 
     <script>
 var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
 var DB_NAME = 'aminostream';
-var DB_VERSION = 2;
+var DB_VERSION = 3;
 var PAGE_SIZE = 100;
 
 var API_KEY = null;
@@ -162,6 +307,12 @@ var db = null;
 // Only keep lightweight metadata in memory
 var META_TABLES = {};
 var META_FIELDS = {};
+var META_VIEWS = {};
+
+// Schema builder mode
+var schemaMode = true; // Start in schema builder mode
+var currentSchemaTab = 'tables'; // 'tables', 'fields', 'views'
+var selectedSchemaTable = null; // Selected table in schema builder
 
 var currentTable = null;
 var currentPage = 0;
@@ -198,6 +349,10 @@ function openDB() {
             // Field metadata: keyed by [tableId, fieldId]
             var fieldStore = db.createObjectStore('fields', { keyPath: ['tableId', 'fieldId'] });
             fieldStore.createIndex('by_table', 'tableId');
+
+            // View metadata: keyed by [tableId, viewId]
+            var viewStore = db.createObjectStore('views', { keyPath: ['tableId', 'viewId'] });
+            viewStore.createIndex('by_table', 'tableId');
 
             // Sync state
             db.createObjectStore('sync', { keyPath: 'key' });
@@ -239,6 +394,53 @@ function getFieldsForTable(tableId) {
         var req = index.getAll(tableId);
         req.onsuccess = () => resolve(req.result || []);
         req.onerror = () => reject(req.error);
+    });
+}
+
+function getViewsForTable(tableId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('views', 'readonly');
+        var index = tx.objectStore('views').index('by_table');
+        var req = index.getAll(tableId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getAllViews() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('views', 'readonly');
+        var req = tx.objectStore('views').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getAllFields() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('fields', 'readonly');
+        var req = tx.objectStore('fields').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// Query schema elements by recordId prefix
+function getSchemaByPrefix(prefix) {
+    // Returns tables (tbl*), fields (fld*), or views (viw*) based on prefix
+    return new Promise(async (resolve) => {
+        var results = [];
+        if (prefix === 'tbl') {
+            var tables = await getAllTables();
+            results = tables.filter(t => t.tableId && t.tableId.startsWith('tbl'));
+        } else if (prefix === 'fld') {
+            var fields = await getAllFields();
+            results = fields.filter(f => f.fieldId && f.fieldId.startsWith('fld'));
+        } else if (prefix === 'viw') {
+            var views = await getAllViews();
+            results = views.filter(v => v.viewId && v.viewId.startsWith('viw'));
+        }
+        resolve(results);
     });
 }
 
@@ -295,6 +497,15 @@ function saveField(field) {
     });
 }
 
+function saveView(view) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('views', 'readwrite');
+        tx.objectStore('views').put(view);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
 function saveDataRecord(record) {
     return new Promise((resolve, reject) => {
         var tx = db.transaction('data', 'readwrite');
@@ -304,11 +515,12 @@ function saveDataRecord(record) {
     });
 }
 
-function saveBatch(tables, fields, dataRecords) {
+function saveBatch(tables, fields, views, dataRecords) {
     return new Promise((resolve, reject) => {
         var stores = [];
         if (tables.length) stores.push('tables');
         if (fields.length) stores.push('fields');
+        if (views.length) stores.push('views');
         if (dataRecords.length) stores.push('data');
         if (!stores.length) return resolve();
 
@@ -316,6 +528,7 @@ function saveBatch(tables, fields, dataRecords) {
 
         tables.forEach(t => tx.objectStore('tables').put(t));
         fields.forEach(f => tx.objectStore('fields').put(f));
+        views.forEach(v => tx.objectStore('views').put(v));
         dataRecords.forEach(d => tx.objectStore('data').put(d));
 
         tx.oncomplete = () => resolve();
@@ -325,10 +538,11 @@ function saveBatch(tables, fields, dataRecords) {
 
 function clearAllData() {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction(['data', 'tables', 'fields', 'sync'], 'readwrite');
+        var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync'], 'readwrite');
         tx.objectStore('data').clear();
         tx.objectStore('tables').clear();
         tx.objectStore('fields').clear();
+        tx.objectStore('views').clear();
         tx.objectStore('sync').clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -464,6 +678,7 @@ async function processEvents(events) {
 
     var tables = [];
     var fields = [];
+    var views = [];
     var dataRecords = [];
     var tableDataMap = {}; // tableId -> { recordId -> fields }
 
@@ -478,30 +693,45 @@ async function processEvents(events) {
         var recordId = e.recordId;
 
         if (recordType === 'table') {
+            // Tables: recordId starts with "tbl", set points to base
             var tableId = recordId;
             var tableData = { tableId };
             applyPayloadFields(tableData, payload);
             if (payload.tableName) tableData.tableName = payload.tableName;
             if (payload.primaryFieldId) tableData.primaryFieldId = payload.primaryFieldId;
+            if (payload.tableId) tableData.tableId = payload.tableId;
             tables.push(tableData);
             META_TABLES[tableId] = tableData;
 
         } else if (recordType === 'field') {
-            var tableId = setName.replace('airtable:', '');
+            // Fields: recordId starts with "fld", set points to table
+            var tableId = payload.tableId || setName.replace('airtable:', '');
             var fieldId = recordId;
             var fieldData = { tableId, fieldId };
             applyPayloadFields(fieldData, payload);
             if (payload.fieldName) fieldData.fieldName = payload.fieldName;
             if (payload.fieldType) fieldData.fieldType = payload.fieldType;
+            if (payload.fieldId) fieldData.fieldId = payload.fieldId;
+            if (payload.options) fieldData.options = payload.options;
             fields.push(fieldData);
             if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
             META_FIELDS[tableId][fieldId] = fieldData;
 
         } else if (recordType === 'view') {
-            // Skip views for now
+            // Views: recordId starts with "viw", set points to table
+            var tableId = payload.tableId || setName.replace('airtable:', '');
+            var viewId = recordId;
+            var viewData = { tableId, viewId };
+            applyPayloadFields(viewData, payload);
+            if (payload.viewName) viewData.viewName = payload.viewName;
+            if (payload.viewType) viewData.viewType = payload.viewType;
+            if (payload.viewId) viewData.viewId = payload.viewId;
+            views.push(viewData);
+            if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+            META_VIEWS[tableId][viewId] = viewData;
 
         } else {
-            // Data record
+            // Data record: recordId starts with "rec"
             var tableId = setName.replace('airtable:', '');
             var pfields = payload.fields;
             if (!pfields || typeof pfields !== 'object') continue;
@@ -538,8 +768,8 @@ async function processEvents(events) {
     }
 
     // Save batch
-    if (tables.length || fields.length || dataRecords.length) {
-        await saveBatch(tables, fields, dataRecords);
+    if (tables.length || fields.length || views.length || dataRecords.length) {
+        await saveBatch(tables, fields, views, dataRecords);
     }
 }
 
@@ -551,6 +781,328 @@ function applyPayloadFields(target, payload) {
     if (fields.NUL && Array.isArray(fields.NUL)) {
         fields.NUL.forEach(k => delete target[k]);
     }
+}
+
+// ============ Schema Builder UI ============
+
+function toggleMode() {
+    schemaMode = !schemaMode;
+    var btn = document.getElementById('mode-toggle-btn');
+    var icon = document.getElementById('mode-icon');
+    var text = document.getElementById('mode-text');
+    var schemaView = document.getElementById('schema-view');
+    var dataView = document.getElementById('data-view');
+
+    if (schemaMode) {
+        btn.className = 'mode-toggle-btn schema';
+        icon.innerHTML = '&#9638;';
+        text.textContent = 'Schema Builder';
+        schemaView.style.display = 'flex';
+        dataView.style.display = 'none';
+        renderSchemaBuilder();
+    } else {
+        btn.className = 'mode-toggle-btn data';
+        icon.innerHTML = '&#9776;';
+        text.textContent = 'Data Viewer';
+        schemaView.style.display = 'none';
+        dataView.style.display = 'flex';
+        if (currentTable) {
+            showTable(currentTable);
+        }
+    }
+}
+
+function showSchemaTab(tab) {
+    currentSchemaTab = tab;
+
+    // Update tab UI
+    document.getElementById('tab-tables').className = 'schema-tab' + (tab === 'tables' ? ' active' : '');
+    document.getElementById('tab-fields').className = 'schema-tab' + (tab === 'fields' ? ' active' : '');
+    document.getElementById('tab-views').className = 'schema-tab' + (tab === 'views' ? ' active' : '');
+
+    // Show/hide table selector for fields and views tabs
+    var tableSelectorContainer = document.getElementById('table-selector-container');
+    if (tab === 'fields' || tab === 'views') {
+        tableSelectorContainer.style.display = 'block';
+        renderTableSelector();
+    } else {
+        tableSelectorContainer.style.display = 'none';
+    }
+
+    renderSchemaContent();
+}
+
+function toggleTableSelector() {
+    var dropdown = document.getElementById('table-selector-dropdown');
+    dropdown.classList.toggle('open');
+}
+
+function selectSchemaTable(tableId) {
+    selectedSchemaTable = tableId;
+    var tableName = tableId ? (META_TABLES[tableId]?.tableName || tableId) : 'All Tables';
+    document.getElementById('selected-table-name').textContent = tableName;
+    document.getElementById('table-selector-dropdown').classList.remove('open');
+    renderSchemaContent();
+}
+
+async function renderTableSelector() {
+    var dropdown = document.getElementById('table-selector-dropdown');
+    var tables = await getAllTables();
+
+    // Also get tables from META_TABLES
+    for (var tid in META_TABLES) {
+        if (!tables.find(t => t.tableId === tid)) {
+            tables.push(META_TABLES[tid]);
+        }
+    }
+
+    tables.sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
+
+    var html = '<div class="table-selector-option' + (!selectedSchemaTable ? ' active' : '') + '" onclick="selectSchemaTable(null)">All Tables</div>';
+    for (var table of tables) {
+        var isActive = selectedSchemaTable === table.tableId;
+        html += '<div class="table-selector-option' + (isActive ? ' active' : '') + '" onclick="selectSchemaTable(\'' + esc(table.tableId) + '\')">' + esc(table.tableName || table.tableId) + '</div>';
+    }
+
+    dropdown.innerHTML = html;
+}
+
+async function renderSchemaBuilder() {
+    await updateSchemaCounts();
+    renderSchemaContent();
+}
+
+async function updateSchemaCounts() {
+    var tables = await getSchemaByPrefix('tbl');
+    var fields = await getSchemaByPrefix('fld');
+    var views = await getSchemaByPrefix('viw');
+
+    document.getElementById('tables-count').textContent = tables.length;
+    document.getElementById('fields-count').textContent = fields.length;
+    document.getElementById('views-count').textContent = views.length;
+}
+
+async function renderSchemaContent() {
+    var content = document.getElementById('schema-content');
+
+    if (currentSchemaTab === 'tables') {
+        await renderTablesTab(content);
+    } else if (currentSchemaTab === 'fields') {
+        await renderFieldsTab(content);
+    } else if (currentSchemaTab === 'views') {
+        await renderViewsTab(content);
+    }
+}
+
+async function renderTablesTab(content) {
+    var tables = await getSchemaByPrefix('tbl');
+
+    if (tables.length === 0) {
+        content.innerHTML = '<div class="schema-empty"><div class="schema-empty-icon">&#128451;</div><h3>No Tables Found</h3><p>Sync data to see your Airtable schema</p></div>';
+        return;
+    }
+
+    // Sort by table name
+    tables.sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
+
+    var html = '<div class="schema-grid">';
+    for (var table of tables) {
+        var fieldCount = META_FIELDS[table.tableId] ? Object.keys(META_FIELDS[table.tableId]).length : 0;
+        var viewCount = META_VIEWS[table.tableId] ? Object.keys(META_VIEWS[table.tableId]).length : 0;
+
+        html += '<div class="schema-card" onclick="viewTableSchema(\'' + esc(table.tableId) + '\')">';
+        html += '<div class="schema-card-header">';
+        html += '<div class="schema-card-icon table">&#128451;</div>';
+        html += '<div>';
+        html += '<div class="schema-card-title">' + esc(table.tableName || table.tableId) + '</div>';
+        html += '<div class="schema-card-id">' + esc(table.tableId) + '</div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="schema-card-body">';
+        html += '<div class="schema-card-meta">';
+        html += '<span class="schema-meta-item"><strong>' + fieldCount + '</strong> fields</span>';
+        html += '<span class="schema-meta-item"><strong>' + viewCount + '</strong> views</span>';
+        if (table.primaryFieldId) {
+            html += '<span class="schema-meta-item">Primary: <strong>' + esc(table.primaryFieldId.slice(-8)) + '</strong></span>';
+        }
+        html += '</div>';
+        html += '</div>';
+        html += '</div>';
+    }
+    html += '</div>';
+
+    content.innerHTML = html;
+}
+
+async function renderFieldsTab(content) {
+    var fields = await getSchemaByPrefix('fld');
+
+    // Filter by selected table
+    if (selectedSchemaTable) {
+        fields = fields.filter(f => f.tableId === selectedSchemaTable);
+    }
+
+    if (fields.length === 0) {
+        var msg = selectedSchemaTable ? 'No fields found for this table' : 'No fields found';
+        content.innerHTML = '<div class="schema-empty"><div class="schema-empty-icon">&#128203;</div><h3>' + msg + '</h3><p>Sync data to see your field definitions</p></div>';
+        return;
+    }
+
+    // Sort by table, then field name
+    fields.sort((a, b) => {
+        var tableCompare = (a.tableId || '').localeCompare(b.tableId || '');
+        if (tableCompare !== 0) return tableCompare;
+        return (a.fieldName || a.fieldId).localeCompare(b.fieldName || b.fieldId);
+    });
+
+    var html = '<div class="schema-grid">';
+    for (var field of fields) {
+        var tableName = META_TABLES[field.tableId]?.tableName || field.tableId;
+        var fieldTypeClass = getFieldTypeClass(field.fieldType);
+
+        html += '<div class="schema-card" onclick="viewFieldDetails(\'' + esc(field.tableId) + '\', \'' + esc(field.fieldId) + '\')">';
+        html += '<div class="schema-card-header">';
+        html += '<div class="schema-card-icon field">&#128203;</div>';
+        html += '<div>';
+        html += '<div class="schema-card-title">' + esc(field.fieldName || field.fieldId) + '</div>';
+        html += '<div class="schema-card-id">' + esc(field.fieldId) + '</div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="schema-card-body">';
+        html += '<div class="schema-card-meta">';
+        html += '<span class="field-type-badge ' + fieldTypeClass + '">' + esc(field.fieldType || 'unknown') + '</span>';
+        html += '<span class="schema-meta-item">Table: <strong>' + esc(tableName) + '</strong></span>';
+        if (field.options && field.options.choices) {
+            html += '<span class="schema-meta-item"><strong>' + field.options.choices.length + '</strong> choices</span>';
+        }
+        html += '</div>';
+        html += '</div>';
+        html += '</div>';
+    }
+    html += '</div>';
+
+    content.innerHTML = html;
+}
+
+async function renderViewsTab(content) {
+    var views = await getSchemaByPrefix('viw');
+
+    // Filter by selected table
+    if (selectedSchemaTable) {
+        views = views.filter(v => v.tableId === selectedSchemaTable);
+    }
+
+    if (views.length === 0) {
+        var msg = selectedSchemaTable ? 'No views found for this table' : 'No views found';
+        content.innerHTML = '<div class="schema-empty"><div class="schema-empty-icon">&#128065;</div><h3>' + msg + '</h3><p>Sync data to see your view definitions</p></div>';
+        return;
+    }
+
+    // Sort by table, then view name
+    views.sort((a, b) => {
+        var tableCompare = (a.tableId || '').localeCompare(b.tableId || '');
+        if (tableCompare !== 0) return tableCompare;
+        return (a.viewName || a.viewId).localeCompare(b.viewName || b.viewId);
+    });
+
+    var html = '<div class="schema-grid">';
+    for (var view of views) {
+        var tableName = META_TABLES[view.tableId]?.tableName || view.tableId;
+        var viewTypeClass = getViewTypeClass(view.viewType);
+
+        html += '<div class="schema-card" onclick="viewViewDetails(\'' + esc(view.tableId) + '\', \'' + esc(view.viewId) + '\')">';
+        html += '<div class="schema-card-header">';
+        html += '<div class="schema-card-icon view">&#128065;</div>';
+        html += '<div>';
+        html += '<div class="schema-card-title">' + esc(view.viewName || view.viewId) + '</div>';
+        html += '<div class="schema-card-id">' + esc(view.viewId) + '</div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="schema-card-body">';
+        html += '<div class="schema-card-meta">';
+        html += '<span class="view-type-badge ' + viewTypeClass + '">' + esc(view.viewType || 'grid') + '</span>';
+        html += '<span class="schema-meta-item">Table: <strong>' + esc(tableName) + '</strong></span>';
+        html += '</div>';
+        html += '</div>';
+        html += '</div>';
+    }
+    html += '</div>';
+
+    content.innerHTML = html;
+}
+
+function getFieldTypeClass(fieldType) {
+    if (!fieldType) return 'default';
+    var type = fieldType.toLowerCase();
+    if (type.includes('text') || type.includes('string') || type === 'singlelinetext' || type === 'multilinetext' || type === 'richtext') return 'text';
+    if (type.includes('number') || type === 'currency' || type === 'percent' || type === 'autonumber') return 'number';
+    if (type.includes('select') || type === 'singleselect' || type === 'multipleselects') return 'select';
+    if (type.includes('date') || type === 'datetime' || type === 'createdtime' || type === 'lastmodifiedtime') return 'date';
+    if (type === 'checkbox') return 'checkbox';
+    if (type.includes('link') || type === 'multiplerecordlinks') return 'link';
+    if (type === 'attachment' || type === 'multipleattachments') return 'attachment';
+    if (type === 'formula') return 'formula';
+    if (type === 'rollup') return 'rollup';
+    if (type === 'lookup' || type === 'multiplelookupvalues') return 'lookup';
+    return 'default';
+}
+
+function getViewTypeClass(viewType) {
+    if (!viewType) return 'default';
+    var type = viewType.toLowerCase();
+    if (type === 'grid') return 'grid';
+    if (type === 'gallery') return 'gallery';
+    if (type === 'kanban') return 'kanban';
+    if (type === 'calendar') return 'calendar';
+    if (type === 'timeline') return 'timeline';
+    if (type === 'form') return 'form';
+    return 'default';
+}
+
+function viewTableSchema(tableId) {
+    // Switch to fields tab filtered by this table
+    selectedSchemaTable = tableId;
+    showSchemaTab('fields');
+}
+
+function viewFieldDetails(tableId, fieldId) {
+    // Could show a modal with field details in the future
+    var field = META_FIELDS[tableId]?.[fieldId];
+    if (field) {
+        console.log('Field details:', field);
+        alert('Field: ' + (field.fieldName || fieldId) + '\nType: ' + (field.fieldType || 'unknown') + '\nID: ' + fieldId);
+    }
+}
+
+function viewViewDetails(tableId, viewId) {
+    // Could show a modal with view details in the future
+    var view = META_VIEWS[tableId]?.[viewId];
+    if (view) {
+        console.log('View details:', view);
+        alert('View: ' + (view.viewName || viewId) + '\nType: ' + (view.viewType || 'grid') + '\nID: ' + viewId);
+    }
+}
+
+function updateSchemaStatus(msg, isSynced, progress, detail) {
+    var dot = document.getElementById('schema-status-dot');
+    var text = document.getElementById('schema-status-text');
+    var progressBar = document.getElementById('schema-progress-bar');
+    var progressFill = document.getElementById('schema-progress-fill');
+    var statusDetail = document.getElementById('schema-status-detail');
+
+    if (dot) dot.className = 'status-dot ' + (isSynced ? 'synced' : 'loading');
+    if (text) text.textContent = msg;
+
+    if (progressBar && progressFill) {
+        if (typeof progress === 'number' && progress >= 0) {
+            progressBar.style.display = 'block';
+            progressFill.style.width = Math.min(100, progress) + '%';
+        } else {
+            progressBar.style.display = 'none';
+        }
+    }
+
+    if (statusDetail) statusDetail.textContent = detail || '';
 }
 
 // ============ UI ============
@@ -867,13 +1419,15 @@ async function fullSync() {
     var eventsLoaded = 0;
     var tablesFound = 0;
     var fieldsFound = 0;
+    var viewsFound = 0;
     var recordsFound = 0;
 
     while (true) {
         // Show progress with estimates (assume ~50 pages max for progress bar)
         var progressPct = Math.min(95, (page / 50) * 100);
-        var detail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + recordsFound.toLocaleString() + ' records';
+        var detail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
         updateStatus('Syncing page ' + page + '...', false, progressPct, detail);
+        updateSchemaStatus('Syncing page ' + page + '...', false, progressPct, detail);
 
         var result = await fetchPage(page, null);
         if (!result.events || result.events.length === 0) break;
@@ -886,7 +1440,8 @@ async function fullSync() {
             var payload = parsePayload(e.payload);
             if (payload && payload._set === 'table') tablesFound++;
             else if (payload && payload._set === 'field') fieldsFound++;
-            else if (payload && payload._set !== 'view') recordsFound++;
+            else if (payload && payload._set === 'view') viewsFound++;
+            else recordsFound++;
         }
 
         await processEvents(result.events);
@@ -894,15 +1449,23 @@ async function fullSync() {
         // Update sidebar after EVERY page to show tables/fields as they arrive
         await renderSidebar();
 
-        // If no table is selected but we have tables, show the first one
-        if (!currentTable && Object.keys(META_TABLES).length > 0) {
-            var firstTable = Object.keys(META_TABLES)[0];
-            await showTable(firstTable);
-        } else if (currentTable) {
-            // Refresh current table view to show new data
-            currentRecordIds = await getRecordIdsForTable(currentTable);
-            totalRecords = currentRecordIds.length;
-            await renderTable();
+        // Update schema builder if in schema mode
+        if (schemaMode) {
+            await updateSchemaCounts();
+            await renderSchemaContent();
+        }
+
+        // If in data mode and table is selected, refresh the view
+        if (!schemaMode) {
+            if (!currentTable && Object.keys(META_TABLES).length > 0) {
+                var firstTable = Object.keys(META_TABLES)[0];
+                await showTable(firstTable);
+            } else if (currentTable) {
+                // Refresh current table view to show new data
+                currentRecordIds = await getRecordIdsForTable(currentTable);
+                totalRecords = currentRecordIds.length;
+                await renderTable();
+            }
         }
 
         if (!result.hasMore) break;
@@ -911,36 +1474,51 @@ async function fullSync() {
     }
 
     await setSyncMeta('lastEventId', lastEventId);
-    var finalDetail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + recordsFound.toLocaleString() + ' records';
+    var finalDetail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
     updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
+    updateSchemaStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
 }
 
 async function incrementalSync() {
     try {
         updateStatus('Checking for updates...', false, null, null);
+        updateSchemaStatus('Checking for updates...', false, null, null);
 
         var result = await fetchPage(1, lastEventId);
 
         if (result.events && result.events.length > 0) {
             updateStatus('Processing ' + result.events.length + ' new events...', false, null, null);
+            updateSchemaStatus('Processing ' + result.events.length + ' new events...', false, null, null);
             result.events.sort((a, b) => (a.id || 0) - (b.id || 0));
             await processEvents(result.events);
             await setSyncMeta('lastEventId', lastEventId);
 
             updateStatus('Updating views...', false, null, null);
             await renderSidebar();
-            if (currentTable) {
+
+            // Update schema builder if in schema mode
+            if (schemaMode) {
+                await updateSchemaCounts();
+                await renderSchemaContent();
+            }
+
+            // Update data view if in data mode
+            if (!schemaMode && currentTable) {
                 currentRecordIds = await getRecordIdsForTable(currentTable);
                 totalRecords = currentRecordIds.length;
                 await renderTable();
             }
+
             updateStatus('Up to date', true, null, result.events.length + ' events synced');
+            updateSchemaStatus('Up to date', true, null, result.events.length + ' events synced');
         } else {
             updateStatus('Up to date', true, null, null);
+            updateSchemaStatus('Up to date', true, null, null);
         }
     } catch (err) {
         console.error('Sync error:', err);
         updateStatus('Sync error: ' + err.message, false, null, null);
+        updateSchemaStatus('Sync error: ' + err.message, false, null, null);
     }
 }
 
@@ -949,43 +1527,58 @@ async function incrementalSync() {
 async function init() {
     META_TABLES = {};
     META_FIELDS = {};
+    META_VIEWS = {};
     currentTable = null;
     currentPage = 0;
     currentRecordIds = [];
     totalRecords = 0;
     lastEventId = 0;
+    schemaMode = true; // Start in schema builder mode
 
     db = await openDB();
 
     updateStatus('Loading local data...', false, null, null);
+    updateSchemaStatus('Loading local data...', false, null, null);
 
     var storedLastId = await getSyncMeta('lastEventId');
     var tables = await getAllTables();
+    var fields = await getAllFields();
+    var views = await getAllViews();
 
-    // Load table metadata into memory
+    // Load metadata into memory
     tables.forEach(t => META_TABLES[t.tableId] = t);
+    fields.forEach(f => {
+        if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+        META_FIELDS[f.tableId][f.fieldId] = f;
+    });
+    views.forEach(v => {
+        if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+        META_VIEWS[v.tableId][v.viewId] = v;
+    });
 
     hideAuthScreen();
 
+    // Always start with schema builder view
+    document.getElementById('schema-view').style.display = 'flex';
+    document.getElementById('data-view').style.display = 'none';
+
     if (tables.length > 0) {
-        updateStatus('Found ' + tables.length + ' tables', false, null, 'Loading table list...');
+        updateSchemaStatus('Found ' + tables.length + ' tables', false, null, 'Loading schema...');
         await renderSidebar();
+        await renderSchemaBuilder();
 
         lastEventId = storedLastId || 0;
-        await showTable(tables[0].tableId);
         await incrementalSync();
     } else {
-        updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
+        updateSchemaStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
         await renderSidebar();
         await fullSync();
         await renderSidebar();
-        var newTables = await getAllTables();
-        if (newTables.length > 0) {
-            await showTable(newTables[0].tableId);
-        }
+        await renderSchemaBuilder();
     }
 
     updateStatus('Up to date', true, null, null);
+    updateSchemaStatus('Up to date', true, null, null);
 
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(incrementalSync, 60000);
