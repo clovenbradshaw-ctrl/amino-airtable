@@ -242,6 +242,57 @@
         .modal-toolbar { padding: 12px 24px; background: #fafafa; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 12px; }
         .modal-toolbar select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; background: #fff; }
         .modal-toolbar .history-count { font-size: 12px; color: #666; margin-left: auto; }
+
+        /* View Selector in Data Toolbar */
+        .view-selector { position: relative; display: flex; align-items: center; gap: 8px; }
+        .view-selector-btn { padding: 6px 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; min-width: 140px; transition: border-color 0.15s; }
+        .view-selector-btn:hover { border-color: #2d6cdf; }
+        .view-selector-btn .view-icon { font-size: 14px; }
+        .view-selector-btn .view-name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .view-selector-btn .dropdown-arrow { font-size: 10px; color: #666; }
+        .view-selector-dropdown { position: absolute; top: 100%; left: 0; margin-top: 4px; min-width: 200px; background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 100; max-height: 300px; overflow-y: auto; display: none; }
+        .view-selector-dropdown.open { display: block; }
+        .view-selector-dropdown-header { padding: 10px 12px; font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #eee; background: #fafafa; }
+        .view-selector-option { padding: 10px 12px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 10px; transition: background 0.1s; }
+        .view-selector-option:hover { background: #f5f5f5; }
+        .view-selector-option.active { background: #e8f0fe; color: #2d6cdf; }
+        .view-selector-option .view-type-icon { width: 20px; text-align: center; }
+        .view-selector-option .view-option-name { flex: 1; }
+        .view-selector-option .view-check { color: #2d6cdf; font-size: 14px; }
+
+        /* Fields Button & Dropdown */
+        .fields-btn { padding: 6px 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+        .fields-btn:hover { border-color: #2d6cdf; background: #f8faff; }
+        .fields-btn .fields-icon { font-size: 14px; }
+        .fields-btn .fields-count { background: #e8f0fe; color: #2d6cdf; padding: 2px 6px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+        .fields-dropdown { position: absolute; top: 100%; right: 0; margin-top: 4px; width: 280px; background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 100; display: none; }
+        .fields-dropdown.open { display: block; }
+        .fields-dropdown-header { padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; }
+        .fields-dropdown-header h3 { font-size: 14px; font-weight: 600; color: #333; margin: 0; }
+        .fields-dropdown-actions { display: flex; gap: 8px; }
+        .fields-dropdown-actions button { padding: 4px 8px; font-size: 11px; background: transparent; border: none; color: #2d6cdf; cursor: pointer; border-radius: 4px; }
+        .fields-dropdown-actions button:hover { background: #e8f0fe; }
+        .fields-dropdown-list { max-height: 350px; overflow-y: auto; padding: 8px 0; }
+        .fields-dropdown-item { padding: 8px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: background 0.1s; user-select: none; }
+        .fields-dropdown-item:hover { background: #f5f5f5; }
+        .fields-dropdown-item.dragging { background: #e8f0fe; opacity: 0.8; }
+        .fields-dropdown-item .field-drag-handle { cursor: grab; color: #ccc; font-size: 12px; padding: 2px; }
+        .fields-dropdown-item .field-drag-handle:hover { color: #999; }
+        .fields-dropdown-item .field-checkbox { width: 18px; height: 18px; border: 2px solid #ddd; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
+        .fields-dropdown-item .field-checkbox.checked { background: #2d6cdf; border-color: #2d6cdf; color: #fff; }
+        .fields-dropdown-item .field-checkbox .check-icon { font-size: 12px; display: none; }
+        .fields-dropdown-item .field-checkbox.checked .check-icon { display: block; }
+        .fields-dropdown-item .field-info { flex: 1; min-width: 0; }
+        .fields-dropdown-item .field-name { font-size: 13px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .fields-dropdown-item .field-type { font-size: 11px; color: #999; }
+        .fields-dropdown-item .field-move-btns { display: flex; flex-direction: column; gap: 2px; opacity: 0; transition: opacity 0.15s; }
+        .fields-dropdown-item:hover .field-move-btns { opacity: 1; }
+        .fields-dropdown-item .field-move-btn { width: 18px; height: 14px; border: none; background: #f0f0f0; border-radius: 3px; cursor: pointer; font-size: 10px; color: #666; display: flex; align-items: center; justify-content: center; }
+        .fields-dropdown-item .field-move-btn:hover { background: #e0e0e0; color: #333; }
+        .fields-dropdown-footer { padding: 10px 16px; border-top: 1px solid #eee; background: #fafafa; font-size: 11px; color: #999; }
+
+        /* View-specific toolbar wrapper */
+        .toolbar-views { display: flex; align-items: center; gap: 8px; position: relative; }
     </style>
 </head>
 <body>
@@ -318,6 +369,43 @@
         <div id="data-view" style="display: none; flex-direction: column; height: 100%;">
             <div class="toolbar">
                 <h1 id="title">Select a table</h1>
+
+                <!-- View Selector -->
+                <div class="toolbar-views">
+                    <div class="view-selector" id="view-selector-container">
+                        <button class="view-selector-btn" id="view-selector-btn" onclick="toggleViewSelector()">
+                            <span class="view-icon" id="current-view-icon">&#9638;</span>
+                            <span class="view-name" id="current-view-name">All Fields</span>
+                            <span class="dropdown-arrow">&#9662;</span>
+                        </button>
+                        <div class="view-selector-dropdown" id="view-selector-dropdown">
+                            <!-- View options will be rendered here -->
+                        </div>
+                    </div>
+
+                    <!-- Fields Button -->
+                    <button class="fields-btn" id="fields-btn" onclick="toggleFieldsDropdown()">
+                        <span class="fields-icon">&#9776;</span>
+                        <span>Fields</span>
+                        <span class="fields-count" id="fields-visible-count">0</span>
+                    </button>
+                    <div class="fields-dropdown" id="fields-dropdown">
+                        <div class="fields-dropdown-header">
+                            <h3>Toggle Fields</h3>
+                            <div class="fields-dropdown-actions">
+                                <button onclick="showAllFields()">Show All</button>
+                                <button onclick="hideAllFields()">Hide All</button>
+                            </div>
+                        </div>
+                        <div class="fields-dropdown-list" id="fields-dropdown-list">
+                            <!-- Field items will be rendered here -->
+                        </div>
+                        <div class="fields-dropdown-footer">
+                            Drag to reorder • Click checkbox to toggle
+                        </div>
+                    </div>
+                </div>
+
                 <button class="btn" onclick="manualSync()">Sync</button>
                 <button class="btn" onclick="logout()">Logout</button>
             </div>
@@ -382,11 +470,16 @@ var currentSchemaTab = 'tables'; // 'tables', 'fields', 'views'
 var selectedSchemaTable = null; // Selected table in schema builder
 
 var currentTable = null;
+var currentView = null; // Current view ID or null for "All Fields" default
 var currentPage = 0;
 var currentRecordIds = [];
 var totalRecords = 0;
 var lastEventId = 0;
 var pollInterval = null;
+
+// View field configuration cache (in-memory, persisted to IndexedDB)
+// Structure: VIEW_FIELD_CONFIG[tableId][viewId] = { visibleFieldIds: [...], fieldOrder: [...] }
+var VIEW_FIELD_CONFIG = {};
 
 // ============ IndexedDB ============
 
@@ -649,6 +742,238 @@ function getFieldHistoryForRecord(tableId, recordId) {
         };
         req.onerror = () => reject(req.error);
     });
+}
+
+// ============ View Field Configuration ============
+
+// Get the field configuration for a view (from cache or initialize default)
+function getViewFieldConfig(tableId, viewId) {
+    if (!VIEW_FIELD_CONFIG[tableId]) VIEW_FIELD_CONFIG[tableId] = {};
+
+    // Return cached config if exists
+    if (VIEW_FIELD_CONFIG[tableId][viewId]) {
+        return VIEW_FIELD_CONFIG[tableId][viewId];
+    }
+
+    // Check if view has stored config in META_VIEWS
+    var view = META_VIEWS[tableId]?.[viewId];
+    if (view && view.visibleFieldIds) {
+        VIEW_FIELD_CONFIG[tableId][viewId] = {
+            visibleFieldIds: view.visibleFieldIds,
+            fieldOrder: view.fieldOrder || view.visibleFieldIds
+        };
+        return VIEW_FIELD_CONFIG[tableId][viewId];
+    }
+
+    // Initialize default config - show all fields in their natural order
+    return initViewFieldConfig(tableId, viewId);
+}
+
+// Initialize default view field config (all fields visible)
+function initViewFieldConfig(tableId, viewId) {
+    var fields = META_FIELDS[tableId] || {};
+    var fieldIds = Object.keys(fields);
+
+    // Sort fields by name for consistent initial order
+    fieldIds.sort((a, b) => {
+        var nameA = (fields[a].fieldName || a).toLowerCase();
+        var nameB = (fields[b].fieldName || b).toLowerCase();
+        return nameA.localeCompare(nameB);
+    });
+
+    var config = {
+        visibleFieldIds: fieldIds.slice(), // All fields visible initially
+        fieldOrder: fieldIds.slice()       // Order matches visible
+    };
+
+    if (!VIEW_FIELD_CONFIG[tableId]) VIEW_FIELD_CONFIG[tableId] = {};
+    VIEW_FIELD_CONFIG[tableId][viewId] = config;
+
+    return config;
+}
+
+// Save view field configuration to memory and IndexedDB
+async function saveViewFieldConfig(tableId, viewId, config) {
+    // Update cache
+    if (!VIEW_FIELD_CONFIG[tableId]) VIEW_FIELD_CONFIG[tableId] = {};
+    VIEW_FIELD_CONFIG[tableId][viewId] = config;
+
+    // Update META_VIEWS and persist to IndexedDB
+    if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+    if (!META_VIEWS[tableId][viewId]) {
+        // Create a synthetic view if it doesn't exist
+        META_VIEWS[tableId][viewId] = {
+            tableId: tableId,
+            viewId: viewId,
+            viewName: viewId === '_default' ? 'All Fields' : viewId,
+            viewType: 'grid'
+        };
+    }
+
+    // Merge config into view
+    META_VIEWS[tableId][viewId].visibleFieldIds = config.visibleFieldIds;
+    META_VIEWS[tableId][viewId].fieldOrder = config.fieldOrder;
+
+    // Persist to IndexedDB
+    await saveView(META_VIEWS[tableId][viewId]);
+}
+
+// Get visible fields for current view in correct order
+function getVisibleFieldsForView(tableId, viewId) {
+    var config = getViewFieldConfig(tableId, viewId || '_default');
+    var fields = META_FIELDS[tableId] || {};
+
+    // Use fieldOrder but filter to only visible fields
+    var visibleSet = new Set(config.visibleFieldIds);
+    var result = [];
+
+    // First add fields that are in fieldOrder and visible
+    for (var fid of config.fieldOrder) {
+        if (visibleSet.has(fid) && fields[fid]) {
+            result.push(fid);
+        }
+    }
+
+    // Add any visible fields not in fieldOrder (newly added fields)
+    for (var fid of config.visibleFieldIds) {
+        if (!result.includes(fid) && fields[fid]) {
+            result.push(fid);
+        }
+    }
+
+    return result;
+}
+
+// Get all fields in order (both visible and hidden) for the fields dropdown
+function getAllFieldsInOrder(tableId, viewId) {
+    var config = getViewFieldConfig(tableId, viewId || '_default');
+    var fields = META_FIELDS[tableId] || {};
+    var allFieldIds = Object.keys(fields);
+    var result = [];
+    var addedSet = new Set();
+
+    // First add fields in fieldOrder
+    for (var fid of (config.fieldOrder || [])) {
+        if (fields[fid] && !addedSet.has(fid)) {
+            result.push(fid);
+            addedSet.add(fid);
+        }
+    }
+
+    // Then add any remaining fields (newly added ones)
+    for (var fid of allFieldIds) {
+        if (!addedSet.has(fid)) {
+            result.push(fid);
+            addedSet.add(fid);
+        }
+    }
+
+    return result;
+}
+
+// Toggle field visibility for current view
+async function toggleFieldVisibility(fieldId) {
+    if (!currentTable) return;
+    var viewId = currentView || '_default';
+    var config = getViewFieldConfig(currentTable, viewId);
+
+    var idx = config.visibleFieldIds.indexOf(fieldId);
+    if (idx >= 0) {
+        // Hide field
+        config.visibleFieldIds.splice(idx, 1);
+    } else {
+        // Show field - add at the end
+        config.visibleFieldIds.push(fieldId);
+        // Also ensure it's in fieldOrder
+        if (!config.fieldOrder.includes(fieldId)) {
+            config.fieldOrder.push(fieldId);
+        }
+    }
+
+    await saveViewFieldConfig(currentTable, viewId, config);
+    renderFieldsDropdown();
+    updateFieldsCount();
+    await renderTable();
+}
+
+// Move field up in order
+async function moveFieldUp(fieldId) {
+    if (!currentTable) return;
+    var viewId = currentView || '_default';
+    var config = getViewFieldConfig(currentTable, viewId);
+
+    var idx = config.fieldOrder.indexOf(fieldId);
+    if (idx > 0) {
+        // Swap with previous
+        var temp = config.fieldOrder[idx - 1];
+        config.fieldOrder[idx - 1] = config.fieldOrder[idx];
+        config.fieldOrder[idx] = temp;
+
+        await saveViewFieldConfig(currentTable, viewId, config);
+        renderFieldsDropdown();
+        await renderTable();
+    }
+}
+
+// Move field down in order
+async function moveFieldDown(fieldId) {
+    if (!currentTable) return;
+    var viewId = currentView || '_default';
+    var config = getViewFieldConfig(currentTable, viewId);
+
+    var idx = config.fieldOrder.indexOf(fieldId);
+    if (idx >= 0 && idx < config.fieldOrder.length - 1) {
+        // Swap with next
+        var temp = config.fieldOrder[idx + 1];
+        config.fieldOrder[idx + 1] = config.fieldOrder[idx];
+        config.fieldOrder[idx] = temp;
+
+        await saveViewFieldConfig(currentTable, viewId, config);
+        renderFieldsDropdown();
+        await renderTable();
+    }
+}
+
+// Show all fields
+async function showAllFields() {
+    if (!currentTable) return;
+    var viewId = currentView || '_default';
+    var fields = META_FIELDS[currentTable] || {};
+    var allFieldIds = Object.keys(fields);
+
+    var config = getViewFieldConfig(currentTable, viewId);
+    config.visibleFieldIds = allFieldIds.slice();
+
+    // Ensure all fields are in fieldOrder
+    for (var fid of allFieldIds) {
+        if (!config.fieldOrder.includes(fid)) {
+            config.fieldOrder.push(fid);
+        }
+    }
+
+    await saveViewFieldConfig(currentTable, viewId, config);
+    renderFieldsDropdown();
+    updateFieldsCount();
+    await renderTable();
+}
+
+// Hide all fields (except keep at least one visible)
+async function hideAllFields() {
+    if (!currentTable) return;
+    var viewId = currentView || '_default';
+    var config = getViewFieldConfig(currentTable, viewId);
+
+    // Keep the first field visible
+    if (config.fieldOrder.length > 0) {
+        config.visibleFieldIds = [config.fieldOrder[0]];
+    } else {
+        config.visibleFieldIds = [];
+    }
+
+    await saveViewFieldConfig(currentTable, viewId, config);
+    renderFieldsDropdown();
+    updateFieldsCount();
+    await renderTable();
 }
 
 function getLocalStats() {
@@ -1319,6 +1644,7 @@ function updateStatus(msg, isSynced, progress, detail) {
 
 async function showTable(tableId) {
     currentTable = tableId;
+    currentView = null; // Reset view when switching tables
     currentPage = 0;
 
     var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
@@ -1338,6 +1664,25 @@ async function showTable(tableId) {
     var fields = await getFieldsForTable(tableId);
     META_FIELDS[tableId] = {};
     fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
+
+    // Load views for this table
+    var views = await getViewsForTable(tableId);
+    META_VIEWS[tableId] = {};
+    views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+
+    // Set current view to the first available view or default
+    var viewIds = Object.keys(META_VIEWS[tableId] || {});
+    if (viewIds.length > 0 && !currentView) {
+        // Check if there's a saved preference or use first view
+        currentView = viewIds[0];
+    } else if (!currentView) {
+        currentView = '_default';
+    }
+
+    // Render view selector and fields dropdown
+    renderViewSelector();
+    renderFieldsDropdown();
+    updateFieldsCount();
 
     // Show table headers immediately with skeleton rows (even before data loads)
     renderTableHeaders();
@@ -1364,18 +1709,20 @@ function renderTableHeaders() {
 
     var container = document.getElementById('table-container');
     var fields = META_FIELDS[currentTable] || {};
-    var fieldIds = Object.keys(fields);
 
-    if (fieldIds.length === 0) {
-        // No fields yet, show loading
+    // Use view field configuration for visible fields
+    var viewId = currentView || '_default';
+    var colList = getVisibleFieldsForView(currentTable, viewId);
+
+    if (colList.length === 0) {
+        // No visible fields, show empty state
+        container.innerHTML = '<div class="empty-state"><h3>No visible fields</h3><p>Click the Fields button to show columns</p></div>';
         return;
     }
 
-    var colList = [];
     var colNames = {};
-    fieldIds.forEach(fid => {
-        colList.push(fid);
-        colNames[fid] = fields[fid].fieldName || fid;
+    colList.forEach(fid => {
+        colNames[fid] = fields[fid]?.fieldName || fid;
     });
 
     // Build table with headers and skeleton rows
@@ -1419,27 +1766,25 @@ async function renderTable() {
     var recordMap = {};
     records.forEach(r => recordMap[r.recordId] = r.fields || {});
 
-    // Get columns
+    // Get columns from view configuration
     var fields = META_FIELDS[currentTable] || {};
-    var fieldIds = Object.keys(fields);
+    var viewId = currentView || '_default';
+    var colList = getVisibleFieldsForView(currentTable, viewId);
 
-    var colList = [];
-    var colNames = {};
-
-    if (fieldIds.length > 0) {
-        fieldIds.forEach(fid => {
-            colList.push(fid);
-            colNames[fid] = fields[fid].fieldName || fid;
-        });
-    } else {
+    // If no visible fields but we have data, initialize with all fields
+    if (colList.length === 0 && Object.keys(fields).length === 0) {
         // Discover from data
         var colSet = {};
         records.forEach(r => {
             if (r.fields) Object.keys(r.fields).forEach(k => colSet[k] = true);
         });
         colList = Object.keys(colSet).sort();
-        colList.forEach(c => colNames[c] = c);
     }
+
+    var colNames = {};
+    colList.forEach(fid => {
+        colNames[fid] = fields[fid]?.fieldName || fid;
+    });
 
     // Build table
     var html = '<thead><tr><th style="width: 70px;">Actions</th><th>ID</th>';
@@ -1926,8 +2271,209 @@ document.addEventListener('keydown', function(e) {
         if (overlay && overlay.classList.contains('open')) {
             closeHistoryModal();
         }
+        // Also close view selector and fields dropdown
+        closeAllDropdowns();
     }
 });
+
+// ============ View Selector & Fields Dropdown UI ============
+
+// Toggle view selector dropdown
+function toggleViewSelector() {
+    var dropdown = document.getElementById('view-selector-dropdown');
+    var fieldsDropdown = document.getElementById('fields-dropdown');
+
+    // Close fields dropdown if open
+    fieldsDropdown.classList.remove('open');
+
+    dropdown.classList.toggle('open');
+}
+
+// Toggle fields dropdown
+function toggleFieldsDropdown() {
+    var dropdown = document.getElementById('fields-dropdown');
+    var viewDropdown = document.getElementById('view-selector-dropdown');
+
+    // Close view dropdown if open
+    viewDropdown.classList.remove('open');
+
+    dropdown.classList.toggle('open');
+}
+
+// Close all dropdowns
+function closeAllDropdowns() {
+    document.getElementById('view-selector-dropdown')?.classList.remove('open');
+    document.getElementById('fields-dropdown')?.classList.remove('open');
+}
+
+// Click outside handler to close dropdowns
+document.addEventListener('click', function(e) {
+    var viewSelector = document.getElementById('view-selector-container');
+    var fieldsBtn = document.getElementById('fields-btn');
+    var fieldsDropdown = document.getElementById('fields-dropdown');
+
+    // Close view selector if clicked outside
+    if (viewSelector && !viewSelector.contains(e.target)) {
+        document.getElementById('view-selector-dropdown')?.classList.remove('open');
+    }
+
+    // Close fields dropdown if clicked outside
+    if (fieldsBtn && fieldsDropdown && !fieldsBtn.contains(e.target) && !fieldsDropdown.contains(e.target)) {
+        fieldsDropdown.classList.remove('open');
+    }
+});
+
+// Get view type icon
+function getViewTypeIcon(viewType) {
+    switch ((viewType || '').toLowerCase()) {
+        case 'grid': return '&#9638;';
+        case 'gallery': return '&#128444;';
+        case 'kanban': return '&#9636;';
+        case 'calendar': return '&#128197;';
+        case 'timeline': return '&#8594;';
+        case 'form': return '&#128196;';
+        default: return '&#9638;';
+    }
+}
+
+// Render view selector dropdown
+function renderViewSelector() {
+    if (!currentTable) return;
+
+    var dropdown = document.getElementById('view-selector-dropdown');
+    var currentViewIcon = document.getElementById('current-view-icon');
+    var currentViewName = document.getElementById('current-view-name');
+
+    var views = META_VIEWS[currentTable] || {};
+    var viewIds = Object.keys(views);
+
+    // Update current view display
+    var viewId = currentView || '_default';
+    var currentViewObj = views[viewId];
+    if (currentViewObj) {
+        currentViewIcon.innerHTML = getViewTypeIcon(currentViewObj.viewType);
+        currentViewName.textContent = currentViewObj.viewName || viewId;
+    } else {
+        currentViewIcon.innerHTML = '&#9638;';
+        currentViewName.textContent = 'All Fields';
+    }
+
+    // Build dropdown
+    var html = '<div class="view-selector-dropdown-header">Views</div>';
+
+    // Add "All Fields" default option
+    var isDefaultActive = !currentView || currentView === '_default';
+    html += '<div class="view-selector-option' + (isDefaultActive ? ' active' : '') + '" onclick="selectView(\'_default\')">';
+    html += '<span class="view-type-icon">&#9638;</span>';
+    html += '<span class="view-option-name">All Fields</span>';
+    if (isDefaultActive) html += '<span class="view-check">&#10003;</span>';
+    html += '</div>';
+
+    // Add existing views
+    for (var vid of viewIds) {
+        if (vid === '_default') continue;
+        var view = views[vid];
+        var isActive = currentView === vid;
+        html += '<div class="view-selector-option' + (isActive ? ' active' : '') + '" onclick="selectView(\'' + esc(vid) + '\')">';
+        html += '<span class="view-type-icon">' + getViewTypeIcon(view.viewType) + '</span>';
+        html += '<span class="view-option-name">' + esc(view.viewName || vid) + '</span>';
+        if (isActive) html += '<span class="view-check">&#10003;</span>';
+        html += '</div>';
+    }
+
+    dropdown.innerHTML = html;
+}
+
+// Select a view
+async function selectView(viewId) {
+    currentView = viewId;
+    closeAllDropdowns();
+
+    // Render view selector to update current view display
+    renderViewSelector();
+
+    // Render fields dropdown for new view
+    renderFieldsDropdown();
+    updateFieldsCount();
+
+    // Re-render table with new view's field configuration
+    await renderTable();
+}
+
+// Render fields dropdown
+function renderFieldsDropdown() {
+    if (!currentTable) return;
+
+    var list = document.getElementById('fields-dropdown-list');
+    var fields = META_FIELDS[currentTable] || {};
+    var viewId = currentView || '_default';
+    var config = getViewFieldConfig(currentTable, viewId);
+    var visibleSet = new Set(config.visibleFieldIds);
+
+    // Get all fields in order
+    var allFieldIds = getAllFieldsInOrder(currentTable, viewId);
+
+    var html = '';
+    for (var i = 0; i < allFieldIds.length; i++) {
+        var fid = allFieldIds[i];
+        var field = fields[fid];
+        if (!field) continue;
+
+        var isVisible = visibleSet.has(fid);
+        var fieldName = field.fieldName || fid;
+        var fieldType = field.fieldType || 'unknown';
+
+        html += '<div class="fields-dropdown-item" data-field-id="' + esc(fid) + '">';
+
+        // Drag handle
+        html += '<span class="field-drag-handle" title="Drag to reorder">&#9776;</span>';
+
+        // Checkbox
+        html += '<div class="field-checkbox' + (isVisible ? ' checked' : '') + '" onclick="toggleFieldVisibility(\'' + esc(fid) + '\')">';
+        html += '<span class="check-icon">&#10003;</span>';
+        html += '</div>';
+
+        // Field info
+        html += '<div class="field-info" onclick="toggleFieldVisibility(\'' + esc(fid) + '\')">';
+        html += '<div class="field-name">' + esc(fieldName) + '</div>';
+        html += '<div class="field-type">' + esc(fieldType) + '</div>';
+        html += '</div>';
+
+        // Move buttons
+        html += '<div class="field-move-btns">';
+        if (i > 0) {
+            html += '<button class="field-move-btn" onclick="moveFieldUp(\'' + esc(fid) + '\')" title="Move up">&#9650;</button>';
+        } else {
+            html += '<button class="field-move-btn" disabled style="opacity: 0.3;">&#9650;</button>';
+        }
+        if (i < allFieldIds.length - 1) {
+            html += '<button class="field-move-btn" onclick="moveFieldDown(\'' + esc(fid) + '\')" title="Move down">&#9660;</button>';
+        } else {
+            html += '<button class="field-move-btn" disabled style="opacity: 0.3;">&#9660;</button>';
+        }
+        html += '</div>';
+
+        html += '</div>';
+    }
+
+    list.innerHTML = html;
+}
+
+// Update visible fields count badge
+function updateFieldsCount() {
+    if (!currentTable) return;
+
+    var viewId = currentView || '_default';
+    var config = getViewFieldConfig(currentTable, viewId);
+    var fields = META_FIELDS[currentTable] || {};
+    var totalFields = Object.keys(fields).length;
+    var visibleCount = config.visibleFieldIds.length;
+
+    var countEl = document.getElementById('fields-visible-count');
+    if (countEl) {
+        countEl.textContent = visibleCount + '/' + totalFields;
+    }
+}
 
 function esc(s) {
     if (s == null) return '';
