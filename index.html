@@ -196,6 +196,52 @@
         .table-selector-option { padding: 10px 16px; cursor: pointer; font-size: 13px; }
         .table-selector-option:hover { background: #f5f5f5; }
         .table-selector-option.active { background: #e8f0fe; color: #2d6cdf; }
+
+        /* Field History Modal */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; }
+        .modal-overlay.open { opacity: 1; visibility: visible; }
+        .modal { background: #fff; border-radius: 12px; width: 90%; max-width: 700px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.3); transform: translateY(20px); transition: transform 0.2s; }
+        .modal-overlay.open .modal { transform: translateY(0); }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 12px; }
+        .modal-header h2 { font-size: 18px; font-weight: 600; color: #333; flex: 1; margin: 0; }
+        .modal-header .record-id { font-size: 12px; color: #999; font-family: "SF Mono", Monaco, monospace; }
+        .modal-close { width: 32px; height: 32px; border: none; background: #f5f5f5; border-radius: 6px; cursor: pointer; font-size: 18px; color: #666; display: flex; align-items: center; justify-content: center; }
+        .modal-close:hover { background: #e8e8e8; color: #333; }
+        .modal-body { flex: 1; overflow-y: auto; padding: 0; }
+        .modal-empty { padding: 60px 20px; text-align: center; color: #666; }
+        .modal-empty h3 { font-size: 16px; color: #333; margin-bottom: 8px; }
+
+        /* History Timeline */
+        .history-timeline { padding: 16px 0; }
+        .history-item { padding: 16px 24px; border-bottom: 1px solid #f0f0f0; transition: background 0.15s; }
+        .history-item:hover { background: #fafafa; }
+        .history-item:last-child { border-bottom: none; }
+        .history-item-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+        .history-field-name { font-weight: 600; color: #333; font-size: 14px; }
+        .history-change-type { font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+        .history-change-type.created { background: #d1fae5; color: #059669; }
+        .history-change-type.updated { background: #dbeafe; color: #1d4ed8; }
+        .history-change-type.deleted { background: #fee2e2; color: #dc2626; }
+        .history-timestamp { font-size: 12px; color: #999; margin-left: auto; }
+        .history-event-id { font-size: 11px; color: #ccc; font-family: "SF Mono", Monaco, monospace; }
+        .history-values { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+        .history-value-box { flex: 1; min-width: 200px; padding: 10px 12px; border-radius: 6px; font-size: 13px; }
+        .history-value-box.old { background: #fef2f2; border: 1px solid #fecaca; }
+        .history-value-box.new { background: #f0fdf4; border: 1px solid #bbf7d0; }
+        .history-value-box.null { background: #f5f5f5; border: 1px solid #e0e0e0; color: #999; font-style: italic; }
+        .history-value-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #999; margin-bottom: 4px; }
+        .history-value-content { word-break: break-word; color: #333; }
+        .history-arrow { color: #999; font-size: 16px; flex-shrink: 0; align-self: center; }
+
+        /* History Button in Table */
+        .history-btn { padding: 4px 8px; background: transparent; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; color: #666; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s; }
+        .history-btn:hover { background: #f5f5f5; border-color: #2d6cdf; color: #2d6cdf; }
+        .history-btn svg { width: 12px; height: 12px; }
+
+        /* Field filter in modal */
+        .modal-toolbar { padding: 12px 24px; background: #fafafa; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 12px; }
+        .modal-toolbar select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; background: #fff; }
+        .modal-toolbar .history-count { font-size: 12px; color: #666; margin-left: auto; }
     </style>
 </head>
 <body>
@@ -294,10 +340,31 @@
         </div>
     </div>
 
+    <!-- Field History Modal -->
+    <div class="modal-overlay" id="history-modal-overlay" onclick="closeHistoryModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2 id="history-modal-title">Field History</h2>
+                <span class="record-id" id="history-modal-record-id"></span>
+                <button class="modal-close" onclick="closeHistoryModal()">&times;</button>
+            </div>
+            <div class="modal-toolbar">
+                <label>Filter by field:</label>
+                <select id="history-field-filter" onchange="filterHistoryByField()">
+                    <option value="">All Fields</option>
+                </select>
+                <span class="history-count" id="history-count"></span>
+            </div>
+            <div class="modal-body" id="history-modal-body">
+                <!-- History items will be rendered here -->
+            </div>
+        </div>
+    </div>
+
     <script>
 var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
 var DB_NAME = 'aminostream';
-var DB_VERSION = 3;
+var DB_VERSION = 4;
 var PAGE_SIZE = 100;
 
 var API_KEY = null;
@@ -353,6 +420,14 @@ function openDB() {
             // View metadata: keyed by [tableId, viewId]
             var viewStore = db.createObjectStore('views', { keyPath: ['tableId', 'viewId'] });
             viewStore.createIndex('by_table', 'tableId');
+
+            // Field history: keyed by auto-increment, indexed by record and field
+            if (!db.objectStoreNames.contains('fieldHistory')) {
+                var historyStore = db.createObjectStore('fieldHistory', { keyPath: 'id', autoIncrement: true });
+                historyStore.createIndex('by_record', ['tableId', 'recordId']);
+                historyStore.createIndex('by_field', ['tableId', 'recordId', 'fieldId']);
+                historyStore.createIndex('by_event', 'eventId');
+            }
 
             // Sync state
             db.createObjectStore('sync', { keyPath: 'key' });
@@ -538,14 +613,41 @@ function saveBatch(tables, fields, views, dataRecords) {
 
 function clearAllData() {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync'], 'readwrite');
+        var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory'], 'readwrite');
         tx.objectStore('data').clear();
         tx.objectStore('tables').clear();
         tx.objectStore('fields').clear();
         tx.objectStore('views').clear();
         tx.objectStore('sync').clear();
+        tx.objectStore('fieldHistory').clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
+    });
+}
+
+function saveFieldHistory(historyEntries) {
+    return new Promise((resolve, reject) => {
+        if (!historyEntries.length) return resolve();
+        var tx = db.transaction('fieldHistory', 'readwrite');
+        var store = tx.objectStore('fieldHistory');
+        historyEntries.forEach(entry => store.add(entry));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function getFieldHistoryForRecord(tableId, recordId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('fieldHistory', 'readonly');
+        var index = tx.objectStore('fieldHistory').index('by_record');
+        var req = index.getAll([tableId, recordId]);
+        req.onsuccess = () => {
+            // Sort by eventId descending (most recent first)
+            var results = req.result || [];
+            results.sort((a, b) => (b.eventId || 0) - (a.eventId || 0));
+            resolve(results);
+        };
+        req.onerror = () => reject(req.error);
     });
 }
 
@@ -680,6 +782,7 @@ async function processEvents(events) {
     var fields = [];
     var views = [];
     var dataRecords = [];
+    var fieldHistoryEntries = [];
     var tableDataMap = {}; // tableId -> { recordId -> fields }
 
     for (var e of events) {
@@ -691,6 +794,8 @@ async function processEvents(events) {
         var recordType = payload._set;
         var setName = e.set;
         var recordId = e.recordId;
+        var eventId = e.id;
+        var timestamp = Date.now(); // Use current time as timestamp
 
         if (recordType === 'table') {
             // Tables: recordId starts with "tbl", set points to base
@@ -744,10 +849,55 @@ async function processEvents(events) {
 
             var state = tableDataMap[tableId][recordId];
 
-            if (pfields.INS) Object.assign(state, pfields.INS);
-            if (pfields.ALT) Object.assign(state, pfields.ALT);
+            // Capture field history for INS (insert/create)
+            if (pfields.INS) {
+                for (var fieldId in pfields.INS) {
+                    fieldHistoryEntries.push({
+                        tableId: tableId,
+                        recordId: recordId,
+                        fieldId: fieldId,
+                        eventId: eventId,
+                        timestamp: timestamp,
+                        changeType: 'created',
+                        oldValue: null,
+                        newValue: pfields.INS[fieldId]
+                    });
+                }
+                Object.assign(state, pfields.INS);
+            }
+
+            // Capture field history for ALT (alter/update)
+            if (pfields.ALT) {
+                for (var fieldId in pfields.ALT) {
+                    fieldHistoryEntries.push({
+                        tableId: tableId,
+                        recordId: recordId,
+                        fieldId: fieldId,
+                        eventId: eventId,
+                        timestamp: timestamp,
+                        changeType: 'updated',
+                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        newValue: pfields.ALT[fieldId]
+                    });
+                }
+                Object.assign(state, pfields.ALT);
+            }
+
+            // Capture field history for NUL (nullify/delete)
             if (pfields.NUL && Array.isArray(pfields.NUL)) {
-                pfields.NUL.forEach(k => delete state[k]);
+                pfields.NUL.forEach(fieldId => {
+                    fieldHistoryEntries.push({
+                        tableId: tableId,
+                        recordId: recordId,
+                        fieldId: fieldId,
+                        eventId: eventId,
+                        timestamp: timestamp,
+                        changeType: 'deleted',
+                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        newValue: null
+                    });
+                    delete state[fieldId];
+                });
             }
         }
 
@@ -770,6 +920,11 @@ async function processEvents(events) {
     // Save batch
     if (tables.length || fields.length || views.length || dataRecords.length) {
         await saveBatch(tables, fields, views, dataRecords);
+    }
+
+    // Save field history
+    if (fieldHistoryEntries.length) {
+        await saveFieldHistory(fieldHistoryEntries);
     }
 }
 
@@ -1224,7 +1379,7 @@ function renderTableHeaders() {
     });
 
     // Build table with headers and skeleton rows
-    var html = '<table id="table"><thead><tr><th>ID</th>';
+    var html = '<table id="table"><thead><tr><th style="width: 70px;">Actions</th><th>ID</th>';
     colList.forEach(col => {
         html += '<th title="' + esc(col) + '">' + esc(colNames[col]) + '</th>';
     });
@@ -1232,7 +1387,7 @@ function renderTableHeaders() {
 
     // Add skeleton loading rows
     for (var i = 0; i < 5; i++) {
-        html += '<tr class="skeleton-row"><td><div class="skeleton-cell" style="width: 60px;"></div></td>';
+        html += '<tr class="skeleton-row"><td><div class="skeleton-cell" style="width: 50px;"></div></td><td><div class="skeleton-cell" style="width: 60px;"></div></td>';
         colList.forEach(() => {
             html += '<td><div class="skeleton-cell" style="width: ' + (60 + Math.random() * 80) + 'px;"></div></td>';
         });
@@ -1287,7 +1442,7 @@ async function renderTable() {
     }
 
     // Build table
-    var html = '<thead><tr><th>ID</th>';
+    var html = '<thead><tr><th style="width: 70px;">Actions</th><th>ID</th>';
     colList.forEach(col => {
         html += '<th title="' + esc(col) + '">' + esc(colNames[col]) + '</th>';
     });
@@ -1295,7 +1450,12 @@ async function renderTable() {
 
     pageRecordIds.forEach(rid => {
         var row = recordMap[rid] || {};
-        html += '<tr><td>' + esc(rid.slice(-8)) + '</td>';
+        html += '<tr>';
+        // History button
+        html += '<td><button class="history-btn" onclick="openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
+        html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
+        html += 'History</button></td>';
+        html += '<td>' + esc(rid.slice(-8)) + '</td>';
         colList.forEach(col => {
             var value = row[col];
             if (value === undefined) value = row[colNames[col]];
@@ -1583,6 +1743,191 @@ async function init() {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(incrementalSync, 60000);
 }
+
+// ============ Field History Modal ============
+
+var currentHistoryData = [];
+var currentHistoryRecordId = null;
+var currentHistoryTableId = null;
+
+async function openHistoryModal(tableId, recordId) {
+    currentHistoryTableId = tableId;
+    currentHistoryRecordId = recordId;
+
+    // Set modal title
+    var tableName = META_TABLES[tableId]?.tableName || tableId;
+    document.getElementById('history-modal-title').textContent = 'Field History - ' + tableName;
+    document.getElementById('history-modal-record-id').textContent = recordId;
+
+    // Show modal with loading state
+    var overlay = document.getElementById('history-modal-overlay');
+    var body = document.getElementById('history-modal-body');
+    body.innerHTML = '<div class="modal-empty"><div class="loading-spinner"></div><h3>Loading history...</h3></div>';
+    overlay.classList.add('open');
+
+    // Fetch history data
+    try {
+        currentHistoryData = await getFieldHistoryForRecord(tableId, recordId);
+        renderHistoryModal();
+    } catch (err) {
+        console.error('Error loading history:', err);
+        body.innerHTML = '<div class="modal-empty"><h3>Error loading history</h3><p>' + esc(err.message) + '</p></div>';
+    }
+}
+
+function closeHistoryModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('history-modal-overlay').classList.remove('open');
+    currentHistoryData = [];
+    currentHistoryRecordId = null;
+    currentHistoryTableId = null;
+}
+
+function renderHistoryModal() {
+    var body = document.getElementById('history-modal-body');
+    var filterSelect = document.getElementById('history-field-filter');
+    var countEl = document.getElementById('history-count');
+
+    if (!currentHistoryData || currentHistoryData.length === 0) {
+        body.innerHTML = '<div class="modal-empty"><h3>No history available</h3><p>Field changes will appear here after the next sync</p></div>';
+        filterSelect.innerHTML = '<option value="">All Fields</option>';
+        countEl.textContent = '0 changes';
+        return;
+    }
+
+    // Build field filter options
+    var fieldIds = [...new Set(currentHistoryData.map(h => h.fieldId))];
+    var fields = META_FIELDS[currentHistoryTableId] || {};
+
+    var filterHtml = '<option value="">All Fields</option>';
+    fieldIds.forEach(fid => {
+        var fieldName = fields[fid]?.fieldName || fid;
+        filterHtml += '<option value="' + esc(fid) + '">' + esc(fieldName) + '</option>';
+    });
+    filterSelect.innerHTML = filterHtml;
+
+    // Get selected filter
+    var selectedField = filterSelect.value;
+    var filteredData = selectedField
+        ? currentHistoryData.filter(h => h.fieldId === selectedField)
+        : currentHistoryData;
+
+    countEl.textContent = filteredData.length + ' change' + (filteredData.length !== 1 ? 's' : '');
+
+    // Render history items
+    var html = '<div class="history-timeline">';
+
+    for (var item of filteredData) {
+        var fieldName = fields[item.fieldId]?.fieldName || item.fieldId;
+        var changeTypeClass = item.changeType || 'updated';
+        var timestamp = item.timestamp ? formatTimestamp(item.timestamp) : 'Unknown time';
+
+        html += '<div class="history-item">';
+        html += '<div class="history-item-header">';
+        html += '<span class="history-field-name">' + esc(fieldName) + '</span>';
+        html += '<span class="history-change-type ' + changeTypeClass + '">' + changeTypeClass + '</span>';
+        html += '<span class="history-timestamp">' + esc(timestamp) + '</span>';
+        html += '<span class="history-event-id">Event #' + (item.eventId || '?') + '</span>';
+        html += '</div>';
+
+        html += '<div class="history-values">';
+
+        // Old value
+        if (item.changeType !== 'created') {
+            html += '<div class="history-value-box ' + (item.oldValue === null ? 'null' : 'old') + '">';
+            html += '<div class="history-value-label">Previous</div>';
+            html += '<div class="history-value-content">' + formatHistoryValue(item.oldValue) + '</div>';
+            html += '</div>';
+            html += '<span class="history-arrow">&#8594;</span>';
+        }
+
+        // New value
+        html += '<div class="history-value-box ' + (item.newValue === null ? 'null' : 'new') + '">';
+        html += '<div class="history-value-label">' + (item.changeType === 'created' ? 'Initial Value' : 'New Value') + '</div>';
+        html += '<div class="history-value-content">' + formatHistoryValue(item.newValue) + '</div>';
+        html += '</div>';
+
+        html += '</div>'; // .history-values
+        html += '</div>'; // .history-item
+    }
+
+    html += '</div>';
+    body.innerHTML = html;
+}
+
+function filterHistoryByField() {
+    renderHistoryModal();
+}
+
+function formatTimestamp(ts) {
+    if (!ts) return 'Unknown';
+    var date = new Date(ts);
+    var now = new Date();
+    var diff = now - date;
+
+    // If less than 24 hours, show relative time
+    if (diff < 86400000) {
+        if (diff < 60000) return 'Just now';
+        if (diff < 3600000) return Math.floor(diff / 60000) + ' min ago';
+        return Math.floor(diff / 3600000) + ' hour' + (Math.floor(diff / 3600000) !== 1 ? 's' : '') + ' ago';
+    }
+
+    // Otherwise show date and time
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatHistoryValue(value) {
+    if (value === null || value === undefined) {
+        return '<span style="color: #999; font-style: italic;">empty</span>';
+    }
+
+    if (Array.isArray(value)) {
+        if (value.length === 0) return '<span style="color: #999; font-style: italic;">empty array</span>';
+
+        // Check if it's an array of objects
+        if (typeof value[0] === 'object' && value[0] !== null) {
+            var items = value.map(item => {
+                if (item.name) return item.name;
+                if (item.filename) return item.filename;
+                if (item.email) return item.email;
+                if (item.id) return item.id;
+                return JSON.stringify(item).slice(0, 30);
+            });
+            return items.map(i => '<span class="tag" style="background: #e8f0fe; color: #2d6cdf; padding: 2px 8px; border-radius: 12px; margin: 1px 2px 1px 0; display: inline-block;">' + esc(i) + '</span>').join('');
+        }
+
+        return value.map(i => '<span class="tag" style="background: #e8f0fe; color: #2d6cdf; padding: 2px 8px; border-radius: 12px; margin: 1px 2px 1px 0; display: inline-block;">' + esc(String(i)) + '</span>').join('');
+    }
+
+    if (typeof value === 'object') {
+        if (value.name) return esc(value.name);
+        if (value.filename) return esc(value.filename);
+        if (value.email) return esc(value.email);
+        return esc(JSON.stringify(value).slice(0, 100));
+    }
+
+    if (typeof value === 'boolean') {
+        return '<span style="padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; ' +
+            (value ? 'background: #d4edda; color: #155724;' : 'background: #f8d7da; color: #721c24;') + '">' +
+            (value ? 'Yes' : 'No') + '</span>';
+    }
+
+    if (typeof value === 'number') {
+        return '<span style="font-family: monospace;">' + value.toLocaleString() + '</span>';
+    }
+
+    return esc(String(value));
+}
+
+// Keyboard handler for modal
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var overlay = document.getElementById('history-modal-overlay');
+        if (overlay && overlay.classList.contains('open')) {
+            closeHistoryModal();
+        }
+    }
+});
 
 function esc(s) {
     if (s == null) return '';
