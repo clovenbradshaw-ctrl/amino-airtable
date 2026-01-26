@@ -1502,11 +1502,6 @@ async function selectTableView(tableId, viewId) {
         });
     }
 
-    // Switch to data view mode
-    if (document.getElementById('schema-view').style.display !== 'none') {
-        toggleMode();
-    }
-
     // If switching to a different table, load it first
     if (currentTable !== tableId) {
         currentTable = tableId;
