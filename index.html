@@ -83,6 +83,25 @@
         /* Empty state */
         .empty-state { padding: 60px 20px; text-align: center; color: #666; }
         .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: #333; }
+
+        /* Loading states */
+        .loading-state { padding: 60px 20px; text-align: center; color: #666; }
+        .loading-state h3 { font-size: 16px; margin-bottom: 8px; color: #333; }
+        .loading-spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid #e0e0e0; border-top-color: #2d6cdf; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Skeleton loading for table */
+        .skeleton-row td { background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .skeleton-cell { height: 16px; background: #e0e0e0; border-radius: 4px; }
+
+        /* Progress bar */
+        .progress-bar { height: 3px; background: #e0e0e0; border-radius: 2px; overflow: hidden; margin-top: 4px; }
+        .progress-fill { height: 100%; background: #2d6cdf; transition: width 0.3s ease; }
+
+        /* Table loading indicator */
+        .table-loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+        .table-container { position: relative; }
     </style>
 </head>
 <body>
@@ -115,6 +134,10 @@
         <div class="status-bar">
             <span class="status-dot" id="status-dot"></span>
             <span id="status-text">Ready</span>
+            <div class="progress-bar" id="progress-bar" style="display: none; flex: 1; max-width: 200px;">
+                <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+            </div>
+            <span id="status-detail" style="color: #999; font-size: 11px;"></span>
         </div>
         <div class="table-container" id="table-container">
             <table id="table"></table>
@@ -567,12 +590,24 @@ async function renderSidebar() {
     }
 }
 
-function updateStatus(msg, isSynced) {
+function updateStatus(msg, isSynced, progress, detail) {
     var dot = document.getElementById('status-dot');
     var text = document.getElementById('status-text');
+    var progressBar = document.getElementById('progress-bar');
+    var progressFill = document.getElementById('progress-fill');
+    var statusDetail = document.getElementById('status-detail');
 
     dot.className = 'status-dot ' + (isSynced ? 'synced' : 'loading');
     text.textContent = msg;
+
+    if (typeof progress === 'number' && progress >= 0) {
+        progressBar.style.display = 'block';
+        progressFill.style.width = Math.min(100, progress) + '%';
+    } else {
+        progressBar.style.display = 'none';
+    }
+
+    statusDetail.textContent = detail || '';
 }
 
 async function showTable(tableId) {
@@ -589,16 +624,71 @@ async function showTable(tableId) {
     var activeItem = [...document.querySelectorAll('.table-item')].find(el => el.textContent.includes(tableName));
     if (activeItem) activeItem.classList.add('active');
 
-    // Load record IDs
-    currentRecordIds = await getRecordIdsForTable(tableId);
-    totalRecords = currentRecordIds.length;
+    // Show loading state immediately
+    showTableLoading('Loading table structure...');
 
-    // Load fields
+    // Load fields first (table structure)
     var fields = await getFieldsForTable(tableId);
     META_FIELDS[tableId] = {};
     fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
 
+    // Show table headers immediately with skeleton rows (even before data loads)
+    renderTableHeaders();
+
+    // Update status (don't overwrite table headers with loading spinner)
+    updateStatus('Loading records...', false, null, null);
+
+    // Load record IDs
+    currentRecordIds = await getRecordIdsForTable(tableId);
+    totalRecords = currentRecordIds.length;
+
+    // Now render full table with data
     await renderTable();
+}
+
+function showTableLoading(message) {
+    var container = document.getElementById('table-container');
+    container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>' + esc(message) + '</h3></div>';
+    document.getElementById('pagination').style.display = 'none';
+}
+
+function renderTableHeaders() {
+    if (!currentTable) return;
+
+    var container = document.getElementById('table-container');
+    var fields = META_FIELDS[currentTable] || {};
+    var fieldIds = Object.keys(fields);
+
+    if (fieldIds.length === 0) {
+        // No fields yet, show loading
+        return;
+    }
+
+    var colList = [];
+    var colNames = {};
+    fieldIds.forEach(fid => {
+        colList.push(fid);
+        colNames[fid] = fields[fid].fieldName || fid;
+    });
+
+    // Build table with headers and skeleton rows
+    var html = '<table id="table"><thead><tr><th>ID</th>';
+    colList.forEach(col => {
+        html += '<th title="' + esc(col) + '">' + esc(colNames[col]) + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    // Add skeleton loading rows
+    for (var i = 0; i < 5; i++) {
+        html += '<tr class="skeleton-row"><td><div class="skeleton-cell" style="width: 60px;"></div></td>';
+        colList.forEach(() => {
+            html += '<td><div class="skeleton-cell" style="width: ' + (60 + Math.random() * 80) + 'px;"></div></td>';
+        });
+        html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
 }
 
 async function renderTable() {
@@ -775,9 +865,15 @@ async function fetchPage(page, afterId) {
 async function fullSync() {
     var page = 1;
     var eventsLoaded = 0;
+    var tablesFound = 0;
+    var fieldsFound = 0;
+    var recordsFound = 0;
 
     while (true) {
-        updateStatus('Syncing page ' + page + '...', false);
+        // Show progress with estimates (assume ~50 pages max for progress bar)
+        var progressPct = Math.min(95, (page / 50) * 100);
+        var detail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + recordsFound.toLocaleString() + ' records';
+        updateStatus('Syncing page ' + page + '...', false, progressPct, detail);
 
         var result = await fetchPage(page, null);
         if (!result.events || result.events.length === 0) break;
@@ -785,11 +881,28 @@ async function fullSync() {
         eventsLoaded += result.events.length;
         result.events.sort((a, b) => (a.id || 0) - (b.id || 0));
 
+        // Count what we're processing for feedback
+        for (var e of result.events) {
+            var payload = parsePayload(e.payload);
+            if (payload && payload._set === 'table') tablesFound++;
+            else if (payload && payload._set === 'field') fieldsFound++;
+            else if (payload && payload._set !== 'view') recordsFound++;
+        }
+
         await processEvents(result.events);
 
-        // Update UI periodically
-        if (page % 5 === 0) {
-            await renderSidebar();
+        // Update sidebar after EVERY page to show tables/fields as they arrive
+        await renderSidebar();
+
+        // If no table is selected but we have tables, show the first one
+        if (!currentTable && Object.keys(META_TABLES).length > 0) {
+            var firstTable = Object.keys(META_TABLES)[0];
+            await showTable(firstTable);
+        } else if (currentTable) {
+            // Refresh current table view to show new data
+            currentRecordIds = await getRecordIdsForTable(currentTable);
+            totalRecords = currentRecordIds.length;
+            await renderTable();
         }
 
         if (!result.hasMore) break;
@@ -798,32 +911,36 @@ async function fullSync() {
     }
 
     await setSyncMeta('lastEventId', lastEventId);
-    updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true);
+    var finalDetail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + recordsFound.toLocaleString() + ' records';
+    updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
 }
 
 async function incrementalSync() {
     try {
-        updateStatus('Checking for updates...', false);
+        updateStatus('Checking for updates...', false, null, null);
 
         var result = await fetchPage(1, lastEventId);
 
         if (result.events && result.events.length > 0) {
+            updateStatus('Processing ' + result.events.length + ' new events...', false, null, null);
             result.events.sort((a, b) => (a.id || 0) - (b.id || 0));
             await processEvents(result.events);
             await setSyncMeta('lastEventId', lastEventId);
 
+            updateStatus('Updating views...', false, null, null);
             await renderSidebar();
             if (currentTable) {
                 currentRecordIds = await getRecordIdsForTable(currentTable);
                 totalRecords = currentRecordIds.length;
                 await renderTable();
             }
+            updateStatus('Up to date', true, null, result.events.length + ' events synced');
+        } else {
+            updateStatus('Up to date', true, null, null);
         }
-
-        updateStatus('Up to date', true);
     } catch (err) {
         console.error('Sync error:', err);
-        updateStatus('Sync error: ' + err.message, false);
+        updateStatus('Sync error: ' + err.message, false, null, null);
     }
 }
 
@@ -840,6 +957,8 @@ async function init() {
 
     db = await openDB();
 
+    updateStatus('Loading local data...', false, null, null);
+
     var storedLastId = await getSyncMeta('lastEventId');
     var tables = await getAllTables();
 
@@ -847,13 +966,17 @@ async function init() {
     tables.forEach(t => META_TABLES[t.tableId] = t);
 
     hideAuthScreen();
-    await renderSidebar();
 
     if (tables.length > 0) {
+        updateStatus('Found ' + tables.length + ' tables', false, null, 'Loading table list...');
+        await renderSidebar();
+
         lastEventId = storedLastId || 0;
         await showTable(tables[0].tableId);
         await incrementalSync();
     } else {
+        updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
+        await renderSidebar();
         await fullSync();
         await renderSidebar();
         var newTables = await getAllTables();
@@ -862,7 +985,7 @@ async function init() {
         }
     }
 
-    updateStatus('Up to date', true);
+    updateStatus('Up to date', true, null, null);
 
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(incrementalSync, 60000);
