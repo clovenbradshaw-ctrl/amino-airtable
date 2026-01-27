@@ -220,6 +220,38 @@
         .group-option .check-mark, .color-option .check-mark { color: #2d6cdf; font-size: 14px; width: 16px; visibility: hidden; }
         .group-option.selected .check-mark, .color-option.selected .check-mark, .group-option.none-selected .check-mark, .color-option.none-selected .check-mark { visibility: visible; }
 
+        /* Grouped Table View */
+        .group-header-row td {
+            background: #f8f9fa;
+            font-weight: 600;
+            padding: 10px 12px !important;
+            border-top: 1px solid #e0e0e0;
+            cursor: pointer;
+            user-select: none;
+        }
+        .group-header-row:hover td { background: #f0f1f3; }
+        .group-header-row .group-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #333;
+        }
+        .group-header-row .group-toggle svg {
+            width: 16px;
+            height: 16px;
+            transition: transform 0.2s;
+            color: #666;
+        }
+        .group-header-row.collapsed .group-toggle svg { transform: rotate(-90deg); }
+        .group-header-row .group-name { font-size: 13px; }
+        .group-header-row .group-count {
+            font-size: 12px;
+            color: #666;
+            font-weight: 400;
+            margin-left: 8px;
+        }
+        .group-row.hidden { display: none; }
+
         /* Row Height Dropdown */
         .row-height-option { display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer; font-size: 13px; transition: background 0.1s; }
         .row-height-option:hover { background: #f5f5f5; }
@@ -1585,8 +1617,8 @@ async function saveViewFieldConfig(tableId, viewId, config) {
     await saveView(META_VIEWS[tableId][viewId]);
 }
 
-// Save view filters and sorts to IndexedDB
-async function saveViewFiltersAndSorts(tableId, viewId, filters, sorts) {
+// Save view filters, sorts, and groupBy to IndexedDB
+async function saveViewFiltersAndSorts(tableId, viewId, filters, sorts, groupBy) {
     if (!tableId || !viewId) return;
 
     // Update META_VIEWS
@@ -1601,22 +1633,24 @@ async function saveViewFiltersAndSorts(tableId, viewId, filters, sorts) {
         };
     }
 
-    // Store filters and sorts
+    // Store filters, sorts, and groupBy
     META_VIEWS[tableId][viewId].filters = filters || [];
     META_VIEWS[tableId][viewId].sorts = sorts || [];
+    META_VIEWS[tableId][viewId].groupBy = groupBy || null;
 
     // Persist to IndexedDB
     await saveView(META_VIEWS[tableId][viewId]);
 }
 
-// Get view filters and sorts
+// Get view filters, sorts, and groupBy
 function getViewFiltersAndSorts(tableId, viewId) {
-    if (!tableId || !viewId) return { filters: [], sorts: [] };
+    if (!tableId || !viewId) return { filters: [], sorts: [], groupBy: null };
 
     var view = META_VIEWS[tableId]?.[viewId];
     return {
         filters: (view && view.filters) ? view.filters.slice() : [],
-        sorts: (view && view.sorts) ? view.sorts.slice() : []
+        sorts: (view && view.sorts) ? view.sorts.slice() : [],
+        groupBy: (view && view.groupBy) ? view.groupBy : null
     };
 }
 
@@ -2582,15 +2616,17 @@ async function selectTableView(tableId, viewId) {
     // Set the current view
     currentView = viewId;
 
-    // Load and apply view filters and sorts
+    // Load and apply view filters, sorts, and groupBy
     var viewConfig = getViewFiltersAndSorts(tableId, viewId);
     currentFilters = viewConfig.filters;
     currentSorts = viewConfig.sorts;
+    currentGroupBy = viewConfig.groupBy;
     currentSearchQuery = ''; // Reset search when switching views
 
-    // Update filter/sort button states
+    // Update filter/sort/group button states
     updateFilterCount();
     updateSortCount();
+    updateGroupButtonState();
     var searchInput = document.getElementById('view-search-input');
     if (searchInput) searchInput.value = '';
 
@@ -2754,14 +2790,16 @@ async function showTable(tableId) {
         currentView = '_default';
     }
 
-    // Load and apply view filters and sorts
+    // Load and apply view filters, sorts, and groupBy
     var viewConfig = getViewFiltersAndSorts(tableId, currentView);
     currentFilters = viewConfig.filters;
     currentSorts = viewConfig.sorts;
+    currentGroupBy = viewConfig.groupBy;
 
-    // Update filter/sort button states
+    // Update filter/sort/group button states
     updateFilterCount();
     updateSortCount();
+    updateGroupButtonState();
 
     // Update the view list to highlight the active view
     updateSidebarViewActive(tableId, currentView);
@@ -2861,15 +2899,27 @@ async function renderTable() {
     totalRecords = currentRecordIds.length;
 
     var tableEl = document.getElementById('table');
-    var pageRecordIds = currentRecordIds.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
-    // Check if we're on a page beyond available data (can happen after filtering)
-    if (pageRecordIds.length === 0 && currentPage > 0) {
-        currentPage = 0;
-        pageRecordIds = currentRecordIds.slice(0, PAGE_SIZE);
+    // Determine which records to display
+    var displayRecordIds;
+    var isGrouped = !!currentGroupBy;
+
+    if (isGrouped) {
+        // When grouping, show all records (no pagination) - up to a reasonable limit
+        var maxGroupedRecords = 1000;
+        displayRecordIds = currentRecordIds.slice(0, maxGroupedRecords);
+    } else {
+        // Standard pagination
+        displayRecordIds = currentRecordIds.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+        // Check if we're on a page beyond available data (can happen after filtering)
+        if (displayRecordIds.length === 0 && currentPage > 0) {
+            currentPage = 0;
+            displayRecordIds = currentRecordIds.slice(0, PAGE_SIZE);
+        }
     }
 
-    if (pageRecordIds.length === 0) {
+    if (displayRecordIds.length === 0) {
         tableEl.innerHTML = '';
         var emptyMsg = (currentFilters.length > 0 || currentSearchQuery)
             ? '<div class="empty-state"><h3>No matching records</h3><p>Try adjusting your filters or search</p></div>'
@@ -2882,8 +2932,8 @@ async function renderTable() {
     document.getElementById('table-container').innerHTML = '<table id="table"></table>';
     tableEl = document.getElementById('table');
 
-    // Get records for current page
-    var records = await getRecordsByIds(currentTable, pageRecordIds);
+    // Get records
+    var records = await getRecordsByIds(currentTable, displayRecordIds);
     var recordMap = {};
     records.forEach(r => recordMap[r.recordId] = r.fields || {});
 
@@ -2907,6 +2957,9 @@ async function renderTable() {
         colNames[fid] = fields[fid]?.fieldName || fid;
     });
 
+    // Get group field name for header display
+    var groupFieldName = currentGroupBy ? (fields[currentGroupBy]?.fieldName || currentGroupBy) : null;
+
     // Build table with draggable headers
     var html = '<thead><tr><th style="width: 70px; cursor: default;">Actions</th>';
     colList.forEach((col, idx) => {
@@ -2917,26 +2970,137 @@ async function renderTable() {
     });
     html += '</tr></thead><tbody>';
 
-    pageRecordIds.forEach(rid => {
-        var row = recordMap[rid] || {};
-        html += '<tr>';
-        // History button
-        html += '<td><button class="history-btn" onclick="openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
-        html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
-        html += 'History</button></td>';
-        colList.forEach(col => {
-            var value = row[col];
-            if (value === undefined) value = row[colNames[col]];
-            html += '<td>' + formatCell(value) + '</td>';
+    if (isGrouped) {
+        // Group records by field value
+        var groups = groupRecordsByField(displayRecordIds, recordMap, currentGroupBy, colNames);
+
+        // Render grouped rows
+        var groupIndex = 0;
+        for (var groupKey in groups) {
+            var groupRecords = groups[groupKey];
+            var groupId = 'group-' + groupIndex;
+
+            // Group header row
+            html += '<tr class="group-header-row" data-group-id="' + groupId + '" onclick="toggleGroup(\'' + groupId + '\')">';
+            html += '<td colspan="' + (colList.length + 1) + '">';
+            html += '<span class="group-toggle">';
+            html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6,9 12,15 18,9"/></svg>';
+            html += '<span class="group-name">' + esc(groupFieldName) + ': ' + esc(groupKey) + '</span>';
+            html += '<span class="group-count">(' + groupRecords.length + ')</span>';
+            html += '</span>';
+            html += '</td></tr>';
+
+            // Group data rows
+            groupRecords.forEach(rid => {
+                var row = recordMap[rid] || {};
+                html += '<tr class="group-row" data-group-id="' + groupId + '">';
+                html += '<td><button class="history-btn" onclick="openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
+                html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
+                html += 'History</button></td>';
+                colList.forEach(col => {
+                    var value = row[col];
+                    if (value === undefined) value = row[colNames[col]];
+                    html += '<td>' + formatCell(value) + '</td>';
+                });
+                html += '</tr>';
+            });
+
+            groupIndex++;
+        }
+    } else {
+        // Standard flat rendering
+        displayRecordIds.forEach(rid => {
+            var row = recordMap[rid] || {};
+            html += '<tr>';
+            html += '<td><button class="history-btn" onclick="openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
+            html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
+            html += 'History</button></td>';
+            colList.forEach(col => {
+                var value = row[col];
+                if (value === undefined) value = row[colNames[col]];
+                html += '<td>' + formatCell(value) + '</td>';
+            });
+            html += '</tr>';
         });
-        html += '</tr>';
-    });
+    }
 
     html += '</tbody>';
     tableEl.innerHTML = html;
 
-    // Update pagination
-    updatePagination();
+    // Update pagination (hide when grouped)
+    if (isGrouped) {
+        document.getElementById('pagination').style.display = 'none';
+    } else {
+        document.getElementById('pagination').style.display = '';
+        updatePagination();
+    }
+}
+
+// Group records by a field value
+function groupRecordsByField(recordIds, recordMap, fieldId, colNames) {
+    var groups = {};
+    var emptyGroupKey = '(Empty)';
+
+    recordIds.forEach(rid => {
+        var row = recordMap[rid] || {};
+        var value = row[fieldId];
+        if (value === undefined) value = row[colNames[fieldId]];
+
+        // Convert value to display string for grouping
+        var groupKey = getGroupKeyFromValue(value);
+
+        if (!groups[groupKey]) {
+            groups[groupKey] = [];
+        }
+        groups[groupKey].push(rid);
+    });
+
+    // Sort groups: put (Empty) last, then sort alphabetically
+    var sortedGroups = {};
+    var keys = Object.keys(groups).sort((a, b) => {
+        if (a === emptyGroupKey) return 1;
+        if (b === emptyGroupKey) return -1;
+        return a.localeCompare(b);
+    });
+    keys.forEach(k => sortedGroups[k] = groups[k]);
+
+    return sortedGroups;
+}
+
+// Get a display string for grouping from a cell value
+function getGroupKeyFromValue(value) {
+    if (value == null || value === '') return '(Empty)';
+
+    if (Array.isArray(value)) {
+        if (value.length === 0) return '(Empty)';
+        // For arrays, join values for display
+        return value.map(v => {
+            if (typeof v === 'object' && v !== null) {
+                return v.name || v.filename || v.email || v.id || JSON.stringify(v);
+            }
+            return String(v);
+        }).join(', ');
+    }
+
+    if (typeof value === 'object') {
+        return value.name || value.filename || value.email || value.url || JSON.stringify(value);
+    }
+
+    return String(value);
+}
+
+// Toggle group visibility
+function toggleGroup(groupId) {
+    var headerRow = document.querySelector('.group-header-row[data-group-id="' + groupId + '"]');
+    var dataRows = document.querySelectorAll('.group-row[data-group-id="' + groupId + '"]');
+
+    if (headerRow.classList.contains('collapsed')) {
+        headerRow.classList.remove('collapsed');
+        dataRows.forEach(row => row.classList.remove('hidden'));
+    } else {
+        headerRow.classList.add('collapsed');
+        dataRows.forEach(row => row.classList.add('hidden'));
+    }
 }
 
 function formatCell(v) {
@@ -3525,13 +3689,15 @@ async function selectView(viewId) {
     currentView = viewId;
     closeAllDropdowns();
 
-    // Load and apply view filters and sorts for the new view
+    // Load and apply view filters, sorts, and groupBy for the new view
     if (currentTable) {
         var viewConfig = getViewFiltersAndSorts(currentTable, viewId);
         currentFilters = viewConfig.filters;
         currentSorts = viewConfig.sorts;
+        currentGroupBy = viewConfig.groupBy;
         updateFilterCount();
         updateSortCount();
+        updateGroupButtonState();
     }
 
     // Update sidebar to reflect the new active view
@@ -3934,7 +4100,7 @@ async function applyFilters() {
     await renderTable();
     // Save filters to current view
     if (currentTable && currentView) {
-        await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts);
+        await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts, currentGroupBy);
         markViewDirty('filters', currentFilters);
     }
 }
@@ -4024,7 +4190,7 @@ async function applySorts() {
     await renderTable();
     // Save sorts to current view
     if (currentTable && currentView) {
-        await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts);
+        await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts, currentGroupBy);
         markViewDirty('sorts', currentSorts);
     }
 }
@@ -4052,17 +4218,27 @@ function renderGroupDropdown() {
     container.innerHTML = html;
 }
 
-// Set group by field
-async function setGroupBy(fieldId) {
-    currentGroupBy = fieldId;
-    closeViewControlDropdowns();
+// Update group button state
+function updateGroupButtonState() {
     var btn = document.getElementById('group-btn');
-    if (fieldId) {
+    if (currentGroupBy) {
         btn.classList.add('active');
     } else {
         btn.classList.remove('active');
     }
+}
+
+// Set group by field
+async function setGroupBy(fieldId) {
+    currentGroupBy = fieldId;
+    closeViewControlDropdowns();
+    updateGroupButtonState();
     await renderTable();
+    // Save groupBy to current view
+    if (currentTable && currentView) {
+        await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts, currentGroupBy);
+        markViewDirty('groupBy', currentGroupBy);
+    }
 }
 
 // Render color dropdown
