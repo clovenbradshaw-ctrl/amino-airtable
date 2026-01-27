@@ -1216,6 +1216,15 @@ function getRecordIdsForTable(tableId) {
     });
 }
 
+function getRecord(tableId, recordId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('data', 'readonly');
+        var req = tx.objectStore('data').get([tableId, recordId]);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
 function getRecordsByIds(tableId, recordIds) {
     return new Promise((resolve, reject) => {
         if (!recordIds.length) return resolve([]);
@@ -1332,6 +1341,113 @@ function getFieldHistoryForRecord(tableId, recordId) {
         };
         req.onerror = () => reject(req.error);
     });
+}
+
+// Fetch and process any new history events for a specific record from API
+async function fetchAndProcessHistoryForRecord(tableId, recordId) {
+    if (!API_KEY) return;
+
+    // Get the highest eventId we have for this record to fetch only newer events
+    var existingHistory = await getFieldHistoryForRecord(tableId, recordId);
+    var maxEventId = existingHistory.reduce((max, h) => Math.max(max, h.eventId || 0), 0);
+
+    // Build API URL with recordId filter and id > maxEventId
+    var url = API + '?page=1&per_page=500';
+    url += '&apiKey=' + encodeURIComponent(API_KEY);
+    url += '&recordId=' + encodeURIComponent(recordId);
+    if (maxEventId > 0) {
+        url += '&id=' + maxEventId;
+    }
+
+    try {
+        var res = await fetch(url);
+        if (!res.ok) return;
+
+        var data = await res.json();
+        var events = Array.isArray(data) ? data : (data.items || data.data || []);
+
+        if (!events || events.length === 0) return;
+
+        // Sort events by id ascending (oldest first for proper state tracking)
+        events.sort((a, b) => (a.id || 0) - (b.id || 0));
+
+        // Get existing record state to calculate oldValue correctly
+        var existingRecord = await getRecord(tableId, recordId);
+        var state = existingRecord ? { ...existingRecord.fields } : {};
+
+        var fieldHistoryEntries = [];
+
+        for (var e of events) {
+            if (!e || !e.recordId || e.recordId !== recordId) continue;
+
+            var payload = parsePayload(e.payload);
+            if (!payload || typeof payload !== 'object') continue;
+
+            var pfields = payload.fields;
+            if (!pfields || typeof pfields !== 'object') continue;
+
+            var eventId = e.id;
+            var timestamp = e.created_at ? new Date(e.created_at).getTime() : Date.now();
+
+            // Process INS (insert/create)
+            if (pfields.INS) {
+                for (var fieldId in pfields.INS) {
+                    fieldHistoryEntries.push({
+                        tableId: tableId,
+                        recordId: recordId,
+                        fieldId: fieldId,
+                        eventId: eventId,
+                        timestamp: timestamp,
+                        changeType: 'created',
+                        oldValue: null,
+                        newValue: pfields.INS[fieldId]
+                    });
+                }
+                Object.assign(state, pfields.INS);
+            }
+
+            // Process ALT (alter/update)
+            if (pfields.ALT) {
+                for (var fieldId in pfields.ALT) {
+                    fieldHistoryEntries.push({
+                        tableId: tableId,
+                        recordId: recordId,
+                        fieldId: fieldId,
+                        eventId: eventId,
+                        timestamp: timestamp,
+                        changeType: 'updated',
+                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        newValue: pfields.ALT[fieldId]
+                    });
+                }
+                Object.assign(state, pfields.ALT);
+            }
+
+            // Process NUL (nullify/delete)
+            if (pfields.NUL && Array.isArray(pfields.NUL)) {
+                pfields.NUL.forEach(fieldId => {
+                    fieldHistoryEntries.push({
+                        tableId: tableId,
+                        recordId: recordId,
+                        fieldId: fieldId,
+                        eventId: eventId,
+                        timestamp: timestamp,
+                        changeType: 'deleted',
+                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        newValue: null
+                    });
+                    delete state[fieldId];
+                });
+            }
+        }
+
+        // Save new history entries
+        if (fieldHistoryEntries.length > 0) {
+            await saveFieldHistory(fieldHistoryEntries);
+        }
+    } catch (err) {
+        console.error('Error fetching history for record:', err);
+    }
 }
 
 // ============ View Folders ============
@@ -1955,6 +2071,35 @@ async function processEvents(events) {
     var fieldHistoryEntries = [];
     var tableDataMap = {}; // tableId -> { recordId -> fields }
 
+    // Pre-load existing record states from IndexedDB for accurate history oldValue tracking
+    // First pass: collect all unique [tableId, recordId] pairs for data records
+    var recordsToLoad = {}; // tableId -> Set of recordIds
+    for (var e of events) {
+        if (!e || !e.set || !e.recordId) continue;
+        var payload = parsePayload(e.payload);
+        if (!payload || typeof payload !== 'object') continue;
+        var recordType = payload._set;
+        // Only load state for data records (not table/field/view metadata)
+        if (recordType !== 'table' && recordType !== 'field' && recordType !== 'view') {
+            var tableId = e.set.replace('airtable:', '');
+            if (!recordsToLoad[tableId]) recordsToLoad[tableId] = new Set();
+            recordsToLoad[tableId].add(e.recordId);
+        }
+    }
+
+    // Load existing records from IndexedDB
+    for (var tableId in recordsToLoad) {
+        var recordIds = Array.from(recordsToLoad[tableId]);
+        if (recordIds.length > 0) {
+            var existingRecords = await getRecordsByIds(tableId, recordIds);
+            if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
+            for (var rec of existingRecords) {
+                // Pre-populate with existing field values
+                tableDataMap[tableId][rec.recordId] = { ...rec.fields };
+            }
+        }
+    }
+
     for (var e of events) {
         if (!e || !e.set || !e.recordId) continue;
 
@@ -1965,7 +2110,7 @@ async function processEvents(events) {
         var setName = e.set;
         var recordId = e.recordId;
         var eventId = e.id;
-        var timestamp = Date.now(); // Use current time as timestamp
+        var timestamp = e.created_at ? new Date(e.created_at).getTime() : Date.now();
 
         if (recordType === 'table') {
             // Tables: recordId starts with "tbl", set points to base
@@ -2013,7 +2158,7 @@ async function processEvents(events) {
 
             if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
             if (!tableDataMap[tableId][recordId]) {
-                // Try to get existing record from db
+                // Initialize new record (existing records pre-loaded above)
                 tableDataMap[tableId][recordId] = {};
             }
 
@@ -3245,6 +3390,10 @@ async function openHistoryModal(tableId, recordId) {
 
     // Fetch history data
     try {
+        // First fetch any new events from API for this specific record (incremental)
+        await fetchAndProcessHistoryForRecord(tableId, recordId);
+
+        // Then get all history from IndexedDB (includes newly fetched entries)
         currentHistoryData = await getFieldHistoryForRecord(tableId, recordId);
         renderHistoryModal();
     } catch (err) {
