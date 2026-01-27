@@ -1448,7 +1448,7 @@ async function saveViewToBackend() {
         uuid: crypto.randomUUID(),
         recordId: viewId,
         set: 'views',
-        operator: 'update',
+        operator: 'ALT',
         created_at: new Date().toISOString(),
         payload: JSON.stringify({
             _set: 'viewConfig',
