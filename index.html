@@ -782,7 +782,6 @@
         <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <h2 id="history-modal-title">Field History</h2>
-                <span class="record-id" id="history-modal-record-id"></span>
                 <button class="modal-close" onclick="closeHistoryModal()">&times;</button>
             </div>
             <div class="modal-toolbar">
@@ -2169,7 +2168,7 @@ async function renderTable() {
     });
 
     // Build table
-    var html = '<thead><tr><th style="width: 70px;">Actions</th><th>ID</th>';
+    var html = '<thead><tr><th style="width: 70px;">Actions</th>';
     colList.forEach(col => {
         html += '<th title="' + esc(col) + '">' + esc(colNames[col]) + '</th>';
     });
@@ -2182,7 +2181,6 @@ async function renderTable() {
         html += '<td><button class="history-btn" onclick="openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
         html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
         html += 'History</button></td>';
-        html += '<td>' + esc(rid.slice(-8)) + '</td>';
         colList.forEach(col => {
             var value = row[col];
             if (value === undefined) value = row[colNames[col]];
@@ -2495,7 +2493,6 @@ async function openHistoryModal(tableId, recordId) {
     // Set modal title
     var tableName = META_TABLES[tableId]?.tableName || tableId;
     document.getElementById('history-modal-title').textContent = 'Field History - ' + tableName;
-    document.getElementById('history-modal-record-id').textContent = recordId;
 
     // Show modal with loading state
     var overlay = document.getElementById('history-modal-overlay');
