@@ -514,6 +514,208 @@
             0%, 100% { transform: scale(1); opacity: 1; }
             50% { transform: scale(1.5); opacity: 0.5; }
         }
+
+        /* View Save Indicator */
+        .view-save-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #999;
+            padding: 4px 10px;
+            border-radius: 4px;
+            transition: all 0.3s;
+            margin-left: 8px;
+        }
+        .view-save-indicator.dirty {
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+        .view-save-indicator.saving {
+            color: #2d6cdf;
+            background: rgba(45, 108, 223, 0.1);
+        }
+        .view-save-indicator.saved {
+            color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .view-save-indicator .save-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        .view-save-indicator.saving .save-dot {
+            animation: pulse-dot 1s ease-in-out infinite;
+        }
+        .view-save-btn {
+            padding: 4px 10px;
+            background: #2d6cdf;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            margin-left: 4px;
+            transition: all 0.15s;
+        }
+        .view-save-btn:hover {
+            background: #2560c9;
+        }
+        .view-save-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* View Folders in Sidebar */
+        .table-view-folder {
+            padding: 6px 16px 6px 36px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #8a8a8a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.15s;
+            user-select: none;
+        }
+        .table-view-folder:hover {
+            background: #2d2f36;
+            color: #fff;
+        }
+        .table-view-folder .folder-icon {
+            font-size: 12px;
+            transition: transform 0.2s;
+        }
+        .table-view-folder.expanded .folder-icon {
+            transform: rotate(90deg);
+        }
+        .table-view-folder .folder-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .table-view-folder .folder-actions {
+            display: none;
+            gap: 4px;
+        }
+        .table-view-folder:hover .folder-actions {
+            display: flex;
+        }
+        .table-view-folder .folder-action-btn {
+            background: transparent;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            padding: 2px 4px;
+            font-size: 10px;
+            border-radius: 3px;
+        }
+        .table-view-folder .folder-action-btn:hover {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+        .folder-views-list {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.25s ease-out;
+        }
+        .folder-views-list.expanded {
+            max-height: 500px;
+        }
+        .folder-views-list .table-view-item {
+            padding-left: 52px;
+        }
+        .table-view-add-btn {
+            padding: 6px 16px 6px 44px;
+            cursor: pointer;
+            font-size: 12px;
+            color: #555;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.15s;
+        }
+        .table-view-add-btn:hover {
+            background: #2d2f36;
+            color: #2d6cdf;
+        }
+        .table-view-add-btn .add-icon {
+            font-size: 14px;
+            color: #2d6cdf;
+        }
+
+        /* Folder Input */
+        .folder-name-input {
+            background: #2d2f36;
+            border: 1px solid #2d6cdf;
+            color: #fff;
+            padding: 4px 8px;
+            font-size: 12px;
+            border-radius: 4px;
+            width: 120px;
+        }
+        .folder-name-input:focus {
+            outline: none;
+            border-color: #5b9aff;
+        }
+
+        /* Context Menu for Views */
+        .view-context-menu {
+            position: fixed;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            z-index: 1000;
+            min-width: 160px;
+            padding: 4px 0;
+            display: none;
+        }
+        .view-context-menu.open {
+            display: block;
+        }
+        .view-context-menu-item {
+            padding: 8px 16px;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .view-context-menu-item:hover {
+            background: #f5f5f5;
+        }
+        .view-context-menu-item.danger {
+            color: #dc2626;
+        }
+        .view-context-menu-item.danger:hover {
+            background: #fee2e2;
+        }
+        .view-context-menu-separator {
+            height: 1px;
+            background: #eee;
+            margin: 4px 0;
+        }
+
+        /* Column Drag Styles */
+        th.dragging {
+            opacity: 0.5;
+            background: #e8f0fe !important;
+        }
+        th.drag-over {
+            border-left: 3px solid #2d6cdf;
+        }
+        th {
+            cursor: grab;
+        }
+        th:active {
+            cursor: grabbing;
+        }
+        th:first-child {
+            cursor: default;
+        }
     </style>
 </head>
 <body>
@@ -628,6 +830,13 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- View Save Indicator -->
+                <div class="view-save-indicator" id="view-save-indicator" style="display: none;">
+                    <span class="save-dot"></span>
+                    <span id="save-indicator-text">Saved</span>
+                </div>
+                <button class="view-save-btn" id="manual-save-btn" onclick="saveViewToBackendNow()" style="display: none;">Save Now</button>
 
                 <button class="btn" onclick="manualSync()">Sync</button>
                 <button class="btn" onclick="logout()">Logout</button>
@@ -777,6 +986,20 @@
         </div>
     </div>
 
+    <!-- View Context Menu -->
+    <div class="view-context-menu" id="view-context-menu">
+        <div class="view-context-menu-item" onclick="moveViewToFolder()">
+            <span>&#128193;</span> Move to folder...
+        </div>
+        <div class="view-context-menu-item" onclick="renameView()">
+            <span>&#9998;</span> Rename
+        </div>
+        <div class="view-context-menu-separator"></div>
+        <div class="view-context-menu-item danger" onclick="deleteView()">
+            <span>&#128465;</span> Delete
+        </div>
+    </div>
+
     <!-- Field History Modal -->
     <div class="modal-overlay" id="history-modal-overlay" onclick="closeHistoryModal(event)">
         <div class="modal" onclick="event.stopPropagation()">
@@ -824,6 +1047,24 @@ var pollInterval = null;
 // Structure: VIEW_FIELD_CONFIG[tableId][viewId] = { visibleFieldIds: [...], fieldOrder: [...] }
 var VIEW_FIELD_CONFIG = {};
 
+// View folders: Structure: VIEW_FOLDERS[tableId][folderId] = { folderId, folderName, parentFolderId, sortOrder, isExpanded }
+var VIEW_FOLDERS = {};
+
+// ============ View Auto-Save System ============
+var XANO_POST_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostreampost';
+var AUTO_SAVE_DELAY = 5 * 60 * 1000; // 5 minutes
+var autoSaveTimer = null;
+
+var viewDirtyState = {
+    isDirty: false,
+    lastEditTime: null,
+    pendingChanges: {
+        tableId: null,
+        viewId: null,
+        changes: {}
+    }
+};
+
 // ============ IndexedDB ============
 
 function openDB() {
@@ -863,6 +1104,12 @@ function openDB() {
                 historyStore.createIndex('by_record', ['tableId', 'recordId']);
                 historyStore.createIndex('by_field', ['tableId', 'recordId', 'fieldId']);
                 historyStore.createIndex('by_event', 'eventId');
+            }
+
+            // View folders: keyed by folderId
+            if (!db.objectStoreNames.contains('viewFolders')) {
+                var folderStore = db.createObjectStore('viewFolders', { keyPath: 'folderId' });
+                folderStore.createIndex('by_table', 'tableId');
             }
 
             // Sync state
@@ -1087,6 +1334,183 @@ function getFieldHistoryForRecord(tableId, recordId) {
     });
 }
 
+// ============ View Folders ============
+
+function getFoldersForTable(tableId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('viewFolders', 'readonly');
+        var index = tx.objectStore('viewFolders').index('by_table');
+        var req = index.getAll(tableId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function saveFolder(folder) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('viewFolders', 'readwrite');
+        tx.objectStore('viewFolders').put(folder);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function deleteFolder(folderId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('viewFolders', 'readwrite');
+        tx.objectStore('viewFolders').delete(folderId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function getAllFolders() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('viewFolders', 'readonly');
+        var req = tx.objectStore('viewFolders').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// ============ View Auto-Save System ============
+
+// Mark view as dirty (edited)
+function markViewDirty(changeType, data) {
+    if (!currentTable || !currentView) return;
+
+    viewDirtyState.isDirty = true;
+    viewDirtyState.lastEditTime = Date.now();
+    viewDirtyState.pendingChanges.tableId = currentTable;
+    viewDirtyState.pendingChanges.viewId = currentView;
+    viewDirtyState.pendingChanges.changes[changeType] = data;
+
+    // Reset auto-save timer (debounce)
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(saveViewToBackend, AUTO_SAVE_DELAY);
+
+    // Update UI indicator
+    updateSaveIndicator('dirty');
+}
+
+// Update save indicator UI
+function updateSaveIndicator(state) {
+    var indicator = document.getElementById('view-save-indicator');
+    var text = document.getElementById('save-indicator-text');
+    var saveBtn = document.getElementById('manual-save-btn');
+
+    if (!indicator || !text || !saveBtn) return;
+
+    indicator.style.display = 'flex';
+    indicator.className = 'view-save-indicator ' + state;
+
+    switch(state) {
+        case 'dirty':
+            var remaining = Math.ceil((AUTO_SAVE_DELAY - (Date.now() - viewDirtyState.lastEditTime)) / 60000);
+            text.textContent = 'Auto-save in ~' + Math.max(1, remaining) + 'm';
+            saveBtn.style.display = 'inline-block';
+            saveBtn.disabled = false;
+            break;
+        case 'saving':
+            text.textContent = 'Saving...';
+            saveBtn.style.display = 'inline-block';
+            saveBtn.disabled = true;
+            break;
+        case 'saved':
+            text.textContent = 'Saved';
+            saveBtn.style.display = 'none';
+            // Hide after 3 seconds
+            setTimeout(() => {
+                if (!viewDirtyState.isDirty) {
+                    indicator.style.display = 'none';
+                }
+            }, 3000);
+            break;
+        default:
+            indicator.style.display = 'none';
+    }
+}
+
+// Save view changes to backend
+async function saveViewToBackend() {
+    if (!viewDirtyState.isDirty) return;
+
+    var { tableId, viewId, changes } = viewDirtyState.pendingChanges;
+    if (!tableId || !viewId) return;
+
+    updateSaveIndicator('saving');
+
+    // Get the full view data
+    var view = META_VIEWS[tableId]?.[viewId] || {};
+    var config = VIEW_FIELD_CONFIG[tableId]?.[viewId] || {};
+
+    var payload = {
+        uuid: crypto.randomUUID(),
+        recordId: viewId,
+        set: 'views',
+        operator: 'update',
+        created_at: new Date().toISOString(),
+        payload: JSON.stringify({
+            _set: 'viewConfig',
+            tableId: tableId,
+            viewId: viewId,
+            viewName: view.viewName || viewId,
+            visibleFieldIds: config.visibleFieldIds || [],
+            fieldOrder: config.fieldOrder || [],
+            filters: view.filters || [],
+            sorts: view.sorts || [],
+            folderId: view.folderId || null,
+            ...changes
+        })
+    };
+
+    try {
+        var response = await fetch(XANO_POST_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+
+        // Clear dirty state
+        viewDirtyState.isDirty = false;
+        viewDirtyState.pendingChanges = { tableId: null, viewId: null, changes: {} };
+        clearTimeout(autoSaveTimer);
+
+        updateSaveIndicator('saved');
+        console.log('View saved to backend:', viewId);
+    } catch (error) {
+        console.error('Failed to save view to backend:', error);
+        // Keep dirty state, will retry on next trigger
+        updateSaveIndicator('dirty');
+    }
+}
+
+// Manual save button handler
+async function saveViewToBackendNow() {
+    clearTimeout(autoSaveTimer);
+    await saveViewToBackend();
+}
+
+// Auto-save before navigation
+async function autoSaveBeforeNavigation() {
+    if (viewDirtyState.isDirty) {
+        clearTimeout(autoSaveTimer);
+        await saveViewToBackend();
+    }
+}
+
+// Browser beforeunload - auto-save
+window.addEventListener('beforeunload', function(e) {
+    if (viewDirtyState.isDirty) {
+        // Attempt to save (may not complete if user leaves too quickly)
+        saveViewToBackend();
+    }
+});
+
 // ============ View Field Configuration ============
 
 // Get the field configuration for a view (from cache or initialize default)
@@ -1269,6 +1693,7 @@ async function toggleFieldVisibility(fieldId) {
     }
 
     await saveViewFieldConfig(currentTable, viewId, config);
+    markViewDirty('visibleFieldIds', config.visibleFieldIds);
     renderFieldsDropdown();
     updateFieldsCount();
     await renderTable();
@@ -1288,6 +1713,7 @@ async function moveFieldUp(fieldId) {
         config.fieldOrder[idx] = temp;
 
         await saveViewFieldConfig(currentTable, viewId, config);
+        markViewDirty('fieldOrder', config.fieldOrder);
         renderFieldsDropdown();
         await renderTable();
     }
@@ -1307,6 +1733,7 @@ async function moveFieldDown(fieldId) {
         config.fieldOrder[idx] = temp;
 
         await saveViewFieldConfig(currentTable, viewId, config);
+        markViewDirty('fieldOrder', config.fieldOrder);
         renderFieldsDropdown();
         await renderTable();
     }
@@ -1330,6 +1757,7 @@ async function showAllFields() {
     }
 
     await saveViewFieldConfig(currentTable, viewId, config);
+    markViewDirty('visibleFieldIds', config.visibleFieldIds);
     renderFieldsDropdown();
     updateFieldsCount();
     await renderTable();
@@ -1349,6 +1777,7 @@ async function hideAllFields() {
     }
 
     await saveViewFieldConfig(currentTable, viewId, config);
+    markViewDirty('visibleFieldIds', config.visibleFieldIds);
     renderFieldsDropdown();
     updateFieldsCount();
     await renderTable();
@@ -1742,10 +2171,15 @@ async function loadTableViewsAsync(tableId) {
     if (!viewsList) return;
 
     var views = await getViewsForTable(tableId);
+    var folders = await getFoldersForTable(tableId);
 
     // Cache views in META_VIEWS
     if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
     views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+
+    // Cache folders in VIEW_FOLDERS
+    if (!VIEW_FOLDERS[tableId]) VIEW_FOLDERS[tableId] = {};
+    folders.forEach(f => VIEW_FOLDERS[tableId][f.folderId] = f);
 
     var html = '';
 
@@ -1756,23 +2190,323 @@ async function loadTableViewsAsync(tableId) {
             '<span class="view-name table-view-default">All Fields</span>' +
             '</div>';
 
-    // Add each view
+    // Group views by folder
+    var viewsByFolder = { '_root': [] };
     var viewIds = Object.keys(META_VIEWS[tableId] || {});
     for (var vid of viewIds) {
         if (vid === '_default') continue;
         var view = META_VIEWS[tableId][vid];
-        var isActive = currentTable === tableId && currentView === vid;
-        var viewName = view.viewName || vid;
-        var viewIcon = getViewTypeIcon(view.viewType);
-
-        html += '<div class="table-view-item' + (isActive ? ' active' : '') + '" onclick="selectTableView(\'' + esc(tableId) + '\', \'' + esc(vid) + '\')">' +
-                '<span class="view-icon">' + viewIcon + '</span>' +
-                '<span class="view-name">' + esc(viewName) + '</span>' +
-                '</div>';
+        var folderId = view.folderId || '_root';
+        if (!viewsByFolder[folderId]) viewsByFolder[folderId] = [];
+        viewsByFolder[folderId].push(view);
     }
+
+    // Render root-level views first
+    for (var view of viewsByFolder['_root'] || []) {
+        html += renderViewItem(tableId, view);
+    }
+
+    // Render folders and their views
+    var folderIds = Object.keys(VIEW_FOLDERS[tableId] || {});
+    folderIds.sort((a, b) => {
+        var fa = VIEW_FOLDERS[tableId][a];
+        var fb = VIEW_FOLDERS[tableId][b];
+        return (fa.sortOrder || 0) - (fb.sortOrder || 0);
+    });
+
+    for (var fid of folderIds) {
+        var folder = VIEW_FOLDERS[tableId][fid];
+        var isExpanded = folder.isExpanded !== false;
+
+        html += '<div class="table-view-folder' + (isExpanded ? ' expanded' : '') + '" data-folder-id="' + esc(fid) + '" onclick="toggleViewFolder(\'' + esc(tableId) + '\', \'' + esc(fid) + '\', event)">';
+        html += '<span class="folder-icon">&#9654;</span>';
+        html += '<span class="folder-name">&#128193; ' + esc(folder.folderName || 'Folder') + '</span>';
+        html += '<span class="folder-actions">';
+        html += '<button class="folder-action-btn" onclick="renameViewFolder(\'' + esc(tableId) + '\', \'' + esc(fid) + '\', event)" title="Rename">&#9998;</button>';
+        html += '<button class="folder-action-btn" onclick="deleteViewFolder(\'' + esc(tableId) + '\', \'' + esc(fid) + '\', event)" title="Delete">&#128465;</button>';
+        html += '</span>';
+        html += '</div>';
+
+        html += '<div class="folder-views-list' + (isExpanded ? ' expanded' : '') + '" id="folder-views-' + esc(fid) + '">';
+        for (var view of viewsByFolder[fid] || []) {
+            html += renderViewItem(tableId, view, true);
+        }
+        html += '</div>';
+    }
+
+    // Add "New folder" button
+    html += '<div class="table-view-add-btn" onclick="createViewFolder(\'' + esc(tableId) + '\')">';
+    html += '<span class="add-icon">+</span>';
+    html += '<span>New folder</span>';
+    html += '</div>';
 
     viewsList.innerHTML = html;
 }
+
+// Render a single view item
+function renderViewItem(tableId, view, inFolder) {
+    var isActive = currentTable === tableId && currentView === view.viewId;
+    var viewName = view.viewName || view.viewId;
+    var viewIcon = getViewTypeIcon(view.viewType);
+    var paddingClass = inFolder ? ' style="padding-left: 52px;"' : '';
+
+    return '<div class="table-view-item' + (isActive ? ' active' : '') + '"' + paddingClass + ' ' +
+           'onclick="selectTableView(\'' + esc(tableId) + '\', \'' + esc(view.viewId) + '\')" ' +
+           'oncontextmenu="showViewContextMenu(event, \'' + esc(tableId) + '\', \'' + esc(view.viewId) + '\')">' +
+           '<span class="view-icon">' + viewIcon + '</span>' +
+           '<span class="view-name">' + esc(viewName) + '</span>' +
+           '</div>';
+}
+
+// Toggle view folder expanded state
+async function toggleViewFolder(tableId, folderId, event) {
+    event.stopPropagation();
+
+    var folder = VIEW_FOLDERS[tableId]?.[folderId];
+    if (!folder) return;
+
+    folder.isExpanded = !folder.isExpanded;
+    await saveFolder(folder);
+
+    // Update UI
+    var folderEl = document.querySelector('.table-view-folder[data-folder-id="' + folderId + '"]');
+    var viewsListEl = document.getElementById('folder-views-' + folderId);
+
+    if (folderEl && viewsListEl) {
+        if (folder.isExpanded) {
+            folderEl.classList.add('expanded');
+            viewsListEl.classList.add('expanded');
+        } else {
+            folderEl.classList.remove('expanded');
+            viewsListEl.classList.remove('expanded');
+        }
+    }
+}
+
+// Create a new view folder
+async function createViewFolder(tableId) {
+    var folderName = prompt('Enter folder name:');
+    if (!folderName) return;
+
+    var folderId = 'vfld' + Date.now();
+    var folder = {
+        folderId: folderId,
+        tableId: tableId,
+        folderName: folderName,
+        parentFolderId: null,
+        sortOrder: Object.keys(VIEW_FOLDERS[tableId] || {}).length,
+        isExpanded: true
+    };
+
+    await saveFolder(folder);
+    if (!VIEW_FOLDERS[tableId]) VIEW_FOLDERS[tableId] = {};
+    VIEW_FOLDERS[tableId][folderId] = folder;
+
+    // Also sync to backend
+    await saveFolderToBackend(folder, 'create');
+
+    // Refresh the views list
+    await loadTableViewsAsync(tableId);
+}
+
+// Rename a view folder
+async function renameViewFolder(tableId, folderId, event) {
+    event.stopPropagation();
+
+    var folder = VIEW_FOLDERS[tableId]?.[folderId];
+    if (!folder) return;
+
+    var newName = prompt('Enter new folder name:', folder.folderName);
+    if (!newName || newName === folder.folderName) return;
+
+    folder.folderName = newName;
+    await saveFolder(folder);
+
+    // Sync to backend
+    await saveFolderToBackend(folder, 'update');
+
+    // Refresh the views list
+    await loadTableViewsAsync(tableId);
+}
+
+// Delete a view folder
+async function deleteViewFolder(tableId, folderId, event) {
+    event.stopPropagation();
+
+    if (!confirm('Delete this folder? Views will be moved to the root level.')) return;
+
+    // Move all views in this folder to root
+    var viewIds = Object.keys(META_VIEWS[tableId] || {});
+    for (var vid of viewIds) {
+        var view = META_VIEWS[tableId][vid];
+        if (view.folderId === folderId) {
+            view.folderId = null;
+            await saveView(view);
+        }
+    }
+
+    // Delete the folder
+    await deleteFolder(folderId);
+    delete VIEW_FOLDERS[tableId][folderId];
+
+    // Sync to backend
+    await saveFolderToBackend({ folderId: folderId, tableId: tableId }, 'delete');
+
+    // Refresh the views list
+    await loadTableViewsAsync(tableId);
+}
+
+// Save folder to backend
+async function saveFolderToBackend(folder, operator) {
+    var payload = {
+        uuid: crypto.randomUUID(),
+        recordId: folder.folderId,
+        set: 'viewFolders',
+        operator: operator,
+        created_at: new Date().toISOString(),
+        payload: JSON.stringify(folder)
+    };
+
+    try {
+        await fetch(XANO_POST_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    } catch (error) {
+        console.error('Failed to save folder to backend:', error);
+    }
+}
+
+// View context menu state
+var contextMenuViewId = null;
+var contextMenuTableId = null;
+
+// Show view context menu
+function showViewContextMenu(event, tableId, viewId) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    contextMenuTableId = tableId;
+    contextMenuViewId = viewId;
+
+    var menu = document.getElementById('view-context-menu');
+    menu.style.left = event.clientX + 'px';
+    menu.style.top = event.clientY + 'px';
+    menu.classList.add('open');
+}
+
+// Close view context menu
+function closeViewContextMenu() {
+    var menu = document.getElementById('view-context-menu');
+    menu.classList.remove('open');
+    contextMenuViewId = null;
+    contextMenuTableId = null;
+}
+
+// Move view to folder
+async function moveViewToFolder() {
+    if (!contextMenuTableId || !contextMenuViewId) return;
+
+    var folders = VIEW_FOLDERS[contextMenuTableId] || {};
+    var folderNames = Object.values(folders).map(f => f.folderName);
+
+    var options = ['(Root level)', ...folderNames];
+    var choice = prompt('Move to folder:\n' + options.map((n, i) => i + ': ' + n).join('\n') + '\n\nEnter number:');
+
+    if (choice === null) {
+        closeViewContextMenu();
+        return;
+    }
+
+    var choiceIdx = parseInt(choice);
+    if (isNaN(choiceIdx) || choiceIdx < 0 || choiceIdx >= options.length) {
+        closeViewContextMenu();
+        return;
+    }
+
+    var view = META_VIEWS[contextMenuTableId]?.[contextMenuViewId];
+    if (!view) {
+        closeViewContextMenu();
+        return;
+    }
+
+    if (choiceIdx === 0) {
+        view.folderId = null;
+    } else {
+        var folderIds = Object.keys(folders);
+        view.folderId = folderIds[choiceIdx - 1];
+    }
+
+    await saveView(view);
+    markViewDirty('folderId', view.folderId);
+
+    closeViewContextMenu();
+    await loadTableViewsAsync(contextMenuTableId);
+}
+
+// Rename view
+async function renameView() {
+    if (!contextMenuTableId || !contextMenuViewId) return;
+
+    var view = META_VIEWS[contextMenuTableId]?.[contextMenuViewId];
+    if (!view) {
+        closeViewContextMenu();
+        return;
+    }
+
+    var newName = prompt('Enter new view name:', view.viewName);
+    if (!newName || newName === view.viewName) {
+        closeViewContextMenu();
+        return;
+    }
+
+    view.viewName = newName;
+    await saveView(view);
+    markViewDirty('viewName', newName);
+
+    closeViewContextMenu();
+    await loadTableViewsAsync(contextMenuTableId);
+    renderViewSelector();
+}
+
+// Delete view
+async function deleteView() {
+    if (!contextMenuTableId || !contextMenuViewId) return;
+
+    if (!confirm('Delete this view?')) {
+        closeViewContextMenu();
+        return;
+    }
+
+    // Remove from META_VIEWS
+    delete META_VIEWS[contextMenuTableId][contextMenuViewId];
+
+    // Remove from IndexedDB
+    await new Promise((resolve, reject) => {
+        var tx = db.transaction('views', 'readwrite');
+        tx.objectStore('views').delete([contextMenuTableId, contextMenuViewId]);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+
+    // If current view was deleted, switch to default
+    if (currentView === contextMenuViewId) {
+        currentView = '_default';
+        renderViewSelector();
+        renderFieldsDropdown();
+        updateFieldsCount();
+        await renderTable();
+    }
+
+    closeViewContextMenu();
+    await loadTableViewsAsync(contextMenuTableId);
+}
+
+// Close context menu on click outside
+document.addEventListener('click', function() {
+    closeViewContextMenu();
+});
 
 // Toggle the expanded views list for a table
 function toggleTableViews(tableId, event) {
@@ -1797,6 +2531,9 @@ function toggleTableViews(tableId, event) {
 
 // Select a view from the sidebar and show the table
 async function selectTableView(tableId, viewId) {
+    // Auto-save any pending changes before navigating
+    await autoSaveBeforeNavigation();
+
     // Update sidebar active states
     document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.table-view-item').forEach(el => el.classList.remove('active'));
@@ -1954,6 +2691,9 @@ function startRefreshCountdown() {
 }
 
 async function showTable(tableId) {
+    // Auto-save any pending changes before switching tables
+    await autoSaveBeforeNavigation();
+
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
     currentPage = 0;
@@ -2167,10 +2907,13 @@ async function renderTable() {
         colNames[fid] = fields[fid]?.fieldName || fid;
     });
 
-    // Build table
-    var html = '<thead><tr><th style="width: 70px;">Actions</th>';
-    colList.forEach(col => {
-        html += '<th title="' + esc(col) + '">' + esc(colNames[col]) + '</th>';
+    // Build table with draggable headers
+    var html = '<thead><tr><th style="width: 70px; cursor: default;">Actions</th>';
+    colList.forEach((col, idx) => {
+        html += '<th draggable="true" data-field-id="' + esc(col) + '" data-field-index="' + idx + '" ' +
+                'ondragstart="handleColumnDragStart(event)" ondragover="handleColumnDragOver(event)" ' +
+                'ondrop="handleColumnDrop(event)" ondragend="handleColumnDragEnd(event)" ' +
+                'title="' + esc(col) + '">' + esc(colNames[col]) + '</th>';
     });
     html += '</tr></thead><tbody>';
 
@@ -2776,8 +3519,20 @@ function renderViewSelector() {
 
 // Select a view
 async function selectView(viewId) {
+    // Auto-save any pending changes before switching views
+    await autoSaveBeforeNavigation();
+
     currentView = viewId;
     closeAllDropdowns();
+
+    // Load and apply view filters and sorts for the new view
+    if (currentTable) {
+        var viewConfig = getViewFiltersAndSorts(currentTable, viewId);
+        currentFilters = viewConfig.filters;
+        currentSorts = viewConfig.sorts;
+        updateFilterCount();
+        updateSortCount();
+    }
 
     // Update sidebar to reflect the new active view
     if (currentTable) {
@@ -3180,6 +3935,7 @@ async function applyFilters() {
     // Save filters to current view
     if (currentTable && currentView) {
         await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts);
+        markViewDirty('filters', currentFilters);
     }
 }
 
@@ -3269,6 +4025,7 @@ async function applySorts() {
     // Save sorts to current view
     if (currentTable && currentView) {
         await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts);
+        markViewDirty('sorts', currentSorts);
     }
 }
 
@@ -3392,6 +4149,92 @@ document.addEventListener('click', function(e) {
         closeViewControlDropdowns();
     }
 });
+
+// ============ Column Drag & Drop Reordering ============
+
+var draggedColumnFieldId = null;
+
+function handleColumnDragStart(event) {
+    var th = event.target.closest('th');
+    if (!th || !th.dataset.fieldId) return;
+
+    draggedColumnFieldId = th.dataset.fieldId;
+    th.classList.add('dragging');
+
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggedColumnFieldId);
+}
+
+function handleColumnDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+
+    var th = event.target.closest('th');
+    if (!th || !th.dataset.fieldId) return;
+
+    // Remove drag-over class from all headers
+    document.querySelectorAll('th.drag-over').forEach(el => el.classList.remove('drag-over'));
+
+    // Add drag-over class to current target
+    if (th.dataset.fieldId !== draggedColumnFieldId) {
+        th.classList.add('drag-over');
+    }
+}
+
+function handleColumnDragEnd(event) {
+    // Remove all drag classes
+    document.querySelectorAll('th.dragging').forEach(el => el.classList.remove('dragging'));
+    document.querySelectorAll('th.drag-over').forEach(el => el.classList.remove('drag-over'));
+    draggedColumnFieldId = null;
+}
+
+async function handleColumnDrop(event) {
+    event.preventDefault();
+
+    var th = event.target.closest('th');
+    if (!th || !th.dataset.fieldId || !draggedColumnFieldId) {
+        handleColumnDragEnd(event);
+        return;
+    }
+
+    var targetFieldId = th.dataset.fieldId;
+    if (targetFieldId === draggedColumnFieldId) {
+        handleColumnDragEnd(event);
+        return;
+    }
+
+    // Reorder the fields
+    await reorderColumn(draggedColumnFieldId, targetFieldId);
+
+    handleColumnDragEnd(event);
+}
+
+async function reorderColumn(draggedFieldId, targetFieldId) {
+    if (!currentTable) return;
+
+    var viewId = currentView || '_default';
+    var config = getViewFieldConfig(currentTable, viewId);
+
+    var fromIdx = config.fieldOrder.indexOf(draggedFieldId);
+    var toIdx = config.fieldOrder.indexOf(targetFieldId);
+
+    if (fromIdx < 0 || toIdx < 0) return;
+
+    // Remove the dragged field from its current position
+    config.fieldOrder.splice(fromIdx, 1);
+
+    // Insert at the new position
+    // If dragging right (fromIdx < toIdx), insert before target
+    // If dragging left (fromIdx > toIdx), insert at target
+    var insertIdx = fromIdx < toIdx ? toIdx : toIdx;
+    config.fieldOrder.splice(insertIdx, 0, draggedFieldId);
+
+    // Save and re-render
+    await saveViewFieldConfig(currentTable, viewId, config);
+    markViewDirty('fieldOrder', config.fieldOrder);
+    renderFieldsDropdown();
+    await renderTable();
+}
 
 initAuthScreen();
     </script>
