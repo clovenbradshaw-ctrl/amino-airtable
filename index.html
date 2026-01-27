@@ -1044,7 +1044,8 @@ var lastEventId = 0;
 var pollInterval = null;
 
 // View field configuration cache (in-memory, persisted to IndexedDB)
-// Structure: VIEW_FIELD_CONFIG[tableId][viewId] = { visibleFieldIds: [...], fieldOrder: [...] }
+// Structure: VIEW_FIELD_CONFIG[tableId][viewId] = { hiddenFieldIds: [...], fieldOrder: [...] }
+// Note: Views default to showing ALL fields; hiddenFieldIds stores fields to hide
 var VIEW_FIELD_CONFIG = {};
 
 // View folders: Structure: VIEW_FOLDERS[tableId][folderId] = { folderId, folderName, parentFolderId, sortOrder, isExpanded }
@@ -1447,7 +1448,7 @@ async function saveViewToBackend() {
     var payload = {
         uuid: crypto.randomUUID(),
         recordId: viewId,
-        set: 'views',
+        set: 'airtable:' + tableId,
         operator: 'ALT',
         created_at: new Date().toISOString(),
         payload: JSON.stringify({
@@ -1455,7 +1456,7 @@ async function saveViewToBackend() {
             tableId: tableId,
             viewId: viewId,
             viewName: view.viewName || viewId,
-            visibleFieldIds: config.visibleFieldIds || [],
+            hiddenFieldIds: config.hiddenFieldIds || [],
             fieldOrder: config.fieldOrder || [],
             filters: view.filters || [],
             sorts: view.sorts || [],
@@ -1524,10 +1525,10 @@ function getViewFieldConfig(tableId, viewId) {
 
     // Check if view has stored config in META_VIEWS
     var view = META_VIEWS[tableId]?.[viewId];
-    if (view && view.visibleFieldIds) {
+    if (view && (view.hiddenFieldIds || view.fieldOrder)) {
         VIEW_FIELD_CONFIG[tableId][viewId] = {
-            visibleFieldIds: view.visibleFieldIds,
-            fieldOrder: view.fieldOrder || view.visibleFieldIds
+            hiddenFieldIds: view.hiddenFieldIds || [],
+            fieldOrder: view.fieldOrder || []
         };
         return VIEW_FIELD_CONFIG[tableId][viewId];
     }
@@ -1549,8 +1550,8 @@ function initViewFieldConfig(tableId, viewId) {
     });
 
     var config = {
-        visibleFieldIds: fieldIds.slice(), // All fields visible initially
-        fieldOrder: fieldIds.slice()       // Order matches visible
+        hiddenFieldIds: [],          // No fields hidden initially (all visible)
+        fieldOrder: fieldIds.slice() // Order for display
     };
 
     if (!VIEW_FIELD_CONFIG[tableId]) VIEW_FIELD_CONFIG[tableId] = {};
@@ -1578,7 +1579,7 @@ async function saveViewFieldConfig(tableId, viewId, config) {
     }
 
     // Merge config into view
-    META_VIEWS[tableId][viewId].visibleFieldIds = config.visibleFieldIds;
+    META_VIEWS[tableId][viewId].hiddenFieldIds = config.hiddenFieldIds;
     META_VIEWS[tableId][viewId].fieldOrder = config.fieldOrder;
 
     // Persist to IndexedDB
@@ -1624,22 +1625,26 @@ function getViewFiltersAndSorts(tableId, viewId) {
 function getVisibleFieldsForView(tableId, viewId) {
     var config = getViewFieldConfig(tableId, viewId || '_default');
     var fields = META_FIELDS[tableId] || {};
+    var allFieldIds = Object.keys(fields);
 
-    // Use fieldOrder but filter to only visible fields
-    var visibleSet = new Set(config.visibleFieldIds);
+    // Hidden fields are in hiddenFieldIds; all others are visible
+    var hiddenSet = new Set(config.hiddenFieldIds || []);
     var result = [];
+    var addedSet = new Set();
 
-    // First add fields that are in fieldOrder and visible
-    for (var fid of config.fieldOrder) {
-        if (visibleSet.has(fid) && fields[fid]) {
+    // First add fields from fieldOrder that are not hidden
+    for (var fid of (config.fieldOrder || [])) {
+        if (fields[fid] && !hiddenSet.has(fid) && !addedSet.has(fid)) {
             result.push(fid);
+            addedSet.add(fid);
         }
     }
 
-    // Add any visible fields not in fieldOrder (newly added fields)
-    for (var fid of config.visibleFieldIds) {
-        if (!result.includes(fid) && fields[fid]) {
+    // Add any remaining visible fields not in fieldOrder (newly added fields)
+    for (var fid of allFieldIds) {
+        if (!hiddenSet.has(fid) && !addedSet.has(fid)) {
             result.push(fid);
+            addedSet.add(fid);
         }
     }
 
@@ -1679,21 +1684,24 @@ async function toggleFieldVisibility(fieldId) {
     var viewId = currentView || '_default';
     var config = getViewFieldConfig(currentTable, viewId);
 
-    var idx = config.visibleFieldIds.indexOf(fieldId);
+    if (!config.hiddenFieldIds) config.hiddenFieldIds = [];
+
+    var idx = config.hiddenFieldIds.indexOf(fieldId);
     if (idx >= 0) {
-        // Hide field
-        config.visibleFieldIds.splice(idx, 1);
+        // Field is hidden, make it visible
+        config.hiddenFieldIds.splice(idx, 1);
     } else {
-        // Show field - add at the end
-        config.visibleFieldIds.push(fieldId);
-        // Also ensure it's in fieldOrder
-        if (!config.fieldOrder.includes(fieldId)) {
-            config.fieldOrder.push(fieldId);
-        }
+        // Field is visible, hide it
+        config.hiddenFieldIds.push(fieldId);
+    }
+
+    // Ensure field is in fieldOrder
+    if (!config.fieldOrder.includes(fieldId)) {
+        config.fieldOrder.push(fieldId);
     }
 
     await saveViewFieldConfig(currentTable, viewId, config);
-    markViewDirty('visibleFieldIds', config.visibleFieldIds);
+    markViewDirty('hiddenFieldIds', config.hiddenFieldIds);
     renderFieldsDropdown();
     updateFieldsCount();
     await renderTable();
@@ -1747,7 +1755,7 @@ async function showAllFields() {
     var allFieldIds = Object.keys(fields);
 
     var config = getViewFieldConfig(currentTable, viewId);
-    config.visibleFieldIds = allFieldIds.slice();
+    config.hiddenFieldIds = []; // Clear all hidden fields
 
     // Ensure all fields are in fieldOrder
     for (var fid of allFieldIds) {
@@ -1757,7 +1765,7 @@ async function showAllFields() {
     }
 
     await saveViewFieldConfig(currentTable, viewId, config);
-    markViewDirty('visibleFieldIds', config.visibleFieldIds);
+    markViewDirty('hiddenFieldIds', config.hiddenFieldIds);
     renderFieldsDropdown();
     updateFieldsCount();
     await renderTable();
@@ -1767,17 +1775,20 @@ async function showAllFields() {
 async function hideAllFields() {
     if (!currentTable) return;
     var viewId = currentView || '_default';
+    var fields = META_FIELDS[currentTable] || {};
+    var allFieldIds = Object.keys(fields);
+
     var config = getViewFieldConfig(currentTable, viewId);
 
-    // Keep the first field visible
-    if (config.fieldOrder.length > 0) {
-        config.visibleFieldIds = [config.fieldOrder[0]];
-    } else {
-        config.visibleFieldIds = [];
-    }
+    // Get all fields in order, keep the first one visible
+    var orderedFields = getAllFieldsInOrder(currentTable, viewId);
+    var firstField = orderedFields[0] || allFieldIds[0];
+
+    // Hide all fields except the first one
+    config.hiddenFieldIds = allFieldIds.filter(fid => fid !== firstField);
 
     await saveViewFieldConfig(currentTable, viewId, config);
-    markViewDirty('visibleFieldIds', config.visibleFieldIds);
+    markViewDirty('hiddenFieldIds', config.hiddenFieldIds);
     renderFieldsDropdown();
     updateFieldsCount();
     await renderTable();
@@ -2004,6 +2015,28 @@ async function processEvents(events) {
             views.push(viewData);
             if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
             META_VIEWS[tableId][viewId] = viewData;
+
+        } else if (recordType === 'viewConfig') {
+            // View configuration updates: hiddenFieldIds, fieldOrder, filters, sorts
+            var tableId = payload.tableId || setName.replace('airtable:', '');
+            var viewId = recordId;
+
+            // Initialize META_VIEWS if needed
+            if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+            if (!META_VIEWS[tableId][viewId]) {
+                META_VIEWS[tableId][viewId] = { tableId, viewId };
+            }
+
+            // Update the view with config data
+            var viewData = META_VIEWS[tableId][viewId];
+            if (payload.viewName) viewData.viewName = payload.viewName;
+            if (payload.hiddenFieldIds) viewData.hiddenFieldIds = payload.hiddenFieldIds;
+            if (payload.fieldOrder) viewData.fieldOrder = payload.fieldOrder;
+            if (payload.filters) viewData.filters = payload.filters;
+            if (payload.sorts) viewData.sorts = payload.sorts;
+            if (payload.folderId !== undefined) viewData.folderId = payload.folderId;
+
+            views.push(viewData);
 
         } else {
             // Data record: recordId starts with "rec"
@@ -3558,7 +3591,7 @@ function renderFieldsDropdown() {
     var fields = META_FIELDS[currentTable] || {};
     var viewId = currentView || '_default';
     var config = getViewFieldConfig(currentTable, viewId);
-    var visibleSet = new Set(config.visibleFieldIds);
+    var hiddenSet = new Set(config.hiddenFieldIds || []);
 
     // Get all fields in order
     var allFieldIds = getAllFieldsInOrder(currentTable, viewId);
@@ -3569,7 +3602,7 @@ function renderFieldsDropdown() {
         var field = fields[fid];
         if (!field) continue;
 
-        var isVisible = visibleSet.has(fid);
+        var isVisible = !hiddenSet.has(fid);
         var fieldName = field.fieldName || fid;
         var fieldType = field.fieldType || 'unknown';
 
@@ -3617,7 +3650,8 @@ function updateFieldsCount() {
     var config = getViewFieldConfig(currentTable, viewId);
     var fields = META_FIELDS[currentTable] || {};
     var totalFields = Object.keys(fields).length;
-    var visibleCount = config.visibleFieldIds.length;
+    var hiddenCount = (config.hiddenFieldIds || []).length;
+    var visibleCount = totalFields - hiddenCount;
 
     var countEl = document.getElementById('fields-visible-count');
     if (countEl) {
