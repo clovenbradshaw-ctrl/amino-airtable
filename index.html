@@ -5295,7 +5295,7 @@ async function showEventsView() {
 
 async function renderEventsView() {
     var container = document.querySelector('.table-container');
-    container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading events...</h3></div>';
+    // No loading spinner - render immediately with cached/local data
 
     try {
         var totalEventsCount = await getRawEventsCount();
@@ -5366,19 +5366,18 @@ async function renderEventsView() {
         html += '</div>';
 
         // Show page info and total count
-        var startItem = offset + 1;
-        var endItem = offset + events.length;
         var totalCount = eventsTypeFilter === 'current' ? totalRecordsCount : totalEventsCount;
-        var hasMore = events.length === eventsPageSize;
+        var totalPages = Math.ceil(totalCount / eventsPageSize);
+        var startItem = totalCount > 0 ? offset + 1 : 0;
+        var endItem = Math.min(offset + events.length, totalCount);
+        var hasMore = eventsPage < totalPages - 1;
         var hasPrev = eventsPage > 0;
 
         html += '<div class="events-stats">';
         if (eventsTypeFilter === 'current') {
-            html += 'Showing ' + startItem.toLocaleString() + '-' + endItem.toLocaleString();
-            html += ' <span style="color: #666;">(' + totalRecordsCount.toLocaleString() + ' total records)</span>';
+            html += startItem.toLocaleString() + '-' + endItem.toLocaleString() + ' of ' + totalRecordsCount.toLocaleString() + ' records';
         } else {
-            html += 'Showing ' + startItem.toLocaleString() + '-' + endItem.toLocaleString();
-            html += ' <span style="color: #666;">(' + totalEventsCount.toLocaleString() + ' total events)</span>';
+            html += startItem.toLocaleString() + '-' + endItem.toLocaleString() + ' of ' + totalEventsCount.toLocaleString() + ' events';
             if (newEventsCount > 0) {
                 html += ' <span class="new-event-badge">' + newEventsCount + ' new</span>';
             }
@@ -5386,10 +5385,10 @@ async function renderEventsView() {
         html += '</div>';
 
         // Pagination controls
-        html += '<div class="events-pagination" style="display: flex; gap: 8px; align-items: center;">';
-        html += '<button onclick="prevEventsPage()" ' + (hasPrev ? '' : 'disabled') + ' style="padding: 4px 12px; cursor: ' + (hasPrev ? 'pointer' : 'not-allowed') + ';">&larr; Prev</button>';
-        html += '<span style="color: #666;">Page ' + (eventsPage + 1) + '</span>';
-        html += '<button onclick="nextEventsPage()" ' + (hasMore ? '' : 'disabled') + ' style="padding: 4px 12px; cursor: ' + (hasMore ? 'pointer' : 'not-allowed') + ';">Next &rarr;</button>';
+        html += '<div class="events-pagination">';
+        html += '<button class="pagination-btn" onclick="prevEventsPage()" ' + (hasPrev ? '' : 'disabled') + '>« Prev</button>';
+        html += '<span class="pagination-info">Page ' + (eventsPage + 1) + ' of ' + Math.max(1, totalPages) + '</span>';
+        html += '<button class="pagination-btn" onclick="nextEventsPage()" ' + (hasMore ? '' : 'disabled') + '>Next »</button>';
         html += '</div>';
         html += '</div>';
 
