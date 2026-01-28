@@ -2167,31 +2167,46 @@ function getRawEventsByRecordId(recordId, maxEventId) {
 }
 
 function getRawEventsBySet(setFilter) {
+    // DEPRECATED: Use getRawEventsBySetPaginated instead
+    return getRawEventsBySetPaginated(setFilter, 0, 500);
+}
+
+// Memory-efficient paginated events by set retrieval
+function getRawEventsBySetPaginated(setFilter, offset, limit) {
     return new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var index = tx.objectStore('events').index('by_set');
+        var results = [];
+        var skipped = 0;
+
+        // Get all matching, then sort and paginate
+        // Note: IndexedDB index doesn't support ordering by different field, so we collect and sort
         var req = index.getAll(setFilter);
         req.onsuccess = () => {
-            var results = req.result || [];
-            results.sort((a, b) => (b.id || 0) - (a.id || 0)); // Newest first
+            var all = req.result || [];
+            all.sort((a, b) => (b.id || 0) - (a.id || 0)); // Newest first
+            // Apply pagination
+            results = all.slice(offset, offset + limit);
             resolve(results);
         };
         req.onerror = () => reject(req.error);
     });
 }
 
-function searchRawEvents(query, limit) {
+function searchRawEvents(query, limit, offset) {
     return new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var store = tx.objectStore('events');
         var results = [];
+        var skipped = 0;
         var maxLimit = limit || 100;
+        var skipCount = offset || 0;
         var lowerQuery = query.toLowerCase();
 
         var req = store.openCursor(null, 'prev');
         req.onsuccess = (e) => {
             var cursor = e.target.result;
-            if (cursor && results.length < maxLimit) {
+            if (cursor) {
                 var event = cursor.value;
                 // Search in recordId, set, and payload
                 var matchesRecord = event.recordId && event.recordId.toLowerCase().includes(lowerQuery);
@@ -2200,9 +2215,18 @@ function searchRawEvents(query, limit) {
                 var matchesPayload = payloadStr && payloadStr.toLowerCase().includes(lowerQuery);
 
                 if (matchesRecord || matchesSet || matchesPayload) {
-                    results.push(event);
+                    if (skipped < skipCount) {
+                        skipped++;
+                        cursor.continue();
+                    } else if (results.length < maxLimit) {
+                        results.push(event);
+                        cursor.continue();
+                    } else {
+                        resolve(results);
+                    }
+                } else {
+                    cursor.continue();
                 }
-                cursor.continue();
             } else {
                 resolve(results);
             }
@@ -2229,43 +2253,113 @@ function getMaxEventId() {
 }
 
 function getAllRawEventsNoPagination() {
+    // DEPRECATED: Use getRawEventsPaginated instead to avoid memory issues
+    return getRawEventsPaginated(0, 500); // Return max 500 events
+}
+
+// Memory-efficient paginated events retrieval using IndexedDB cursor
+function getRawEventsPaginated(offset, limit) {
     return new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var store = tx.objectStore('events');
-        var req = store.getAll();
-        req.onsuccess = () => {
-            var results = req.result || [];
-            // Sort by id descending (newest first)
-            results.sort((a, b) => (b.id || 0) - (a.id || 0));
-            resolve(results);
+        var results = [];
+        var skipped = 0;
+
+        // Use cursor in reverse order (newest first, highest ID first)
+        var req = store.openCursor(null, 'prev');
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor) {
+                if (skipped < offset) {
+                    skipped++;
+                    cursor.continue();
+                } else if (results.length < limit) {
+                    results.push(cursor.value);
+                    cursor.continue();
+                } else {
+                    resolve(results);
+                }
+            } else {
+                resolve(results);
+            }
         };
         req.onerror = () => reject(req.error);
     });
 }
 
+// Get total count of raw events
+function getRawEventsTotalCount() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var req = tx.objectStore('events').count();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
 // Get all current records from all tables as synthetic event-like objects
+// DEPRECATED: Use getCurrentRecordsPaginated instead to avoid memory issues
 function getAllCurrentRecords() {
+    return getCurrentRecordsPaginated(0, 500); // Return max 500 records
+}
+
+// Memory-efficient paginated current records retrieval
+function getCurrentRecordsPaginated(offset, limit, tableFilter, searchQuery) {
     return new Promise((resolve, reject) => {
         var tx = db.transaction('data', 'readonly');
         var store = tx.objectStore('data');
-        var req = store.getAll();
-        req.onsuccess = () => {
-            var records = req.result || [];
-            // Convert records to event-like format for display in Events Stream
-            var syntheticEvents = records.map(rec => ({
-                id: 0, // No event ID for current state
-                recordId: rec.recordId,
-                set: 'airtable:' + rec.tableId,
-                payload: JSON.stringify({
-                    _set: 'current',
-                    fields: { INS: rec.fields }
-                }),
-                created_at: null, // No timestamp for current state
-                _isCurrentState: true // Flag to identify synthetic events
-            }));
-            // Sort by recordId for consistent ordering
-            syntheticEvents.sort((a, b) => (a.recordId || '').localeCompare(b.recordId || ''));
-            resolve(syntheticEvents);
+        var results = [];
+        var skipped = 0;
+        var setFilter = tableFilter || null;
+        var query = searchQuery ? searchQuery.toLowerCase() : null;
+
+        var req = store.openCursor();
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor) {
+                var rec = cursor.value;
+                var setVal = 'airtable:' + rec.tableId;
+
+                // Apply table filter if set
+                if (setFilter && setVal !== setFilter) {
+                    cursor.continue();
+                    return;
+                }
+
+                // Apply search filter if set
+                if (query) {
+                    var matchesSearch = (rec.recordId && rec.recordId.toLowerCase().includes(query)) ||
+                                       (setVal.toLowerCase().includes(query)) ||
+                                       (JSON.stringify(rec.fields || {}).toLowerCase().includes(query));
+                    if (!matchesSearch) {
+                        cursor.continue();
+                        return;
+                    }
+                }
+
+                if (skipped < offset) {
+                    skipped++;
+                    cursor.continue();
+                } else if (results.length < limit) {
+                    // Convert to synthetic event format
+                    results.push({
+                        id: 0,
+                        recordId: rec.recordId,
+                        set: setVal,
+                        payload: JSON.stringify({
+                            _set: 'current',
+                            fields: { INS: rec.fields }
+                        }),
+                        created_at: null,
+                        _isCurrentState: true
+                    });
+                    cursor.continue();
+                } else {
+                    resolve(results);
+                }
+            } else {
+                resolve(results);
+            }
         };
         req.onerror = () => reject(req.error);
     });
@@ -2474,16 +2568,29 @@ function saveFieldHistory(historyEntries) {
     });
 }
 
-function getFieldHistoryForRecord(tableId, recordId) {
+// Field history limit to prevent excessive memory usage
+var FIELD_HISTORY_LIMIT = 1000;
+
+function getFieldHistoryForRecord(tableId, recordId, limit) {
     return new Promise((resolve, reject) => {
         var tx = db.transaction('fieldHistory', 'readonly');
         var index = tx.objectStore('fieldHistory').index('by_record');
-        var req = index.getAll([tableId, recordId]);
-        req.onsuccess = () => {
-            // Sort by eventId descending (most recent first)
-            var results = req.result || [];
-            results.sort((a, b) => (b.eventId || 0) - (a.eventId || 0));
-            resolve(results);
+        var maxLimit = limit || FIELD_HISTORY_LIMIT;
+
+        // Use cursor for memory-efficient retrieval with limit
+        var results = [];
+        var req = index.openCursor(IDBKeyRange.only([tableId, recordId]));
+
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor && results.length < maxLimit) {
+                results.push(cursor.value);
+                cursor.continue();
+            } else {
+                // Sort by eventId descending (most recent first)
+                results.sort((a, b) => (b.eventId || 0) - (a.eventId || 0));
+                resolve(results);
+            }
         };
         req.onerror = () => reject(req.error);
     });
@@ -4286,6 +4393,10 @@ async function showTable(tableId) {
     // Auto-save any pending changes before switching tables
     await autoSaveBeforeNavigation();
 
+    // Clear events view state to free memory
+    expandedPayloads.clear();
+    eventsPage = 0;
+
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
     currentPage = 0;
@@ -4774,6 +4885,7 @@ async function fullSync() {
     var fieldsFound = 0;
     var viewsFound = 0;
     var recordsFound = 0;
+    var RENDER_INTERVAL = 10; // Only render UI every N pages to reduce memory churn
 
     // Show the loading overlay for initial sync
     showLoadingOverlay();
@@ -4813,24 +4925,37 @@ async function fullSync() {
 
         await processEvents(result.events);
 
-        // Update sidebar after EVERY page to show tables/fields as they arrive
-        await renderSidebar();
+        // Only render UI periodically to reduce memory churn (every RENDER_INTERVAL pages)
+        var shouldRender = page === 1 || page % RENDER_INTERVAL === 0;
 
-        // Auto-select first table and refresh view
-        if (!currentTable && Object.keys(META_TABLES).length > 0) {
-            var firstTable = Object.keys(META_TABLES)[0];
-            await showTable(firstTable);
-        } else if (currentTable) {
-            // Refresh current table view to show new data
-            originalRecordIds = await getRecordIdsForTable(currentTable);
-            currentRecordIds = originalRecordIds.slice();
-            totalRecords = currentRecordIds.length;
-            await renderTable();
+        if (shouldRender) {
+            await renderSidebar();
+
+            // Auto-select first table and refresh view
+            if (!currentTable && Object.keys(META_TABLES).length > 0) {
+                var firstTable = Object.keys(META_TABLES)[0];
+                await showTable(firstTable);
+            } else if (currentTable) {
+                // Refresh current table view to show new data
+                originalRecordIds = await getRecordIdsForTable(currentTable);
+                currentRecordIds = originalRecordIds.slice();
+                totalRecords = currentRecordIds.length;
+                await renderTable();
+            }
         }
 
         if (!result.hasMore) break;
         page = result.nextPage || page + 1;
         if (page > 500) break;
+    }
+
+    // Final render after sync completes
+    await renderSidebar();
+    if (currentTable) {
+        originalRecordIds = await getRecordIdsForTable(currentTable);
+        currentRecordIds = originalRecordIds.slice();
+        totalRecords = currentRecordIds.length;
+        await renderTable();
     }
 
     // Final update and hide overlay
@@ -5176,36 +5301,24 @@ async function renderEventsView() {
         var totalEventsCount = await getRawEventsCount();
         var totalRecordsCount = await getCurrentRecordsCount();
         var events = [];
+        var offset = eventsPage * eventsPageSize;
 
         // Check if we're showing current state records
         if (eventsTypeFilter === 'current') {
-            // Fetch all current records as synthetic events
-            events = await getAllCurrentRecords();
-            // Apply table filter if set
-            if (eventsSetFilter) {
-                events = events.filter(e => e.set === eventsSetFilter);
-            }
-            // Apply search if set
-            if (eventsSearchQuery) {
-                var query = eventsSearchQuery.toLowerCase();
-                events = events.filter(e => {
-                    if (e.recordId && e.recordId.toLowerCase().includes(query)) return true;
-                    if (e.set && e.set.toLowerCase().includes(query)) return true;
-                    if (e.payload && e.payload.toLowerCase().includes(query)) return true;
-                    return false;
-                });
-            }
+            // Use paginated fetch with filters applied at DB level
+            events = await getCurrentRecordsPaginated(offset, eventsPageSize, eventsSetFilter, eventsSearchQuery);
         } else {
-            // Fetch ALL events (no pagination)
+            // Fetch paginated events
             if (eventsSearchQuery) {
-                events = await searchRawEvents(eventsSearchQuery, 10000); // Large limit for search
+                // For search, use paginated search with smaller limit
+                events = await searchRawEvents(eventsSearchQuery, eventsPageSize, offset);
             } else if (eventsSetFilter) {
-                events = await getRawEventsBySet(eventsSetFilter);
+                events = await getRawEventsBySetPaginated(eventsSetFilter, offset, eventsPageSize);
             } else {
-                events = await getAllRawEventsNoPagination();
+                events = await getRawEventsPaginated(offset, eventsPageSize);
             }
 
-            // Apply type filter
+            // Apply type filter if set (post-filter since we need to parse payload)
             if (eventsTypeFilter) {
                 events = events.filter(e => {
                     var payload = parsePayload(e.payload);
@@ -5252,18 +5365,31 @@ async function renderEventsView() {
         html += '<input type="text" placeholder="Search events..." value="' + esc(eventsSearchQuery) + '" onkeydown="if(event.key===\'Enter\')setEventsSearch(this.value)">';
         html += '</div>';
 
-        // Show total count and new events count
+        // Show page info and total count
+        var startItem = offset + 1;
+        var endItem = offset + events.length;
+        var totalCount = eventsTypeFilter === 'current' ? totalRecordsCount : totalEventsCount;
+        var hasMore = events.length === eventsPageSize;
+        var hasPrev = eventsPage > 0;
+
         html += '<div class="events-stats">';
         if (eventsTypeFilter === 'current') {
-            html += events.length.toLocaleString() + ' records shown';
-            html += ' <span style="color: #666; margin-left: 8px;">(' + totalRecordsCount.toLocaleString() + ' total records)</span>';
+            html += 'Showing ' + startItem.toLocaleString() + '-' + endItem.toLocaleString();
+            html += ' <span style="color: #666;">(' + totalRecordsCount.toLocaleString() + ' total records)</span>';
         } else {
-            html += events.length.toLocaleString() + ' events shown';
-            html += ' <span style="color: #666; margin-left: 8px;">(' + totalEventsCount.toLocaleString() + ' total events, ' + totalRecordsCount.toLocaleString() + ' records)</span>';
+            html += 'Showing ' + startItem.toLocaleString() + '-' + endItem.toLocaleString();
+            html += ' <span style="color: #666;">(' + totalEventsCount.toLocaleString() + ' total events)</span>';
             if (newEventsCount > 0) {
                 html += ' <span class="new-event-badge">' + newEventsCount + ' new</span>';
             }
         }
+        html += '</div>';
+
+        // Pagination controls
+        html += '<div class="events-pagination" style="display: flex; gap: 8px; align-items: center;">';
+        html += '<button onclick="prevEventsPage()" ' + (hasPrev ? '' : 'disabled') + ' style="padding: 4px 12px; cursor: ' + (hasPrev ? 'pointer' : 'not-allowed') + ';">&larr; Prev</button>';
+        html += '<span style="color: #666;">Page ' + (eventsPage + 1) + '</span>';
+        html += '<button onclick="nextEventsPage()" ' + (hasMore ? '' : 'disabled') + ' style="padding: 4px 12px; cursor: ' + (hasMore ? 'pointer' : 'not-allowed') + ';">Next &rarr;</button>';
         html += '</div>';
         html += '</div>';
 
