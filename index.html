@@ -1075,6 +1075,9 @@
         .events-table .event-type-badge.field { background: #ede9fe; color: #6d28d9; }
         .events-table .event-type-badge.view { background: #fce7f3; color: #be185d; }
         .events-table .event-type-badge.viewconfig { background: #f3e8ff; color: #7c3aed; }
+        .events-table .event-type-badge.current { background: #d1fae5; color: #065f46; }
+        .events-table .current-state-row { background: #f0fdf4; }
+        .events-table .event-id.current-state { color: #9ca3af; }
 
         /* New Event Indicator */
         .events-table tr.new-event td { background: linear-gradient(90deg, #ecfdf5 0%, #fff 100%); }
@@ -2236,6 +2239,44 @@ function getAllRawEventsNoPagination() {
             results.sort((a, b) => (b.id || 0) - (a.id || 0));
             resolve(results);
         };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// Get all current records from all tables as synthetic event-like objects
+function getAllCurrentRecords() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('data', 'readonly');
+        var store = tx.objectStore('data');
+        var req = store.getAll();
+        req.onsuccess = () => {
+            var records = req.result || [];
+            // Convert records to event-like format for display in Events Stream
+            var syntheticEvents = records.map(rec => ({
+                id: 0, // No event ID for current state
+                recordId: rec.recordId,
+                set: 'airtable:' + rec.tableId,
+                payload: JSON.stringify({
+                    _set: 'current',
+                    fields: { INS: rec.fields }
+                }),
+                created_at: null, // No timestamp for current state
+                _isCurrentState: true // Flag to identify synthetic events
+            }));
+            // Sort by recordId for consistent ordering
+            syntheticEvents.sort((a, b) => (a.recordId || '').localeCompare(b.recordId || ''));
+            resolve(syntheticEvents);
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// Get count of all current records
+function getCurrentRecordsCount() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('data', 'readonly');
+        var req = tx.objectStore('data').count();
+        req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
     });
 }
@@ -5132,25 +5173,46 @@ async function renderEventsView() {
     container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading events...</h3></div>';
 
     try {
-        var totalCount = await getRawEventsCount();
+        var totalEventsCount = await getRawEventsCount();
+        var totalRecordsCount = await getCurrentRecordsCount();
         var events = [];
 
-        // Fetch ALL events (no pagination)
-        if (eventsSearchQuery) {
-            events = await searchRawEvents(eventsSearchQuery, 10000); // Large limit for search
-        } else if (eventsSetFilter) {
-            events = await getRawEventsBySet(eventsSetFilter);
+        // Check if we're showing current state records
+        if (eventsTypeFilter === 'current') {
+            // Fetch all current records as synthetic events
+            events = await getAllCurrentRecords();
+            // Apply table filter if set
+            if (eventsSetFilter) {
+                events = events.filter(e => e.set === eventsSetFilter);
+            }
+            // Apply search if set
+            if (eventsSearchQuery) {
+                var query = eventsSearchQuery.toLowerCase();
+                events = events.filter(e => {
+                    if (e.recordId && e.recordId.toLowerCase().includes(query)) return true;
+                    if (e.set && e.set.toLowerCase().includes(query)) return true;
+                    if (e.payload && e.payload.toLowerCase().includes(query)) return true;
+                    return false;
+                });
+            }
         } else {
-            events = await getAllRawEventsNoPagination();
-        }
+            // Fetch ALL events (no pagination)
+            if (eventsSearchQuery) {
+                events = await searchRawEvents(eventsSearchQuery, 10000); // Large limit for search
+            } else if (eventsSetFilter) {
+                events = await getRawEventsBySet(eventsSetFilter);
+            } else {
+                events = await getAllRawEventsNoPagination();
+            }
 
-        // Apply type filter
-        if (eventsTypeFilter) {
-            events = events.filter(e => {
-                var payload = parsePayload(e.payload);
-                var type = payload?._set || 'data';
-                return type === eventsTypeFilter;
-            });
+            // Apply type filter
+            if (eventsTypeFilter) {
+                events = events.filter(e => {
+                    var payload = parsePayload(e.payload);
+                    var type = payload?._set || 'data';
+                    return type === eventsTypeFilter;
+                });
+            }
         }
 
         // Count new events (events with ID > appOpenedEventId)
@@ -5163,12 +5225,13 @@ async function renderEventsView() {
         html += '<div class="events-filter-group">';
         html += '<label>Type:</label>';
         html += '<select onchange="setEventsTypeFilter(this.value)">';
-        html += '<option value=""' + (!eventsTypeFilter ? ' selected' : '') + '>All Types</option>';
-        html += '<option value="data"' + (eventsTypeFilter === 'data' ? ' selected' : '') + '>Data Records</option>';
-        html += '<option value="table"' + (eventsTypeFilter === 'table' ? ' selected' : '') + '>Tables</option>';
-        html += '<option value="field"' + (eventsTypeFilter === 'field' ? ' selected' : '') + '>Fields</option>';
-        html += '<option value="view"' + (eventsTypeFilter === 'view' ? ' selected' : '') + '>Views</option>';
-        html += '<option value="viewConfig"' + (eventsTypeFilter === 'viewConfig' ? ' selected' : '') + '>View Config</option>';
+        html += '<option value=""' + (!eventsTypeFilter ? ' selected' : '') + '>All Events</option>';
+        html += '<option value="current"' + (eventsTypeFilter === 'current' ? ' selected' : '') + '>All Records (Current State)</option>';
+        html += '<option value="data"' + (eventsTypeFilter === 'data' ? ' selected' : '') + '>Data Events</option>';
+        html += '<option value="table"' + (eventsTypeFilter === 'table' ? ' selected' : '') + '>Table Events</option>';
+        html += '<option value="field"' + (eventsTypeFilter === 'field' ? ' selected' : '') + '>Field Events</option>';
+        html += '<option value="view"' + (eventsTypeFilter === 'view' ? ' selected' : '') + '>View Events</option>';
+        html += '<option value="viewConfig"' + (eventsTypeFilter === 'viewConfig' ? ' selected' : '') + '>View Config Events</option>';
         html += '</select>';
         html += '</div>';
 
@@ -5191,9 +5254,15 @@ async function renderEventsView() {
 
         // Show total count and new events count
         html += '<div class="events-stats">';
-        html += totalCount.toLocaleString() + ' total events';
-        if (newEventsCount > 0) {
-            html += ' <span class="new-event-badge">' + newEventsCount + ' new</span>';
+        if (eventsTypeFilter === 'current') {
+            html += events.length.toLocaleString() + ' records shown';
+            html += ' <span style="color: #666; margin-left: 8px;">(' + totalRecordsCount.toLocaleString() + ' total records)</span>';
+        } else {
+            html += events.length.toLocaleString() + ' events shown';
+            html += ' <span style="color: #666; margin-left: 8px;">(' + totalEventsCount.toLocaleString() + ' total events, ' + totalRecordsCount.toLocaleString() + ' records)</span>';
+            if (newEventsCount > 0) {
+                html += ' <span class="new-event-badge">' + newEventsCount + ' new</span>';
+            }
         }
         html += '</div>';
         html += '</div>';
@@ -5242,12 +5311,20 @@ async function renderEventsView() {
 function renderEventRow(event, isNew) {
     var payload = parsePayload(event.payload);
     var eventType = payload?._set || 'data';
-    var timestamp = event.created_at ? formatTimestamp(new Date(event.created_at).getTime()) : 'Unknown';
-    var isExpanded = expandedPayloads.has(event.id);
+    var isCurrentState = event._isCurrentState || eventType === 'current';
+    var timestamp = event.created_at ? formatTimestamp(new Date(event.created_at).getTime()) : (isCurrentState ? 'Current' : 'Unknown');
+    var isExpanded = expandedPayloads.has(event.id || event.recordId);
 
-    var rowClass = isNew ? 'new-event' : '';
-    var html = '<tr data-event-id="' + event.id + '"' + (rowClass ? ' class="' + rowClass + '"' : '') + '>';
-    html += '<td><span class="event-id">' + event.id + (isNew ? '<span class="new-event-badge">NEW</span>' : '') + '</span></td>';
+    var rowClass = isNew ? 'new-event' : (isCurrentState ? 'current-state-row' : '');
+    var html = '<tr data-event-id="' + (event.id || event.recordId) + '"' + (rowClass ? ' class="' + rowClass + '"' : '') + '>';
+
+    // ID column - show "–" for current state
+    if (isCurrentState) {
+        html += '<td><span class="event-id current-state">–</span></td>';
+    } else {
+        html += '<td><span class="event-id">' + event.id + (isNew ? '<span class="new-event-badge">NEW</span>' : '') + '</span></td>';
+    }
+
     html += '<td><span class="event-timestamp">' + esc(timestamp) + '</span></td>';
     html += '<td><span class="event-type-badge ' + eventType + '">' + esc(eventType) + '</span></td>';
     html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(event.set || '') + '</span></td>';
@@ -5255,7 +5332,7 @@ function renderEventRow(event, isNew) {
 
     // Payload preview
     html += '<td class="payload-preview-container">';
-    html += '<div class="payload-preview' + (isExpanded ? ' expanded' : '') + '" onclick="togglePayloadExpand(' + event.id + ')">';
+    html += '<div class="payload-preview' + (isExpanded ? ' expanded' : '') + '" onclick="togglePayloadExpand(\'' + (event.id || event.recordId) + '\')">';
     html += formatPayloadPreview(payload, isExpanded);
     if (!isExpanded) {
         html += '<span class="payload-expand-btn">Expand</span>';
@@ -5268,10 +5345,19 @@ function renderEventRow(event, isNew) {
     // Actions
     html += '<td class="event-actions">';
     if (event.recordId && event.recordId.startsWith('rec')) {
-        html += '<button class="event-action-btn primary" onclick="viewRecordAtPointInTime(' + event.id + ', \'' + esc(event.recordId) + '\', \'' + esc(event.set || '') + '\')" title="View record state at this point in time">';
-        html += '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/></svg>';
-        html += 'View State';
-        html += '</button>';
+        if (isCurrentState) {
+            // For current state, show "View Record" button that opens profile
+            var tableId = (event.set || '').replace('airtable:', '');
+            html += '<button class="event-action-btn primary" onclick="openRecordProfile(\'' + esc(tableId) + '\', \'' + esc(event.recordId) + '\')" title="View full record details">';
+            html += '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+            html += 'View Record';
+            html += '</button>';
+        } else {
+            html += '<button class="event-action-btn primary" onclick="viewRecordAtPointInTime(' + event.id + ', \'' + esc(event.recordId) + '\', \'' + esc(event.set || '') + '\')" title="View record state at this point in time">';
+            html += '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/></svg>';
+            html += 'View State';
+            html += '</button>';
+        }
     }
     html += '</td>';
 
