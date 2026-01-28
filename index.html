@@ -1939,6 +1939,7 @@ async function saveViewToBackend() {
         set: 'airtable:' + tableId,
         operator: 'ALT',
         created_at: new Date().toISOString(),
+        apiKey: API_KEY,
         payload: JSON.stringify({
             _set: 'viewConfig',
             tableId: tableId,
@@ -2922,6 +2923,7 @@ async function saveFolderToBackend(folder, operator) {
         set: 'viewFolders',
         operator: operator,
         created_at: new Date().toISOString(),
+        apiKey: API_KEY,
         payload: JSON.stringify(folder)
     };
 
@@ -5368,6 +5370,7 @@ async function saveWorkspaceToBackend(workspace, operator) {
         set: 'workspaces',
         operator: operator,
         created_at: new Date().toISOString(),
+        apiKey: API_KEY,
         payload: JSON.stringify(workspace)
     };
 
