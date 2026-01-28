@@ -1162,7 +1162,12 @@
         .events-filter-group label { font-size: 12px; color: #666; font-weight: 500; }
         .events-filter-group select, .events-filter-group input { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
         .events-filter-group input { width: 150px; }
-        .events-stats { margin-left: auto; font-size: 12px; color: #666; }
+        .events-stats { font-size: 12px; color: #666; }
+        .events-pagination { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+        .pagination-btn { padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; background: #fff; cursor: pointer; }
+        .pagination-btn:hover:not(:disabled) { background: #f5f5f5; }
+        .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pagination-info { font-size: 12px; color: #666; }
 
         /* Record Profile Slide-out Panel */
         .record-profile-overlay {
@@ -2180,12 +2185,14 @@ function getRawEventsBySet(setFilter) {
     });
 }
 
-function searchRawEvents(query, limit) {
+function searchRawEvents(query, limit, offset) {
     return new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var store = tx.objectStore('events');
         var results = [];
+        var skipped = 0;
         var maxLimit = limit || 100;
+        var startOffset = offset || 0;
         var lowerQuery = query.toLowerCase();
 
         var req = store.openCursor(null, 'prev');
@@ -2200,11 +2207,141 @@ function searchRawEvents(query, limit) {
                 var matchesPayload = payloadStr && payloadStr.toLowerCase().includes(lowerQuery);
 
                 if (matchesRecord || matchesSet || matchesPayload) {
-                    results.push(event);
+                    if (skipped < startOffset) {
+                        skipped++;
+                    } else {
+                        results.push(event);
+                    }
                 }
                 cursor.continue();
             } else {
                 resolve(results);
+            }
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getSearchEventsCount(query) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var store = tx.objectStore('events');
+        var count = 0;
+        var lowerQuery = query.toLowerCase();
+
+        var req = store.openCursor(null, 'prev');
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor) {
+                var event = cursor.value;
+                var matchesRecord = event.recordId && event.recordId.toLowerCase().includes(lowerQuery);
+                var matchesSet = event.set && event.set.toLowerCase().includes(lowerQuery);
+                var payloadStr = typeof event.payload === 'string' ? event.payload : JSON.stringify(event.payload);
+                var matchesPayload = payloadStr && payloadStr.toLowerCase().includes(lowerQuery);
+
+                if (matchesRecord || matchesSet || matchesPayload) {
+                    count++;
+                }
+                cursor.continue();
+            } else {
+                resolve(count);
+            }
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getRawEventsBySetPaginated(setFilter, limit, offset) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var index = tx.objectStore('events').index('by_set');
+        var results = [];
+        var skipped = 0;
+        var maxLimit = limit || 100;
+        var startOffset = offset || 0;
+
+        // Use cursor with key range and reverse direction for newest first
+        var req = index.openCursor(IDBKeyRange.only(setFilter), 'prev');
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor && results.length < maxLimit) {
+                if (skipped < startOffset) {
+                    skipped++;
+                } else {
+                    results.push(cursor.value);
+                }
+                cursor.continue();
+            } else {
+                // Sort by id descending since index cursor doesn't guarantee id order
+                results.sort((a, b) => (b.id || 0) - (a.id || 0));
+                resolve(results);
+            }
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getRawEventsBySetCount(setFilter) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var index = tx.objectStore('events').index('by_set');
+        var req = index.count(setFilter);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getRawEventsByTypePaginated(typeFilter, limit, offset) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var store = tx.objectStore('events');
+        var results = [];
+        var skipped = 0;
+        var maxLimit = limit || 100;
+        var startOffset = offset || 0;
+
+        var req = store.openCursor(null, 'prev');
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor && results.length < maxLimit) {
+                var event = cursor.value;
+                var payload = parsePayload(event.payload);
+                var type = payload?._set || 'data';
+                if (type === typeFilter) {
+                    if (skipped < startOffset) {
+                        skipped++;
+                    } else {
+                        results.push(event);
+                    }
+                }
+                cursor.continue();
+            } else {
+                resolve(results);
+            }
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getRawEventsByTypeCount(typeFilter) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var store = tx.objectStore('events');
+        var count = 0;
+
+        var req = store.openCursor(null, 'prev');
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor) {
+                var event = cursor.value;
+                var payload = parsePayload(event.payload);
+                var type = payload?._set || 'data';
+                if (type === typeFilter) {
+                    count++;
+                }
+                cursor.continue();
+            } else {
+                resolve(count);
             }
         };
         req.onerror = () => reject(req.error);
@@ -5170,16 +5307,18 @@ async function showEventsView() {
 
 async function renderEventsView() {
     var container = document.querySelector('.table-container');
-    container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading events...</h3></div>';
+
+    // Show cached/instant render first, then update counts asynchronously
+    var pageSize = eventsPageSize;
+    var offset = eventsPage * pageSize;
 
     try {
-        var totalEventsCount = await getRawEventsCount();
-        var totalRecordsCount = await getCurrentRecordsCount();
         var events = [];
+        var totalFilteredCount = 0;
 
         // Check if we're showing current state records
         if (eventsTypeFilter === 'current') {
-            // Fetch all current records as synthetic events
+            // Fetch all current records as synthetic events (these are fast, usually small dataset)
             events = await getAllCurrentRecords();
             // Apply table filter if set
             if (eventsSetFilter) {
@@ -5195,25 +5334,32 @@ async function renderEventsView() {
                     return false;
                 });
             }
+            totalFilteredCount = events.length;
+            // Apply pagination to current records
+            events = events.slice(offset, offset + pageSize);
         } else {
-            // Fetch ALL events (no pagination)
+            // Use paginated fetch for events (newest first via cursor)
             if (eventsSearchQuery) {
-                events = await searchRawEvents(eventsSearchQuery, 10000); // Large limit for search
+                // Search uses cursor with limit, already returns newest first
+                events = await searchRawEvents(eventsSearchQuery, pageSize, offset);
+                totalFilteredCount = await getSearchEventsCount(eventsSearchQuery);
             } else if (eventsSetFilter) {
-                events = await getRawEventsBySet(eventsSetFilter);
+                events = await getRawEventsBySetPaginated(eventsSetFilter, pageSize, offset);
+                totalFilteredCount = await getRawEventsBySetCount(eventsSetFilter);
+            } else if (eventsTypeFilter) {
+                // Type filter requires fetching then filtering
+                events = await getRawEventsByTypePaginated(eventsTypeFilter, pageSize, offset);
+                totalFilteredCount = await getRawEventsByTypeCount(eventsTypeFilter);
             } else {
-                events = await getAllRawEventsNoPagination();
-            }
-
-            // Apply type filter
-            if (eventsTypeFilter) {
-                events = events.filter(e => {
-                    var payload = parsePayload(e.payload);
-                    var type = payload?._set || 'data';
-                    return type === eventsTypeFilter;
-                });
+                // No filters - use fast paginated fetch
+                events = await getAllRawEvents(pageSize, offset);
+                totalFilteredCount = await getRawEventsCount();
             }
         }
+
+        // Get total counts asynchronously for stats display
+        var totalEventsCount = await getRawEventsCount();
+        var totalRecordsCount = await getCurrentRecordsCount();
 
         // Count new events (events with ID > appOpenedEventId)
         var newEventsCount = events.filter(e => e.id > appOpenedEventId).length;
@@ -5252,18 +5398,33 @@ async function renderEventsView() {
         html += '<input type="text" placeholder="Search events..." value="' + esc(eventsSearchQuery) + '" onkeydown="if(event.key===\'Enter\')setEventsSearch(this.value)">';
         html += '</div>';
 
-        // Show total count and new events count
+        // Pagination info
+        var startItem = totalFilteredCount > 0 ? offset + 1 : 0;
+        var endItem = Math.min(offset + events.length, totalFilteredCount);
+        var totalPages = Math.ceil(totalFilteredCount / pageSize);
+        var currentPageNum = eventsPage + 1;
+        var hasPrev = eventsPage > 0;
+        var hasNext = endItem < totalFilteredCount;
+
+        // Show total count and pagination
         html += '<div class="events-stats">';
         if (eventsTypeFilter === 'current') {
-            html += events.length.toLocaleString() + ' records shown';
-            html += ' <span style="color: #666; margin-left: 8px;">(' + totalRecordsCount.toLocaleString() + ' total records)</span>';
+            html += startItem.toLocaleString() + '-' + endItem.toLocaleString() + ' of ' + totalFilteredCount.toLocaleString() + ' records';
+            html += ' <span style="color: #666; margin-left: 8px;">(' + totalRecordsCount.toLocaleString() + ' total)</span>';
         } else {
-            html += events.length.toLocaleString() + ' events shown';
-            html += ' <span style="color: #666; margin-left: 8px;">(' + totalEventsCount.toLocaleString() + ' total events, ' + totalRecordsCount.toLocaleString() + ' records)</span>';
+            html += startItem.toLocaleString() + '-' + endItem.toLocaleString() + ' of ' + totalFilteredCount.toLocaleString() + ' events';
+            html += ' <span style="color: #666; margin-left: 8px;">(' + totalEventsCount.toLocaleString() + ' total, ' + totalRecordsCount.toLocaleString() + ' records)</span>';
             if (newEventsCount > 0) {
                 html += ' <span class="new-event-badge">' + newEventsCount + ' new</span>';
             }
         }
+        html += '</div>';
+
+        // Pagination controls
+        html += '<div class="events-pagination">';
+        html += '<button class="pagination-btn" onclick="prevEventsPage()" ' + (hasPrev ? '' : 'disabled') + '>&laquo; Prev</button>';
+        html += '<span class="pagination-info">Page ' + currentPageNum + ' of ' + Math.max(1, totalPages) + '</span>';
+        html += '<button class="pagination-btn" onclick="nextEventsPage()" ' + (hasNext ? '' : 'disabled') + '>Next &raquo;</button>';
         html += '</div>';
         html += '</div>';
 
