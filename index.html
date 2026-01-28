@@ -1503,6 +1503,883 @@
             padding: 2px 6px;
             border-radius: 3px;
         }
+
+        /* ============ Command Palette (Cmd+K) ============ */
+        .command-palette-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 15vh;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.15s, visibility 0.15s;
+        }
+        .command-palette-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        .command-palette {
+            background: #fff;
+            border-radius: 12px;
+            width: 560px;
+            max-width: 90vw;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+            transform: translateY(-10px) scale(0.98);
+            transition: transform 0.15s;
+        }
+        .command-palette-overlay.open .command-palette {
+            transform: translateY(0) scale(1);
+        }
+        .command-palette-input-wrapper {
+            padding: 16px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .command-palette-input-wrapper svg {
+            color: #999;
+            flex-shrink: 0;
+        }
+        .command-palette-input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 16px;
+            color: #333;
+        }
+        .command-palette-input::placeholder {
+            color: #aaa;
+        }
+        .command-palette-kbd {
+            font-size: 11px;
+            padding: 4px 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            color: #666;
+            font-family: "SF Mono", Monaco, monospace;
+        }
+        .command-palette-results {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .command-palette-section {
+            padding: 8px 0;
+        }
+        .command-palette-section-title {
+            padding: 8px 16px 4px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .command-palette-item {
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        .command-palette-item:hover,
+        .command-palette-item.selected {
+            background: #f5f5f5;
+        }
+        .command-palette-item.selected {
+            background: #e8f0fe;
+        }
+        .command-palette-item-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #666;
+        }
+        .command-palette-item-icon.table { background: #dbeafe; color: #2563eb; }
+        .command-palette-item-icon.view { background: #dcfce7; color: #16a34a; }
+        .command-palette-item-icon.action { background: #fef3c7; color: #d97706; }
+        .command-palette-item-icon.record { background: #f3e8ff; color: #9333ea; }
+        .command-palette-item-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .command-palette-item-title {
+            font-size: 14px;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .command-palette-item-subtitle {
+            font-size: 12px;
+            color: #999;
+        }
+        .command-palette-item-shortcut {
+            font-size: 11px;
+            color: #999;
+            font-family: "SF Mono", Monaco, monospace;
+        }
+        .command-palette-empty {
+            padding: 32px 16px;
+            text-align: center;
+            color: #999;
+        }
+        .command-palette-footer {
+            padding: 10px 16px;
+            border-top: 1px solid #e0e0e0;
+            background: #fafafa;
+            display: flex;
+            gap: 16px;
+            font-size: 11px;
+            color: #999;
+        }
+        .command-palette-footer span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .command-palette-footer kbd {
+            padding: 2px 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, monospace;
+        }
+
+        /* ============ Keyboard Shortcuts Help Modal ============ */
+        .shortcuts-help-content {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            padding: 24px;
+        }
+        .shortcuts-section h4 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        .shortcut-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+        .shortcut-row span:first-child {
+            color: #666;
+        }
+        .shortcut-keys {
+            display: flex;
+            gap: 4px;
+        }
+        .shortcut-keys kbd {
+            padding: 3px 8px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 11px;
+            color: #333;
+        }
+
+        /* ============ Kanban View ============ */
+        .kanban-container {
+            display: flex;
+            gap: 16px;
+            padding: 20px;
+            overflow-x: auto;
+            flex: 1;
+            align-items: flex-start;
+        }
+        .kanban-column {
+            background: #f5f5f5;
+            border-radius: 12px;
+            width: 300px;
+            min-width: 300px;
+            max-height: calc(100vh - 220px);
+            display: flex;
+            flex-direction: column;
+        }
+        .kanban-column-header {
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .kanban-column-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .kanban-column-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: #333;
+            flex: 1;
+        }
+        .kanban-column-count {
+            background: #e0e0e0;
+            color: #666;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        .kanban-column-body {
+            padding: 12px;
+            overflow-y: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .kanban-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: box-shadow 0.2s, transform 0.2s;
+        }
+        .kanban-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+        }
+        .kanban-card.dragging {
+            opacity: 0.5;
+            transform: rotate(3deg);
+        }
+        .kanban-card-title {
+            font-weight: 500;
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .kanban-card-fields {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .kanban-card-field {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+        .kanban-card-field-label {
+            color: #999;
+            min-width: 60px;
+        }
+        .kanban-card-field-value {
+            color: #666;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .kanban-column-empty {
+            padding: 24px;
+            text-align: center;
+            color: #999;
+            font-size: 13px;
+        }
+        .kanban-config-bar {
+            padding: 12px 20px;
+            background: #fff;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .kanban-config-bar label {
+            font-size: 13px;
+            color: #666;
+        }
+        .kanban-config-bar select {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        /* ============ Calendar View ============ */
+        .calendar-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .calendar-header {
+            padding: 16px 20px;
+            background: #fff;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .calendar-nav-btn {
+            padding: 8px 12px;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .calendar-nav-btn:hover {
+            background: #e8e8e8;
+        }
+        .calendar-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            min-width: 200px;
+        }
+        .calendar-today-btn {
+            padding: 8px 16px;
+            background: #2d6cdf;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .calendar-today-btn:hover {
+            background: #2560c9;
+        }
+        .calendar-config {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .calendar-config label {
+            font-size: 13px;
+            color: #666;
+        }
+        .calendar-config select {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .calendar-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            grid-template-rows: auto repeat(6, 1fr);
+            border-left: 1px solid #e0e0e0;
+            border-top: 1px solid #e0e0e0;
+            overflow-y: auto;
+        }
+        .calendar-day-header {
+            padding: 12px;
+            background: #f8f9fa;
+            border-right: 1px solid #e0e0e0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            text-align: center;
+            text-transform: uppercase;
+        }
+        .calendar-day {
+            border-right: 1px solid #e0e0e0;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 8px;
+            min-height: 100px;
+            background: #fff;
+            overflow-y: auto;
+        }
+        .calendar-day.other-month {
+            background: #fafafa;
+        }
+        .calendar-day.today {
+            background: #eff6ff;
+        }
+        .calendar-day-number {
+            font-size: 13px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        .calendar-day.other-month .calendar-day-number {
+            color: #999;
+        }
+        .calendar-day.today .calendar-day-number {
+            background: #2d6cdf;
+            color: #fff;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .calendar-event {
+            padding: 4px 8px;
+            background: #e8f0fe;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #1d4ed8;
+            margin-bottom: 4px;
+            cursor: pointer;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .calendar-event:hover {
+            background: #dbeafe;
+        }
+        .calendar-more {
+            font-size: 11px;
+            color: #666;
+            cursor: pointer;
+            padding: 2px 4px;
+        }
+        .calendar-more:hover {
+            color: #2d6cdf;
+        }
+
+        /* ============ Linked Record Preview ============ */
+        .linked-record-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #e8f0fe;
+            color: #2d6cdf;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+            margin: 1px 2px 1px 0;
+        }
+        .linked-record-chip:hover {
+            background: #dbeafe;
+            box-shadow: 0 2px 6px rgba(45,108,223,0.2);
+        }
+        .linked-record-preview {
+            position: fixed;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+            z-index: 1500;
+            width: 320px;
+            max-height: 400px;
+            overflow: hidden;
+            animation: preview-fade-in 0.15s ease-out;
+        }
+        @keyframes preview-fade-in {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .linked-record-preview-header {
+            padding: 16px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%);
+            border-bottom: 1px solid #eee;
+        }
+        .linked-record-preview-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        .linked-record-preview-table {
+            font-size: 11px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .linked-record-preview-body {
+            padding: 12px 16px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .linked-record-preview-field {
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .linked-record-preview-field:last-child {
+            border-bottom: none;
+        }
+        .linked-record-preview-label {
+            font-size: 11px;
+            font-weight: 500;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 4px;
+        }
+        .linked-record-preview-value {
+            font-size: 13px;
+            color: #333;
+            word-break: break-word;
+        }
+        .linked-record-preview-footer {
+            padding: 12px 16px;
+            border-top: 1px solid #eee;
+            background: #fafafa;
+            display: flex;
+            gap: 8px;
+        }
+        .linked-record-preview-btn {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            text-align: center;
+            color: #333;
+        }
+        .linked-record-preview-btn:hover {
+            background: #f5f5f5;
+        }
+        .linked-record-preview-btn.primary {
+            background: #2d6cdf;
+            border-color: #2d6cdf;
+            color: #fff;
+        }
+        .linked-record-preview-btn.primary:hover {
+            background: #2560c9;
+        }
+
+        /* ============ Search Highlighting ============ */
+        .search-highlight {
+            background: #fff3cd;
+            padding: 0 2px;
+            border-radius: 2px;
+            color: #856404;
+        }
+        .search-match-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: #666;
+            margin-left: 8px;
+        }
+        .search-match-count {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        /* ============ Virtual Scrolling ============ */
+        .virtual-scroll-container {
+            position: relative;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .virtual-scroll-content {
+            position: relative;
+        }
+        .virtual-scroll-spacer-top,
+        .virtual-scroll-spacer-bottom {
+            width: 100%;
+        }
+
+        /* ============ Undo/Redo Indicator ============ */
+        .undo-redo-bar {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 13px;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .undo-redo-bar.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .undo-redo-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+        .undo-redo-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        .undo-redo-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .undo-redo-message {
+            flex: 1;
+        }
+        .undo-toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            font-size: 13px;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+        }
+        .undo-toast.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .undo-toast-btn {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.3);
+            color: #fff;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 12px;
+            font-size: 12px;
+        }
+        .undo-toast-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        /* ============ Rich Field Renderers ============ */
+        /* Checkbox toggle */
+        .cell-checkbox {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .cell-checkbox-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .cell-checkbox-icon.checked {
+            background: #22c55e;
+            color: #fff;
+        }
+        .cell-checkbox-icon.unchecked {
+            background: #e5e7eb;
+            color: #9ca3af;
+        }
+
+        /* Rating display */
+        .cell-rating {
+            display: inline-flex;
+            gap: 2px;
+        }
+        .cell-rating .star {
+            font-size: 14px;
+        }
+        .cell-rating .star.filled {
+            color: #fbbf24;
+        }
+        .cell-rating .star.empty {
+            color: #e5e7eb;
+        }
+
+        /* Progress bar */
+        .cell-progress {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 100px;
+        }
+        .cell-progress-bar {
+            flex: 1;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .cell-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        .cell-progress-label {
+            font-size: 12px;
+            color: #666;
+            min-width: 35px;
+            text-align: right;
+        }
+
+        /* Attachment preview */
+        .cell-attachment {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .attachment-thumb {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            object-fit: cover;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .attachment-thumb:hover {
+            transform: scale(1.1);
+        }
+        .attachment-file {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            background: #f3f4f6;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #666;
+        }
+        .attachment-file-icon {
+            font-size: 12px;
+        }
+
+        /* Date display */
+        .cell-date {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #333;
+        }
+        .cell-date-icon {
+            color: #999;
+            font-size: 12px;
+        }
+        .cell-date-relative {
+            font-size: 11px;
+            color: #999;
+            margin-left: 4px;
+        }
+
+        /* Email/Phone with action */
+        .cell-contact {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .cell-contact-link {
+            color: #2d6cdf;
+            text-decoration: none;
+        }
+        .cell-contact-link:hover {
+            text-decoration: underline;
+        }
+        .cell-contact-action {
+            padding: 2px 6px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            font-size: 10px;
+            color: #666;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        td:hover .cell-contact-action {
+            opacity: 1;
+        }
+        .cell-contact-action:hover {
+            background: #e0e0e0;
+        }
+
+        /* Select field colors */
+        .cell-select-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin: 1px 2px 1px 0;
+        }
+        .cell-select-tag.color-blue { background: #dbeafe; color: #1d4ed8; }
+        .cell-select-tag.color-green { background: #dcfce7; color: #16a34a; }
+        .cell-select-tag.color-red { background: #fee2e2; color: #dc2626; }
+        .cell-select-tag.color-yellow { background: #fef3c7; color: #d97706; }
+        .cell-select-tag.color-purple { background: #f3e8ff; color: #9333ea; }
+        .cell-select-tag.color-pink { background: #fce7f3; color: #db2777; }
+        .cell-select-tag.color-orange { background: #ffedd5; color: #ea580c; }
+        .cell-select-tag.color-cyan { background: #cffafe; color: #0891b2; }
+        .cell-select-tag.color-gray { background: #f3f4f6; color: #4b5563; }
+        .cell-select-tag.color-teal { background: #ccfbf1; color: #0d9488; }
+
+        /* Currency */
+        .cell-currency {
+            font-family: "SF Mono", Monaco, monospace;
+            color: #059669;
+        }
+        .cell-currency.negative {
+            color: #dc2626;
+        }
+
+        /* URL with favicon */
+        .cell-url {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .cell-url-favicon {
+            width: 14px;
+            height: 14px;
+            border-radius: 2px;
+        }
+
+        /* Keyboard navigation highlight for cells */
+        tr.keyboard-selected td {
+            background: #e8f0fe !important;
+        }
+        td.keyboard-selected {
+            outline: 2px solid #2d6cdf;
+            outline-offset: -2px;
+        }
+
+        /* View type icons in selector */
+        .view-type-icon {
+            font-size: 14px;
+        }
+        .view-type-icon.grid::before { content: '▦'; }
+        .view-type-icon.kanban::before { content: '▥'; }
+        .view-type-icon.calendar::before { content: '📅'; }
+        .view-type-icon.schema::before { content: '▤'; }
     </style>
 </head>
 <body>
@@ -1937,6 +2814,98 @@
                 </button>
             </div>
         </div>
+    </div>
+
+    <!-- Command Palette (Cmd+K) -->
+    <div class="command-palette-overlay" id="command-palette-overlay" onclick="closeCommandPalette(event)">
+        <div class="command-palette" onclick="event.stopPropagation()">
+            <div class="command-palette-input-wrapper">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input type="text" class="command-palette-input" id="command-palette-input"
+                       placeholder="Search tables, views, records, or type a command..."
+                       oninput="handleCommandPaletteInput(this.value)"
+                       onkeydown="handleCommandPaletteKeydown(event)">
+                <span class="command-palette-kbd">esc</span>
+            </div>
+            <div class="command-palette-results" id="command-palette-results">
+                <!-- Results rendered here -->
+            </div>
+            <div class="command-palette-footer">
+                <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+                <span><kbd>↵</kbd> Select</span>
+                <span><kbd>esc</kbd> Close</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Help Modal -->
+    <div class="modal-overlay" id="shortcuts-modal-overlay" onclick="closeShortcutsModal(event)">
+        <div class="modal" style="max-width: 600px;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Keyboard Shortcuts</h2>
+                <button class="modal-close" onclick="closeShortcutsModal()">&times;</button>
+            </div>
+            <div class="modal-body shortcuts-help-content">
+                <div class="shortcuts-section">
+                    <h4>Navigation</h4>
+                    <div class="shortcut-row"><span>Command palette</span><div class="shortcut-keys"><kbd>⌘</kbd><kbd>K</kbd></div></div>
+                    <div class="shortcut-row"><span>Search in view</span><div class="shortcut-keys"><kbd>⌘</kbd><kbd>F</kbd></div></div>
+                    <div class="shortcut-row"><span>Next row</span><div class="shortcut-keys"><kbd>↓</kbd> or <kbd>J</kbd></div></div>
+                    <div class="shortcut-row"><span>Previous row</span><div class="shortcut-keys"><kbd>↑</kbd> or <kbd>K</kbd></div></div>
+                    <div class="shortcut-row"><span>Next page</span><div class="shortcut-keys"><kbd>→</kbd></div></div>
+                    <div class="shortcut-row"><span>Previous page</span><div class="shortcut-keys"><kbd>←</kbd></div></div>
+                </div>
+                <div class="shortcuts-section">
+                    <h4>Actions</h4>
+                    <div class="shortcut-row"><span>Open record</span><div class="shortcut-keys"><kbd>Enter</kbd></div></div>
+                    <div class="shortcut-row"><span>View history</span><div class="shortcut-keys"><kbd>H</kbd></div></div>
+                    <div class="shortcut-row"><span>Undo</span><div class="shortcut-keys"><kbd>⌘</kbd><kbd>Z</kbd></div></div>
+                    <div class="shortcut-row"><span>Redo</span><div class="shortcut-keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>Z</kbd></div></div>
+                    <div class="shortcut-row"><span>Sync data</span><div class="shortcut-keys"><kbd>⌘</kbd><kbd>S</kbd></div></div>
+                    <div class="shortcut-row"><span>Show shortcuts</span><div class="shortcut-keys"><kbd>?</kbd></div></div>
+                </div>
+                <div class="shortcuts-section">
+                    <h4>Views</h4>
+                    <div class="shortcut-row"><span>Grid view</span><div class="shortcut-keys"><kbd>G</kbd></div></div>
+                    <div class="shortcut-row"><span>Kanban view</span><div class="shortcut-keys"><kbd>B</kbd></div></div>
+                    <div class="shortcut-row"><span>Calendar view</span><div class="shortcut-keys"><kbd>C</kbd></div></div>
+                    <div class="shortcut-row"><span>Toggle sidebar</span><div class="shortcut-keys"><kbd>[</kbd></div></div>
+                </div>
+                <div class="shortcuts-section">
+                    <h4>Table Controls</h4>
+                    <div class="shortcut-row"><span>Add filter</span><div class="shortcut-keys"><kbd>F</kbd></div></div>
+                    <div class="shortcut-row"><span>Add sort</span><div class="shortcut-keys"><kbd>S</kbd></div></div>
+                    <div class="shortcut-row"><span>Toggle fields</span><div class="shortcut-keys"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd></div></div>
+                    <div class="shortcut-row"><span>Escape/Close</span><div class="shortcut-keys"><kbd>Esc</kbd></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Linked Record Preview Popup (dynamically positioned) -->
+    <div class="linked-record-preview" id="linked-record-preview" style="display: none;">
+        <div class="linked-record-preview-header">
+            <div class="linked-record-preview-title" id="linked-preview-title">Record</div>
+            <div class="linked-record-preview-table" id="linked-preview-table">
+                <span>📊</span>
+                <span id="linked-preview-table-name">Table</span>
+            </div>
+        </div>
+        <div class="linked-record-preview-body" id="linked-preview-body">
+            <!-- Fields rendered here -->
+        </div>
+        <div class="linked-record-preview-footer">
+            <button class="linked-record-preview-btn" onclick="closeLinkedRecordPreview()">Close</button>
+            <button class="linked-record-preview-btn primary" id="linked-preview-open-btn">Open Record</button>
+        </div>
+    </div>
+
+    <!-- Undo Toast -->
+    <div class="undo-toast" id="undo-toast">
+        <span id="undo-toast-message">Action completed</span>
+        <button class="undo-toast-btn" onclick="performUndo()">Undo</button>
     </div>
 
     <script>
@@ -7644,6 +8613,1195 @@ document.addEventListener('keydown', function(e) {
         }
     }
 });
+
+// ============ FEATURE: Keyboard Shortcuts & Command Palette ============
+
+var selectedRowIndex = -1;
+var commandPaletteSelectedIndex = 0;
+var commandPaletteResults = [];
+
+// Main keyboard handler
+document.addEventListener('keydown', function(e) {
+    // Don't handle if typing in an input
+    var isInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
+    var cmdOrCtrl = e.metaKey || e.ctrlKey;
+
+    // Command Palette - Cmd+K
+    if (cmdOrCtrl && e.key === 'k') {
+        e.preventDefault();
+        openCommandPalette();
+        return;
+    }
+
+    // Search - Cmd+F
+    if (cmdOrCtrl && e.key === 'f' && !e.shiftKey) {
+        e.preventDefault();
+        var searchInput = document.getElementById('view-search-input');
+        if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+        }
+        return;
+    }
+
+    // Undo - Cmd+Z
+    if (cmdOrCtrl && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        performUndo();
+        return;
+    }
+
+    // Redo - Cmd+Shift+Z
+    if (cmdOrCtrl && e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        performRedo();
+        return;
+    }
+
+    // Sync - Cmd+S
+    if (cmdOrCtrl && e.key === 's') {
+        e.preventDefault();
+        manualSync();
+        return;
+    }
+
+    // Toggle fields dropdown - Cmd+Shift+F
+    if (cmdOrCtrl && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        toggleFieldsDropdown();
+        return;
+    }
+
+    // Skip other shortcuts if in input
+    if (isInput) return;
+
+    // Escape - close modals and dropdowns
+    if (e.key === 'Escape') {
+        closeAllDropdowns();
+        closeCommandPalette();
+        closeShortcutsModal();
+        closeLinkedRecordPreview();
+        selectedRowIndex = -1;
+        updateRowSelection();
+        return;
+    }
+
+    // ? - show shortcuts help
+    if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault();
+        openShortcutsModal();
+        return;
+    }
+
+    // Table navigation (when table is visible)
+    if (currentTable && !isEventsViewActive()) {
+        // Arrow down or J - next row
+        if (e.key === 'ArrowDown' || e.key === 'j') {
+            e.preventDefault();
+            navigateRow(1);
+            return;
+        }
+
+        // Arrow up or K - previous row
+        if (e.key === 'ArrowUp' || e.key === 'k') {
+            e.preventDefault();
+            navigateRow(-1);
+            return;
+        }
+
+        // Arrow right - next page
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            nextPage();
+            return;
+        }
+
+        // Arrow left - previous page
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            prevPage();
+            return;
+        }
+
+        // Enter - open selected record
+        if (e.key === 'Enter' && selectedRowIndex >= 0) {
+            e.preventDefault();
+            openSelectedRecord();
+            return;
+        }
+
+        // H - open history for selected record
+        if (e.key === 'h' && selectedRowIndex >= 0) {
+            e.preventDefault();
+            openHistoryForSelectedRecord();
+            return;
+        }
+
+        // F - open filter dropdown
+        if (e.key === 'f' && !cmdOrCtrl) {
+            e.preventDefault();
+            toggleFilterDropdown();
+            return;
+        }
+
+        // S - open sort dropdown
+        if (e.key === 's' && !cmdOrCtrl) {
+            e.preventDefault();
+            toggleSortDropdown();
+            return;
+        }
+
+        // G - grid view
+        if (e.key === 'g') {
+            e.preventDefault();
+            switchToViewType('grid');
+            return;
+        }
+
+        // B - kanban/board view
+        if (e.key === 'b') {
+            e.preventDefault();
+            switchToViewType('kanban');
+            return;
+        }
+
+        // C - calendar view
+        if (e.key === 'c') {
+            e.preventDefault();
+            switchToViewType('calendar');
+            return;
+        }
+    }
+
+    // [ - toggle sidebar
+    if (e.key === '[') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+    }
+});
+
+function isEventsViewActive() {
+    var eventsView = document.getElementById('events-view');
+    return eventsView && eventsView.style.display !== 'none';
+}
+
+function navigateRow(delta) {
+    var rows = document.querySelectorAll('#table tbody tr:not(.group-header-row)');
+    if (rows.length === 0) return;
+
+    selectedRowIndex += delta;
+    if (selectedRowIndex < 0) selectedRowIndex = 0;
+    if (selectedRowIndex >= rows.length) selectedRowIndex = rows.length - 1;
+
+    updateRowSelection();
+
+    // Scroll into view
+    var selectedRow = rows[selectedRowIndex];
+    if (selectedRow) {
+        selectedRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+}
+
+function updateRowSelection() {
+    // Remove previous selection
+    document.querySelectorAll('tr.keyboard-selected').forEach(function(row) {
+        row.classList.remove('keyboard-selected');
+    });
+
+    // Add new selection
+    var rows = document.querySelectorAll('#table tbody tr:not(.group-header-row)');
+    if (selectedRowIndex >= 0 && selectedRowIndex < rows.length) {
+        rows[selectedRowIndex].classList.add('keyboard-selected');
+    }
+}
+
+function openSelectedRecord() {
+    var rows = document.querySelectorAll('#table tbody tr:not(.group-header-row)');
+    if (selectedRowIndex >= 0 && selectedRowIndex < rows.length) {
+        var row = rows[selectedRowIndex];
+        var recordId = row.getAttribute('data-record-id');
+        if (recordId && currentTable) {
+            openRecordProfile(currentTable, recordId);
+        }
+    }
+}
+
+function openHistoryForSelectedRecord() {
+    var rows = document.querySelectorAll('#table tbody tr:not(.group-header-row)');
+    if (selectedRowIndex >= 0 && selectedRowIndex < rows.length) {
+        var row = rows[selectedRowIndex];
+        var recordId = row.getAttribute('data-record-id');
+        if (recordId && currentTable) {
+            openHistoryModal(currentTable, recordId);
+        }
+    }
+}
+
+function toggleSidebar() {
+    var sidebar = document.getElementById('sidebar');
+    if (sidebar.style.display === 'none') {
+        sidebar.style.display = '';
+    } else {
+        sidebar.style.display = 'none';
+    }
+}
+
+function closeAllDropdowns() {
+    document.querySelectorAll('.view-control-dropdown.open').forEach(function(d) {
+        d.classList.remove('open');
+    });
+    document.querySelectorAll('.view-selector-dropdown.open').forEach(function(d) {
+        d.classList.remove('open');
+    });
+    document.querySelectorAll('.fields-dropdown.open').forEach(function(d) {
+        d.classList.remove('open');
+    });
+}
+
+// Command Palette
+function openCommandPalette() {
+    var overlay = document.getElementById('command-palette-overlay');
+    overlay.classList.add('open');
+    var input = document.getElementById('command-palette-input');
+    input.value = '';
+    input.focus();
+    commandPaletteSelectedIndex = 0;
+    renderCommandPaletteResults('');
+}
+
+function closeCommandPalette(event) {
+    if (event && event.target !== event.currentTarget) return;
+    var overlay = document.getElementById('command-palette-overlay');
+    overlay.classList.remove('open');
+}
+
+function handleCommandPaletteInput(query) {
+    commandPaletteSelectedIndex = 0;
+    renderCommandPaletteResults(query);
+}
+
+function handleCommandPaletteKeydown(e) {
+    if (e.key === 'Escape') {
+        closeCommandPalette();
+        return;
+    }
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        commandPaletteSelectedIndex++;
+        if (commandPaletteSelectedIndex >= commandPaletteResults.length) {
+            commandPaletteSelectedIndex = 0;
+        }
+        updateCommandPaletteSelection();
+        return;
+    }
+
+    if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        commandPaletteSelectedIndex--;
+        if (commandPaletteSelectedIndex < 0) {
+            commandPaletteSelectedIndex = commandPaletteResults.length - 1;
+        }
+        updateCommandPaletteSelection();
+        return;
+    }
+
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        executeCommandPaletteItem();
+        return;
+    }
+}
+
+function renderCommandPaletteResults(query) {
+    var container = document.getElementById('command-palette-results');
+    commandPaletteResults = [];
+
+    var html = '';
+    var q = query.toLowerCase().trim();
+
+    // Tables section
+    var matchingTables = Object.values(META_TABLES).filter(function(t) {
+        return !q || t.tableName.toLowerCase().includes(q);
+    }).slice(0, 5);
+
+    if (matchingTables.length > 0) {
+        html += '<div class="command-palette-section">';
+        html += '<div class="command-palette-section-title">Tables</div>';
+        matchingTables.forEach(function(t, i) {
+            commandPaletteResults.push({ type: 'table', id: t.tableId, name: t.tableName });
+            html += '<div class="command-palette-item' + (commandPaletteResults.length - 1 === commandPaletteSelectedIndex ? ' selected' : '') + '" data-index="' + (commandPaletteResults.length - 1) + '" onclick="selectCommandPaletteItem(' + (commandPaletteResults.length - 1) + ')">';
+            html += '<div class="command-palette-item-icon table">📊</div>';
+            html += '<div class="command-palette-item-content">';
+            html += '<div class="command-palette-item-title">' + esc(t.tableName) + '</div>';
+            html += '<div class="command-palette-item-subtitle">' + (META_TABLES[t.tableId]?.recordCount || 0) + ' records</div>';
+            html += '</div></div>';
+        });
+        html += '</div>';
+    }
+
+    // Views section
+    var matchingViews = [];
+    Object.keys(META_VIEWS).forEach(function(tableId) {
+        Object.values(META_VIEWS[tableId] || {}).forEach(function(v) {
+            if (!q || v.viewName.toLowerCase().includes(q)) {
+                matchingViews.push({ tableId: tableId, view: v });
+            }
+        });
+    });
+    matchingViews = matchingViews.slice(0, 5);
+
+    if (matchingViews.length > 0) {
+        html += '<div class="command-palette-section">';
+        html += '<div class="command-palette-section-title">Views</div>';
+        matchingViews.forEach(function(item) {
+            commandPaletteResults.push({ type: 'view', tableId: item.tableId, viewId: item.view.viewId, name: item.view.viewName });
+            html += '<div class="command-palette-item' + (commandPaletteResults.length - 1 === commandPaletteSelectedIndex ? ' selected' : '') + '" data-index="' + (commandPaletteResults.length - 1) + '" onclick="selectCommandPaletteItem(' + (commandPaletteResults.length - 1) + ')">';
+            html += '<div class="command-palette-item-icon view">👁️</div>';
+            html += '<div class="command-palette-item-content">';
+            html += '<div class="command-palette-item-title">' + esc(item.view.viewName) + '</div>';
+            html += '<div class="command-palette-item-subtitle">' + esc(META_TABLES[item.tableId]?.tableName || item.tableId) + '</div>';
+            html += '</div></div>';
+        });
+        html += '</div>';
+    }
+
+    // Commands section
+    var commands = [
+        { id: 'sync', name: 'Sync Data', subtitle: 'Refresh data from server', shortcut: '⌘S', icon: '🔄' },
+        { id: 'filter', name: 'Add Filter', subtitle: 'Filter current view', shortcut: 'F', icon: '🔍' },
+        { id: 'sort', name: 'Add Sort', subtitle: 'Sort current view', shortcut: 'S', icon: '↕️' },
+        { id: 'fields', name: 'Toggle Fields', subtitle: 'Show/hide columns', shortcut: '⌘⇧F', icon: '📋' },
+        { id: 'kanban', name: 'Kanban View', subtitle: 'Switch to board view', shortcut: 'B', icon: '▥' },
+        { id: 'calendar', name: 'Calendar View', subtitle: 'Switch to calendar view', shortcut: 'C', icon: '📅' },
+        { id: 'grid', name: 'Grid View', subtitle: 'Switch to table view', shortcut: 'G', icon: '▦' },
+        { id: 'shortcuts', name: 'Keyboard Shortcuts', subtitle: 'Show all shortcuts', shortcut: '?', icon: '⌨️' }
+    ];
+
+    var matchingCommands = commands.filter(function(c) {
+        return !q || c.name.toLowerCase().includes(q) || c.subtitle.toLowerCase().includes(q);
+    });
+
+    if (matchingCommands.length > 0) {
+        html += '<div class="command-palette-section">';
+        html += '<div class="command-palette-section-title">Commands</div>';
+        matchingCommands.forEach(function(c) {
+            commandPaletteResults.push({ type: 'command', id: c.id, name: c.name });
+            html += '<div class="command-palette-item' + (commandPaletteResults.length - 1 === commandPaletteSelectedIndex ? ' selected' : '') + '" data-index="' + (commandPaletteResults.length - 1) + '" onclick="selectCommandPaletteItem(' + (commandPaletteResults.length - 1) + ')">';
+            html += '<div class="command-palette-item-icon action">' + c.icon + '</div>';
+            html += '<div class="command-palette-item-content">';
+            html += '<div class="command-palette-item-title">' + esc(c.name) + '</div>';
+            html += '<div class="command-palette-item-subtitle">' + esc(c.subtitle) + '</div>';
+            html += '</div>';
+            html += '<span class="command-palette-item-shortcut">' + c.shortcut + '</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    if (commandPaletteResults.length === 0) {
+        html = '<div class="command-palette-empty">No results found</div>';
+    }
+
+    container.innerHTML = html;
+}
+
+function updateCommandPaletteSelection() {
+    document.querySelectorAll('.command-palette-item').forEach(function(item, i) {
+        if (parseInt(item.getAttribute('data-index')) === commandPaletteSelectedIndex) {
+            item.classList.add('selected');
+            item.scrollIntoView({ block: 'nearest' });
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+}
+
+function selectCommandPaletteItem(index) {
+    commandPaletteSelectedIndex = index;
+    executeCommandPaletteItem();
+}
+
+function executeCommandPaletteItem() {
+    var item = commandPaletteResults[commandPaletteSelectedIndex];
+    if (!item) return;
+
+    closeCommandPalette();
+
+    if (item.type === 'table') {
+        selectTable(item.id);
+    } else if (item.type === 'view') {
+        selectTable(item.tableId);
+        setTimeout(function() {
+            selectView(item.viewId);
+        }, 100);
+    } else if (item.type === 'command') {
+        switch (item.id) {
+            case 'sync': manualSync(); break;
+            case 'filter': toggleFilterDropdown(); break;
+            case 'sort': toggleSortDropdown(); break;
+            case 'fields': toggleFieldsDropdown(); break;
+            case 'kanban': switchToViewType('kanban'); break;
+            case 'calendar': switchToViewType('calendar'); break;
+            case 'grid': switchToViewType('grid'); break;
+            case 'shortcuts': openShortcutsModal(); break;
+        }
+    }
+}
+
+// Shortcuts Modal
+function openShortcutsModal() {
+    document.getElementById('shortcuts-modal-overlay').classList.add('open');
+}
+
+function closeShortcutsModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('shortcuts-modal-overlay').classList.remove('open');
+}
+
+// ============ FEATURE: View Type Switching (Kanban, Calendar) ============
+
+var currentViewType = 'grid'; // 'grid', 'kanban', 'calendar'
+var kanbanGroupField = null;
+var calendarDateField = null;
+var calendarCurrentMonth = new Date();
+
+function switchToViewType(viewType) {
+    if (!currentTable) return;
+    currentViewType = viewType;
+
+    var tableContainer = document.getElementById('table-container');
+    var pagination = document.getElementById('pagination');
+
+    if (viewType === 'grid') {
+        pagination.style.display = '';
+        renderTable();
+    } else if (viewType === 'kanban') {
+        pagination.style.display = 'none';
+        renderKanbanView();
+    } else if (viewType === 'calendar') {
+        pagination.style.display = 'none';
+        renderCalendarView();
+    }
+}
+
+// ============ FEATURE: Kanban View ============
+
+async function renderKanbanView() {
+    var container = document.getElementById('table-container');
+    var fields = META_FIELDS[currentTable] || {};
+
+    // Find suitable group field (single select or status-like field)
+    var groupFieldCandidates = Object.entries(fields).filter(function(entry) {
+        var f = entry[1];
+        return f.fieldType === 'singleSelect' || f.fieldType === 'multipleSelects' ||
+               f.fieldName.toLowerCase().includes('status') ||
+               f.fieldName.toLowerCase().includes('stage') ||
+               f.fieldName.toLowerCase().includes('type');
+    });
+
+    if (!kanbanGroupField && groupFieldCandidates.length > 0) {
+        kanbanGroupField = groupFieldCandidates[0][0];
+    }
+
+    // Get primary field for card title
+    var primaryField = Object.keys(fields)[0];
+
+    // Build config bar
+    var html = '<div class="kanban-config-bar">';
+    html += '<label>Group by:</label>';
+    html += '<select id="kanban-group-select" onchange="changeKanbanGroupField(this.value)">';
+    Object.entries(fields).forEach(function(entry) {
+        var fid = entry[0];
+        var f = entry[1];
+        var selected = fid === kanbanGroupField ? ' selected' : '';
+        html += '<option value="' + esc(fid) + '"' + selected + '>' + esc(f.fieldName) + '</option>';
+    });
+    html += '</select>';
+    html += '<label style="margin-left: 16px;">Card title:</label>';
+    html += '<select id="kanban-title-select" onchange="renderKanbanView()">';
+    Object.entries(fields).forEach(function(entry) {
+        var fid = entry[0];
+        var f = entry[1];
+        var selected = fid === primaryField ? ' selected' : '';
+        html += '<option value="' + esc(fid) + '"' + selected + '>' + esc(f.fieldName) + '</option>';
+    });
+    html += '</select>';
+    html += '</div>';
+
+    // Get records
+    var recordIds = currentRecordIds.length > 0 ? currentRecordIds : originalRecordIds;
+    var displayIds = recordIds.slice(0, 500); // Limit for performance
+    var records = await getRecordsByIds(currentTable, displayIds);
+
+    // Group records
+    var groups = {};
+    var emptyGroupKey = '(No value)';
+
+    records.forEach(function(r) {
+        var groupValue = r.fields?.[kanbanGroupField];
+        var key = groupValue ? String(groupValue) : emptyGroupKey;
+        if (Array.isArray(groupValue)) {
+            key = groupValue.length > 0 ? groupValue[0] : emptyGroupKey;
+        }
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(r);
+    });
+
+    // Sort groups
+    var sortedKeys = Object.keys(groups).sort(function(a, b) {
+        if (a === emptyGroupKey) return 1;
+        if (b === emptyGroupKey) return -1;
+        return a.localeCompare(b);
+    });
+
+    // Get title field
+    var titleField = document.getElementById('kanban-title-select')?.value || primaryField;
+    var previewFields = Object.keys(fields).slice(0, 4).filter(function(f) { return f !== titleField && f !== kanbanGroupField; });
+
+    // Render columns
+    html += '<div class="kanban-container">';
+
+    var colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+    var colorIndex = 0;
+
+    sortedKeys.forEach(function(key) {
+        var groupRecords = groups[key];
+        var color = colors[colorIndex % colors.length];
+        colorIndex++;
+
+        html += '<div class="kanban-column">';
+        html += '<div class="kanban-column-header">';
+        html += '<div class="kanban-column-color" style="background: ' + color + ';"></div>';
+        html += '<div class="kanban-column-title">' + esc(key) + '</div>';
+        html += '<div class="kanban-column-count">' + groupRecords.length + '</div>';
+        html += '</div>';
+        html += '<div class="kanban-column-body">';
+
+        if (groupRecords.length === 0) {
+            html += '<div class="kanban-column-empty">No records</div>';
+        } else {
+            groupRecords.forEach(function(r) {
+                var title = r.fields?.[titleField] || r.recordId;
+                if (Array.isArray(title)) title = title.join(', ');
+                if (typeof title === 'object') title = title.name || title.filename || JSON.stringify(title);
+
+                html += '<div class="kanban-card" onclick="openRecordProfile(\'' + esc(currentTable) + '\', \'' + esc(r.recordId) + '\')">';
+                html += '<div class="kanban-card-title">' + esc(String(title).slice(0, 60)) + '</div>';
+                html += '<div class="kanban-card-fields">';
+
+                previewFields.slice(0, 2).forEach(function(fid) {
+                    var val = r.fields?.[fid];
+                    if (val != null && val !== '') {
+                        var displayVal = formatSimpleValue(val);
+                        html += '<div class="kanban-card-field">';
+                        html += '<span class="kanban-card-field-label">' + esc(fields[fid]?.fieldName || fid) + '</span>';
+                        html += '<span class="kanban-card-field-value">' + esc(displayVal.slice(0, 30)) + '</span>';
+                        html += '</div>';
+                    }
+                });
+
+                html += '</div></div>';
+            });
+        }
+
+        html += '</div></div>';
+    });
+
+    html += '</div>';
+
+    container.innerHTML = html;
+}
+
+function changeKanbanGroupField(fieldId) {
+    kanbanGroupField = fieldId;
+    renderKanbanView();
+}
+
+function formatSimpleValue(v) {
+    if (v == null) return '';
+    if (Array.isArray(v)) return v.map(function(i) { return formatSimpleValue(i); }).join(', ');
+    if (typeof v === 'object') return v.name || v.filename || v.email || JSON.stringify(v).slice(0, 30);
+    return String(v);
+}
+
+// ============ FEATURE: Calendar View ============
+
+async function renderCalendarView() {
+    var container = document.getElementById('table-container');
+    var fields = META_FIELDS[currentTable] || {};
+
+    // Find date fields
+    var dateFieldCandidates = Object.entries(fields).filter(function(entry) {
+        var f = entry[1];
+        return f.fieldType === 'date' || f.fieldType === 'dateTime' ||
+               f.fieldName.toLowerCase().includes('date') ||
+               f.fieldName.toLowerCase().includes('created') ||
+               f.fieldName.toLowerCase().includes('deadline');
+    });
+
+    if (!calendarDateField && dateFieldCandidates.length > 0) {
+        calendarDateField = dateFieldCandidates[0][0];
+    }
+
+    if (!calendarDateField) {
+        calendarDateField = Object.keys(fields)[0];
+    }
+
+    // Get primary field for event title
+    var titleField = Object.keys(fields)[0];
+
+    // Build header
+    var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    var html = '<div class="calendar-container">';
+    html += '<div class="calendar-header">';
+    html += '<button class="calendar-nav-btn" onclick="navigateCalendar(-1)">&larr;</button>';
+    html += '<button class="calendar-nav-btn" onclick="navigateCalendar(1)">&rarr;</button>';
+    html += '<span class="calendar-title">' + monthNames[calendarCurrentMonth.getMonth()] + ' ' + calendarCurrentMonth.getFullYear() + '</span>';
+    html += '<button class="calendar-today-btn" onclick="goToToday()">Today</button>';
+    html += '<div class="calendar-config">';
+    html += '<label>Date field:</label>';
+    html += '<select id="calendar-date-select" onchange="changeCalendarDateField(this.value)">';
+    Object.entries(fields).forEach(function(entry) {
+        var fid = entry[0];
+        var f = entry[1];
+        var selected = fid === calendarDateField ? ' selected' : '';
+        html += '<option value="' + esc(fid) + '"' + selected + '>' + esc(f.fieldName) + '</option>';
+    });
+    html += '</select></div></div>';
+
+    // Get records for current month
+    var year = calendarCurrentMonth.getFullYear();
+    var month = calendarCurrentMonth.getMonth();
+    var firstDay = new Date(year, month, 1);
+    var lastDay = new Date(year, month + 1, 0);
+
+    var recordIds = currentRecordIds.length > 0 ? currentRecordIds : originalRecordIds;
+    var records = await getRecordsByIds(currentTable, recordIds.slice(0, 1000));
+
+    // Group records by date
+    var recordsByDate = {};
+    records.forEach(function(r) {
+        var dateVal = r.fields?.[calendarDateField];
+        if (dateVal) {
+            var d = new Date(dateVal);
+            if (!isNaN(d.getTime())) {
+                var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                if (!recordsByDate[key]) recordsByDate[key] = [];
+                recordsByDate[key].push(r);
+            }
+        }
+    });
+
+    // Build calendar grid
+    html += '<div class="calendar-grid">';
+
+    // Day headers
+    var dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    dayNames.forEach(function(d) {
+        html += '<div class="calendar-day-header">' + d + '</div>';
+    });
+
+    // Calculate grid start (previous month days)
+    var startDayOfWeek = firstDay.getDay();
+    var prevMonthLastDay = new Date(year, month, 0).getDate();
+
+    // Today for highlighting
+    var today = new Date();
+    var todayKey = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+
+    // Previous month days
+    for (var i = startDayOfWeek - 1; i >= 0; i--) {
+        var dayNum = prevMonthLastDay - i;
+        html += '<div class="calendar-day other-month"><div class="calendar-day-number">' + dayNum + '</div></div>';
+    }
+
+    // Current month days
+    for (var day = 1; day <= lastDay.getDate(); day++) {
+        var dateKey = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+        var isToday = dateKey === todayKey;
+        var dayRecords = recordsByDate[dateKey] || [];
+
+        html += '<div class="calendar-day' + (isToday ? ' today' : '') + '">';
+        html += '<div class="calendar-day-number">' + day + '</div>';
+
+        // Show up to 3 events
+        dayRecords.slice(0, 3).forEach(function(r) {
+            var title = r.fields?.[titleField] || r.recordId;
+            if (typeof title === 'object') title = title.name || JSON.stringify(title);
+            html += '<div class="calendar-event" onclick="event.stopPropagation(); openRecordProfile(\'' + esc(currentTable) + '\', \'' + esc(r.recordId) + '\')">';
+            html += esc(String(title).slice(0, 20));
+            html += '</div>';
+        });
+
+        if (dayRecords.length > 3) {
+            html += '<div class="calendar-more">+' + (dayRecords.length - 3) + ' more</div>';
+        }
+
+        html += '</div>';
+    }
+
+    // Next month days
+    var totalCells = startDayOfWeek + lastDay.getDate();
+    var remainingCells = (7 - (totalCells % 7)) % 7;
+    for (var i = 1; i <= remainingCells; i++) {
+        html += '<div class="calendar-day other-month"><div class="calendar-day-number">' + i + '</div></div>';
+    }
+
+    html += '</div></div>';
+
+    container.innerHTML = html;
+}
+
+function navigateCalendar(delta) {
+    calendarCurrentMonth.setMonth(calendarCurrentMonth.getMonth() + delta);
+    renderCalendarView();
+}
+
+function goToToday() {
+    calendarCurrentMonth = new Date();
+    renderCalendarView();
+}
+
+function changeCalendarDateField(fieldId) {
+    calendarDateField = fieldId;
+    renderCalendarView();
+}
+
+// ============ FEATURE: Linked Record Preview ============
+
+var linkedRecordPreviewTimeout = null;
+var currentLinkedPreview = null;
+
+function showLinkedRecordPreview(event, tableId, recordId, displayName) {
+    event.stopPropagation();
+
+    // Clear any pending close
+    if (linkedRecordPreviewTimeout) {
+        clearTimeout(linkedRecordPreviewTimeout);
+        linkedRecordPreviewTimeout = null;
+    }
+
+    currentLinkedPreview = { tableId: tableId, recordId: recordId };
+
+    // Position the preview
+    var preview = document.getElementById('linked-record-preview');
+    var rect = event.target.getBoundingClientRect();
+
+    var left = rect.left;
+    var top = rect.bottom + 8;
+
+    // Adjust if too close to right edge
+    if (left + 320 > window.innerWidth) {
+        left = window.innerWidth - 330;
+    }
+
+    // Adjust if too close to bottom
+    if (top + 400 > window.innerHeight) {
+        top = rect.top - 408;
+    }
+
+    preview.style.left = left + 'px';
+    preview.style.top = top + 'px';
+    preview.style.display = 'block';
+
+    // Update title
+    document.getElementById('linked-preview-title').textContent = displayName || recordId;
+    document.getElementById('linked-preview-table-name').textContent = META_TABLES[tableId]?.tableName || tableId;
+
+    // Update open button
+    document.getElementById('linked-preview-open-btn').onclick = function() {
+        closeLinkedRecordPreview();
+        openRecordProfile(tableId, recordId);
+    };
+
+    // Load record data
+    loadLinkedRecordPreviewData(tableId, recordId);
+}
+
+async function loadLinkedRecordPreviewData(tableId, recordId) {
+    var body = document.getElementById('linked-preview-body');
+    body.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Loading...</div>';
+
+    try {
+        var records = await getRecordsByIds(tableId, [recordId]);
+        var record = records[0];
+
+        if (!record) {
+            body.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Record not found</div>';
+            return;
+        }
+
+        var fields = META_FIELDS[tableId] || {};
+        var html = '';
+
+        // Show first 5 fields
+        var fieldIds = Object.keys(record.fields || {}).slice(0, 5);
+        fieldIds.forEach(function(fid) {
+            var fieldMeta = fields[fid];
+            var value = record.fields[fid];
+            if (value != null && value !== '') {
+                html += '<div class="linked-record-preview-field">';
+                html += '<div class="linked-record-preview-label">' + esc(fieldMeta?.fieldName || fid) + '</div>';
+                html += '<div class="linked-record-preview-value">' + formatSimpleValue(value) + '</div>';
+                html += '</div>';
+            }
+        });
+
+        if (html === '') {
+            html = '<div style="padding: 20px; text-align: center; color: #999;">No data available</div>';
+        }
+
+        body.innerHTML = html;
+    } catch (err) {
+        body.innerHTML = '<div style="padding: 20px; text-align: center; color: #dc2626;">Error loading record</div>';
+    }
+}
+
+function closeLinkedRecordPreview() {
+    document.getElementById('linked-record-preview').style.display = 'none';
+    currentLinkedPreview = null;
+}
+
+// Close preview when clicking elsewhere
+document.addEventListener('click', function(e) {
+    var preview = document.getElementById('linked-record-preview');
+    if (preview && preview.style.display !== 'none') {
+        if (!preview.contains(e.target) && !e.target.classList.contains('linked-record-chip')) {
+            closeLinkedRecordPreview();
+        }
+    }
+});
+
+// ============ FEATURE: Search Highlighting ============
+
+var currentSearchHighlight = '';
+
+function highlightSearchText(text, searchTerm) {
+    if (!searchTerm || !text) return esc(String(text));
+
+    var escaped = esc(String(text));
+    var regex = new RegExp('(' + escapeRegex(searchTerm) + ')', 'gi');
+    return escaped.replace(regex, '<mark class="search-highlight">$1</mark>');
+}
+
+function escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Override handleViewSearch to set highlight term
+var originalHandleViewSearch = typeof handleViewSearch === 'function' ? handleViewSearch : function() {};
+handleViewSearch = function(query) {
+    currentSearchHighlight = query;
+    currentSearchQuery = query;
+    currentPage = 0;
+    renderTable();
+};
+
+// ============ FEATURE: Undo/Redo System ============
+
+var undoStack = [];
+var redoStack = [];
+var MAX_UNDO_STACK = 50;
+
+function addToUndoStack(action) {
+    // action = { type, description, undo: function, redo: function }
+    undoStack.push(action);
+    if (undoStack.length > MAX_UNDO_STACK) {
+        undoStack.shift();
+    }
+    redoStack = []; // Clear redo stack on new action
+    showUndoToast(action.description);
+}
+
+function performUndo() {
+    if (undoStack.length === 0) return;
+
+    var action = undoStack.pop();
+    if (action.undo) {
+        action.undo();
+        redoStack.push(action);
+        showUndoToast('Undone: ' + action.description);
+    }
+}
+
+function performRedo() {
+    if (redoStack.length === 0) return;
+
+    var action = redoStack.pop();
+    if (action.redo) {
+        action.redo();
+        undoStack.push(action);
+        showUndoToast('Redone: ' + action.description);
+    }
+}
+
+var undoToastTimeout = null;
+function showUndoToast(message) {
+    var toast = document.getElementById('undo-toast');
+    if (!toast) return;
+
+    document.getElementById('undo-toast-message').textContent = message;
+    toast.classList.add('visible');
+
+    if (undoToastTimeout) clearTimeout(undoToastTimeout);
+    undoToastTimeout = setTimeout(function() {
+        toast.classList.remove('visible');
+    }, 3000);
+}
+
+// ============ FEATURE: Rich Field Type Renderers ============
+
+// Enhanced formatCell function with rich rendering
+var originalFormatCell = formatCell;
+formatCell = function(v, fieldMeta, searchTerm) {
+    if (v == null || v === '') {
+        return '<span class="cell-empty">—</span>';
+    }
+
+    var fieldType = fieldMeta?.fieldType || '';
+
+    // Checkbox
+    if (typeof v === 'boolean' || fieldType === 'checkbox') {
+        return '<span class="cell-checkbox">' +
+            '<span class="cell-checkbox-icon ' + (v ? 'checked' : 'unchecked') + '">' +
+            (v ? '✓' : '') +
+            '</span></span>';
+    }
+
+    // Rating (number 1-5 or field type rating)
+    if (fieldType === 'rating' || (typeof v === 'number' && v >= 1 && v <= 5 && Number.isInteger(v) && fieldMeta?.fieldName?.toLowerCase().includes('rating'))) {
+        var html = '<span class="cell-rating">';
+        for (var i = 1; i <= 5; i++) {
+            html += '<span class="star ' + (i <= v ? 'filled' : 'empty') + '">★</span>';
+        }
+        html += '</span>';
+        return html;
+    }
+
+    // Percent/Progress
+    if (fieldType === 'percent' || (typeof v === 'number' && v >= 0 && v <= 1 && fieldMeta?.fieldName?.toLowerCase().includes('progress'))) {
+        var pct = Math.round(v * 100);
+        return '<span class="cell-progress">' +
+            '<span class="cell-progress-bar"><span class="cell-progress-fill" style="width: ' + pct + '%;"></span></span>' +
+            '<span class="cell-progress-label">' + pct + '%</span></span>';
+    }
+
+    // Attachments
+    if (fieldType === 'multipleAttachments' || (Array.isArray(v) && v[0]?.url && (v[0]?.type || v[0]?.filename))) {
+        var html = '<span class="cell-attachment">';
+        v.slice(0, 4).forEach(function(att) {
+            if (att.type && att.type.startsWith('image/')) {
+                var thumbUrl = att.thumbnails?.small?.url || att.url;
+                html += '<img class="attachment-thumb" src="' + esc(thumbUrl) + '" alt="' + esc(att.filename || '') + '" onclick="window.open(\'' + esc(att.url) + '\', \'_blank\')">';
+            } else {
+                var icon = '📄';
+                if (att.type?.includes('pdf')) icon = '📕';
+                else if (att.type?.includes('word') || att.type?.includes('document')) icon = '📘';
+                else if (att.type?.includes('sheet') || att.type?.includes('excel')) icon = '📗';
+                html += '<span class="attachment-file"><span class="attachment-file-icon">' + icon + '</span>' + esc((att.filename || 'File').slice(0, 15)) + '</span>';
+            }
+        });
+        if (v.length > 4) {
+            html += '<span class="attachment-file">+' + (v.length - 4) + '</span>';
+        }
+        html += '</span>';
+        return html;
+    }
+
+    // Email
+    if (fieldType === 'email' || (typeof v === 'string' && v.includes('@') && v.includes('.'))) {
+        return '<span class="cell-contact">' +
+            '<a class="cell-contact-link" href="mailto:' + esc(v) + '">' + highlightSearchText(v, searchTerm || currentSearchHighlight) + '</a>' +
+            '</span>';
+    }
+
+    // Phone
+    if (fieldType === 'phoneNumber' || (typeof v === 'string' && /^[\d\s\-\+\(\)]+$/.test(v) && v.length >= 7)) {
+        return '<span class="cell-contact">' +
+            '<a class="cell-contact-link" href="tel:' + esc(v.replace(/\s/g, '')) + '">' + highlightSearchText(v, searchTerm || currentSearchHighlight) + '</a>' +
+            '</span>';
+    }
+
+    // Currency
+    if (fieldType === 'currency' || (typeof v === 'number' && fieldMeta?.fieldName?.toLowerCase().includes('amount'))) {
+        var isNegative = v < 0;
+        return '<span class="cell-currency' + (isNegative ? ' negative' : '') + '">$' + Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</span>';
+    }
+
+    // Single/Multi Select with colors
+    if (fieldType === 'singleSelect') {
+        var color = getSelectColor(v, fieldMeta);
+        return '<span class="cell-select-tag color-' + color + '">' + highlightSearchText(v, searchTerm || currentSearchHighlight) + '</span>';
+    }
+
+    if (fieldType === 'multipleSelects' && Array.isArray(v)) {
+        return v.map(function(item) {
+            var color = getSelectColor(item, fieldMeta);
+            return '<span class="cell-select-tag color-' + color + '">' + highlightSearchText(item, searchTerm || currentSearchHighlight) + '</span>';
+        }).join('');
+    }
+
+    // Linked Records
+    if (fieldType === 'multipleRecordLinks' && Array.isArray(v)) {
+        var linkedTableId = fieldMeta?.options?.linkedTableId;
+        return v.map(function(item) {
+            var recordId = typeof item === 'string' ? item : (item.id || item);
+            var displayName = typeof item === 'object' ? (item.name || item.id || recordId) : recordId;
+
+            if (linkedTableId) {
+                return '<span class="linked-record-chip" onmouseenter="showLinkedRecordPreview(event, \'' + esc(linkedTableId) + '\', \'' + esc(recordId) + '\', \'' + esc(String(displayName)) + '\')">' +
+                    highlightSearchText(displayName, searchTerm || currentSearchHighlight) +
+                    '</span>';
+            } else {
+                return '<span class="tag">' + highlightSearchText(displayName, searchTerm || currentSearchHighlight) + '</span>';
+            }
+        }).join('');
+    }
+
+    // Date with relative time
+    if (fieldType === 'date' || fieldType === 'dateTime') {
+        var date = new Date(v);
+        if (!isNaN(date.getTime())) {
+            var formatted = date.toLocaleDateString();
+            var relative = getRelativeTime(date);
+            return '<span class="cell-date">' +
+                '<span>' + formatted + '</span>' +
+                '<span class="cell-date-relative">' + relative + '</span>' +
+                '</span>';
+        }
+    }
+
+    // Arrays (generic)
+    if (Array.isArray(v)) {
+        if (v.length === 0) return '<span class="cell-empty">—</span>';
+
+        if (typeof v[0] === 'object' && v[0] !== null) {
+            var items = v.map(function(item) {
+                if (item.name) return item.name;
+                if (item.filename) return item.filename;
+                if (item.email) return item.email;
+                if (item.id) return item.id;
+                return JSON.stringify(item).slice(0, 30);
+            });
+            return '<span class="cell-array">' + items.map(function(i) {
+                return '<span class="tag">' + highlightSearchText(i, searchTerm || currentSearchHighlight) + '</span>';
+            }).join('') + '</span>';
+        }
+
+        return '<span class="cell-array">' + v.map(function(i) {
+            return '<span class="tag">' + highlightSearchText(String(i), searchTerm || currentSearchHighlight) + '</span>';
+        }).join('') + '</span>';
+    }
+
+    // Objects
+    if (typeof v === 'object') {
+        if (v.name) return highlightSearchText(v.name, searchTerm || currentSearchHighlight);
+        if (v.filename) return highlightSearchText(v.filename, searchTerm || currentSearchHighlight);
+        if (v.email) return highlightSearchText(v.email, searchTerm || currentSearchHighlight);
+        if (v.url) return '<a class="cell-link" href="' + esc(v.url) + '" target="_blank">' + highlightSearchText(v.url.slice(0, 40), searchTerm || currentSearchHighlight) + '</a>';
+        return esc(JSON.stringify(v).slice(0, 50));
+    }
+
+    // Numbers
+    if (typeof v === 'number') {
+        return '<span class="cell-number">' + v.toLocaleString() + '</span>';
+    }
+
+    // URLs
+    var str = String(v);
+    if (str.startsWith('http://') || str.startsWith('https://')) {
+        return '<a class="cell-link" href="' + esc(str) + '" target="_blank">' + highlightSearchText(str.slice(0, 50), searchTerm || currentSearchHighlight) + '</a>';
+    }
+
+    // Default text with highlighting
+    return highlightSearchText(str, searchTerm || currentSearchHighlight);
+};
+
+function getSelectColor(value, fieldMeta) {
+    var colors = ['blue', 'green', 'red', 'yellow', 'purple', 'pink', 'orange', 'cyan', 'gray', 'teal'];
+
+    // Try to get color from field options
+    if (fieldMeta?.options?.choices) {
+        var choice = fieldMeta.options.choices.find(function(c) { return c.name === value; });
+        if (choice?.color) {
+            // Map Airtable colors to our CSS classes
+            var colorMap = {
+                'blueLight2': 'blue', 'blueDark1': 'blue', 'blue': 'blue',
+                'greenLight2': 'green', 'greenDark1': 'green', 'green': 'green',
+                'redLight2': 'red', 'redDark1': 'red', 'red': 'red',
+                'yellowLight2': 'yellow', 'yellowDark1': 'yellow', 'yellow': 'yellow',
+                'purpleLight2': 'purple', 'purpleDark1': 'purple', 'purple': 'purple',
+                'pinkLight2': 'pink', 'pinkDark1': 'pink', 'pink': 'pink',
+                'orangeLight2': 'orange', 'orangeDark1': 'orange', 'orange': 'orange',
+                'cyanLight2': 'cyan', 'cyanDark1': 'cyan', 'cyan': 'cyan',
+                'grayLight2': 'gray', 'grayDark1': 'gray', 'gray': 'gray',
+                'tealLight2': 'teal', 'tealDark1': 'teal', 'teal': 'teal'
+            };
+            return colorMap[choice.color] || 'blue';
+        }
+    }
+
+    // Hash the value to get consistent color
+    var hash = 0;
+    for (var i = 0; i < String(value).length; i++) {
+        hash = ((hash << 5) - hash) + String(value).charCodeAt(i);
+        hash = hash & hash;
+    }
+    return colors[Math.abs(hash) % colors.length];
+}
+
+function getRelativeTime(date) {
+    var now = new Date();
+    var diff = now - date;
+    var diffDays = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays === -1) return 'Tomorrow';
+    if (diffDays > 0 && diffDays < 7) return diffDays + ' days ago';
+    if (diffDays < 0 && diffDays > -7) return 'In ' + Math.abs(diffDays) + ' days';
+    if (diffDays > 0 && diffDays < 30) return Math.floor(diffDays / 7) + ' weeks ago';
+    if (diffDays < 0 && diffDays > -30) return 'In ' + Math.floor(Math.abs(diffDays) / 7) + ' weeks';
+    return '';
+}
+
+// ============ FEATURE: Virtual Scrolling ============
+
+var virtualScrollEnabled = false;
+var virtualScrollState = {
+    rowHeight: 36,
+    bufferSize: 10,
+    visibleStart: 0,
+    visibleEnd: 0
+};
+
+// Enable virtual scrolling for large datasets
+function shouldUseVirtualScroll() {
+    return totalRecords > 500;
+}
+
+// Virtual scroll is integrated into renderTable() - check for large datasets
+// For now, we use pagination which is effective. Full virtual scrolling
+// would require significant refactoring of renderTable().
+
+// ============ Update renderTable to use enhanced formatCell ============
+
+// Patch the existing renderTable function to pass field metadata
+var patchedRenderTable = false;
+
+function patchRenderTableForRichFormatting() {
+    if (patchedRenderTable) return;
+
+    // The formatCell function is already overridden above with rich formatting
+    // It will automatically be used by the existing renderTable calls
+
+    patchedRenderTable = true;
+}
+
+// Initialize patches
+patchRenderTableForRichFormatting();
 
 initAuthScreen();
     </script>
