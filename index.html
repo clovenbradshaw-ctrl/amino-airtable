@@ -1442,19 +1442,27 @@ function openDB() {
             }
 
             // Data records: keyed by [tableId, recordId]
-            var dataStore = db.createObjectStore('data', { keyPath: ['tableId', 'recordId'] });
-            dataStore.createIndex('by_table', 'tableId');
+            if (!db.objectStoreNames.contains('data')) {
+                var dataStore = db.createObjectStore('data', { keyPath: ['tableId', 'recordId'] });
+                dataStore.createIndex('by_table', 'tableId');
+            }
 
             // Table metadata
-            db.createObjectStore('tables', { keyPath: 'tableId' });
+            if (!db.objectStoreNames.contains('tables')) {
+                db.createObjectStore('tables', { keyPath: 'tableId' });
+            }
 
             // Field metadata: keyed by [tableId, fieldId]
-            var fieldStore = db.createObjectStore('fields', { keyPath: ['tableId', 'fieldId'] });
-            fieldStore.createIndex('by_table', 'tableId');
+            if (!db.objectStoreNames.contains('fields')) {
+                var fieldStore = db.createObjectStore('fields', { keyPath: ['tableId', 'fieldId'] });
+                fieldStore.createIndex('by_table', 'tableId');
+            }
 
             // View metadata: keyed by [tableId, viewId]
-            var viewStore = db.createObjectStore('views', { keyPath: ['tableId', 'viewId'] });
-            viewStore.createIndex('by_table', 'tableId');
+            if (!db.objectStoreNames.contains('views')) {
+                var viewStore = db.createObjectStore('views', { keyPath: ['tableId', 'viewId'] });
+                viewStore.createIndex('by_table', 'tableId');
+            }
 
             // Field history: keyed by auto-increment, indexed by record and field
             if (!db.objectStoreNames.contains('fieldHistory')) {
