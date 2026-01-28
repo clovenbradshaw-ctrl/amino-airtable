@@ -1249,6 +1249,9 @@
                                 <span>Filter records</span>
                                 <button class="dropdown-action-btn" onclick="addFilter()">+ Add filter</button>
                             </div>
+                            <div class="dropdown-search-wrapper">
+                                <input type="text" class="dropdown-search-input" id="filter-search-input" placeholder="Find a field" oninput="filterFilterDropdown(this.value)">
+                            </div>
                             <div class="filter-list" id="filter-list">
                                 <div class="empty-filters">No filters applied</div>
                             </div>
@@ -1269,6 +1272,9 @@
                                 <span>Sort records</span>
                                 <button class="dropdown-action-btn" onclick="addSort()">+ Add sort</button>
                             </div>
+                            <div class="dropdown-search-wrapper">
+                                <input type="text" class="dropdown-search-input" id="sort-search-input" placeholder="Find a field" oninput="filterSortDropdown(this.value)">
+                            </div>
                             <div class="sort-list" id="sort-list">
                                 <div class="empty-sorts">No sorts applied</div>
                             </div>
@@ -1286,6 +1292,9 @@
                         <div class="dropdown-section">
                             <div class="dropdown-header">
                                 <span>Group records by</span>
+                            </div>
+                            <div class="dropdown-search-wrapper">
+                                <input type="text" class="dropdown-search-input" id="group-search-input" placeholder="Find a field" oninput="filterGroupDropdown(this.value)">
                             </div>
                             <div class="group-options" id="group-options">
                                 <div class="group-option none-selected" onclick="setGroupBy(null)">
@@ -5267,6 +5276,11 @@ function toggleFilterDropdown() {
     closeViewControlDropdowns();
     if (!wasOpen) {
         dropdown.classList.add('open');
+        filterDropdownSearch = '';
+        var searchInput = document.getElementById('filter-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+        }
         renderFilterDropdown();
     }
 }
@@ -5278,6 +5292,11 @@ function toggleSortDropdown() {
     closeViewControlDropdowns();
     if (!wasOpen) {
         dropdown.classList.add('open');
+        sortDropdownSearch = '';
+        var searchInput = document.getElementById('sort-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+        }
         renderSortDropdown();
     }
 }
@@ -5289,6 +5308,11 @@ function toggleGroupDropdown() {
     closeViewControlDropdowns();
     if (!wasOpen) {
         dropdown.classList.add('open');
+        groupDropdownSearch = '';
+        var searchInput = document.getElementById('group-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+        }
         renderGroupDropdown();
     }
 }
@@ -5319,10 +5343,51 @@ function toggleRowHeightDropdown() {
     }
 }
 
+// Get sorted fields for dropdown: alphabetical, with selected/used fields at top
+function getSortedFieldsForDropdown(fields, usedFieldIds, filterText) {
+    var filter = (filterText || '').toLowerCase().trim();
+    var fieldArray = [];
+
+    for (var fid in fields) {
+        var field = fields[fid];
+        var fieldName = field.fieldName || fid;
+
+        // Filter by search text
+        if (filter && !fieldName.toLowerCase().includes(filter)) {
+            continue;
+        }
+
+        fieldArray.push({
+            fieldId: fid,
+            fieldName: fieldName,
+            isUsed: usedFieldIds.indexOf(fid) !== -1
+        });
+    }
+
+    // Sort: used fields first, then alphabetically
+    fieldArray.sort(function(a, b) {
+        if (a.isUsed !== b.isUsed) {
+            return a.isUsed ? -1 : 1;
+        }
+        return a.fieldName.localeCompare(b.fieldName);
+    });
+
+    return fieldArray;
+}
+
+// Current search state for dropdowns
+var filterDropdownSearch = '';
+var sortDropdownSearch = '';
+var groupDropdownSearch = '';
+
 // Render filter dropdown
-function renderFilterDropdown() {
+function renderFilterDropdown(filterText) {
     if (!currentTable) return;
     var list = document.getElementById('filter-list');
+
+    if (filterText !== undefined) {
+        filterDropdownSearch = filterText;
+    }
 
     if (currentFilters.length === 0) {
         list.innerHTML = '<div class="empty-filters">No filters applied</div>';
@@ -5330,16 +5395,32 @@ function renderFilterDropdown() {
     }
 
     var fields = META_FIELDS[currentTable] || {};
+
+    // Get used field IDs from current filters
+    var usedFieldIds = currentFilters.map(function(f) { return f.fieldId; });
+    var sortedFields = getSortedFieldsForDropdown(fields, usedFieldIds, filterDropdownSearch);
+
     var html = '';
 
     for (var i = 0; i < currentFilters.length; i++) {
         var filter = currentFilters[i];
         html += '<div class="filter-row">';
         html += '<select onchange="updateFilter(' + i + ', \'field\', this.value)">';
-        for (var fid in fields) {
-            var sel = filter.fieldId === fid ? ' selected' : '';
-            html += '<option value="' + esc(fid) + '"' + sel + '>' + esc(fields[fid].fieldName || fid) + '</option>';
+
+        // Add sorted fields to dropdown, ensuring selected field is always included
+        var selectedInList = false;
+        for (var j = 0; j < sortedFields.length; j++) {
+            var sf = sortedFields[j];
+            var sel = filter.fieldId === sf.fieldId ? ' selected' : '';
+            if (sel) selectedInList = true;
+            html += '<option value="' + esc(sf.fieldId) + '"' + sel + '>' + esc(sf.fieldName) + '</option>';
         }
+        // If selected field was filtered out, still include it
+        if (!selectedInList && fields[filter.fieldId]) {
+            var selField = fields[filter.fieldId];
+            html += '<option value="' + esc(filter.fieldId) + '" selected>' + esc(selField.fieldName || filter.fieldId) + '</option>';
+        }
+
         html += '</select>';
         html += '<select onchange="updateFilter(' + i + ', \'operator\', this.value)">';
         html += '<option value="contains"' + (filter.operator === 'contains' ? ' selected' : '') + '>contains</option>';
@@ -5359,11 +5440,18 @@ function renderFilterDropdown() {
     updateFilterCount();
 }
 
+// Filter filter dropdown based on search input
+function filterFilterDropdown(filterText) {
+    renderFilterDropdown(filterText);
+}
+
 // Add filter
 function addFilter() {
     if (!currentTable) return;
     var fields = META_FIELDS[currentTable] || {};
-    var firstFieldId = Object.keys(fields)[0];
+    // Get sorted fields (alphabetically)
+    var sortedFields = getSortedFieldsForDropdown(fields, [], '');
+    var firstFieldId = sortedFields.length > 0 ? sortedFields[0].fieldId : null;
     if (!firstFieldId) return;
 
     currentFilters.push({
@@ -5417,9 +5505,13 @@ async function applyFilters() {
 }
 
 // Render sort dropdown
-function renderSortDropdown() {
+function renderSortDropdown(filterText) {
     if (!currentTable) return;
     var list = document.getElementById('sort-list');
+
+    if (filterText !== undefined) {
+        sortDropdownSearch = filterText;
+    }
 
     if (currentSorts.length === 0) {
         list.innerHTML = '<div class="empty-sorts">No sorts applied</div>';
@@ -5427,16 +5519,32 @@ function renderSortDropdown() {
     }
 
     var fields = META_FIELDS[currentTable] || {};
+
+    // Get used field IDs from current sorts
+    var usedFieldIds = currentSorts.map(function(s) { return s.fieldId; });
+    var sortedFields = getSortedFieldsForDropdown(fields, usedFieldIds, sortDropdownSearch);
+
     var html = '';
 
     for (var i = 0; i < currentSorts.length; i++) {
         var sort = currentSorts[i];
         html += '<div class="sort-row">';
         html += '<select onchange="updateSort(' + i + ', \'field\', this.value)">';
-        for (var fid in fields) {
-            var sel = sort.fieldId === fid ? ' selected' : '';
-            html += '<option value="' + esc(fid) + '"' + sel + '>' + esc(fields[fid].fieldName || fid) + '</option>';
+
+        // Add sorted fields to dropdown, ensuring selected field is always included
+        var selectedInList = false;
+        for (var j = 0; j < sortedFields.length; j++) {
+            var sf = sortedFields[j];
+            var sel = sort.fieldId === sf.fieldId ? ' selected' : '';
+            if (sel) selectedInList = true;
+            html += '<option value="' + esc(sf.fieldId) + '"' + sel + '>' + esc(sf.fieldName) + '</option>';
         }
+        // If selected field was filtered out, still include it
+        if (!selectedInList && fields[sort.fieldId]) {
+            var selField = fields[sort.fieldId];
+            html += '<option value="' + esc(sort.fieldId) + '" selected>' + esc(selField.fieldName || sort.fieldId) + '</option>';
+        }
+
         html += '</select>';
         html += '<div class="sort-direction-btns">';
         html += '<button class="sort-direction-btn' + (sort.direction === 'asc' ? ' active' : '') + '" onclick="updateSort(' + i + ', \'direction\', \'asc\')">A→Z</button>';
@@ -5450,11 +5558,18 @@ function renderSortDropdown() {
     updateSortCount();
 }
 
+// Filter sort dropdown based on search input
+function filterSortDropdown(filterText) {
+    renderSortDropdown(filterText);
+}
+
 // Add sort
 function addSort() {
     if (!currentTable) return;
     var fields = META_FIELDS[currentTable] || {};
-    var firstFieldId = Object.keys(fields)[0];
+    // Get sorted fields (alphabetically)
+    var sortedFields = getSortedFieldsForDropdown(fields, [], '');
+    var firstFieldId = sortedFields.length > 0 ? sortedFields[0].fieldId : null;
     if (!firstFieldId) return;
 
     currentSorts.push({
@@ -5507,26 +5622,50 @@ async function applySorts() {
 }
 
 // Render group dropdown
-function renderGroupDropdown() {
+function renderGroupDropdown(filterText) {
     if (!currentTable) return;
     var container = document.getElementById('group-options');
     var fields = META_FIELDS[currentTable] || {};
 
-    var html = '<div class="group-option' + (!currentGroupBy ? ' none-selected' : '') + '" onclick="setGroupBy(null)">';
-    html += '<span class="check-mark">&#10003;</span>';
-    html += '<span>None</span>';
-    html += '</div>';
+    if (filterText !== undefined) {
+        groupDropdownSearch = filterText;
+    }
 
-    for (var fid in fields) {
-        var field = fields[fid];
-        var isSelected = currentGroupBy === fid;
-        html += '<div class="group-option' + (isSelected ? ' selected' : '') + '" onclick="setGroupBy(\'' + esc(fid) + '\')">';
+    var filter = (groupDropdownSearch || '').toLowerCase().trim();
+
+    var html = '';
+
+    // Show "None" option only if it matches filter or no filter
+    if (!filter || 'none'.includes(filter)) {
+        html += '<div class="group-option' + (!currentGroupBy ? ' none-selected' : '') + '" onclick="setGroupBy(null)">';
         html += '<span class="check-mark">&#10003;</span>';
-        html += '<span>' + esc(field.fieldName || fid) + '</span>';
+        html += '<span>None</span>';
         html += '</div>';
     }
 
+    // Get sorted fields with selected at top
+    var usedFieldIds = currentGroupBy ? [currentGroupBy] : [];
+    var sortedFields = getSortedFieldsForDropdown(fields, usedFieldIds, filter);
+
+    for (var i = 0; i < sortedFields.length; i++) {
+        var sf = sortedFields[i];
+        var isSelected = currentGroupBy === sf.fieldId;
+        html += '<div class="group-option' + (isSelected ? ' selected' : '') + '" onclick="setGroupBy(\'' + esc(sf.fieldId) + '\')">';
+        html += '<span class="check-mark">&#10003;</span>';
+        html += '<span>' + esc(sf.fieldName) + '</span>';
+        html += '</div>';
+    }
+
+    if (!html) {
+        html = '<div class="group-option" style="color: #999; cursor: default;">No matching fields</div>';
+    }
+
     container.innerHTML = html;
+}
+
+// Filter group dropdown based on search input
+function filterGroupDropdown(filterText) {
+    renderGroupDropdown(filterText);
 }
 
 // Update group button state
@@ -5569,19 +5708,16 @@ function renderColorDropdown(filterText) {
         html += '</div>';
     }
 
-    for (var fid in fields) {
-        var field = fields[fid];
-        var fieldName = field.fieldName || fid;
+    // Get sorted fields with selected at top
+    var usedFieldIds = currentColorBy ? [currentColorBy] : [];
+    var sortedFields = getSortedFieldsForDropdown(fields, usedFieldIds, filter);
 
-        // Filter by field name
-        if (filter && !fieldName.toLowerCase().includes(filter)) {
-            continue;
-        }
-
-        var isSelected = currentColorBy === fid;
-        html += '<div class="color-option' + (isSelected ? ' selected' : '') + '" onclick="setColorBy(\'' + esc(fid) + '\')">';
+    for (var i = 0; i < sortedFields.length; i++) {
+        var sf = sortedFields[i];
+        var isSelected = currentColorBy === sf.fieldId;
+        html += '<div class="color-option' + (isSelected ? ' selected' : '') + '" onclick="setColorBy(\'' + esc(sf.fieldId) + '\')">';
         html += '<span class="check-mark">&#10003;</span>';
-        html += '<span>' + esc(fieldName) + '</span>';
+        html += '<span>' + esc(sf.fieldName) + '</span>';
         html += '</div>';
     }
 
