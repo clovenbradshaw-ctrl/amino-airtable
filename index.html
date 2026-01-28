@@ -3588,7 +3588,6 @@ async function renderTable() {
     }
 
     if (displayRecordIds.length === 0) {
-        tableEl.innerHTML = '';
         var emptyMsg = (currentFilters.length > 0 || currentSearchQuery)
             ? '<div class="empty-state"><h3>No matching records</h3><p>Try adjusting your filters or search</p></div>'
             : '<div class="empty-state"><h3>No records</h3><p>This table is empty</p></div>';
