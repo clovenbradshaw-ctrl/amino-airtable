@@ -1014,6 +1014,94 @@
         }
         .view-type-badge.schema { background: #7c3aed; color: #fff; }
         .view-type-badge.grid { background: #2d6cdf; color: #fff; }
+
+        /* Events View Styles */
+        .events-section-header {
+            padding: 12px 16px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #666;
+            border-bottom: 1px solid #2d2f36;
+        }
+        .sidebar div.table-item.events-item {
+            background: linear-gradient(90deg, #1a1c21 0%, #1d1f25 100%);
+            border-bottom: 1px solid #2d2f36;
+        }
+        .sidebar div.table-item.events-item .table-icon {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+        .sidebar div.table-item.events-item:hover {
+            background: linear-gradient(90deg, #2d2f36 0%, #1d1f25 100%);
+        }
+        .sidebar div.table-item.events-item.active {
+            background: linear-gradient(90deg, #7c3aed 0%, #6d28d9 100%);
+        }
+
+        /* Events Table */
+        .events-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .events-table th { background: #f5f5f5; border-bottom: 2px solid #ddd; padding: 10px 12px; text-align: left; font-weight: 500; color: #333; position: sticky; top: 0; z-index: 10; white-space: nowrap; }
+        .events-table td { border-bottom: 1px solid #eee; padding: 10px 12px; vertical-align: top; }
+        .events-table tr:hover td { background: #f8f9fa; }
+        .events-table .event-id { font-family: "SF Mono", Monaco, monospace; font-size: 12px; color: #666; }
+        .events-table .event-timestamp { font-size: 12px; color: #666; white-space: nowrap; }
+        .events-table .event-set { font-family: "SF Mono", Monaco, monospace; font-size: 11px; color: #2d6cdf; background: #e8f0fe; padding: 2px 6px; border-radius: 4px; display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+        .events-table .event-record-id { font-family: "SF Mono", Monaco, monospace; font-size: 11px; color: #059669; background: #d1fae5; padding: 2px 6px; border-radius: 4px; display: inline-block; }
+        .events-table .event-type-badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
+        .events-table .event-type-badge.data { background: #dbeafe; color: #1d4ed8; }
+        .events-table .event-type-badge.table { background: #fef3c7; color: #92400e; }
+        .events-table .event-type-badge.field { background: #ede9fe; color: #6d28d9; }
+        .events-table .event-type-badge.view { background: #fce7f3; color: #be185d; }
+        .events-table .event-type-badge.viewconfig { background: #f3e8ff; color: #7c3aed; }
+
+        /* Payload Preview */
+        .payload-preview-container { max-width: 400px; }
+        .payload-preview { font-family: "SF Mono", Monaco, monospace; font-size: 11px; color: #555; background: #f8f9fa; padding: 6px 10px; border-radius: 4px; max-height: 60px; overflow: hidden; cursor: pointer; position: relative; transition: all 0.2s; border: 1px solid #e5e7eb; }
+        .payload-preview:hover { background: #f0f4f8; border-color: #cbd5e1; }
+        .payload-preview.expanded { max-height: none; white-space: pre-wrap; word-break: break-all; }
+        .payload-expand-btn { position: absolute; bottom: 4px; right: 4px; font-size: 10px; color: #2d6cdf; background: #fff; padding: 2px 6px; border-radius: 3px; border: 1px solid #e5e7eb; cursor: pointer; }
+        .payload-preview.expanded .payload-expand-btn { position: static; display: block; margin-top: 8px; }
+
+        /* JSON Syntax Highlighting */
+        .json-key { color: #7c3aed; }
+        .json-string { color: #059669; }
+        .json-number { color: #2563eb; }
+        .json-boolean { color: #dc2626; }
+        .json-null { color: #6b7280; font-style: italic; }
+
+        /* Event Actions */
+        .event-actions { display: flex; gap: 6px; }
+        .event-action-btn { padding: 4px 8px; background: #fff; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; color: #666; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s; white-space: nowrap; }
+        .event-action-btn:hover { background: #f5f5f5; border-color: #2d6cdf; color: #2d6cdf; }
+        .event-action-btn.primary { background: #2d6cdf; border-color: #2d6cdf; color: #fff; }
+        .event-action-btn.primary:hover { background: #2560c9; }
+
+        /* Point in Time Modal */
+        .pit-modal { max-width: 900px; width: 95%; }
+        .pit-modal-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .pit-modal-header .pit-info { flex: 1; }
+        .pit-modal-header .pit-event-badge { font-size: 11px; background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 4px; font-family: "SF Mono", Monaco, monospace; }
+        .pit-modal-header .pit-timestamp { font-size: 12px; color: #666; }
+        .pit-record-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; margin: 16px 24px; overflow: hidden; }
+        .pit-record-header { background: #f8f9fa; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 12px; }
+        .pit-record-header .pit-table-name { font-weight: 600; color: #333; }
+        .pit-record-header .pit-record-id { font-family: "SF Mono", Monaco, monospace; font-size: 11px; color: #666; }
+        .pit-record-header .pit-go-to-table { margin-left: auto; }
+        .pit-record-fields { padding: 16px; }
+        .pit-field-row { display: flex; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+        .pit-field-row:last-child { border-bottom: none; }
+        .pit-field-name { width: 180px; flex-shrink: 0; font-weight: 500; color: #333; font-size: 13px; }
+        .pit-field-value { flex: 1; font-size: 13px; color: #555; word-break: break-word; }
+        .pit-empty-state { padding: 40px 20px; text-align: center; color: #666; }
+
+        /* Events View Controls */
+        .events-controls { padding: 12px 20px; background: #fff; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .events-filter-group { display: flex; align-items: center; gap: 8px; }
+        .events-filter-group label { font-size: 12px; color: #666; font-weight: 500; }
+        .events-filter-group select, .events-filter-group input { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
+        .events-filter-group input { width: 150px; }
+        .events-stats { margin-left: auto; font-size: 12px; color: #666; }
     </style>
 </head>
 <body>
@@ -1370,10 +1458,27 @@
         </div>
     </div>
 
+    <!-- Point in Time Modal -->
+    <div class="modal-overlay" id="pit-modal-overlay" onclick="closePitModal(event)">
+        <div class="modal pit-modal" onclick="event.stopPropagation()">
+            <div class="modal-header pit-modal-header">
+                <div class="pit-info">
+                    <h2 id="pit-modal-title">Record at Point in Time</h2>
+                    <span class="pit-timestamp" id="pit-modal-timestamp"></span>
+                </div>
+                <span class="pit-event-badge" id="pit-modal-event-badge"></span>
+                <button class="modal-close" onclick="closePitModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="pit-modal-body">
+                <!-- Record state will be rendered here -->
+            </div>
+        </div>
+    </div>
+
     <script>
 var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
 var DB_NAME = 'aminostream';
-var DB_VERSION = 5;
+var DB_VERSION = 6;
 var PAGE_SIZE = 100;
 
 var API_KEY = null;
@@ -1407,6 +1512,14 @@ var currentWorkspace = null; // Current active workspace filter
 
 // Pending view action (when user tries to modify default view)
 var pendingViewAction = null; // { action: 'filter'|'sort'|'fields'|'group', data: any }
+
+// ============ Events View State ============
+var eventsPage = 0;
+var eventsPageSize = 50;
+var eventsTypeFilter = ''; // 'data', 'table', 'field', 'view', 'viewConfig', or '' for all
+var eventsSetFilter = ''; // Filter by set (table id)
+var eventsSearchQuery = '';
+var expandedPayloads = new Set(); // Set of event IDs with expanded payloads
 
 // ============ View Auto-Save System ============
 var XANO_POST_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostreampost';
@@ -1487,6 +1600,14 @@ function openDB() {
             if (!db.objectStoreNames.contains('sync')) {
                 db.createObjectStore('sync', { keyPath: 'key' });
             }
+
+            // Raw events: keyed by event id, indexed by set and recordId
+            if (!db.objectStoreNames.contains('events')) {
+                var eventsStore = db.createObjectStore('events', { keyPath: 'id' });
+                eventsStore.createIndex('by_set', 'set');
+                eventsStore.createIndex('by_record', 'recordId');
+                eventsStore.createIndex('by_timestamp', 'created_at');
+            }
         };
     });
 }
@@ -1506,6 +1627,122 @@ function setSyncMeta(key, value) {
         tx.objectStore('sync').put({ key, value });
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
+    });
+}
+
+// ============ Events Store Functions ============
+
+function saveRawEvents(events) {
+    return new Promise((resolve, reject) => {
+        if (!events || events.length === 0) return resolve();
+        var tx = db.transaction('events', 'readwrite');
+        var store = tx.objectStore('events');
+        events.forEach(e => store.put(e));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function getAllRawEvents(limit, offset) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var store = tx.objectStore('events');
+        var results = [];
+        var skipped = 0;
+        var collected = 0;
+        var maxLimit = limit || 100;
+        var startOffset = offset || 0;
+
+        // Use a cursor to iterate in reverse order (newest first)
+        var req = store.openCursor(null, 'prev');
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor && collected < maxLimit) {
+                if (skipped < startOffset) {
+                    skipped++;
+                    cursor.continue();
+                } else {
+                    results.push(cursor.value);
+                    collected++;
+                    cursor.continue();
+                }
+            } else {
+                resolve(results);
+            }
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getRawEventsCount() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var req = tx.objectStore('events').count();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getRawEventsByRecordId(recordId, maxEventId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var index = tx.objectStore('events').index('by_record');
+        var req = index.getAll(recordId);
+        req.onsuccess = () => {
+            var results = req.result || [];
+            // Filter to events up to maxEventId and sort by id ascending
+            if (maxEventId) {
+                results = results.filter(e => e.id <= maxEventId);
+            }
+            results.sort((a, b) => (a.id || 0) - (b.id || 0));
+            resolve(results);
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getRawEventsBySet(setFilter) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var index = tx.objectStore('events').index('by_set');
+        var req = index.getAll(setFilter);
+        req.onsuccess = () => {
+            var results = req.result || [];
+            results.sort((a, b) => (b.id || 0) - (a.id || 0)); // Newest first
+            resolve(results);
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function searchRawEvents(query, limit) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var store = tx.objectStore('events');
+        var results = [];
+        var maxLimit = limit || 100;
+        var lowerQuery = query.toLowerCase();
+
+        var req = store.openCursor(null, 'prev');
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor && results.length < maxLimit) {
+                var event = cursor.value;
+                // Search in recordId, set, and payload
+                var matchesRecord = event.recordId && event.recordId.toLowerCase().includes(lowerQuery);
+                var matchesSet = event.set && event.set.toLowerCase().includes(lowerQuery);
+                var payloadStr = typeof event.payload === 'string' ? event.payload : JSON.stringify(event.payload);
+                var matchesPayload = payloadStr && payloadStr.toLowerCase().includes(lowerQuery);
+
+                if (matchesRecord || matchesSet || matchesPayload) {
+                    results.push(event);
+                }
+                cursor.continue();
+            } else {
+                resolve(results);
+            }
+        };
+        req.onerror = () => reject(req.error);
     });
 }
 
@@ -1678,13 +1915,14 @@ function saveBatch(tables, fields, views, dataRecords) {
 
 function clearAllData() {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory'], 'readwrite');
+        var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory', 'events'], 'readwrite');
         tx.objectStore('data').clear();
         tx.objectStore('tables').clear();
         tx.objectStore('fields').clear();
         tx.objectStore('views').clear();
         tx.objectStore('sync').clear();
         tx.objectStore('fieldHistory').clear();
+        tx.objectStore('events').clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
@@ -2649,6 +2887,9 @@ async function processEvents(events) {
     if (fieldHistoryEntries.length) {
         await saveFieldHistory(fieldHistoryEntries);
     }
+
+    // Save raw events for Events view
+    await saveRawEvents(events);
 }
 
 function applyPayloadFields(target, payload) {
@@ -2666,6 +2907,31 @@ function applyPayloadFields(target, payload) {
 async function renderSidebar() {
     var tableList = document.getElementById('table-list');
     tableList.innerHTML = '';
+
+    // Add Events Stream item at the top
+    var eventsWrapper = document.createElement('div');
+    eventsWrapper.className = 'table-wrapper';
+    eventsWrapper.setAttribute('data-table-id', '_events');
+
+    var eventsDiv = document.createElement('div');
+    eventsDiv.className = 'table-item events-item' + (currentTable === '_events' ? ' active' : '');
+    eventsDiv.innerHTML = '<span class="table-icon"></span>Events Stream' +
+                          '<span class="count" id="count-_events"></span>';
+    eventsDiv.onclick = () => showEventsView();
+    eventsWrapper.appendChild(eventsDiv);
+    tableList.appendChild(eventsWrapper);
+
+    // Update events count asynchronously
+    getRawEventsCount().then(count => {
+        var el = document.getElementById('count-_events');
+        if (el) el.textContent = count.toLocaleString();
+    });
+
+    // Add section header for tables
+    var tablesHeader = document.createElement('div');
+    tablesHeader.className = 'events-section-header';
+    tablesHeader.textContent = 'Tables';
+    tableList.appendChild(tablesHeader);
 
     var tables = await getAllTables();
 
@@ -3421,6 +3687,11 @@ async function showTable(tableId) {
     var tableName = table.tableName || tableId;
 
     document.getElementById('title').textContent = tableName;
+
+    // Restore view controls when switching from Events view
+    document.getElementById('view-controls-bar').style.display = '';
+    var toolbarViews = document.querySelector('.toolbar-views');
+    if (toolbarViews) toolbarViews.style.display = '';
 
     // Update sidebar - expand the selected table and highlight it
     document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
@@ -4242,10 +4513,355 @@ document.addEventListener('keydown', function(e) {
         if (overlay && overlay.classList.contains('open')) {
             closeHistoryModal();
         }
+        // Also close PIT modal
+        var pitOverlay = document.getElementById('pit-modal-overlay');
+        if (pitOverlay && pitOverlay.classList.contains('open')) {
+            closePitModal();
+        }
         // Also close view selector and fields dropdown
         closeAllDropdowns();
     }
 });
+
+// ============ Events View ============
+
+async function showEventsView() {
+    currentTable = '_events';
+    currentView = null;
+    eventsPage = 0;
+
+    // Update sidebar selection
+    document.querySelectorAll('.sidebar .table-item').forEach(el => el.classList.remove('active', 'expanded'));
+    document.querySelector('.sidebar .table-item.events-item')?.classList.add('active');
+
+    // Hide view controls and show events view
+    document.getElementById('view-controls-bar').style.display = 'none';
+    document.getElementById('title').textContent = 'Events Stream';
+
+    // Hide toolbar views section for events view
+    var toolbarViews = document.querySelector('.toolbar-views');
+    if (toolbarViews) toolbarViews.style.display = 'none';
+
+    await renderEventsView();
+}
+
+async function renderEventsView() {
+    var container = document.querySelector('.table-container');
+    container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading events...</h3></div>';
+
+    try {
+        var totalCount = await getRawEventsCount();
+        var events = [];
+
+        // Fetch events based on filters
+        if (eventsSearchQuery) {
+            events = await searchRawEvents(eventsSearchQuery, eventsPageSize);
+        } else if (eventsSetFilter) {
+            events = await getRawEventsBySet(eventsSetFilter);
+            events = events.slice(eventsPage * eventsPageSize, (eventsPage + 1) * eventsPageSize);
+        } else {
+            events = await getAllRawEvents(eventsPageSize, eventsPage * eventsPageSize);
+        }
+
+        // Apply type filter
+        if (eventsTypeFilter) {
+            events = events.filter(e => {
+                var payload = parsePayload(e.payload);
+                var type = payload?._set || 'data';
+                return type === eventsTypeFilter;
+            });
+        }
+
+        var html = '';
+
+        // Events controls bar
+        html += '<div class="events-controls">';
+        html += '<div class="events-filter-group">';
+        html += '<label>Type:</label>';
+        html += '<select onchange="setEventsTypeFilter(this.value)">';
+        html += '<option value=""' + (!eventsTypeFilter ? ' selected' : '') + '>All Types</option>';
+        html += '<option value="data"' + (eventsTypeFilter === 'data' ? ' selected' : '') + '>Data Records</option>';
+        html += '<option value="table"' + (eventsTypeFilter === 'table' ? ' selected' : '') + '>Tables</option>';
+        html += '<option value="field"' + (eventsTypeFilter === 'field' ? ' selected' : '') + '>Fields</option>';
+        html += '<option value="view"' + (eventsTypeFilter === 'view' ? ' selected' : '') + '>Views</option>';
+        html += '<option value="viewConfig"' + (eventsTypeFilter === 'viewConfig' ? ' selected' : '') + '>View Config</option>';
+        html += '</select>';
+        html += '</div>';
+
+        html += '<div class="events-filter-group">';
+        html += '<label>Table:</label>';
+        html += '<select onchange="setEventsSetFilter(this.value)">';
+        html += '<option value="">All Tables</option>';
+        for (var tid in META_TABLES) {
+            var tableName = META_TABLES[tid].tableName || tid;
+            var setVal = 'airtable:' + tid;
+            html += '<option value="' + esc(setVal) + '"' + (eventsSetFilter === setVal ? ' selected' : '') + '>' + esc(tableName) + '</option>';
+        }
+        html += '</select>';
+        html += '</div>';
+
+        html += '<div class="events-filter-group">';
+        html += '<label>Search:</label>';
+        html += '<input type="text" placeholder="Search events..." value="' + esc(eventsSearchQuery) + '" onkeydown="if(event.key===\'Enter\')setEventsSearch(this.value)">';
+        html += '</div>';
+
+        html += '<div class="events-stats">' + totalCount.toLocaleString() + ' total events</div>';
+        html += '</div>';
+
+        // Events table
+        html += '<table class="events-table">';
+        html += '<thead><tr>';
+        html += '<th style="width: 80px;">ID</th>';
+        html += '<th style="width: 140px;">Timestamp</th>';
+        html += '<th style="width: 60px;">Type</th>';
+        html += '<th style="width: 140px;">Set</th>';
+        html += '<th style="width: 130px;">Record ID</th>';
+        html += '<th>Payload</th>';
+        html += '<th style="width: 120px;">Actions</th>';
+        html += '</tr></thead>';
+        html += '<tbody>';
+
+        if (events.length === 0) {
+            html += '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">No events found</td></tr>';
+        } else {
+            for (var event of events) {
+                html += renderEventRow(event);
+            }
+        }
+
+        html += '</tbody></table>';
+
+        // Pagination
+        var totalPages = Math.ceil(totalCount / eventsPageSize);
+        html += '<div class="pagination">';
+        html += '<button onclick="prevEventsPage()" ' + (eventsPage === 0 ? 'disabled' : '') + '>Previous</button>';
+        html += '<span class="page-info">Page ' + (eventsPage + 1) + ' of ' + Math.max(1, totalPages) + '</span>';
+        html += '<button onclick="nextEventsPage()" ' + (eventsPage >= totalPages - 1 ? 'disabled' : '') + '>Next</button>';
+        html += '</div>';
+
+        container.innerHTML = html;
+
+    } catch (err) {
+        console.error('Error loading events:', err);
+        container.innerHTML = '<div class="empty-state"><h3>Error loading events</h3><p>' + esc(err.message) + '</p></div>';
+    }
+}
+
+function renderEventRow(event) {
+    var payload = parsePayload(event.payload);
+    var eventType = payload?._set || 'data';
+    var timestamp = event.created_at ? formatTimestamp(new Date(event.created_at).getTime()) : 'Unknown';
+    var isExpanded = expandedPayloads.has(event.id);
+
+    var html = '<tr data-event-id="' + event.id + '">';
+    html += '<td><span class="event-id">' + event.id + '</span></td>';
+    html += '<td><span class="event-timestamp">' + esc(timestamp) + '</span></td>';
+    html += '<td><span class="event-type-badge ' + eventType + '">' + esc(eventType) + '</span></td>';
+    html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(event.set || '') + '</span></td>';
+    html += '<td><span class="event-record-id">' + esc(event.recordId || '') + '</span></td>';
+
+    // Payload preview
+    html += '<td class="payload-preview-container">';
+    html += '<div class="payload-preview' + (isExpanded ? ' expanded' : '') + '" onclick="togglePayloadExpand(' + event.id + ')">';
+    html += formatPayloadPreview(payload, isExpanded);
+    if (!isExpanded) {
+        html += '<span class="payload-expand-btn">Expand</span>';
+    } else {
+        html += '<span class="payload-expand-btn">Collapse</span>';
+    }
+    html += '</div>';
+    html += '</td>';
+
+    // Actions
+    html += '<td class="event-actions">';
+    if (event.recordId && event.recordId.startsWith('rec')) {
+        html += '<button class="event-action-btn primary" onclick="viewRecordAtPointInTime(' + event.id + ', \'' + esc(event.recordId) + '\', \'' + esc(event.set || '') + '\')" title="View record state at this point in time">';
+        html += '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/></svg>';
+        html += 'View State';
+        html += '</button>';
+    }
+    html += '</td>';
+
+    html += '</tr>';
+    return html;
+}
+
+function formatPayloadPreview(payload, expanded) {
+    if (!payload) return '<span class="json-null">null</span>';
+
+    try {
+        var str = typeof payload === 'string' ? payload : JSON.stringify(payload, null, expanded ? 2 : 0);
+
+        // Apply syntax highlighting
+        str = esc(str)
+            .replace(/"([^"]+)":/g, '<span class="json-key">"$1"</span>:')
+            .replace(/: "([^"]*)"([,\n\}])/g, ': <span class="json-string">"$1"</span>$2')
+            .replace(/: (-?\d+\.?\d*)([,\n\}])/g, ': <span class="json-number">$1</span>$2')
+            .replace(/: (true|false)([,\n\}])/g, ': <span class="json-boolean">$1</span>$2')
+            .replace(/: (null)([,\n\}])/g, ': <span class="json-null">$1</span>$2');
+
+        return str;
+    } catch (e) {
+        return esc(String(payload));
+    }
+}
+
+function togglePayloadExpand(eventId) {
+    if (expandedPayloads.has(eventId)) {
+        expandedPayloads.delete(eventId);
+    } else {
+        expandedPayloads.add(eventId);
+    }
+    renderEventsView();
+}
+
+function setEventsTypeFilter(type) {
+    eventsTypeFilter = type;
+    eventsPage = 0;
+    renderEventsView();
+}
+
+function setEventsSetFilter(set) {
+    eventsSetFilter = set;
+    eventsPage = 0;
+    renderEventsView();
+}
+
+function setEventsSearch(query) {
+    eventsSearchQuery = query;
+    eventsPage = 0;
+    renderEventsView();
+}
+
+function prevEventsPage() {
+    if (eventsPage > 0) {
+        eventsPage--;
+        renderEventsView();
+    }
+}
+
+function nextEventsPage() {
+    eventsPage++;
+    renderEventsView();
+}
+
+// ============ Point in Time View ============
+
+async function viewRecordAtPointInTime(eventId, recordId, set) {
+    var overlay = document.getElementById('pit-modal-overlay');
+    var body = document.getElementById('pit-modal-body');
+
+    // Show loading state
+    body.innerHTML = '<div class="pit-empty-state"><div class="loading-spinner"></div><h3>Replaying events...</h3><p>Building record state at event #' + eventId + '</p></div>';
+    overlay.classList.add('open');
+
+    try {
+        // Get all events for this record up to the specified event ID
+        var events = await getRawEventsByRecordId(recordId, eventId);
+
+        if (events.length === 0) {
+            body.innerHTML = '<div class="pit-empty-state"><h3>No events found</h3><p>Could not find any events for this record.</p></div>';
+            return;
+        }
+
+        // Determine the table ID from the set
+        var tableId = set ? set.replace('airtable:', '') : null;
+
+        // Replay events to build the record state
+        var recordState = {};
+        var lastTimestamp = null;
+
+        for (var e of events) {
+            var payload = parsePayload(e.payload);
+            if (!payload || !payload.fields) continue;
+
+            var fields = payload.fields;
+
+            // Apply INS (insert)
+            if (fields.INS) {
+                Object.assign(recordState, fields.INS);
+            }
+
+            // Apply ALT (alter)
+            if (fields.ALT) {
+                Object.assign(recordState, fields.ALT);
+            }
+
+            // Apply NUL (nullify)
+            if (fields.NUL && Array.isArray(fields.NUL)) {
+                fields.NUL.forEach(k => delete recordState[k]);
+            }
+
+            if (e.created_at) {
+                lastTimestamp = e.created_at;
+            }
+        }
+
+        // Update modal header
+        var tableName = META_TABLES[tableId]?.tableName || tableId || 'Unknown Table';
+        document.getElementById('pit-modal-title').textContent = tableName;
+        document.getElementById('pit-modal-event-badge').textContent = 'Event #' + eventId;
+        document.getElementById('pit-modal-timestamp').textContent = lastTimestamp ? formatTimestamp(new Date(lastTimestamp).getTime()) : '';
+
+        // Render the record state
+        var html = '<div class="pit-record-card">';
+        html += '<div class="pit-record-header">';
+        html += '<span class="pit-table-name">' + esc(tableName) + '</span>';
+        html += '<span class="pit-record-id">' + esc(recordId) + '</span>';
+        if (tableId && META_TABLES[tableId]) {
+            html += '<button class="event-action-btn pit-go-to-table" onclick="goToRecordInTable(\'' + esc(tableId) + '\', \'' + esc(recordId) + '\')">';
+            html += '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6 3L11 8L6 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+            html += 'View Current Record';
+            html += '</button>';
+        }
+        html += '</div>';
+
+        html += '<div class="pit-record-fields">';
+
+        var fieldIds = Object.keys(recordState);
+        if (fieldIds.length === 0) {
+            html += '<div class="pit-empty-state">No fields recorded at this point in time</div>';
+        } else {
+            // Sort fields by name
+            var fieldsInfo = META_FIELDS[tableId] || {};
+            fieldIds.sort((a, b) => {
+                var nameA = (fieldsInfo[a]?.fieldName || a).toLowerCase();
+                var nameB = (fieldsInfo[b]?.fieldName || b).toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+
+            for (var fieldId of fieldIds) {
+                var fieldName = fieldsInfo[fieldId]?.fieldName || fieldId;
+                var value = recordState[fieldId];
+
+                html += '<div class="pit-field-row">';
+                html += '<div class="pit-field-name">' + esc(fieldName) + '</div>';
+                html += '<div class="pit-field-value">' + formatHistoryValue(value) + '</div>';
+                html += '</div>';
+            }
+        }
+
+        html += '</div>'; // .pit-record-fields
+        html += '</div>'; // .pit-record-card
+
+        body.innerHTML = html;
+
+    } catch (err) {
+        console.error('Error viewing record at point in time:', err);
+        body.innerHTML = '<div class="pit-empty-state"><h3>Error</h3><p>' + esc(err.message) + '</p></div>';
+    }
+}
+
+function closePitModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('pit-modal-overlay').classList.remove('open');
+}
+
+function goToRecordInTable(tableId, recordId) {
+    closePitModal();
+    showTable(tableId);
+    // Note: Could add scrolling to the specific record here
+}
 
 // ============ View Selector & Fields Dropdown UI ============
 
