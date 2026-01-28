@@ -220,6 +220,12 @@
         .group-option .check-mark, .color-option .check-mark { color: #2d6cdf; font-size: 14px; width: 16px; visibility: hidden; }
         .group-option.selected .check-mark, .color-option.selected .check-mark, .group-option.none-selected .check-mark, .color-option.none-selected .check-mark { visibility: visible; }
 
+        /* Dropdown Search */
+        .dropdown-search-wrapper { padding: 8px 12px; border-bottom: 1px solid #eee; }
+        .dropdown-search-input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; box-sizing: border-box; }
+        .dropdown-search-input:focus { outline: none; border-color: #2d6cdf; box-shadow: 0 0 0 2px rgba(45,108,223,0.1); }
+        .dropdown-search-input::placeholder { color: #aaa; }
+
         /* Grouped Table View */
         .group-header-row td {
             background: #f8f9fa;
@@ -1301,6 +1307,9 @@
                         <div class="dropdown-section">
                             <div class="dropdown-header">
                                 <span>Color records by</span>
+                            </div>
+                            <div class="dropdown-search-wrapper">
+                                <input type="text" class="dropdown-search-input" id="color-search-input" placeholder="Find a field" oninput="filterColorDropdown(this.value)">
                             </div>
                             <div class="color-options" id="color-options">
                                 <div class="color-option none-selected" onclick="setColorBy(null)">
@@ -5291,6 +5300,10 @@ function toggleColorDropdown() {
     closeViewControlDropdowns();
     if (!wasOpen) {
         dropdown.classList.add('open');
+        var searchInput = document.getElementById('color-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+        }
         renderColorDropdown();
     }
 }
@@ -5540,26 +5553,48 @@ async function setGroupBy(fieldId) {
 }
 
 // Render color dropdown
-function renderColorDropdown() {
+function renderColorDropdown(filterText) {
     if (!currentTable) return;
     var container = document.getElementById('color-options');
     var fields = META_FIELDS[currentTable] || {};
+    var filter = (filterText || '').toLowerCase().trim();
 
-    var html = '<div class="color-option' + (!currentColorBy ? ' none-selected' : '') + '" onclick="setColorBy(null)">';
-    html += '<span class="check-mark">&#10003;</span>';
-    html += '<span>None</span>';
-    html += '</div>';
+    var html = '';
 
-    for (var fid in fields) {
-        var field = fields[fid];
-        var isSelected = currentColorBy === fid;
-        html += '<div class="color-option' + (isSelected ? ' selected' : '') + '" onclick="setColorBy(\'' + esc(fid) + '\')">';
+    // Show "None" option only if it matches filter or no filter
+    if (!filter || 'none'.includes(filter)) {
+        html += '<div class="color-option' + (!currentColorBy ? ' none-selected' : '') + '" onclick="setColorBy(null)">';
         html += '<span class="check-mark">&#10003;</span>';
-        html += '<span>' + esc(field.fieldName || fid) + '</span>';
+        html += '<span>None</span>';
         html += '</div>';
     }
 
+    for (var fid in fields) {
+        var field = fields[fid];
+        var fieldName = field.fieldName || fid;
+
+        // Filter by field name
+        if (filter && !fieldName.toLowerCase().includes(filter)) {
+            continue;
+        }
+
+        var isSelected = currentColorBy === fid;
+        html += '<div class="color-option' + (isSelected ? ' selected' : '') + '" onclick="setColorBy(\'' + esc(fid) + '\')">';
+        html += '<span class="check-mark">&#10003;</span>';
+        html += '<span>' + esc(fieldName) + '</span>';
+        html += '</div>';
+    }
+
+    if (!html) {
+        html = '<div class="color-option" style="color: #999; cursor: default;">No matching fields</div>';
+    }
+
     container.innerHTML = html;
+}
+
+// Filter color dropdown based on search input
+function filterColorDropdown(filterText) {
+    renderColorDropdown(filterText);
 }
 
 // Set color by field
