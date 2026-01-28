@@ -301,6 +301,67 @@
         .history-value-content { word-break: break-word; color: #333; }
         .history-arrow { color: #999; font-size: 16px; flex-shrink: 0; align-self: center; }
 
+        /* Modal Wide Variant */
+        .modal.modal-wide { max-width: 900px; }
+
+        /* History View Toggle */
+        .history-view-toggle { display: flex; gap: 4px; background: #e8e8e8; padding: 3px; border-radius: 6px; }
+        .history-view-btn { padding: 6px 14px; border: none; background: transparent; border-radius: 4px; cursor: pointer; font-size: 13px; color: #666; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
+        .history-view-btn:hover { color: #333; }
+        .history-view-btn.active { background: #fff; color: #333; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .history-view-btn .view-icon { font-size: 12px; }
+        .history-toolbar-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+
+        /* Profile View */
+        .profile-view { padding: 0; }
+        .profile-field { border-bottom: 1px solid #f0f0f0; }
+        .profile-field:last-child { border-bottom: none; }
+        .profile-field-header { padding: 14px 24px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: background 0.15s; }
+        .profile-field-header:hover { background: #fafafa; }
+        .profile-field-name { font-weight: 600; color: #333; font-size: 13px; min-width: 160px; }
+        .profile-field-value { flex: 1; font-size: 13px; color: #333; }
+        .profile-field-value.empty { color: #999; font-style: italic; }
+        .profile-field-history-count { font-size: 11px; color: #999; background: #f0f0f0; padding: 2px 8px; border-radius: 10px; }
+        .profile-field-expand { font-size: 10px; color: #999; transition: transform 0.2s; }
+        .profile-field.expanded .profile-field-expand { transform: rotate(90deg); }
+        .profile-field-history { display: none; background: #f8f9fa; border-top: 1px solid #e8e8e8; padding: 0; }
+        .profile-field.expanded .profile-field-history { display: block; }
+        .profile-field-history-item { padding: 12px 24px 12px 48px; display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #eee; font-size: 12px; }
+        .profile-field-history-item:last-child { border-bottom: none; }
+        .profile-field-history-op { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; }
+        .profile-field-history-op.INS { background: #d1fae5; color: #059669; }
+        .profile-field-history-op.ALT { background: #dbeafe; color: #1d4ed8; }
+        .profile-field-history-op.NUL { background: #fee2e2; color: #dc2626; }
+        .profile-field-history-time { color: #999; min-width: 100px; }
+        .profile-field-history-values { flex: 1; display: flex; align-items: center; gap: 8px; }
+        .profile-field-history-old { color: #999; text-decoration: line-through; }
+        .profile-field-history-new { color: #333; }
+        .profile-field-history-arrow { color: #ccc; }
+
+        /* Record Timeline View */
+        .record-timeline { padding: 16px 0; }
+        .record-event { border-bottom: 1px solid #f0f0f0; }
+        .record-event:last-child { border-bottom: none; }
+        .record-event-header { padding: 14px 24px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: background 0.15s; }
+        .record-event-header:hover { background: #fafafa; }
+        .record-event-op { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 4px; text-transform: uppercase; }
+        .record-event-op.INS { background: #d1fae5; color: #059669; }
+        .record-event-op.ALT { background: #dbeafe; color: #1d4ed8; }
+        .record-event-timestamp { font-size: 13px; color: #333; flex: 1; }
+        .record-event-field-count { font-size: 12px; color: #666; }
+        .record-event-expand { font-size: 10px; color: #999; transition: transform 0.2s; }
+        .record-event.expanded .record-event-expand { transform: rotate(90deg); }
+        .record-event-fields { display: none; background: #f8f9fa; border-top: 1px solid #e8e8e8; }
+        .record-event.expanded .record-event-fields { display: block; }
+        .record-event-field { padding: 10px 24px 10px 48px; display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+        .record-event-field:last-child { border-bottom: none; }
+        .record-event-field-name { font-weight: 500; color: #333; min-width: 140px; }
+        .record-event-field-op { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; }
+        .record-event-field-op.INS { background: #d1fae5; color: #059669; }
+        .record-event-field-op.ALT { background: #dbeafe; color: #1d4ed8; }
+        .record-event-field-op.NUL { background: #fee2e2; color: #dc2626; }
+        .record-event-field-values { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
         /* History Button in Table */
         .history-btn { padding: 4px 8px; background: transparent; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; color: #666; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s; }
         .history-btn:hover { background: #f5f5f5; border-color: #2d6cdf; color: #2d6cdf; }
@@ -1309,17 +1370,27 @@
 
     <!-- Field History Modal -->
     <div class="modal-overlay" id="history-modal-overlay" onclick="closeHistoryModal(event)">
-        <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal modal-wide" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h2 id="history-modal-title">Field History</h2>
+                <h2 id="history-modal-title">Record Profile</h2>
                 <button class="modal-close" onclick="closeHistoryModal()">&times;</button>
             </div>
             <div class="modal-toolbar">
-                <label>Filter by field:</label>
-                <select id="history-field-filter" onchange="filterHistoryByField()">
-                    <option value="">All Fields</option>
-                </select>
-                <span class="history-count" id="history-count"></span>
+                <div class="history-view-toggle">
+                    <button class="history-view-btn active" id="profile-view-btn" onclick="switchHistoryView('profile')">
+                        <span class="view-icon">&#9638;</span> Profile
+                    </button>
+                    <button class="history-view-btn" id="timeline-view-btn" onclick="switchHistoryView('timeline')">
+                        <span class="view-icon">&#8986;</span> Timeline
+                    </button>
+                </div>
+                <div class="history-toolbar-right">
+                    <label>Filter by field:</label>
+                    <select id="history-field-filter" onchange="filterHistoryByField()">
+                        <option value="">All Fields</option>
+                    </select>
+                    <span class="history-count" id="history-count"></span>
+                </div>
             </div>
             <div class="modal-body" id="history-modal-body">
                 <!-- History items will be rendered here -->
@@ -1373,7 +1444,7 @@
     <script>
 var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
 var DB_NAME = 'aminostream';
-var DB_VERSION = 5;
+var DB_VERSION = 6;
 var PAGE_SIZE = 100;
 
 var API_KEY = null;
@@ -1470,6 +1541,14 @@ function openDB() {
                 historyStore.createIndex('by_record', ['tableId', 'recordId']);
                 historyStore.createIndex('by_field', ['tableId', 'recordId', 'fieldId']);
                 historyStore.createIndex('by_event', 'eventId');
+            }
+
+            // Record history: tracks record-level ALT operations with nested field changes
+            // Structure: { tableId, recordId, eventId, timestamp, operationType: 'ALT'|'INS'|'NUL', fieldOps: [...] }
+            if (!db.objectStoreNames.contains('recordHistory')) {
+                var recordHistoryStore = db.createObjectStore('recordHistory', { keyPath: 'id', autoIncrement: true });
+                recordHistoryStore.createIndex('by_record', ['tableId', 'recordId']);
+                recordHistoryStore.createIndex('by_event', 'eventId');
             }
 
             // View folders: keyed by folderId
@@ -1716,13 +1795,57 @@ function getFieldHistoryForRecord(tableId, recordId) {
     });
 }
 
+function saveRecordHistory(historyEntries) {
+    return new Promise((resolve, reject) => {
+        if (!historyEntries.length) return resolve();
+        var tx = db.transaction('recordHistory', 'readwrite');
+        var store = tx.objectStore('recordHistory');
+        historyEntries.forEach(entry => store.add(entry));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function getRecordHistoryForRecord(tableId, recordId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('recordHistory', 'readonly');
+        var index = tx.objectStore('recordHistory').index('by_record');
+        var req = index.getAll([tableId, recordId]);
+        req.onsuccess = () => {
+            // Sort by eventId descending (most recent first)
+            var results = req.result || [];
+            results.sort((a, b) => (b.eventId || 0) - (a.eventId || 0));
+            resolve(results);
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getFieldHistoryByField(tableId, recordId, fieldId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('fieldHistory', 'readonly');
+        var index = tx.objectStore('fieldHistory').index('by_field');
+        var req = index.getAll([tableId, recordId, fieldId]);
+        req.onsuccess = () => {
+            var results = req.result || [];
+            results.sort((a, b) => (b.eventId || 0) - (a.eventId || 0));
+            resolve(results);
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
 // Fetch and process any new history events for a specific record from API
 async function fetchAndProcessHistoryForRecord(tableId, recordId) {
     if (!API_KEY) return;
 
     // Get the highest eventId we have for this record to fetch only newer events
     var existingHistory = await getFieldHistoryForRecord(tableId, recordId);
-    var maxEventId = existingHistory.reduce((max, h) => Math.max(max, h.eventId || 0), 0);
+    var existingRecordHistory = await getRecordHistoryForRecord(tableId, recordId);
+    var maxEventId = Math.max(
+        existingHistory.reduce((max, h) => Math.max(max, h.eventId || 0), 0),
+        existingRecordHistory.reduce((max, h) => Math.max(max, h.eventId || 0), 0)
+    );
 
     // Build API URL with recordId filter and id > maxEventId
     var url = API + '?page=1&per_page=500';
@@ -1747,8 +1870,10 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
         // Get existing record state to calculate oldValue correctly
         var existingRecord = await getRecord(tableId, recordId);
         var state = existingRecord ? { ...existingRecord.fields } : {};
+        var recordExists = !!existingRecord;
 
         var fieldHistoryEntries = [];
+        var recordHistoryEntries = [];
 
         for (var e of events) {
             if (!e || !e.recordId || e.recordId !== recordId) continue;
@@ -1761,6 +1886,11 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
 
             var eventId = e.id;
             var timestamp = e.created_at ? new Date(e.created_at).getTime() : Date.now();
+
+            // Determine if this is a new record creation or an update
+            var isNewRecord = !recordExists && Object.keys(state).length === 0;
+            var recordOpType = isNewRecord ? 'INS' : 'ALT';
+            var fieldOps = [];
 
             // Process INS (insert/create)
             if (pfields.INS) {
@@ -1775,6 +1905,12 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
                         oldValue: null,
                         newValue: pfields.INS[fieldId]
                     });
+                    fieldOps.push({
+                        opType: 'INS',
+                        fieldId: fieldId,
+                        oldValue: null,
+                        newValue: pfields.INS[fieldId]
+                    });
                 }
                 Object.assign(state, pfields.INS);
             }
@@ -1782,6 +1918,7 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
             // Process ALT (alter/update)
             if (pfields.ALT) {
                 for (var fieldId in pfields.ALT) {
+                    var oldVal = state[fieldId] !== undefined ? state[fieldId] : null;
                     fieldHistoryEntries.push({
                         tableId: tableId,
                         recordId: recordId,
@@ -1789,7 +1926,13 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
                         eventId: eventId,
                         timestamp: timestamp,
                         changeType: 'updated',
-                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        oldValue: oldVal,
+                        newValue: pfields.ALT[fieldId]
+                    });
+                    fieldOps.push({
+                        opType: 'ALT',
+                        fieldId: fieldId,
+                        oldValue: oldVal,
                         newValue: pfields.ALT[fieldId]
                     });
                 }
@@ -1799,6 +1942,7 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
             // Process NUL (nullify/delete)
             if (pfields.NUL && Array.isArray(pfields.NUL)) {
                 pfields.NUL.forEach(fieldId => {
+                    var oldVal = state[fieldId] !== undefined ? state[fieldId] : null;
                     fieldHistoryEntries.push({
                         tableId: tableId,
                         recordId: recordId,
@@ -1806,17 +1950,41 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
                         eventId: eventId,
                         timestamp: timestamp,
                         changeType: 'deleted',
-                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        oldValue: oldVal,
+                        newValue: null
+                    });
+                    fieldOps.push({
+                        opType: 'NUL',
+                        fieldId: fieldId,
+                        oldValue: oldVal,
                         newValue: null
                     });
                     delete state[fieldId];
                 });
             }
+
+            // Create record-level history entry
+            if (fieldOps.length > 0) {
+                recordHistoryEntries.push({
+                    tableId: tableId,
+                    recordId: recordId,
+                    eventId: eventId,
+                    timestamp: timestamp,
+                    operationType: recordOpType,
+                    fieldOps: fieldOps
+                });
+            }
+
+            // Mark record as existing after first event
+            recordExists = true;
         }
 
         // Save new history entries
         if (fieldHistoryEntries.length > 0) {
             await saveFieldHistory(fieldHistoryEntries);
+        }
+        if (recordHistoryEntries.length > 0) {
+            await saveRecordHistory(recordHistoryEntries);
         }
     } catch (err) {
         console.error('Error fetching history for record:', err);
@@ -2454,7 +2622,9 @@ async function processEvents(events) {
     var views = [];
     var dataRecords = [];
     var fieldHistoryEntries = [];
+    var recordHistoryEntries = [];
     var tableDataMap = {}; // tableId -> { recordId -> fields }
+    var recordFirstSeen = {}; // tableId -> { recordId -> true } - tracks if record was pre-existing
 
     // Pre-load existing record states from IndexedDB for accurate history oldValue tracking
     // First pass: collect all unique [tableId, recordId] pairs for data records
@@ -2478,9 +2648,12 @@ async function processEvents(events) {
         if (recordIds.length > 0) {
             var existingRecords = await getRecordsByIds(tableId, recordIds);
             if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
+            if (!recordFirstSeen[tableId]) recordFirstSeen[tableId] = {};
             for (var rec of existingRecords) {
                 // Pre-populate with existing field values
                 tableDataMap[tableId][rec.recordId] = { ...rec.fields };
+                // Mark as pre-existing record
+                recordFirstSeen[tableId][rec.recordId] = true;
             }
         }
     }
@@ -2564,6 +2737,10 @@ async function processEvents(events) {
             if (!pfields || typeof pfields !== 'object') continue;
 
             if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
+            if (!recordFirstSeen[tableId]) recordFirstSeen[tableId] = {};
+
+            var isNewRecord = !tableDataMap[tableId][recordId] && !recordFirstSeen[tableId][recordId];
+
             if (!tableDataMap[tableId][recordId]) {
                 // Initialize new record (existing records pre-loaded above)
                 tableDataMap[tableId][recordId] = {};
@@ -2571,16 +2748,31 @@ async function processEvents(events) {
 
             var state = tableDataMap[tableId][recordId];
 
+            // Collect field operations for this event
+            var fieldOps = [];
+
+            // Determine record-level operation type
+            // - If new record with INS fields: record is being created
+            // - If existing record: this is an ALT (update) on the record
+            var recordOpType = isNewRecord ? 'INS' : 'ALT';
+
             // Capture field history for INS (insert/create)
             if (pfields.INS) {
                 for (var fieldId in pfields.INS) {
-                    fieldHistoryEntries.push({
+                    var fieldEntry = {
                         tableId: tableId,
                         recordId: recordId,
                         fieldId: fieldId,
                         eventId: eventId,
                         timestamp: timestamp,
                         changeType: 'created',
+                        oldValue: null,
+                        newValue: pfields.INS[fieldId]
+                    };
+                    fieldHistoryEntries.push(fieldEntry);
+                    fieldOps.push({
+                        opType: 'INS',
+                        fieldId: fieldId,
                         oldValue: null,
                         newValue: pfields.INS[fieldId]
                     });
@@ -2591,14 +2783,22 @@ async function processEvents(events) {
             // Capture field history for ALT (alter/update)
             if (pfields.ALT) {
                 for (var fieldId in pfields.ALT) {
-                    fieldHistoryEntries.push({
+                    var oldVal = state[fieldId] !== undefined ? state[fieldId] : null;
+                    var fieldEntry = {
                         tableId: tableId,
                         recordId: recordId,
                         fieldId: fieldId,
                         eventId: eventId,
                         timestamp: timestamp,
                         changeType: 'updated',
-                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        oldValue: oldVal,
+                        newValue: pfields.ALT[fieldId]
+                    };
+                    fieldHistoryEntries.push(fieldEntry);
+                    fieldOps.push({
+                        opType: 'ALT',
+                        fieldId: fieldId,
+                        oldValue: oldVal,
                         newValue: pfields.ALT[fieldId]
                     });
                 }
@@ -2608,19 +2808,42 @@ async function processEvents(events) {
             // Capture field history for NUL (nullify/delete)
             if (pfields.NUL && Array.isArray(pfields.NUL)) {
                 pfields.NUL.forEach(fieldId => {
-                    fieldHistoryEntries.push({
+                    var oldVal = state[fieldId] !== undefined ? state[fieldId] : null;
+                    var fieldEntry = {
                         tableId: tableId,
                         recordId: recordId,
                         fieldId: fieldId,
                         eventId: eventId,
                         timestamp: timestamp,
                         changeType: 'deleted',
-                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        oldValue: oldVal,
+                        newValue: null
+                    };
+                    fieldHistoryEntries.push(fieldEntry);
+                    fieldOps.push({
+                        opType: 'NUL',
+                        fieldId: fieldId,
+                        oldValue: oldVal,
                         newValue: null
                     });
                     delete state[fieldId];
                 });
             }
+
+            // Create record-level history entry with nested field operations
+            if (fieldOps.length > 0) {
+                recordHistoryEntries.push({
+                    tableId: tableId,
+                    recordId: recordId,
+                    eventId: eventId,
+                    timestamp: timestamp,
+                    operationType: recordOpType,
+                    fieldOps: fieldOps
+                });
+            }
+
+            // Mark this record as seen for subsequent events in this batch
+            recordFirstSeen[tableId][recordId] = true;
         }
 
         if (e.id && e.id > lastEventId) {
@@ -2647,6 +2870,11 @@ async function processEvents(events) {
     // Save field history
     if (fieldHistoryEntries.length) {
         await saveFieldHistory(fieldHistoryEntries);
+    }
+
+    // Save record history
+    if (recordHistoryEntries.length) {
+        await saveRecordHistory(recordHistoryEntries);
     }
 }
 
@@ -4058,21 +4286,29 @@ async function init() {
 // ============ Field History Modal ============
 
 var currentHistoryData = [];
+var currentRecordHistoryData = [];
 var currentHistoryRecordId = null;
 var currentHistoryTableId = null;
+var currentRecordData = null;
+var currentHistoryView = 'profile'; // 'profile' or 'timeline'
 
 async function openHistoryModal(tableId, recordId) {
     currentHistoryTableId = tableId;
     currentHistoryRecordId = recordId;
+    currentHistoryView = 'profile';
 
     // Set modal title
     var tableName = META_TABLES[tableId]?.tableName || tableId;
-    document.getElementById('history-modal-title').textContent = 'Field History - ' + tableName;
+    document.getElementById('history-modal-title').textContent = 'Record Profile - ' + tableName;
+
+    // Reset view toggle buttons
+    document.getElementById('profile-view-btn').classList.add('active');
+    document.getElementById('timeline-view-btn').classList.remove('active');
 
     // Show modal with loading state
     var overlay = document.getElementById('history-modal-overlay');
     var body = document.getElementById('history-modal-body');
-    body.innerHTML = '<div class="modal-empty"><div class="loading-spinner"></div><h3>Loading history...</h3></div>';
+    body.innerHTML = '<div class="modal-empty"><div class="loading-spinner"></div><h3>Loading record...</h3></div>';
     overlay.classList.add('open');
 
     // Fetch history data
@@ -4080,8 +4316,13 @@ async function openHistoryModal(tableId, recordId) {
         // First fetch any new events from API for this specific record (incremental)
         await fetchAndProcessHistoryForRecord(tableId, recordId);
 
-        // Then get all history from IndexedDB (includes newly fetched entries)
+        // Get all history from IndexedDB
         currentHistoryData = await getFieldHistoryForRecord(tableId, recordId);
+        currentRecordHistoryData = await getRecordHistoryForRecord(tableId, recordId);
+
+        // Get current record data
+        currentRecordData = await getRecord(tableId, recordId);
+
         renderHistoryModal();
     } catch (err) {
         console.error('Error loading history:', err);
@@ -4089,30 +4330,48 @@ async function openHistoryModal(tableId, recordId) {
     }
 }
 
+function switchHistoryView(view) {
+    currentHistoryView = view;
+
+    // Update toggle buttons
+    document.getElementById('profile-view-btn').classList.toggle('active', view === 'profile');
+    document.getElementById('timeline-view-btn').classList.toggle('active', view === 'timeline');
+
+    // Update title
+    var tableName = META_TABLES[currentHistoryTableId]?.tableName || currentHistoryTableId;
+    document.getElementById('history-modal-title').textContent =
+        (view === 'profile' ? 'Record Profile' : 'Record Timeline') + ' - ' + tableName;
+
+    renderHistoryModal();
+}
+
 function closeHistoryModal(event) {
     if (event && event.target !== event.currentTarget) return;
     document.getElementById('history-modal-overlay').classList.remove('open');
     currentHistoryData = [];
+    currentRecordHistoryData = [];
     currentHistoryRecordId = null;
     currentHistoryTableId = null;
+    currentRecordData = null;
 }
 
 function renderHistoryModal() {
+    if (currentHistoryView === 'profile') {
+        renderProfileView();
+    } else {
+        renderTimelineView();
+    }
+}
+
+function renderProfileView() {
     var body = document.getElementById('history-modal-body');
     var filterSelect = document.getElementById('history-field-filter');
     var countEl = document.getElementById('history-count');
 
-    if (!currentHistoryData || currentHistoryData.length === 0) {
-        body.innerHTML = '<div class="modal-empty"><h3>No history available</h3><p>Field changes will appear here after the next sync</p></div>';
-        filterSelect.innerHTML = '<option value="">All Fields</option>';
-        countEl.textContent = '0 changes';
-        return;
-    }
+    var fields = META_FIELDS[currentHistoryTableId] || {};
+    var fieldIds = Object.keys(fields);
 
     // Build field filter options
-    var fieldIds = [...new Set(currentHistoryData.map(h => h.fieldId))];
-    var fields = META_FIELDS[currentHistoryTableId] || {};
-
     var filterHtml = '<option value="">All Fields</option>';
     fieldIds.forEach(fid => {
         var fieldName = fields[fid]?.fieldName || fid;
@@ -4122,51 +4381,182 @@ function renderHistoryModal() {
 
     // Get selected filter
     var selectedField = filterSelect.value;
-    var filteredData = selectedField
-        ? currentHistoryData.filter(h => h.fieldId === selectedField)
-        : currentHistoryData;
+    var displayFields = selectedField ? [selectedField] : fieldIds;
 
-    countEl.textContent = filteredData.length + ' change' + (filteredData.length !== 1 ? 's' : '');
+    // Group history by field
+    var historyByField = {};
+    currentHistoryData.forEach(h => {
+        if (!historyByField[h.fieldId]) historyByField[h.fieldId] = [];
+        historyByField[h.fieldId].push(h);
+    });
 
-    // Render history items
-    var html = '<div class="history-timeline">';
+    var totalChanges = currentHistoryData.length;
+    countEl.textContent = totalChanges + ' change' + (totalChanges !== 1 ? 's' : '');
 
-    for (var item of filteredData) {
-        var fieldName = fields[item.fieldId]?.fieldName || item.fieldId;
-        var changeTypeClass = item.changeType || 'updated';
-        var timestamp = item.timestamp ? formatTimestamp(item.timestamp) : 'Unknown time';
+    if (displayFields.length === 0) {
+        body.innerHTML = '<div class="modal-empty"><h3>No fields available</h3></div>';
+        return;
+    }
 
-        html += '<div class="history-item">';
-        html += '<div class="history-item-header">';
-        html += '<span class="history-field-name">' + esc(fieldName) + '</span>';
-        html += '<span class="history-change-type ' + changeTypeClass + '">' + changeTypeClass + '</span>';
-        html += '<span class="history-timestamp">' + esc(timestamp) + '</span>';
-        html += '<span class="history-event-id">Event #' + (item.eventId || '?') + '</span>';
-        html += '</div>';
+    var html = '<div class="profile-view">';
 
-        html += '<div class="history-values">';
+    for (var fieldId of displayFields) {
+        var fieldMeta = fields[fieldId];
+        var fieldName = fieldMeta?.fieldName || fieldId;
+        var currentValue = currentRecordData?.fields?.[fieldId];
+        var fieldHistory = historyByField[fieldId] || [];
 
-        // Old value
-        if (item.changeType !== 'created') {
-            html += '<div class="history-value-box ' + (item.oldValue === null ? 'null' : 'old') + '">';
-            html += '<div class="history-value-label">Previous</div>';
-            html += '<div class="history-value-content">' + formatHistoryValue(item.oldValue) + '</div>';
-            html += '</div>';
-            html += '<span class="history-arrow">&#8594;</span>';
+        html += '<div class="profile-field" data-field-id="' + esc(fieldId) + '">';
+        html += '<div class="profile-field-header" onclick="toggleProfileField(this.parentElement)">';
+        html += '<span class="profile-field-name">' + esc(fieldName) + '</span>';
+        html += '<span class="profile-field-value' + (currentValue === undefined || currentValue === null ? ' empty' : '') + '">';
+        html += formatHistoryValue(currentValue);
+        html += '</span>';
+
+        if (fieldHistory.length > 0) {
+            html += '<span class="profile-field-history-count">' + fieldHistory.length + ' change' + (fieldHistory.length !== 1 ? 's' : '') + '</span>';
         }
-
-        // New value
-        html += '<div class="history-value-box ' + (item.newValue === null ? 'null' : 'new') + '">';
-        html += '<div class="history-value-label">' + (item.changeType === 'created' ? 'Initial Value' : 'New Value') + '</div>';
-        html += '<div class="history-value-content">' + formatHistoryValue(item.newValue) + '</div>';
+        html += '<span class="profile-field-expand">&#9654;</span>';
         html += '</div>';
 
-        html += '</div>'; // .history-values
-        html += '</div>'; // .history-item
+        // Field history (hidden by default)
+        html += '<div class="profile-field-history">';
+        if (fieldHistory.length > 0) {
+            for (var h of fieldHistory) {
+                var opType = h.changeType === 'created' ? 'INS' : (h.changeType === 'deleted' ? 'NUL' : 'ALT');
+                html += '<div class="profile-field-history-item">';
+                html += '<span class="profile-field-history-op ' + opType + '">' + opType + '</span>';
+                html += '<span class="profile-field-history-time">' + formatTimestamp(h.timestamp) + '</span>';
+                html += '<span class="profile-field-history-values">';
+
+                if (h.changeType !== 'created' && h.oldValue !== null) {
+                    html += '<span class="profile-field-history-old">' + formatHistoryValueCompact(h.oldValue) + '</span>';
+                    html += '<span class="profile-field-history-arrow">→</span>';
+                }
+                html += '<span class="profile-field-history-new">' + formatHistoryValueCompact(h.newValue) + '</span>';
+                html += '</span>';
+                html += '</div>';
+            }
+        } else {
+            html += '<div class="profile-field-history-item" style="color: #999; font-style: italic;">No changes recorded</div>';
+        }
+        html += '</div>';
+
+        html += '</div>';
     }
 
     html += '</div>';
     body.innerHTML = html;
+}
+
+function renderTimelineView() {
+    var body = document.getElementById('history-modal-body');
+    var filterSelect = document.getElementById('history-field-filter');
+    var countEl = document.getElementById('history-count');
+
+    var fields = META_FIELDS[currentHistoryTableId] || {};
+
+    // Build field filter options from history data
+    var fieldIdsInHistory = [...new Set(currentHistoryData.map(h => h.fieldId))];
+    var filterHtml = '<option value="">All Fields</option>';
+    fieldIdsInHistory.forEach(fid => {
+        var fieldName = fields[fid]?.fieldName || fid;
+        filterHtml += '<option value="' + esc(fid) + '">' + esc(fieldName) + '</option>';
+    });
+    filterSelect.innerHTML = filterHtml;
+
+    var selectedField = filterSelect.value;
+
+    // Filter record history if a field is selected
+    var filteredRecordHistory = currentRecordHistoryData;
+    if (selectedField) {
+        filteredRecordHistory = currentRecordHistoryData.filter(rh =>
+            rh.fieldOps && rh.fieldOps.some(op => op.fieldId === selectedField)
+        );
+    }
+
+    countEl.textContent = filteredRecordHistory.length + ' event' + (filteredRecordHistory.length !== 1 ? 's' : '');
+
+    if (filteredRecordHistory.length === 0) {
+        body.innerHTML = '<div class="modal-empty"><h3>No events available</h3><p>Record changes will appear here after the next sync</p></div>';
+        return;
+    }
+
+    var html = '<div class="record-timeline">';
+
+    for (var event of filteredRecordHistory) {
+        var fieldOps = event.fieldOps || [];
+        if (selectedField) {
+            fieldOps = fieldOps.filter(op => op.fieldId === selectedField);
+        }
+
+        html += '<div class="record-event" data-event-id="' + event.eventId + '">';
+        html += '<div class="record-event-header" onclick="toggleRecordEvent(this.parentElement)">';
+        html += '<span class="record-event-op ' + event.operationType + '">' + event.operationType + '</span>';
+        html += '<span class="record-event-timestamp">' + formatTimestamp(event.timestamp) + '</span>';
+        html += '<span class="record-event-field-count">' + fieldOps.length + ' field' + (fieldOps.length !== 1 ? 's' : '') + '</span>';
+        html += '<span class="record-event-expand">&#9654;</span>';
+        html += '</div>';
+
+        // Field operations (hidden by default)
+        html += '<div class="record-event-fields">';
+        for (var op of fieldOps) {
+            var fieldName = fields[op.fieldId]?.fieldName || op.fieldId;
+            html += '<div class="record-event-field">';
+            html += '<span class="record-event-field-name">' + esc(fieldName) + '</span>';
+            html += '<span class="record-event-field-op ' + op.opType + '">' + op.opType + '</span>';
+            html += '<span class="record-event-field-values">';
+
+            if (op.opType !== 'INS' && op.oldValue !== null) {
+                html += '<span class="profile-field-history-old">' + formatHistoryValueCompact(op.oldValue) + '</span>';
+                html += '<span class="profile-field-history-arrow">→</span>';
+            }
+            html += '<span class="profile-field-history-new">' + formatHistoryValueCompact(op.newValue) + '</span>';
+            html += '</span>';
+            html += '</div>';
+        }
+        html += '</div>';
+
+        html += '</div>';
+    }
+
+    html += '</div>';
+    body.innerHTML = html;
+}
+
+function toggleProfileField(fieldEl) {
+    fieldEl.classList.toggle('expanded');
+}
+
+function toggleRecordEvent(eventEl) {
+    eventEl.classList.toggle('expanded');
+}
+
+function formatHistoryValueCompact(value) {
+    if (value === null || value === undefined) {
+        return '<span style="color: #999; font-style: italic;">empty</span>';
+    }
+
+    if (Array.isArray(value)) {
+        if (value.length === 0) return '<span style="color: #999;">[]</span>';
+        if (value.length > 2) {
+            var preview = value.slice(0, 2).map(v => typeof v === 'object' ? (v.name || v.id || '...') : v);
+            return esc(preview.join(', ')) + ' +' + (value.length - 2);
+        }
+        return esc(value.map(v => typeof v === 'object' ? (v.name || v.id || '...') : v).join(', '));
+    }
+
+    if (typeof value === 'object') {
+        return esc(value.name || value.id || JSON.stringify(value).slice(0, 30));
+    }
+
+    if (typeof value === 'boolean') {
+        return value ? 'Yes' : 'No';
+    }
+
+    var str = String(value);
+    if (str.length > 50) return esc(str.slice(0, 47)) + '...';
+    return esc(str);
 }
 
 function filterHistoryByField() {
