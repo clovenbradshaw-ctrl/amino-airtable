@@ -302,7 +302,21 @@
         .history-arrow { color: #999; font-size: 16px; flex-shrink: 0; align-self: center; }
 
         /* Modal Wide Variant */
-        .modal.modal-wide { max-width: 900px; }
+        .modal.modal-wide { max-width: 950px; }
+        .modal-record-id { font-size: 11px; color: #999; font-family: "SF Mono", Monaco, monospace; background: #f5f5f5; padding: 4px 8px; border-radius: 4px; }
+
+        /* Record Summary Header */
+        .record-summary { padding: 16px 24px; background: linear-gradient(to bottom, #f8f9fa, #fff); border-bottom: 1px solid #e8e8e8; display: flex; gap: 24px; flex-wrap: wrap; }
+        .record-summary-stat { display: flex; flex-direction: column; gap: 4px; }
+        .record-summary-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #888; }
+        .record-summary-value { font-size: 14px; color: #333; font-weight: 500; }
+        .record-summary-value.mono { font-family: "SF Mono", Monaco, monospace; font-size: 12px; }
+        .record-summary-ops { display: flex; gap: 8px; align-items: center; }
+        .record-summary-op-badge { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 4px 10px; border-radius: 12px; font-weight: 500; }
+        .record-summary-op-badge.INS { background: #d1fae5; color: #059669; }
+        .record-summary-op-badge.ALT { background: #dbeafe; color: #1d4ed8; }
+        .record-summary-op-badge.NUL { background: #fee2e2; color: #dc2626; }
+        .record-summary-op-badge .op-count { font-weight: 700; }
 
         /* History View Toggle */
         .history-view-toggle { display: flex; gap: 4px; background: #e8e8e8; padding: 3px; border-radius: 6px; }
@@ -310,6 +324,9 @@
         .history-view-btn:hover { color: #333; }
         .history-view-btn.active { background: #fff; color: #333; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .history-view-btn .view-icon { font-size: 12px; }
+        .history-toolbar-actions { display: flex; gap: 4px; }
+        .toolbar-action-btn { padding: 5px 10px; border: 1px solid #ddd; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px; color: #666; display: flex; align-items: center; gap: 4px; transition: all 0.15s; }
+        .toolbar-action-btn:hover { border-color: #2d6cdf; color: #2d6cdf; background: #f8faff; }
         .history-toolbar-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 
         /* Profile View */
@@ -318,49 +335,66 @@
         .profile-field:last-child { border-bottom: none; }
         .profile-field-header { padding: 14px 24px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: background 0.15s; }
         .profile-field-header:hover { background: #fafafa; }
-        .profile-field-name { font-weight: 600; color: #333; font-size: 13px; min-width: 160px; }
-        .profile-field-value { flex: 1; font-size: 13px; color: #333; }
+        .profile-field-name { font-weight: 600; color: #333; font-size: 13px; min-width: 180px; flex-shrink: 0; }
+        .profile-field-type { font-size: 10px; color: #999; background: #f0f0f0; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; }
+        .profile-field-value { flex: 1; font-size: 13px; color: #333; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
         .profile-field-value.empty { color: #999; font-style: italic; }
-        .profile-field-history-count { font-size: 11px; color: #999; background: #f0f0f0; padding: 2px 8px; border-radius: 10px; }
-        .profile-field-expand { font-size: 10px; color: #999; transition: transform 0.2s; }
+        .profile-field-history-badge { display: flex; align-items: center; gap: 6px; }
+        .profile-field-history-count { font-size: 11px; color: #666; background: #e8f0fe; padding: 3px 10px; border-radius: 12px; font-weight: 500; }
+        .profile-field-history-count.has-changes { background: #dbeafe; color: #1d4ed8; }
+        .profile-field-expand { font-size: 10px; color: #999; transition: transform 0.2s; width: 20px; text-align: center; }
         .profile-field.expanded .profile-field-expand { transform: rotate(90deg); }
         .profile-field-history { display: none; background: #f8f9fa; border-top: 1px solid #e8e8e8; padding: 0; }
         .profile-field.expanded .profile-field-history { display: block; }
-        .profile-field-history-item { padding: 12px 24px 12px 48px; display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #eee; font-size: 12px; }
+        .profile-field-history-list { padding: 8px 0; }
+        .profile-field-history-item { padding: 10px 24px 10px 56px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #eee; font-size: 12px; position: relative; }
         .profile-field-history-item:last-child { border-bottom: none; }
-        .profile-field-history-op { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; }
+        .profile-field-history-item::before { content: ''; position: absolute; left: 36px; top: 0; bottom: 0; width: 2px; background: #e0e0e0; }
+        .profile-field-history-item:last-child::before { bottom: 50%; }
+        .profile-field-history-item::after { content: ''; position: absolute; left: 32px; top: 50%; width: 10px; height: 10px; background: #fff; border: 2px solid #ccc; border-radius: 50%; transform: translateY(-50%); }
+        .profile-field-history-item.INS::after { border-color: #059669; background: #d1fae5; }
+        .profile-field-history-item.ALT::after { border-color: #1d4ed8; background: #dbeafe; }
+        .profile-field-history-item.NUL::after { border-color: #dc2626; background: #fee2e2; }
+        .profile-field-history-op { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px; text-transform: uppercase; min-width: 32px; text-align: center; }
         .profile-field-history-op.INS { background: #d1fae5; color: #059669; }
         .profile-field-history-op.ALT { background: #dbeafe; color: #1d4ed8; }
         .profile-field-history-op.NUL { background: #fee2e2; color: #dc2626; }
-        .profile-field-history-time { color: #999; min-width: 100px; }
-        .profile-field-history-values { flex: 1; display: flex; align-items: center; gap: 8px; }
-        .profile-field-history-old { color: #999; text-decoration: line-through; }
-        .profile-field-history-new { color: #333; }
-        .profile-field-history-arrow { color: #ccc; }
+        .profile-field-history-time { color: #888; min-width: 130px; font-size: 11px; }
+        .profile-field-history-event { color: #bbb; font-size: 10px; font-family: "SF Mono", Monaco, monospace; min-width: 60px; }
+        .profile-field-history-values { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .profile-field-history-old { color: #999; text-decoration: line-through; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .profile-field-history-new { color: #333; font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .profile-field-history-arrow { color: #ccc; flex-shrink: 0; }
+        .profile-field-no-history { padding: 12px 24px 12px 56px; color: #999; font-style: italic; font-size: 12px; }
 
         /* Record Timeline View */
-        .record-timeline { padding: 16px 0; }
+        .record-timeline { padding: 8px 0; }
         .record-event { border-bottom: 1px solid #f0f0f0; }
         .record-event:last-child { border-bottom: none; }
         .record-event-header { padding: 14px 24px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: background 0.15s; }
         .record-event-header:hover { background: #fafafa; }
-        .record-event-op { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 4px; text-transform: uppercase; }
+        .record-event-op { font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; min-width: 50px; text-align: center; }
         .record-event-op.INS { background: #d1fae5; color: #059669; }
         .record-event-op.ALT { background: #dbeafe; color: #1d4ed8; }
-        .record-event-timestamp { font-size: 13px; color: #333; flex: 1; }
-        .record-event-field-count { font-size: 12px; color: #666; }
-        .record-event-expand { font-size: 10px; color: #999; transition: transform 0.2s; }
+        .record-event-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+        .record-event-timestamp { font-size: 13px; color: #333; font-weight: 500; }
+        .record-event-id { font-size: 10px; color: #999; font-family: "SF Mono", Monaco, monospace; }
+        .record-event-field-count { font-size: 12px; color: #666; background: #f0f0f0; padding: 4px 10px; border-radius: 12px; }
+        .record-event-expand { font-size: 10px; color: #999; transition: transform 0.2s; width: 24px; text-align: center; }
         .record-event.expanded .record-event-expand { transform: rotate(90deg); }
         .record-event-fields { display: none; background: #f8f9fa; border-top: 1px solid #e8e8e8; }
         .record-event.expanded .record-event-fields { display: block; }
-        .record-event-field { padding: 10px 24px 10px 48px; display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+        .record-event-fields-header { padding: 8px 24px 8px 48px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #888; background: #f0f0f0; display: flex; gap: 12px; }
+        .record-event-fields-header span:first-child { min-width: 160px; }
+        .record-event-fields-header span:nth-child(2) { min-width: 40px; }
+        .record-event-field { padding: 10px 24px 10px 48px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #eee; font-size: 13px; }
         .record-event-field:last-child { border-bottom: none; }
-        .record-event-field-name { font-weight: 500; color: #333; min-width: 140px; }
-        .record-event-field-op { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; }
+        .record-event-field-name { font-weight: 500; color: #333; min-width: 160px; flex-shrink: 0; }
+        .record-event-field-op { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px; min-width: 40px; text-align: center; }
         .record-event-field-op.INS { background: #d1fae5; color: #059669; }
         .record-event-field-op.ALT { background: #dbeafe; color: #1d4ed8; }
         .record-event-field-op.NUL { background: #fee2e2; color: #dc2626; }
-        .record-event-field-values { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .record-event-field-values { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 
         /* History Button in Table */
         .history-btn { padding: 4px 8px; background: transparent; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; color: #666; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s; }
@@ -1373,7 +1407,11 @@
         <div class="modal modal-wide" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <h2 id="history-modal-title">Record Profile</h2>
+                <span class="modal-record-id" id="history-modal-record-id"></span>
                 <button class="modal-close" onclick="closeHistoryModal()">&times;</button>
+            </div>
+            <div class="record-summary" id="record-summary">
+                <!-- Record metadata will be rendered here -->
             </div>
             <div class="modal-toolbar">
                 <div class="history-view-toggle">
@@ -1382,6 +1420,14 @@
                     </button>
                     <button class="history-view-btn" id="timeline-view-btn" onclick="switchHistoryView('timeline')">
                         <span class="view-icon">&#8986;</span> Timeline
+                    </button>
+                </div>
+                <div class="history-toolbar-actions">
+                    <button class="toolbar-action-btn" onclick="expandAllHistory()" title="Expand all">
+                        <span>&#9660;</span> Expand
+                    </button>
+                    <button class="toolbar-action-btn" onclick="collapseAllHistory()" title="Collapse all">
+                        <span>&#9650;</span> Collapse
                     </button>
                 </div>
                 <div class="history-toolbar-right">
@@ -4299,7 +4345,8 @@ async function openHistoryModal(tableId, recordId) {
 
     // Set modal title
     var tableName = META_TABLES[tableId]?.tableName || tableId;
-    document.getElementById('history-modal-title').textContent = 'Record Profile - ' + tableName;
+    document.getElementById('history-modal-title').textContent = 'Record Profile';
+    document.getElementById('history-modal-record-id').textContent = recordId;
 
     // Reset view toggle buttons
     document.getElementById('profile-view-btn').classList.add('active');
@@ -4308,6 +4355,8 @@ async function openHistoryModal(tableId, recordId) {
     // Show modal with loading state
     var overlay = document.getElementById('history-modal-overlay');
     var body = document.getElementById('history-modal-body');
+    var summary = document.getElementById('record-summary');
+    summary.innerHTML = '';
     body.innerHTML = '<div class="modal-empty"><div class="loading-spinner"></div><h3>Loading record...</h3></div>';
     overlay.classList.add('open');
 
@@ -4323,11 +4372,83 @@ async function openHistoryModal(tableId, recordId) {
         // Get current record data
         currentRecordData = await getRecord(tableId, recordId);
 
+        renderRecordSummary();
         renderHistoryModal();
     } catch (err) {
         console.error('Error loading history:', err);
         body.innerHTML = '<div class="modal-empty"><h3>Error loading history</h3><p>' + esc(err.message) + '</p></div>';
     }
+}
+
+function renderRecordSummary() {
+    var summary = document.getElementById('record-summary');
+
+    // Calculate stats
+    var totalEvents = currentRecordHistoryData.length;
+    var totalFieldChanges = currentHistoryData.length;
+
+    // Count operations by type
+    var insCount = 0, altCount = 0, nulCount = 0;
+    currentHistoryData.forEach(h => {
+        if (h.changeType === 'created') insCount++;
+        else if (h.changeType === 'updated') altCount++;
+        else if (h.changeType === 'deleted') nulCount++;
+    });
+
+    // Find first and last event timestamps
+    var firstEvent = currentRecordHistoryData.length > 0
+        ? currentRecordHistoryData[currentRecordHistoryData.length - 1]
+        : null;
+    var lastEvent = currentRecordHistoryData.length > 0
+        ? currentRecordHistoryData[0]
+        : null;
+
+    var html = '';
+
+    // Created date
+    html += '<div class="record-summary-stat">';
+    html += '<span class="record-summary-label">Created</span>';
+    html += '<span class="record-summary-value">' + (firstEvent ? formatTimestampFull(firstEvent.timestamp) : 'Unknown') + '</span>';
+    html += '</div>';
+
+    // Last modified
+    html += '<div class="record-summary-stat">';
+    html += '<span class="record-summary-label">Last Modified</span>';
+    html += '<span class="record-summary-value">' + (lastEvent ? formatTimestampFull(lastEvent.timestamp) : 'Unknown') + '</span>';
+    html += '</div>';
+
+    // Total events
+    html += '<div class="record-summary-stat">';
+    html += '<span class="record-summary-label">Events</span>';
+    html += '<span class="record-summary-value">' + totalEvents + '</span>';
+    html += '</div>';
+
+    // Field changes
+    html += '<div class="record-summary-stat">';
+    html += '<span class="record-summary-label">Field Changes</span>';
+    html += '<span class="record-summary-value">' + totalFieldChanges + '</span>';
+    html += '</div>';
+
+    // Operation breakdown
+    html += '<div class="record-summary-stat">';
+    html += '<span class="record-summary-label">Operations</span>';
+    html += '<div class="record-summary-ops">';
+    if (insCount > 0) {
+        html += '<span class="record-summary-op-badge INS"><span class="op-count">' + insCount + '</span> INS</span>';
+    }
+    if (altCount > 0) {
+        html += '<span class="record-summary-op-badge ALT"><span class="op-count">' + altCount + '</span> ALT</span>';
+    }
+    if (nulCount > 0) {
+        html += '<span class="record-summary-op-badge NUL"><span class="op-count">' + nulCount + '</span> NUL</span>';
+    }
+    if (insCount === 0 && altCount === 0 && nulCount === 0) {
+        html += '<span style="color: #999;">None</span>';
+    }
+    html += '</div>';
+    html += '</div>';
+
+    summary.innerHTML = html;
 }
 
 function switchHistoryView(view) {
@@ -4338,9 +4459,8 @@ function switchHistoryView(view) {
     document.getElementById('timeline-view-btn').classList.toggle('active', view === 'timeline');
 
     // Update title
-    var tableName = META_TABLES[currentHistoryTableId]?.tableName || currentHistoryTableId;
     document.getElementById('history-modal-title').textContent =
-        (view === 'profile' ? 'Record Profile' : 'Record Timeline') + ' - ' + tableName;
+        view === 'profile' ? 'Record Profile' : 'Record Timeline';
 
     renderHistoryModal();
 }
@@ -4403,43 +4523,52 @@ function renderProfileView() {
     for (var fieldId of displayFields) {
         var fieldMeta = fields[fieldId];
         var fieldName = fieldMeta?.fieldName || fieldId;
+        var fieldType = fieldMeta?.fieldType || 'unknown';
         var currentValue = currentRecordData?.fields?.[fieldId];
         var fieldHistory = historyByField[fieldId] || [];
 
         html += '<div class="profile-field" data-field-id="' + esc(fieldId) + '">';
         html += '<div class="profile-field-header" onclick="toggleProfileField(this.parentElement)">';
         html += '<span class="profile-field-name">' + esc(fieldName) + '</span>';
+        html += '<span class="profile-field-type">' + esc(fieldType) + '</span>';
         html += '<span class="profile-field-value' + (currentValue === undefined || currentValue === null ? ' empty' : '') + '">';
         html += formatHistoryValue(currentValue);
         html += '</span>';
 
+        html += '<span class="profile-field-history-badge">';
         if (fieldHistory.length > 0) {
-            html += '<span class="profile-field-history-count">' + fieldHistory.length + ' change' + (fieldHistory.length !== 1 ? 's' : '') + '</span>';
+            html += '<span class="profile-field-history-count has-changes">' + fieldHistory.length + '</span>';
+        } else {
+            html += '<span class="profile-field-history-count">0</span>';
         }
+        html += '</span>';
         html += '<span class="profile-field-expand">&#9654;</span>';
         html += '</div>';
 
         // Field history (hidden by default)
         html += '<div class="profile-field-history">';
+        html += '<div class="profile-field-history-list">';
         if (fieldHistory.length > 0) {
             for (var h of fieldHistory) {
                 var opType = h.changeType === 'created' ? 'INS' : (h.changeType === 'deleted' ? 'NUL' : 'ALT');
-                html += '<div class="profile-field-history-item">';
+                html += '<div class="profile-field-history-item ' + opType + '">';
                 html += '<span class="profile-field-history-op ' + opType + '">' + opType + '</span>';
-                html += '<span class="profile-field-history-time">' + formatTimestamp(h.timestamp) + '</span>';
+                html += '<span class="profile-field-history-time">' + formatTimestampFull(h.timestamp) + '</span>';
+                html += '<span class="profile-field-history-event">#' + (h.eventId || '?') + '</span>';
                 html += '<span class="profile-field-history-values">';
 
                 if (h.changeType !== 'created' && h.oldValue !== null) {
-                    html += '<span class="profile-field-history-old">' + formatHistoryValueCompact(h.oldValue) + '</span>';
+                    html += '<span class="profile-field-history-old" title="' + esc(formatHistoryValueFull(h.oldValue)) + '">' + formatHistoryValueCompact(h.oldValue) + '</span>';
                     html += '<span class="profile-field-history-arrow">→</span>';
                 }
-                html += '<span class="profile-field-history-new">' + formatHistoryValueCompact(h.newValue) + '</span>';
+                html += '<span class="profile-field-history-new" title="' + esc(formatHistoryValueFull(h.newValue)) + '">' + formatHistoryValueCompact(h.newValue) + '</span>';
                 html += '</span>';
                 html += '</div>';
             }
         } else {
-            html += '<div class="profile-field-history-item" style="color: #999; font-style: italic;">No changes recorded</div>';
+            html += '<div class="profile-field-no-history">No changes recorded for this field</div>';
         }
+        html += '</div>';
         html += '</div>';
 
         html += '</div>';
@@ -4490,16 +4619,25 @@ function renderTimelineView() {
             fieldOps = fieldOps.filter(op => op.fieldId === selectedField);
         }
 
+        // Count field ops by type
+        var fieldInsCount = fieldOps.filter(op => op.opType === 'INS').length;
+        var fieldAltCount = fieldOps.filter(op => op.opType === 'ALT').length;
+        var fieldNulCount = fieldOps.filter(op => op.opType === 'NUL').length;
+
         html += '<div class="record-event" data-event-id="' + event.eventId + '">';
         html += '<div class="record-event-header" onclick="toggleRecordEvent(this.parentElement)">';
         html += '<span class="record-event-op ' + event.operationType + '">' + event.operationType + '</span>';
-        html += '<span class="record-event-timestamp">' + formatTimestamp(event.timestamp) + '</span>';
+        html += '<div class="record-event-info">';
+        html += '<span class="record-event-timestamp">' + formatTimestampFull(event.timestamp) + '</span>';
+        html += '<span class="record-event-id">Event #' + event.eventId + '</span>';
+        html += '</div>';
         html += '<span class="record-event-field-count">' + fieldOps.length + ' field' + (fieldOps.length !== 1 ? 's' : '') + '</span>';
         html += '<span class="record-event-expand">&#9654;</span>';
         html += '</div>';
 
         // Field operations (hidden by default)
         html += '<div class="record-event-fields">';
+        html += '<div class="record-event-fields-header"><span>Field</span><span>Op</span><span>Values</span></div>';
         for (var op of fieldOps) {
             var fieldName = fields[op.fieldId]?.fieldName || op.fieldId;
             html += '<div class="record-event-field">';
@@ -4508,10 +4646,10 @@ function renderTimelineView() {
             html += '<span class="record-event-field-values">';
 
             if (op.opType !== 'INS' && op.oldValue !== null) {
-                html += '<span class="profile-field-history-old">' + formatHistoryValueCompact(op.oldValue) + '</span>';
+                html += '<span class="profile-field-history-old" title="' + esc(formatHistoryValueFull(op.oldValue)) + '">' + formatHistoryValueCompact(op.oldValue) + '</span>';
                 html += '<span class="profile-field-history-arrow">→</span>';
             }
-            html += '<span class="profile-field-history-new">' + formatHistoryValueCompact(op.newValue) + '</span>';
+            html += '<span class="profile-field-history-new" title="' + esc(formatHistoryValueFull(op.newValue)) + '">' + formatHistoryValueCompact(op.newValue) + '</span>';
             html += '</span>';
             html += '</div>';
         }
@@ -4530,6 +4668,24 @@ function toggleProfileField(fieldEl) {
 
 function toggleRecordEvent(eventEl) {
     eventEl.classList.toggle('expanded');
+}
+
+function expandAllHistory() {
+    var body = document.getElementById('history-modal-body');
+    if (currentHistoryView === 'profile') {
+        body.querySelectorAll('.profile-field').forEach(el => el.classList.add('expanded'));
+    } else {
+        body.querySelectorAll('.record-event').forEach(el => el.classList.add('expanded'));
+    }
+}
+
+function collapseAllHistory() {
+    var body = document.getElementById('history-modal-body');
+    if (currentHistoryView === 'profile') {
+        body.querySelectorAll('.profile-field').forEach(el => el.classList.remove('expanded'));
+    } else {
+        body.querySelectorAll('.record-event').forEach(el => el.classList.remove('expanded'));
+    }
 }
 
 function formatHistoryValueCompact(value) {
@@ -4555,12 +4711,24 @@ function formatHistoryValueCompact(value) {
     }
 
     var str = String(value);
-    if (str.length > 50) return esc(str.slice(0, 47)) + '...';
+    if (str.length > 40) return esc(str.slice(0, 37)) + '...';
     return esc(str);
+}
+
+function formatHistoryValueFull(value) {
+    if (value === null || value === undefined) return 'empty';
+    if (typeof value === 'object') return JSON.stringify(value, null, 2);
+    return String(value);
 }
 
 function filterHistoryByField() {
     renderHistoryModal();
+}
+
+function formatTimestampFull(ts) {
+    if (!ts) return 'Unknown';
+    var date = new Date(ts);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function formatTimestamp(ts) {
