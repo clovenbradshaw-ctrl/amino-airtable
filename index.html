@@ -1111,6 +1111,11 @@
         .event-action-btn.primary { background: #2d6cdf; border-color: #2d6cdf; color: #fff; }
         .event-action-btn.primary:hover { background: #2560c9; }
 
+        /* Infinite Scroll Loading */
+        .events-load-more { display: flex; align-items: center; justify-content: center; padding: 20px; gap: 10px; color: #666; font-size: 13px; }
+        .events-load-more .loading-spinner-small { width: 20px; height: 20px; border: 2px solid #e5e7eb; border-top-color: #2d6cdf; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .events-end-message { text-align: center; padding: 20px; color: #9ca3af; font-size: 12px; border-top: 1px solid #eee; }
+
         /* Point in Time Modal */
         .pit-modal { max-width: 900px; width: 95%; }
         .pit-modal-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -1978,13 +1983,19 @@ var currentWorkspace = null; // Current active workspace filter
 var pendingViewAction = null; // { action: 'filter'|'sort'|'fields'|'group', data: any }
 
 // ============ Events View State ============
-var eventsPage = 0;
 var eventsPageSize = 50;
 var eventsTypeFilter = ''; // 'data', 'table', 'field', 'view', 'viewConfig', or '' for all
 var eventsSetFilter = ''; // Filter by set (table id)
 var eventsSearchQuery = '';
 var expandedPayloads = new Set(); // Set of event IDs with expanded payloads
 var appOpenedEventId = 0; // Highest event ID when app was opened (events with higher IDs are "new")
+
+// Infinite scroll state
+var loadedEvents = []; // All currently loaded events
+var eventsOffset = 0; // Current offset for loading more
+var isLoadingMoreEvents = false; // Prevent multiple simultaneous loads
+var hasMoreEvents = true; // Whether there are more events to load
+var eventsScrollHandler = null; // Reference to scroll handler for cleanup
 
 // ============ View Auto-Save System ============
 var XANO_POST_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostreampost';
@@ -4395,7 +4406,8 @@ async function showTable(tableId) {
 
     // Clear events view state to free memory
     expandedPayloads.clear();
-    eventsPage = 0;
+    loadedEvents = [];
+    eventsOffset = 0;
 
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
@@ -5276,7 +5288,6 @@ document.addEventListener('keydown', function(e) {
 async function showEventsView() {
     currentTable = '_events';
     currentView = null;
-    eventsPage = 0;
 
     // Update sidebar selection
     document.querySelectorAll('.sidebar .table-item').forEach(el => el.classList.remove('active', 'expanded'));
@@ -5297,36 +5308,27 @@ async function renderEventsView() {
     var container = document.querySelector('.table-container');
     // No loading spinner - render immediately with cached/local data
 
+    // Clean up previous scroll handler
+    if (eventsScrollHandler) {
+        container.removeEventListener('scroll', eventsScrollHandler);
+        eventsScrollHandler = null;
+    }
+
+    // Reset infinite scroll state
+    loadedEvents = [];
+    eventsOffset = 0;
+    isLoadingMoreEvents = false;
+    hasMoreEvents = true;
+
     try {
         var totalEventsCount = await getRawEventsCount();
         var totalRecordsCount = await getCurrentRecordsCount();
-        var events = [];
-        var offset = eventsPage * eventsPageSize;
 
-        // Check if we're showing current state records
-        if (eventsTypeFilter === 'current') {
-            // Use paginated fetch with filters applied at DB level
-            events = await getCurrentRecordsPaginated(offset, eventsPageSize, eventsSetFilter, eventsSearchQuery);
-        } else {
-            // Fetch paginated events
-            if (eventsSearchQuery) {
-                // For search, use paginated search with smaller limit
-                events = await searchRawEvents(eventsSearchQuery, eventsPageSize, offset);
-            } else if (eventsSetFilter) {
-                events = await getRawEventsBySetPaginated(eventsSetFilter, offset, eventsPageSize);
-            } else {
-                events = await getRawEventsPaginated(offset, eventsPageSize);
-            }
-
-            // Apply type filter if set (post-filter since we need to parse payload)
-            if (eventsTypeFilter) {
-                events = events.filter(e => {
-                    var payload = parsePayload(e.payload);
-                    var type = payload?._set || 'data';
-                    return type === eventsTypeFilter;
-                });
-            }
-        }
+        // Load initial batch of events
+        var events = await fetchEventsForInfiniteScroll(eventsOffset, eventsPageSize);
+        loadedEvents = events;
+        eventsOffset = events.length;
+        hasMoreEvents = events.length === eventsPageSize;
 
         // Count new events (events with ID > appOpenedEventId)
         var newEventsCount = events.filter(e => e.id > appOpenedEventId).length;
@@ -5365,31 +5367,20 @@ async function renderEventsView() {
         html += '<input type="text" placeholder="Search events..." value="' + esc(eventsSearchQuery) + '" onkeydown="if(event.key===\'Enter\')setEventsSearch(this.value)">';
         html += '</div>';
 
-        // Show page info and total count
-        var totalCount = eventsTypeFilter === 'current' ? totalRecordsCount : totalEventsCount;
-        var totalPages = Math.ceil(totalCount / eventsPageSize);
-        var startItem = totalCount > 0 ? offset + 1 : 0;
-        var endItem = Math.min(offset + events.length, totalCount);
-        var hasMore = eventsPage < totalPages - 1;
-        var hasPrev = eventsPage > 0;
-
-        html += '<div class="events-stats">';
+        // Show loaded count and total
+        html += '<div class="events-stats" id="events-stats">';
         if (eventsTypeFilter === 'current') {
-            html += startItem.toLocaleString() + '-' + endItem.toLocaleString() + ' of ' + totalRecordsCount.toLocaleString() + ' records';
+            html += 'Loaded ' + loadedEvents.length.toLocaleString();
+            html += ' <span style="color: #666;">(' + totalRecordsCount.toLocaleString() + ' total records)</span>';
         } else {
-            html += startItem.toLocaleString() + '-' + endItem.toLocaleString() + ' of ' + totalEventsCount.toLocaleString() + ' events';
+            html += 'Loaded ' + loadedEvents.length.toLocaleString();
+            html += ' <span style="color: #666;">(' + totalEventsCount.toLocaleString() + ' total events)</span>';
             if (newEventsCount > 0) {
                 html += ' <span class="new-event-badge">' + newEventsCount + ' new</span>';
             }
         }
         html += '</div>';
 
-        // Pagination controls
-        html += '<div class="events-pagination">';
-        html += '<button class="pagination-btn" onclick="prevEventsPage()" ' + (hasPrev ? '' : 'disabled') + '>« Prev</button>';
-        html += '<span class="pagination-info">Page ' + (eventsPage + 1) + ' of ' + Math.max(1, totalPages) + '</span>';
-        html += '<button class="pagination-btn" onclick="nextEventsPage()" ' + (hasMore ? '' : 'disabled') + '>Next »</button>';
-        html += '</div>';
         html += '</div>';
 
         // Events table
@@ -5403,34 +5394,169 @@ async function renderEventsView() {
         html += '<th>Payload</th>';
         html += '<th style="width: 120px;">Actions</th>';
         html += '</tr></thead>';
-        html += '<tbody>';
+        html += '<tbody id="events-tbody">';
 
         if (events.length === 0) {
             html += '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">No events found</td></tr>';
         } else {
-            var addedDivider = false;
-            for (var i = 0; i < events.length; i++) {
-                var event = events[i];
-                var isNew = event.id > appOpenedEventId;
-
-                // Add divider between new and old events
-                if (!addedDivider && !isNew && newEventsCount > 0) {
-                    html += '<tr class="new-events-divider"><td colspan="7"><span class="new-events-divider-text">Events when app opened</span></td></tr>';
-                    addedDivider = true;
-                }
-
-                html += renderEventRow(event, isNew);
-            }
+            html += renderEventRows(events, newEventsCount);
         }
 
         html += '</tbody></table>';
 
+        // Infinite scroll loading indicator
+        html += '<div id="events-load-more" class="events-load-more" style="display: ' + (hasMoreEvents ? 'flex' : 'none') + ';">';
+        html += '<div class="loading-spinner-small"></div>';
+        html += '<span>Loading more events...</span>';
+        html += '</div>';
+
+        // End of events message
+        html += '<div id="events-end-message" class="events-end-message" style="display: ' + (hasMoreEvents ? 'none' : 'block') + ';">';
+        html += 'All events loaded';
+        html += '</div>';
+
         container.innerHTML = html;
+
+        // Set up infinite scroll
+        setupEventsInfiniteScroll(container, totalEventsCount, totalRecordsCount);
 
     } catch (err) {
         console.error('Error loading events:', err);
         container.innerHTML = '<div class="empty-state"><h3>Error loading events</h3><p>' + esc(err.message) + '</p></div>';
     }
+}
+
+// Helper function to fetch events based on current filters
+async function fetchEventsForInfiniteScroll(offset, limit) {
+    var events = [];
+
+    if (eventsTypeFilter === 'current') {
+        events = await getCurrentRecordsPaginated(offset, limit, eventsSetFilter, eventsSearchQuery);
+    } else {
+        if (eventsSearchQuery) {
+            events = await searchRawEvents(eventsSearchQuery, limit, offset);
+        } else if (eventsSetFilter) {
+            events = await getRawEventsBySetPaginated(eventsSetFilter, offset, limit);
+        } else {
+            events = await getRawEventsPaginated(offset, limit);
+        }
+
+        // Apply type filter if set (post-filter since we need to parse payload)
+        if (eventsTypeFilter) {
+            events = events.filter(e => {
+                var payload = parsePayload(e.payload);
+                var type = payload?._set || 'data';
+                return type === eventsTypeFilter;
+            });
+        }
+    }
+
+    return events;
+}
+
+// Render multiple event rows and track new events divider
+function renderEventRows(events, newEventsCount) {
+    var html = '';
+    var addedDivider = loadedEvents.length > events.length; // Divider already added if we've loaded more than initial batch
+
+    for (var i = 0; i < events.length; i++) {
+        var event = events[i];
+        var isNew = event.id > appOpenedEventId;
+
+        // Add divider between new and old events (only once)
+        if (!addedDivider && !isNew && newEventsCount > 0) {
+            html += '<tr class="new-events-divider"><td colspan="7"><span class="new-events-divider-text">Events when app opened</span></td></tr>';
+            addedDivider = true;
+        }
+
+        html += renderEventRow(event, isNew);
+    }
+
+    return html;
+}
+
+// Set up infinite scroll for events
+function setupEventsInfiniteScroll(container, totalEventsCount, totalRecordsCount) {
+    eventsScrollHandler = function() {
+        // Check if we're near the bottom (within 200px)
+        var scrollTop = container.scrollTop;
+        var scrollHeight = container.scrollHeight;
+        var clientHeight = container.clientHeight;
+
+        if (scrollHeight - scrollTop - clientHeight < 200) {
+            loadMoreEvents(totalEventsCount, totalRecordsCount);
+        }
+    };
+
+    container.addEventListener('scroll', eventsScrollHandler);
+}
+
+// Load more events for infinite scroll
+async function loadMoreEvents(totalEventsCount, totalRecordsCount) {
+    if (isLoadingMoreEvents || !hasMoreEvents) return;
+
+    isLoadingMoreEvents = true;
+    var loadMoreDiv = document.getElementById('events-load-more');
+    if (loadMoreDiv) loadMoreDiv.style.display = 'flex';
+
+    try {
+        var newEvents = await fetchEventsForInfiniteScroll(eventsOffset, eventsPageSize);
+
+        if (newEvents.length === 0) {
+            hasMoreEvents = false;
+        } else {
+            // Add new events to loaded array
+            loadedEvents = loadedEvents.concat(newEvents);
+            eventsOffset += newEvents.length;
+            hasMoreEvents = newEvents.length === eventsPageSize;
+
+            // Count new events in this batch
+            var newEventsCount = newEvents.filter(e => e.id > appOpenedEventId).length;
+
+            // Append rows to tbody
+            var tbody = document.getElementById('events-tbody');
+            if (tbody) {
+                var rowsHtml = renderEventRows(newEvents, newEventsCount);
+                tbody.insertAdjacentHTML('beforeend', rowsHtml);
+            }
+
+            // Update stats
+            updateEventsStats(totalEventsCount, totalRecordsCount);
+        }
+    } catch (err) {
+        console.error('Error loading more events:', err);
+    } finally {
+        isLoadingMoreEvents = false;
+
+        // Update loading indicator visibility
+        var loadMoreDiv = document.getElementById('events-load-more');
+        var endMessage = document.getElementById('events-end-message');
+
+        if (loadMoreDiv) loadMoreDiv.style.display = hasMoreEvents ? 'none' : 'none';
+        if (endMessage) endMessage.style.display = hasMoreEvents ? 'none' : 'block';
+    }
+}
+
+// Update the events stats display
+function updateEventsStats(totalEventsCount, totalRecordsCount) {
+    var statsDiv = document.getElementById('events-stats');
+    if (!statsDiv) return;
+
+    var newEventsCount = loadedEvents.filter(e => e.id > appOpenedEventId).length;
+
+    var html = '';
+    if (eventsTypeFilter === 'current') {
+        html += 'Loaded ' + loadedEvents.length.toLocaleString();
+        html += ' <span style="color: #666;">(' + totalRecordsCount.toLocaleString() + ' total records)</span>';
+    } else {
+        html += 'Loaded ' + loadedEvents.length.toLocaleString();
+        html += ' <span style="color: #666;">(' + totalEventsCount.toLocaleString() + ' total events)</span>';
+        if (newEventsCount > 0) {
+            html += ' <span class="new-event-badge">' + newEventsCount + ' new</span>';
+        }
+    }
+
+    statsDiv.innerHTML = html;
 }
 
 function renderEventRow(event, isNew) {
@@ -5516,36 +5642,42 @@ function togglePayloadExpand(eventId) {
     } else {
         expandedPayloads.add(eventId);
     }
-    renderEventsView();
+
+    // Find the row and update just the payload cell instead of re-rendering everything
+    var row = document.querySelector('tr[data-event-id="' + eventId + '"]');
+    if (row) {
+        var event = loadedEvents.find(e => (e.id || e.recordId) == eventId);
+        if (event) {
+            var payload = parsePayload(event.payload);
+            var isExpanded = expandedPayloads.has(eventId);
+            var payloadCell = row.querySelector('.payload-preview-container');
+            if (payloadCell) {
+                var html = '<div class="payload-preview' + (isExpanded ? ' expanded' : '') + '" onclick="togglePayloadExpand(\'' + eventId + '\')">';
+                html += formatPayloadPreview(payload, isExpanded);
+                if (!isExpanded) {
+                    html += '<span class="payload-expand-btn">Expand</span>';
+                } else {
+                    html += '<span class="payload-expand-btn">Collapse</span>';
+                }
+                html += '</div>';
+                payloadCell.innerHTML = html;
+            }
+        }
+    }
 }
 
 function setEventsTypeFilter(type) {
     eventsTypeFilter = type;
-    eventsPage = 0;
     renderEventsView();
 }
 
 function setEventsSetFilter(set) {
     eventsSetFilter = set;
-    eventsPage = 0;
     renderEventsView();
 }
 
 function setEventsSearch(query) {
     eventsSearchQuery = query;
-    eventsPage = 0;
-    renderEventsView();
-}
-
-function prevEventsPage() {
-    if (eventsPage > 0) {
-        eventsPage--;
-        renderEventsView();
-    }
-}
-
-function nextEventsPage() {
-    eventsPage++;
     renderEventsView();
 }
 
