@@ -748,6 +748,272 @@
         th:first-child {
             cursor: default;
         }
+
+        /* Schema View - Card Layout */
+        .schema-view-container {
+            padding: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            overflow-y: auto;
+        }
+        .schema-card {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            width: 320px;
+            max-height: 500px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: box-shadow 0.2s, transform 0.2s;
+            display: flex;
+            flex-direction: column;
+        }
+        .schema-card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            transform: translateY(-2px);
+        }
+        .schema-card-header {
+            padding: 16px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%);
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .schema-card-id {
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 11px;
+            color: #666;
+            background: #f0f0f0;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .schema-card-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .schema-card-body {
+            padding: 0;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .schema-field-row {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .schema-field-row:last-child {
+            border-bottom: none;
+        }
+        .schema-field-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .schema-field-value {
+            font-size: 13px;
+            color: #333;
+            word-break: break-word;
+        }
+        .schema-field-value.empty {
+            color: #ccc;
+            font-style: italic;
+        }
+
+        /* Create View Modal */
+        .create-view-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1001;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .create-view-modal.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        .create-view-modal-content {
+            background: #fff;
+            border-radius: 12px;
+            width: 400px;
+            max-width: 90%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            transform: translateY(20px);
+            transition: transform 0.2s;
+        }
+        .create-view-modal.open .create-view-modal-content {
+            transform: translateY(0);
+        }
+        .create-view-modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .create-view-modal-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin: 0 0 4px 0;
+        }
+        .create-view-modal-header p {
+            font-size: 13px;
+            color: #666;
+            margin: 0;
+        }
+        .create-view-modal-body {
+            padding: 24px;
+        }
+        .create-view-field {
+            margin-bottom: 16px;
+        }
+        .create-view-field label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        .create-view-field input,
+        .create-view-field select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .create-view-field input:focus,
+        .create-view-field select:focus {
+            outline: none;
+            border-color: #2d6cdf;
+            box-shadow: 0 0 0 3px rgba(45,108,223,0.1);
+        }
+        .create-view-modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            background: #fafafa;
+            border-radius: 0 0 12px 12px;
+        }
+        .create-view-modal-footer button {
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .create-view-modal-footer .btn-cancel {
+            background: #fff;
+            border: 1px solid #ddd;
+            color: #666;
+        }
+        .create-view-modal-footer .btn-cancel:hover {
+            background: #f5f5f5;
+        }
+        .create-view-modal-footer .btn-create {
+            background: #2d6cdf;
+            border: 1px solid #2d6cdf;
+            color: #fff;
+        }
+        .create-view-modal-footer .btn-create:hover {
+            background: #2560c9;
+        }
+
+        /* View Tags */
+        .view-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 4px;
+        }
+        .view-tag {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            background: #e8f0fe;
+            color: #2d6cdf;
+        }
+        .view-tag.workspace {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .table-view-item .view-tags {
+            padding-left: 24px;
+        }
+
+        /* Workspace Tabs */
+        .workspace-tabs {
+            display: flex;
+            gap: 4px;
+            padding: 8px 16px;
+            background: #16181d;
+            border-bottom: 1px solid #2d2f36;
+        }
+        .workspace-tab {
+            padding: 6px 12px;
+            font-size: 12px;
+            color: #8a8a8a;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .workspace-tab:hover {
+            background: #2d2f36;
+            color: #fff;
+        }
+        .workspace-tab.active {
+            background: #2d6cdf;
+            color: #fff;
+        }
+        .workspace-tab .workspace-count {
+            margin-left: 6px;
+            font-size: 10px;
+            background: rgba(255,255,255,0.2);
+            padding: 2px 5px;
+            border-radius: 8px;
+        }
+        .workspace-add-btn {
+            padding: 6px 8px;
+            font-size: 12px;
+            color: #666;
+            cursor: pointer;
+        }
+        .workspace-add-btn:hover {
+            color: #2d6cdf;
+        }
+
+        /* Nested Views Indentation */
+        .table-view-item.nested-level-1 { padding-left: 60px; }
+        .table-view-item.nested-level-2 { padding-left: 76px; }
+        .table-view-item.nested-level-3 { padding-left: 92px; }
+        .view-nest-indicator {
+            font-size: 10px;
+            color: #666;
+            margin-right: 4px;
+        }
+
+        /* View Type Indicator in Sidebar */
+        .view-type-badge {
+            font-size: 9px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background: #2d2f36;
+            color: #888;
+            margin-left: auto;
+        }
+        .view-type-badge.schema { background: #7c3aed; color: #fff; }
+        .view-type-badge.grid { background: #2d6cdf; color: #fff; }
     </style>
 </head>
 <body>
@@ -1026,6 +1292,15 @@
         <div class="view-context-menu-item" onclick="renameView()">
             <span>&#9998;</span> Rename
         </div>
+        <div class="view-context-menu-item" onclick="manageViewTags()">
+            <span>&#127991;</span> Manage tags...
+        </div>
+        <div class="view-context-menu-item" onclick="addViewToWorkspaceMenu()">
+            <span>&#11088;</span> Add to workspace...
+        </div>
+        <div class="view-context-menu-item" onclick="setViewParent()">
+            <span>&#128279;</span> Set parent view...
+        </div>
         <div class="view-context-menu-separator"></div>
         <div class="view-context-menu-item danger" onclick="deleteView()">
             <span>&#128465;</span> Delete
@@ -1052,10 +1327,53 @@
         </div>
     </div>
 
+    <!-- Create View Modal -->
+    <div class="create-view-modal" id="create-view-modal" onclick="closeCreateViewModal(event)">
+        <div class="create-view-modal-content" onclick="event.stopPropagation()">
+            <div class="create-view-modal-header">
+                <h2>Create New View</h2>
+                <p id="create-view-reason">Customize this view with your own filters and field settings.</p>
+            </div>
+            <div class="create-view-modal-body">
+                <div class="create-view-field">
+                    <label for="create-view-name">View Name</label>
+                    <input type="text" id="create-view-name" placeholder="Enter view name...">
+                </div>
+                <div class="create-view-field">
+                    <label for="create-view-type">View Type</label>
+                    <select id="create-view-type">
+                        <option value="grid">Grid View</option>
+                        <option value="schema">Schema View (Cards)</option>
+                    </select>
+                </div>
+                <div class="create-view-field">
+                    <label for="create-view-parent">Parent View (for nesting)</label>
+                    <select id="create-view-parent">
+                        <option value="">(No parent - root level)</option>
+                    </select>
+                </div>
+                <div class="create-view-field">
+                    <label for="create-view-tags">Tags (comma-separated)</label>
+                    <input type="text" id="create-view-tags" placeholder="e.g., reports, daily, team-a">
+                </div>
+                <div class="create-view-field">
+                    <label for="create-view-workspace">Add to Workspace</label>
+                    <select id="create-view-workspace">
+                        <option value="">(None)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="create-view-modal-footer">
+                <button class="btn-cancel" onclick="closeCreateViewModal()">Cancel</button>
+                <button class="btn-create" id="create-view-submit" onclick="submitCreateView()">Create View</button>
+            </div>
+        </div>
+    </div>
+
     <script>
 var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
 var DB_NAME = 'aminostream';
-var DB_VERSION = 4;
+var DB_VERSION = 5;
 var PAGE_SIZE = 100;
 
 var API_KEY = null;
@@ -1082,6 +1400,13 @@ var VIEW_FIELD_CONFIG = {};
 
 // View folders: Structure: VIEW_FOLDERS[tableId][folderId] = { folderId, folderName, parentFolderId, sortOrder, isExpanded }
 var VIEW_FOLDERS = {};
+
+// Workspaces: Structure: WORKSPACES[workspaceId] = { workspaceId, workspaceName, viewIds: [], sortOrder }
+var WORKSPACES = {};
+var currentWorkspace = null; // Current active workspace filter
+
+// Pending view action (when user tries to modify default view)
+var pendingViewAction = null; // { action: 'filter'|'sort'|'fields'|'group', data: any }
 
 // ============ View Auto-Save System ============
 var XANO_POST_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostreampost';
@@ -1145,8 +1470,15 @@ function openDB() {
                 folderStore.createIndex('by_table', 'tableId');
             }
 
+            // Workspaces: keyed by workspaceId
+            if (!db.objectStoreNames.contains('workspaces')) {
+                db.createObjectStore('workspaces', { keyPath: 'workspaceId' });
+            }
+
             // Sync state
-            db.createObjectStore('sync', { keyPath: 'key' });
+            if (!db.objectStoreNames.contains('sync')) {
+                db.createObjectStore('sync', { keyPath: 'key' });
+            }
         };
     });
 }
@@ -2446,6 +2778,12 @@ async function loadTableViewsAsync(tableId) {
         html += '</div>';
     }
 
+    // Add "New view" button
+    html += '<div class="table-view-add-btn" onclick="openCreateViewModal(\'' + esc(tableId) + '\')">';
+    html += '<span class="add-icon">+</span>';
+    html += '<span>New view</span>';
+    html += '</div>';
+
     // Add "New folder" button
     html += '<div class="table-view-add-btn" onclick="createViewFolder(\'' + esc(tableId) + '\')">';
     html += '<span class="add-icon">+</span>';
@@ -2713,6 +3051,150 @@ async function deleteView() {
 
     closeViewContextMenu();
     await loadTableViewsAsync(contextMenuTableId);
+}
+
+// Manage view tags from context menu
+async function manageViewTags() {
+    if (!contextMenuTableId || !contextMenuViewId) return;
+
+    var view = META_VIEWS[contextMenuTableId]?.[contextMenuViewId];
+    if (!view) {
+        closeViewContextMenu();
+        return;
+    }
+
+    var currentTags = (view.tags || []).join(', ');
+    var newTags = prompt('Enter tags (comma-separated):', currentTags);
+
+    if (newTags !== null) {
+        view.tags = newTags.split(',').map(t => t.trim()).filter(t => t);
+        await saveView(view);
+        markViewDirty('tags', view.tags);
+        await loadTableViewsAsync(contextMenuTableId);
+    }
+
+    closeViewContextMenu();
+}
+
+// Add view to workspace from context menu
+async function addViewToWorkspaceMenu() {
+    if (!contextMenuTableId || !contextMenuViewId) return;
+
+    var wsIds = Object.keys(WORKSPACES);
+
+    if (wsIds.length === 0) {
+        var name = prompt('No workspaces exist. Enter a name to create one:');
+        if (name) {
+            var wsId = await createWorkspace(name);
+            await addViewToWorkspace(contextMenuViewId, wsId);
+            renderWorkspaceTabs();
+            await loadTableViewsAsync(contextMenuTableId);
+        }
+        closeViewContextMenu();
+        return;
+    }
+
+    var options = wsIds.map((wid, i) => {
+        var ws = WORKSPACES[wid];
+        var inWs = ws.viewIds.includes(contextMenuViewId) ? ' [already added]' : '';
+        return i + ': ' + ws.workspaceName + inWs;
+    });
+    options.push(wsIds.length + ': Create new workspace...');
+
+    var choice = prompt('Add to workspace:\n' + options.join('\n') + '\n\nEnter number:');
+
+    if (choice !== null) {
+        var idx = parseInt(choice);
+        if (idx >= 0 && idx < wsIds.length) {
+            await addViewToWorkspace(contextMenuViewId, wsIds[idx]);
+            renderWorkspaceTabs();
+        } else if (idx === wsIds.length) {
+            var name = prompt('Enter workspace name:');
+            if (name) {
+                var wsId = await createWorkspace(name);
+                await addViewToWorkspace(contextMenuViewId, wsId);
+                renderWorkspaceTabs();
+            }
+        }
+    }
+
+    closeViewContextMenu();
+}
+
+// Set parent view from context menu
+async function setViewParent() {
+    if (!contextMenuTableId || !contextMenuViewId) return;
+
+    var view = META_VIEWS[contextMenuTableId]?.[contextMenuViewId];
+    if (!view) {
+        closeViewContextMenu();
+        return;
+    }
+
+    var views = META_VIEWS[contextMenuTableId] || {};
+    var options = ['0: (No parent - root level)'];
+    var viewIds = [''];
+
+    var idx = 1;
+    for (var vid in views) {
+        if (vid === '_default' || vid === contextMenuViewId) continue;
+        var v = views[vid];
+        options.push(idx + ': ' + (v.viewName || vid));
+        viewIds.push(vid);
+        idx++;
+    }
+
+    var choice = prompt('Set parent view (for nesting):\n' + options.join('\n') + '\n\nEnter number:');
+
+    if (choice !== null) {
+        var choiceIdx = parseInt(choice);
+        if (choiceIdx >= 0 && choiceIdx < viewIds.length) {
+            view.parentViewId = viewIds[choiceIdx] || null;
+            await saveView(view);
+            markViewDirty('parentViewId', view.parentViewId);
+            await loadTableViewsAsync(contextMenuTableId);
+        }
+    }
+
+    closeViewContextMenu();
+}
+
+// Open create view modal directly (not from default view protection)
+function openCreateViewModal(tableId) {
+    if (tableId) {
+        // Temporarily switch context to the target table
+        currentTable = tableId;
+    }
+
+    pendingViewAction = null;
+
+    // Set the reason text
+    var reasonEl = document.getElementById('create-view-reason');
+    if (reasonEl) {
+        reasonEl.textContent = 'Create a custom view with your own filters, sorting, and field configuration.';
+    }
+
+    // Set default view name
+    var nameInput = document.getElementById('create-view-name');
+    if (nameInput) {
+        nameInput.value = generateDefaultViewName();
+    }
+
+    // Reset other fields
+    document.getElementById('create-view-type').value = 'grid';
+    document.getElementById('create-view-tags').value = '';
+
+    // Populate parent view options
+    populateParentViewOptions();
+
+    // Populate workspace options
+    populateWorkspaceOptions();
+
+    // Show modal
+    document.getElementById('create-view-modal').classList.add('open');
+
+    // Focus name input
+    setTimeout(() => nameInput?.focus(), 100);
 }
 
 // Close context menu on click outside
@@ -3860,6 +4342,13 @@ function renderViewSelector() {
         html += '</div>';
     }
 
+    // Add "Create New View" option at bottom
+    html += '<div style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 4px;"></div>';
+    html += '<div class="view-selector-option" onclick="openCreateViewModal()" style="color: #2d6cdf;">';
+    html += '<span class="view-type-icon">+</span>';
+    html += '<span class="view-option-name">Create New View</span>';
+    html += '</div>';
+
     dropdown.innerHTML = html;
 }
 
@@ -4594,6 +5083,629 @@ async function reorderColumn(draggedFieldId, targetFieldId) {
     renderFieldsDropdown();
     await renderTable();
 }
+
+// ============ Default View Protection & View Creation ============
+
+// Check if current view is the default view (cannot be modified directly)
+function isDefaultView() {
+    return !currentView || currentView === '_default';
+}
+
+// Generate default view name: "{Table Name} {DateTime}"
+function generateDefaultViewName() {
+    var tableName = 'View';
+    if (currentTable && META_TABLES[currentTable]) {
+        tableName = META_TABLES[currentTable].tableName || currentTable;
+    }
+    var now = new Date();
+    var dateStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return tableName + ' ' + dateStr;
+}
+
+// Show create view modal when user tries to modify default view
+function promptCreateViewFromDefault(action, data, reason) {
+    pendingViewAction = { action: action, data: data };
+
+    // Set the reason text
+    var reasonEl = document.getElementById('create-view-reason');
+    if (reasonEl) {
+        reasonEl.textContent = reason || 'The default view cannot be modified. Create a new view to customize.';
+    }
+
+    // Set default view name
+    var nameInput = document.getElementById('create-view-name');
+    if (nameInput) {
+        nameInput.value = generateDefaultViewName();
+    }
+
+    // Reset other fields
+    document.getElementById('create-view-type').value = 'grid';
+    document.getElementById('create-view-tags').value = '';
+
+    // Populate parent view options
+    populateParentViewOptions();
+
+    // Populate workspace options
+    populateWorkspaceOptions();
+
+    // Show modal
+    document.getElementById('create-view-modal').classList.add('open');
+
+    // Focus name input
+    setTimeout(() => nameInput?.focus(), 100);
+}
+
+// Populate parent view dropdown for nesting
+function populateParentViewOptions() {
+    var select = document.getElementById('create-view-parent');
+    if (!select || !currentTable) return;
+
+    var html = '<option value="">(No parent - root level)</option>';
+    var views = META_VIEWS[currentTable] || {};
+
+    for (var vid in views) {
+        if (vid === '_default') continue;
+        var view = views[vid];
+        html += '<option value="' + esc(vid) + '">' + esc(view.viewName || vid) + '</option>';
+    }
+
+    select.innerHTML = html;
+}
+
+// Populate workspace dropdown
+function populateWorkspaceOptions() {
+    var select = document.getElementById('create-view-workspace');
+    if (!select) return;
+
+    var html = '<option value="">(None)</option>';
+
+    for (var wid in WORKSPACES) {
+        var ws = WORKSPACES[wid];
+        html += '<option value="' + esc(wid) + '">' + esc(ws.workspaceName) + '</option>';
+    }
+
+    // Add option to create new workspace
+    html += '<option value="_new">+ Create new workspace...</option>';
+
+    select.innerHTML = html;
+}
+
+// Close create view modal
+function closeCreateViewModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('create-view-modal').classList.remove('open');
+    pendingViewAction = null;
+}
+
+// Submit create view
+async function submitCreateView() {
+    var nameInput = document.getElementById('create-view-name');
+    var typeSelect = document.getElementById('create-view-type');
+    var parentSelect = document.getElementById('create-view-parent');
+    var tagsInput = document.getElementById('create-view-tags');
+    var workspaceSelect = document.getElementById('create-view-workspace');
+
+    var viewName = nameInput.value.trim();
+    if (!viewName) {
+        alert('Please enter a view name');
+        nameInput.focus();
+        return;
+    }
+
+    var viewType = typeSelect.value;
+    var parentViewId = parentSelect.value || null;
+    var tags = tagsInput.value.split(',').map(t => t.trim()).filter(t => t);
+    var workspaceId = workspaceSelect.value;
+
+    // Handle "create new workspace" option
+    if (workspaceId === '_new') {
+        var wsName = prompt('Enter workspace name:');
+        if (wsName) {
+            workspaceId = await createWorkspace(wsName);
+        } else {
+            workspaceId = null;
+        }
+    }
+
+    // Create the new view
+    var newViewId = 'viw_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    var newView = {
+        tableId: currentTable,
+        viewId: newViewId,
+        viewName: viewName,
+        viewType: viewType,
+        parentViewId: parentViewId,
+        tags: tags,
+        hiddenFieldIds: [],
+        fieldOrder: [],
+        filters: [],
+        sorts: [],
+        groupBy: null,
+        folderId: null
+    };
+
+    // If there was a pending action (filter, sort, etc.), apply it to the new view
+    if (pendingViewAction) {
+        switch (pendingViewAction.action) {
+            case 'filter':
+                newView.filters = [pendingViewAction.data];
+                break;
+            case 'sort':
+                newView.sorts = [pendingViewAction.data];
+                break;
+            case 'group':
+                newView.groupBy = pendingViewAction.data;
+                break;
+            case 'hideField':
+                newView.hiddenFieldIds = [pendingViewAction.data];
+                break;
+        }
+    }
+
+    // Add to workspace if selected
+    if (workspaceId && WORKSPACES[workspaceId]) {
+        WORKSPACES[workspaceId].viewIds.push(newViewId);
+        await saveWorkspace(WORKSPACES[workspaceId]);
+    }
+
+    // Save the view
+    if (!META_VIEWS[currentTable]) META_VIEWS[currentTable] = {};
+    META_VIEWS[currentTable][newViewId] = newView;
+    await saveView(newView);
+
+    // Close modal
+    closeCreateViewModal();
+
+    // Refresh sidebar
+    await loadTableViewsAsync(currentTable);
+
+    // Switch to the new view
+    await selectTableView(currentTable, newViewId);
+}
+
+// ============ Workspace Management ============
+
+// Get all workspaces from IndexedDB
+function getAllWorkspaces() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('workspaces', 'readonly');
+        var req = tx.objectStore('workspaces').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// Save a workspace to IndexedDB
+function saveWorkspace(workspace) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('workspaces', 'readwrite');
+        tx.objectStore('workspaces').put(workspace);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+// Delete a workspace from IndexedDB
+function deleteWorkspaceFromDB(workspaceId) {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('workspaces', 'readwrite');
+        tx.objectStore('workspaces').delete(workspaceId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+// Create a new workspace
+async function createWorkspace(name) {
+    var workspaceId = 'ws_' + Date.now();
+    var workspace = {
+        workspaceId: workspaceId,
+        workspaceName: name,
+        viewIds: [],
+        sortOrder: Object.keys(WORKSPACES).length
+    };
+
+    WORKSPACES[workspaceId] = workspace;
+    await saveWorkspace(workspace);
+
+    // Sync to backend
+    await saveWorkspaceToBackend(workspace, 'create');
+
+    return workspaceId;
+}
+
+// Add a view to a workspace
+async function addViewToWorkspace(viewId, workspaceId) {
+    if (!WORKSPACES[workspaceId]) return;
+
+    if (!WORKSPACES[workspaceId].viewIds.includes(viewId)) {
+        WORKSPACES[workspaceId].viewIds.push(viewId);
+        await saveWorkspace(WORKSPACES[workspaceId]);
+        await saveWorkspaceToBackend(WORKSPACES[workspaceId], 'update');
+    }
+}
+
+// Remove a view from a workspace
+async function removeViewFromWorkspace(viewId, workspaceId) {
+    if (!WORKSPACES[workspaceId]) return;
+
+    var idx = WORKSPACES[workspaceId].viewIds.indexOf(viewId);
+    if (idx >= 0) {
+        WORKSPACES[workspaceId].viewIds.splice(idx, 1);
+        await saveWorkspace(WORKSPACES[workspaceId]);
+        await saveWorkspaceToBackend(WORKSPACES[workspaceId], 'update');
+    }
+}
+
+// Delete a workspace
+async function deleteWorkspace(workspaceId) {
+    if (!confirm('Delete this workspace?')) return;
+
+    delete WORKSPACES[workspaceId];
+    await deleteWorkspaceFromDB(workspaceId);
+    await saveWorkspaceToBackend({ workspaceId: workspaceId }, 'delete');
+
+    if (currentWorkspace === workspaceId) {
+        currentWorkspace = null;
+    }
+
+    renderSidebar();
+}
+
+// Save workspace to backend
+async function saveWorkspaceToBackend(workspace, operator) {
+    var payload = {
+        uuid: crypto.randomUUID(),
+        recordId: workspace.workspaceId,
+        set: 'workspaces',
+        operator: operator,
+        created_at: new Date().toISOString(),
+        payload: JSON.stringify(workspace)
+    };
+
+    try {
+        await fetch(XANO_POST_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    } catch (error) {
+        console.error('Failed to save workspace to backend:', error);
+    }
+}
+
+// Load workspaces into memory
+async function loadWorkspaces() {
+    try {
+        var workspaces = await getAllWorkspaces();
+        WORKSPACES = {};
+        workspaces.forEach(ws => WORKSPACES[ws.workspaceId] = ws);
+    } catch (err) {
+        console.error('Error loading workspaces:', err);
+    }
+}
+
+// ============ Schema View Rendering ============
+
+// Render schema view (card-based vertical layout)
+async function renderSchemaView() {
+    if (!currentTable) return;
+
+    var container = document.getElementById('table-container');
+
+    // Get records (limited for performance)
+    var displayRecordIds = currentRecordIds.slice(0, 50); // Show up to 50 cards
+
+    if (displayRecordIds.length === 0) {
+        container.innerHTML = '<div class="empty-state"><h3>No records</h3><p>This table is empty</p></div>';
+        document.getElementById('pagination').style.display = 'none';
+        return;
+    }
+
+    var records = await getRecordsByIds(currentTable, displayRecordIds);
+    var fields = META_FIELDS[currentTable] || {};
+    var fieldIds = Object.keys(fields);
+
+    var html = '<div class="schema-view-container">';
+
+    for (var record of records) {
+        var recordId = record.recordId;
+        var recordFields = record.fields || {};
+
+        html += '<div class="schema-card">';
+
+        // Card header
+        html += '<div class="schema-card-header">';
+        html += '<span class="schema-card-id">' + esc(recordId) + '</span>';
+        html += '<div class="schema-card-actions">';
+        html += '<button class="history-btn" onclick="openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(recordId) + '\')" title="View field history">';
+        html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
+        html += '</button>';
+        html += '</div>';
+        html += '</div>';
+
+        // Card body - all fields vertically
+        html += '<div class="schema-card-body">';
+
+        for (var fid of fieldIds) {
+            var field = fields[fid];
+            var fieldName = field.fieldName || fid;
+            var value = recordFields[fid];
+            if (value === undefined) value = recordFields[fieldName];
+
+            html += '<div class="schema-field-row">';
+            html += '<div class="schema-field-name">' + esc(fieldName) + '</div>';
+
+            if (value == null || value === '') {
+                html += '<div class="schema-field-value empty">—</div>';
+            } else {
+                html += '<div class="schema-field-value">' + formatCell(value) + '</div>';
+            }
+
+            html += '</div>';
+        }
+
+        html += '</div>'; // .schema-card-body
+        html += '</div>'; // .schema-card
+    }
+
+    html += '</div>'; // .schema-view-container
+
+    container.innerHTML = html;
+
+    // Update pagination info (schema view shows limited records)
+    document.getElementById('pagination').style.display = 'none';
+    updateStatus('Showing ' + displayRecordIds.length + ' of ' + totalRecords + ' records', true, null, 'Schema view');
+}
+
+// ============ View Type Detection & Rendering ============
+
+// Get the current view's type
+function getCurrentViewType() {
+    if (!currentTable || !currentView || currentView === '_default') {
+        return 'grid'; // Default view is always grid
+    }
+
+    var view = META_VIEWS[currentTable]?.[currentView];
+    return view?.viewType || 'grid';
+}
+
+// Override renderTable to handle different view types
+var originalRenderTable = renderTable;
+renderTable = async function() {
+    var viewType = getCurrentViewType();
+
+    if (viewType === 'schema') {
+        await renderSchemaView();
+    } else {
+        await originalRenderTable();
+    }
+};
+
+// ============ Override Filter/Sort/Field Functions for Default View Protection ============
+
+// Store original functions
+var originalAddFilter = addFilter;
+var originalAddSort = addSort;
+var originalSetGroupBy = setGroupBy;
+var originalToggleFieldVisibility = toggleFieldVisibility;
+
+// Override addFilter to protect default view
+addFilter = function() {
+    if (isDefaultView()) {
+        var fields = META_FIELDS[currentTable] || {};
+        var firstFieldId = Object.keys(fields)[0];
+        promptCreateViewFromDefault('filter', {
+            fieldId: firstFieldId,
+            operator: 'contains',
+            value: ''
+        }, 'To add filters, please create a new view. The default view shows all records without filters.');
+        return;
+    }
+    originalAddFilter();
+};
+
+// Override addSort to protect default view
+addSort = function() {
+    if (isDefaultView()) {
+        var fields = META_FIELDS[currentTable] || {};
+        var firstFieldId = Object.keys(fields)[0];
+        promptCreateViewFromDefault('sort', {
+            fieldId: firstFieldId,
+            direction: 'asc'
+        }, 'To add sorting, please create a new view. The default view maintains the original record order.');
+        return;
+    }
+    originalAddSort();
+};
+
+// Override setGroupBy to protect default view
+setGroupBy = async function(fieldId) {
+    if (isDefaultView() && fieldId) {
+        promptCreateViewFromDefault('group', fieldId, 'To group records, please create a new view. The default view shows records ungrouped.');
+        return;
+    }
+    await originalSetGroupBy(fieldId);
+};
+
+// Override toggleFieldVisibility to protect default view
+toggleFieldVisibility = async function(fieldId) {
+    if (isDefaultView()) {
+        promptCreateViewFromDefault('hideField', fieldId, 'To customize visible fields, please create a new view. The default view shows all fields.');
+        return;
+    }
+    await originalToggleFieldVisibility(fieldId);
+};
+
+// ============ View Tags UI ============
+
+// Get tags for a view
+function getViewTags(tableId, viewId) {
+    var view = META_VIEWS[tableId]?.[viewId];
+    return view?.tags || [];
+}
+
+// Add tag to a view
+async function addTagToView(tableId, viewId, tag) {
+    var view = META_VIEWS[tableId]?.[viewId];
+    if (!view) return;
+
+    if (!view.tags) view.tags = [];
+    if (!view.tags.includes(tag)) {
+        view.tags.push(tag);
+        await saveView(view);
+        markViewDirty('tags', view.tags);
+    }
+}
+
+// Remove tag from a view
+async function removeTagFromView(tableId, viewId, tag) {
+    var view = META_VIEWS[tableId]?.[viewId];
+    if (!view || !view.tags) return;
+
+    var idx = view.tags.indexOf(tag);
+    if (idx >= 0) {
+        view.tags.splice(idx, 1);
+        await saveView(view);
+        markViewDirty('tags', view.tags);
+    }
+}
+
+// Render tags for a view in sidebar
+function renderViewTags(tags) {
+    if (!tags || tags.length === 0) return '';
+
+    var html = '<div class="view-tags">';
+    tags.slice(0, 3).forEach(tag => {
+        html += '<span class="view-tag">' + esc(tag) + '</span>';
+    });
+    if (tags.length > 3) {
+        html += '<span class="view-tag">+' + (tags.length - 3) + '</span>';
+    }
+    html += '</div>';
+    return html;
+}
+
+// ============ Enhanced Sidebar View Rendering ============
+
+// Update renderViewItem to show tags, type badges, and nesting
+var originalRenderViewItem = renderViewItem;
+renderViewItem = function(tableId, view, inFolder) {
+    var isActive = currentTable === tableId && currentView === view.viewId;
+    var viewName = view.viewName || view.viewId;
+    var viewIcon = getViewTypeIcon(view.viewType);
+    var paddingClass = inFolder ? ' style="padding-left: 52px;"' : '';
+
+    // Calculate nesting level
+    var nestLevel = 0;
+    var parentId = view.parentViewId;
+    while (parentId && nestLevel < 3) {
+        nestLevel++;
+        var parentView = META_VIEWS[tableId]?.[parentId];
+        parentId = parentView?.parentViewId;
+    }
+
+    var nestClass = nestLevel > 0 ? ' nested-level-' + nestLevel : '';
+
+    var html = '<div class="table-view-item' + (isActive ? ' active' : '') + nestClass + '"' + paddingClass + ' ' +
+           'onclick="selectTableView(\'' + esc(tableId) + '\', \'' + esc(view.viewId) + '\')" ' +
+           'oncontextmenu="showViewContextMenu(event, \'' + esc(tableId) + '\', \'' + esc(view.viewId) + '\')">';
+
+    // Nesting indicator
+    if (nestLevel > 0) {
+        html += '<span class="view-nest-indicator">└</span>';
+    }
+
+    html += '<span class="view-icon">' + viewIcon + '</span>' +
+           '<span class="view-name">' + esc(viewName) + '</span>';
+
+    // View type badge
+    if (view.viewType && view.viewType !== 'grid') {
+        html += '<span class="view-type-badge ' + esc(view.viewType) + '">' + esc(view.viewType) + '</span>';
+    }
+
+    html += '</div>';
+
+    // Tags row (if present)
+    var tags = view.tags || [];
+    if (tags.length > 0) {
+        html += renderViewTags(tags);
+    }
+
+    return html;
+};
+
+// ============ Workspace UI in Sidebar ============
+
+// Render workspace tabs at top of sidebar
+function renderWorkspaceTabs() {
+    var sidebarHeader = document.querySelector('.sidebar-header');
+    if (!sidebarHeader) return;
+
+    // Remove existing workspace tabs
+    var existingTabs = document.querySelector('.workspace-tabs');
+    if (existingTabs) existingTabs.remove();
+
+    var wsIds = Object.keys(WORKSPACES);
+    if (wsIds.length === 0) return;
+
+    var html = '<div class="workspace-tabs">';
+
+    // "All" tab
+    html += '<div class="workspace-tab' + (!currentWorkspace ? ' active' : '') + '" onclick="filterByWorkspace(null)">All</div>';
+
+    // Workspace tabs
+    wsIds.forEach(wid => {
+        var ws = WORKSPACES[wid];
+        var isActive = currentWorkspace === wid;
+        html += '<div class="workspace-tab' + (isActive ? ' active' : '') + '" onclick="filterByWorkspace(\'' + esc(wid) + '\')">';
+        html += esc(ws.workspaceName);
+        html += '<span class="workspace-count">' + ws.viewIds.length + '</span>';
+        html += '</div>';
+    });
+
+    // Add workspace button
+    html += '<div class="workspace-add-btn" onclick="promptCreateWorkspace()" title="Create workspace">+</div>';
+
+    html += '</div>';
+
+    sidebarHeader.insertAdjacentHTML('afterend', html);
+}
+
+// Filter sidebar views by workspace
+function filterByWorkspace(workspaceId) {
+    currentWorkspace = workspaceId;
+    renderSidebar();
+}
+
+// Prompt to create a new workspace
+async function promptCreateWorkspace() {
+    var name = prompt('Enter workspace name:');
+    if (name) {
+        await createWorkspace(name);
+        renderWorkspaceTabs();
+    }
+}
+
+// ============ Initialize Workspaces on Load ============
+
+// Extend init to load workspaces
+var originalInit = init;
+init = async function() {
+    await originalInit();
+    await loadWorkspaces();
+    renderWorkspaceTabs();
+};
+
+// Keyboard handler for create view modal
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var modal = document.getElementById('create-view-modal');
+        if (modal && modal.classList.contains('open')) {
+            closeCreateViewModal();
+        }
+    }
+});
 
 initAuthScreen();
     </script>
