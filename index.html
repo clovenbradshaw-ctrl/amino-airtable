@@ -1061,6 +1061,16 @@
         .events-table .event-type-badge.view { background: #fce7f3; color: #be185d; }
         .events-table .event-type-badge.viewconfig { background: #f3e8ff; color: #7c3aed; }
 
+        /* New Event Indicator */
+        .events-table tr.new-event td { background: linear-gradient(90deg, #ecfdf5 0%, #fff 100%); }
+        .events-table tr.new-event:hover td { background: linear-gradient(90deg, #d1fae5 0%, #f8f9fa 100%); }
+        .new-event-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #10b981; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 6px; animation: pulse-new 2s ease-in-out infinite; }
+        @keyframes pulse-new { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .new-events-divider { position: relative; padding: 8px 0; }
+        .new-events-divider td { background: #f0fdf4 !important; border-bottom: 2px solid #10b981; text-align: center; padding: 8px 12px; }
+        .new-events-divider-text { display: inline-flex; align-items: center; gap: 8px; color: #059669; font-size: 11px; font-weight: 600; }
+        .new-events-divider-text::before, .new-events-divider-text::after { content: ''; display: inline-block; width: 40px; height: 1px; background: #10b981; }
+
         /* Payload Preview */
         .payload-preview-container { max-width: 400px; }
         .payload-preview { font-family: "SF Mono", Monaco, monospace; font-size: 11px; color: #555; background: #f8f9fa; padding: 6px 10px; border-radius: 4px; max-height: 60px; overflow: hidden; cursor: pointer; position: relative; transition: all 0.2s; border: 1px solid #e5e7eb; }
@@ -1538,6 +1548,7 @@ var eventsTypeFilter = ''; // 'data', 'table', 'field', 'view', 'viewConfig', or
 var eventsSetFilter = ''; // Filter by set (table id)
 var eventsSearchQuery = '';
 var expandedPayloads = new Set(); // Set of event IDs with expanded payloads
+var appOpenedEventId = 0; // Highest event ID when app was opened (events with higher IDs are "new")
 
 // ============ View Auto-Save System ============
 var XANO_POST_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostreampost';
@@ -1759,6 +1770,38 @@ function searchRawEvents(query, limit) {
             } else {
                 resolve(results);
             }
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getMaxEventId() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var store = tx.objectStore('events');
+        var req = store.openCursor(null, 'prev'); // Open cursor in reverse to get highest ID first
+        req.onsuccess = (e) => {
+            var cursor = e.target.result;
+            if (cursor) {
+                resolve(cursor.value.id || 0);
+            } else {
+                resolve(0); // No events
+            }
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function getAllRawEventsNoPagination() {
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('events', 'readonly');
+        var store = tx.objectStore('events');
+        var req = store.getAll();
+        req.onsuccess = () => {
+            var results = req.result || [];
+            // Sort by id descending (newest first)
+            results.sort((a, b) => (b.id || 0) - (a.id || 0));
+            resolve(results);
         };
         req.onerror = () => reject(req.error);
     });
@@ -4297,6 +4340,9 @@ async function init() {
 
     db = await openDB();
 
+    // Capture the highest event ID at app open time for "new" event indicators
+    appOpenedEventId = await getMaxEventId();
+
     updateStatus('Loading local data...', false, null, null);
 
     var storedLastId = await getSyncMeta('lastEventId');
@@ -4571,14 +4617,13 @@ async function renderEventsView() {
         var totalCount = await getRawEventsCount();
         var events = [];
 
-        // Fetch events based on filters
+        // Fetch ALL events (no pagination)
         if (eventsSearchQuery) {
-            events = await searchRawEvents(eventsSearchQuery, eventsPageSize);
+            events = await searchRawEvents(eventsSearchQuery, 10000); // Large limit for search
         } else if (eventsSetFilter) {
             events = await getRawEventsBySet(eventsSetFilter);
-            events = events.slice(eventsPage * eventsPageSize, (eventsPage + 1) * eventsPageSize);
         } else {
-            events = await getAllRawEvents(eventsPageSize, eventsPage * eventsPageSize);
+            events = await getAllRawEventsNoPagination();
         }
 
         // Apply type filter
@@ -4589,6 +4634,9 @@ async function renderEventsView() {
                 return type === eventsTypeFilter;
             });
         }
+
+        // Count new events (events with ID > appOpenedEventId)
+        var newEventsCount = events.filter(e => e.id > appOpenedEventId).length;
 
         var html = '';
 
@@ -4623,7 +4671,13 @@ async function renderEventsView() {
         html += '<input type="text" placeholder="Search events..." value="' + esc(eventsSearchQuery) + '" onkeydown="if(event.key===\'Enter\')setEventsSearch(this.value)">';
         html += '</div>';
 
-        html += '<div class="events-stats">' + totalCount.toLocaleString() + ' total events</div>';
+        // Show total count and new events count
+        html += '<div class="events-stats">';
+        html += totalCount.toLocaleString() + ' total events';
+        if (newEventsCount > 0) {
+            html += ' <span class="new-event-badge">' + newEventsCount + ' new</span>';
+        }
+        html += '</div>';
         html += '</div>';
 
         // Events table
@@ -4642,20 +4696,22 @@ async function renderEventsView() {
         if (events.length === 0) {
             html += '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">No events found</td></tr>';
         } else {
-            for (var event of events) {
-                html += renderEventRow(event);
+            var addedDivider = false;
+            for (var i = 0; i < events.length; i++) {
+                var event = events[i];
+                var isNew = event.id > appOpenedEventId;
+
+                // Add divider between new and old events
+                if (!addedDivider && !isNew && newEventsCount > 0) {
+                    html += '<tr class="new-events-divider"><td colspan="7"><span class="new-events-divider-text">Events when app opened</span></td></tr>';
+                    addedDivider = true;
+                }
+
+                html += renderEventRow(event, isNew);
             }
         }
 
         html += '</tbody></table>';
-
-        // Pagination
-        var totalPages = Math.ceil(totalCount / eventsPageSize);
-        html += '<div class="pagination">';
-        html += '<button onclick="prevEventsPage()" ' + (eventsPage === 0 ? 'disabled' : '') + '>Previous</button>';
-        html += '<span class="page-info">Page ' + (eventsPage + 1) + ' of ' + Math.max(1, totalPages) + '</span>';
-        html += '<button onclick="nextEventsPage()" ' + (eventsPage >= totalPages - 1 ? 'disabled' : '') + '>Next</button>';
-        html += '</div>';
 
         container.innerHTML = html;
 
@@ -4665,14 +4721,15 @@ async function renderEventsView() {
     }
 }
 
-function renderEventRow(event) {
+function renderEventRow(event, isNew) {
     var payload = parsePayload(event.payload);
     var eventType = payload?._set || 'data';
     var timestamp = event.created_at ? formatTimestamp(new Date(event.created_at).getTime()) : 'Unknown';
     var isExpanded = expandedPayloads.has(event.id);
 
-    var html = '<tr data-event-id="' + event.id + '">';
-    html += '<td><span class="event-id">' + event.id + '</span></td>';
+    var rowClass = isNew ? 'new-event' : '';
+    var html = '<tr data-event-id="' + event.id + '"' + (rowClass ? ' class="' + rowClass + '"' : '') + '>';
+    html += '<td><span class="event-id">' + event.id + (isNew ? '<span class="new-event-badge">NEW</span>' : '') + '</span></td>';
     html += '<td><span class="event-timestamp">' + esc(timestamp) + '</span></td>';
     html += '<td><span class="event-type-badge ' + eventType + '">' + esc(eventType) + '</span></td>';
     html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(event.set || '') + '</span></td>';
