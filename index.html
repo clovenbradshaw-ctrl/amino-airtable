@@ -74,6 +74,21 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        .table-view-item .view-name-input {
+            flex: 1;
+            background: #1a1b1e;
+            border: 1px solid #4a90d9;
+            border-radius: 3px;
+            color: #fff;
+            font-size: 12px;
+            padding: 2px 6px;
+            outline: none;
+            min-width: 0;
+        }
+        .table-view-item .view-name-input:focus {
+            border-color: #6ab0ff;
+            box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.3);
+        }
         .table-view-default {
             color: #666;
             font-style: italic;
@@ -3137,7 +3152,9 @@ function renderViewItem(tableId, view, inFolder) {
     var paddingClass = inFolder ? ' style="padding-left: 52px;"' : '';
 
     return '<div class="table-view-item' + (isActive ? ' active' : '') + '"' + paddingClass + ' ' +
+           'data-table-id="' + esc(tableId) + '" data-view-id="' + esc(view.viewId) + '" ' +
            'onclick="selectTableView(\'' + esc(tableId) + '\', \'' + esc(view.viewId) + '\')" ' +
+           'ondblclick="startViewRename(event, \'' + esc(tableId) + '\', \'' + esc(view.viewId) + '\')" ' +
            'oncontextmenu="showViewContextMenu(event, \'' + esc(tableId) + '\', \'' + esc(view.viewId) + '\')">' +
            '<span class="view-icon">' + viewIcon + '</span>' +
            '<span class="view-name">' + esc(viewName) + '</span>' +
@@ -3332,7 +3349,80 @@ async function moveViewToFolder() {
     await loadTableViewsAsync(contextMenuTableId);
 }
 
-// Rename view
+// Start inline view rename (double-click)
+function startViewRename(event, tableId, viewId) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    var view = META_VIEWS[tableId]?.[viewId];
+    if (!view) return;
+
+    var viewItem = event.currentTarget;
+    var nameSpan = viewItem.querySelector('.view-name');
+    if (!nameSpan) return;
+
+    // Create input element
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'view-name-input';
+    input.value = view.viewName || '';
+    input.setAttribute('data-table-id', tableId);
+    input.setAttribute('data-view-id', viewId);
+
+    // Replace span with input
+    nameSpan.style.display = 'none';
+    nameSpan.parentNode.insertBefore(input, nameSpan.nextSibling);
+    input.focus();
+    input.select();
+
+    // Handle blur and enter key
+    input.addEventListener('blur', finishViewRename);
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            input.blur();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            input.value = view.viewName || '';
+            input.blur();
+        }
+    });
+    input.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+}
+
+// Finish inline view rename
+async function finishViewRename(event) {
+    var input = event.target;
+    var tableId = input.getAttribute('data-table-id');
+    var viewId = input.getAttribute('data-view-id');
+    var newName = input.value.trim();
+
+    var view = META_VIEWS[tableId]?.[viewId];
+    var nameSpan = input.previousElementSibling;
+
+    // Restore the span
+    if (nameSpan) {
+        nameSpan.style.display = '';
+    }
+    input.remove();
+
+    if (!view || !newName || newName === view.viewName) {
+        return;
+    }
+
+    // Update the view name
+    view.viewName = newName;
+    await saveView(view);
+    markViewDirty('viewName', newName);
+
+    // Refresh the UI
+    await loadTableViewsAsync(tableId);
+    renderViewSelector();
+}
+
+// Rename view (from context menu)
 async function renameView() {
     if (!contextMenuTableId || !contextMenuViewId) return;
 
@@ -3342,19 +3432,29 @@ async function renameView() {
         return;
     }
 
-    var newName = prompt('Enter new view name:', view.viewName);
-    if (!newName || newName === view.viewName) {
-        closeViewContextMenu();
-        return;
-    }
-
-    view.viewName = newName;
-    await saveView(view);
-    markViewDirty('viewName', newName);
-
     closeViewContextMenu();
-    await loadTableViewsAsync(contextMenuTableId);
-    renderViewSelector();
+
+    // Find the view item and trigger inline rename
+    var viewItem = document.querySelector('.table-view-item[data-view-id="' + contextMenuViewId + '"]');
+    if (viewItem) {
+        var fakeEvent = {
+            preventDefault: function() {},
+            stopPropagation: function() {},
+            currentTarget: viewItem
+        };
+        startViewRename(fakeEvent, contextMenuTableId, contextMenuViewId);
+    } else {
+        // Fallback to prompt if element not found
+        var newName = prompt('Enter new view name:', view.viewName);
+        if (!newName || newName === view.viewName) {
+            return;
+        }
+        view.viewName = newName;
+        await saveView(view);
+        markViewDirty('viewName', newName);
+        await loadTableViewsAsync(contextMenuTableId);
+        renderViewSelector();
+    }
 }
 
 // Delete view
