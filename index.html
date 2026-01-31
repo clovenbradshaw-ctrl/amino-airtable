@@ -4579,6 +4579,13 @@ function renderTableHeaders() {
 async function renderTable() {
     if (!currentTable) return;
 
+    // Check if table container exists - may not exist during early loading
+    var tableContainer = document.getElementById('table-container');
+    if (!tableContainer) {
+        console.log('renderTable: table-container not ready yet');
+        return;
+    }
+
     // Apply filters, search, and sorts
     var needsFiltering = currentFilters.length > 0 || currentSearchQuery || currentSorts.length > 0;
     if (needsFiltering) {
@@ -4610,16 +4617,16 @@ async function renderTable() {
     }
 
     if (displayRecordIds.length === 0) {
-        tableEl.innerHTML = '';
+        if (tableEl) tableEl.innerHTML = '';
         var emptyMsg = (currentFilters.length > 0 || currentSearchQuery)
             ? '<div class="empty-state"><h3>No matching records</h3><p>Try adjusting your filters or search</p></div>'
             : '<div class="empty-state"><h3>No records</h3><p>This table is empty</p></div>';
-        document.getElementById('table-container').innerHTML = emptyMsg;
+        tableContainer.innerHTML = emptyMsg;
         document.getElementById('pagination').style.display = 'none';
         return;
     }
 
-    document.getElementById('table-container').innerHTML = '<table id="table"></table>';
+    tableContainer.innerHTML = '<table id="table"></table>';
     tableEl = document.getElementById('table');
 
     // Get records
@@ -4871,11 +4878,29 @@ function nextPage() {
 
 // ============ API ============
 
-async function fetchPage(page, afterId, order) {
+// Fetch all records of a specific set type (table, field, view)
+async function fetchAllBySet(setType, onProgress) {
+    var allEvents = [];
+    var page = 1;
+    while (true) {
+        var result = await fetchPage(page, null, 'asc', setType);
+        if (!result.events || result.events.length === 0) break;
+        allEvents = allEvents.concat(result.events);
+        if (onProgress) onProgress(allEvents.length);
+        if (!result.hasMore) break;
+        page = result.nextPage || page + 1;
+        if (page > 100) break; // Safety limit for schema
+    }
+    return allEvents;
+}
+
+async function fetchPage(page, afterId, order, setOverride) {
     var url = API + '?page=' + page + '&per_page=500';
     if (API_KEY) url += '&apiKey=' + encodeURIComponent(API_KEY);
     if (afterId) url += '&id=' + afterId;
-    if (SET_FILTER) url += '&set=' + encodeURIComponent(SET_FILTER);
+    // Use setOverride if provided, otherwise fall back to global SET_FILTER
+    var setFilter = setOverride !== undefined ? setOverride : SET_FILTER;
+    if (setFilter) url += '&set=' + encodeURIComponent(setFilter);
     if (order) url += '&order=' + encodeURIComponent(order);
 
     var res = await fetch(url);
@@ -4898,7 +4923,6 @@ async function fetchPage(page, afterId, order) {
 }
 
 async function fullSync() {
-    var page = 1;
     var eventsLoaded = 0;
     var tablesFound = 0;
     var fieldsFound = 0;
@@ -4909,62 +4933,113 @@ async function fullSync() {
     // Show the loading overlay for initial sync
     showLoadingOverlay();
 
+    // PHASE 1: Load schema first (tables, fields, views) to ensure metadata is available
+    // before trying to render any tables
+    updateStatus('Loading schema...', false, 5, 'Fetching tables...');
+    updateLoadingOverlay('Loading tables...', 'Phase 1/4', 5, 0, 0, 0);
+
+    // Load all tables first
+    var tableEvents = await fetchAllBySet('table', function(count) {
+        updateLoadingOverlay('Loading tables...', count + ' found', 10, count, 0, 0);
+    });
+    if (tableEvents.length > 0) {
+        tableEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
+        await processEvents(tableEvents);
+        eventsLoaded += tableEvents.length;
+        tablesFound = tableEvents.length;
+    }
+
+    updateStatus('Loading schema...', false, 20, 'Fetching fields...');
+    updateLoadingOverlay('Loading fields...', 'Phase 2/4', 20, tablesFound, 0, 0);
+
+    // Load all fields
+    var fieldEvents = await fetchAllBySet('field', function(count) {
+        updateLoadingOverlay('Loading fields...', count + ' found', 30, tablesFound, count, 0);
+    });
+    if (fieldEvents.length > 0) {
+        fieldEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
+        await processEvents(fieldEvents);
+        eventsLoaded += fieldEvents.length;
+        fieldsFound = fieldEvents.length;
+    }
+
+    updateStatus('Loading schema...', false, 40, 'Fetching views...');
+    updateLoadingOverlay('Loading views...', 'Phase 3/4', 40, tablesFound, fieldsFound, 0);
+
+    // Load all views
+    var viewEvents = await fetchAllBySet('view', function(count) {
+        updateLoadingOverlay('Loading views...', count + ' found', 45, tablesFound, fieldsFound, 0);
+    });
+    if (viewEvents.length > 0) {
+        viewEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
+        await processEvents(viewEvents);
+        eventsLoaded += viewEvents.length;
+        viewsFound = viewEvents.length;
+    }
+
+    // Render sidebar with schema
+    await renderSidebar();
+
+    // Auto-select first table now that schema is loaded
+    if (!currentTable && Object.keys(META_TABLES).length > 0) {
+        var firstTable = Object.keys(META_TABLES)[0];
+        await showTable(firstTable);
+    }
+
+    // Hide overlay after schema is loaded so user can see structure while records stream
+    if (tablesFound > 0) {
+        hideLoadingOverlay();
+        overlayHidden = true;
+    }
+
+    // PHASE 2: Stream data records
+    updateStatus('Loading records...', false, 50, tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views');
+
+    var page = 1;
     while (true) {
-        // Show progress with estimates (assume ~50 pages max for progress bar)
-        var progressPct = Math.min(95, (page / 50) * 100);
+        // Show progress with estimates
+        var progressPct = Math.min(95, 50 + (page / 100) * 45);
         var detail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
         updateStatus('Streaming page ' + page + '...', false, progressPct, detail);
 
         // Update the loading overlay (only if still visible)
         if (!overlayHidden) {
-            var statusMessages = [
-                'Fetching your data...',
-                'Building your workspace...',
-                'Organizing records...',
-                'Almost there...',
-                'Processing data...',
-                'Loading tables...'
-            ];
-            var statusMsg = statusMessages[page % statusMessages.length];
-            updateLoadingOverlay(statusMsg, 'Page ' + page, progressPct, tablesFound, fieldsFound, recordsFound);
+            updateLoadingOverlay('Loading records...', 'Page ' + page, progressPct, tablesFound, fieldsFound, recordsFound);
         }
 
-        // Fetch with descending order (latest to earliest) for faster initial display
+        // Fetch data records (excluding schema which we already loaded)
+        // Pass null for setOverride to use the global SET_FILTER, which may be null (all records)
         var result = await fetchPage(page, null, 'desc');
         if (!result.events || result.events.length === 0) break;
 
-        eventsLoaded += result.events.length;
-        // Sort events by ID ascending within each page for correct state processing
-        result.events.sort((a, b) => (a.id || 0) - (b.id || 0));
-
-        // Count what we're processing for feedback
-        for (var e of result.events) {
+        // Filter out schema events we already processed
+        var dataEvents = result.events.filter(function(e) {
             var payload = parsePayload(e.payload);
-            if (payload && payload._set === 'table') tablesFound++;
-            else if (payload && payload._set === 'field') fieldsFound++;
-            else if (payload && payload._set === 'view') viewsFound++;
-            else recordsFound++;
-        }
+            var set = payload && payload._set;
+            return set !== 'table' && set !== 'field' && set !== 'view';
+        });
 
-        await processEvents(result.events);
+        if (dataEvents.length > 0) {
+            eventsLoaded += dataEvents.length;
+            recordsFound += dataEvents.length;
+            // Sort events by ID ascending for correct state processing
+            dataEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
+            await processEvents(dataEvents);
 
-        // Stream data to UI - render after every page for immediate feedback
-        await renderSidebar();
+            // Stream data to UI - render after every page for immediate feedback
+            await renderSidebar();
 
-        // Auto-select first table and refresh view
-        if (!currentTable && Object.keys(META_TABLES).length > 0) {
-            var firstTable = Object.keys(META_TABLES)[0];
-            await showTable(firstTable);
-        } else if (currentTable) {
             // Refresh current table view to show new data
-            originalRecordIds = await getRecordIdsForTable(currentTable);
-            currentRecordIds = originalRecordIds.slice();
-            totalRecords = currentRecordIds.length;
-            await renderTable();
+            if (currentTable) {
+                originalRecordIds = await getRecordIdsForTable(currentTable);
+                currentRecordIds = originalRecordIds.slice();
+                totalRecords = currentRecordIds.length;
+                await renderTable();
+            }
         }
 
-        // Hide overlay after first page with data so user can see streaming content
-        if (!overlayHidden && (tablesFound > 0 || recordsFound > 0)) {
+        // Hide overlay after first page with records
+        if (!overlayHidden && recordsFound > 0) {
             hideLoadingOverlay();
             overlayHidden = true;
         }
