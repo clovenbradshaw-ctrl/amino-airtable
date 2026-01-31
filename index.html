@@ -1076,6 +1076,12 @@
         .events-table .event-type-badge.view { background: #fce7f3; color: #be185d; }
         .events-table .event-type-badge.viewconfig { background: #f3e8ff; color: #7c3aed; }
         .events-table .event-type-badge.current { background: #d1fae5; color: #065f46; }
+        .events-table .field-op-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; margin-right: 4px; }
+        .events-table .field-op-badge.INS { background: #d1fae5; color: #065f46; }
+        .events-table .field-op-badge.ALT { background: #fef3c7; color: #92400e; }
+        .events-table .field-op-badge.NUL { background: #fee2e2; color: #991b1b; }
+        .events-table .field-op-badge .field-count { font-weight: 400; opacity: 0.8; }
+        .events-table .event-details { white-space: nowrap; }
         .events-table .current-state-row { background: #f0fdf4; }
         .events-table .event-id.current-state { color: #9ca3af; }
 
@@ -5396,13 +5402,14 @@ async function renderEventsView() {
         html += '<th style="width: 60px;">Type</th>';
         html += '<th style="width: 140px;">Set</th>';
         html += '<th style="width: 130px;">Record ID</th>';
+        html += '<th style="width: 140px;">Details</th>';
         html += '<th>Payload</th>';
         html += '<th style="width: 120px;">Actions</th>';
         html += '</tr></thead>';
         html += '<tbody id="events-tbody">';
 
         if (events.length === 0) {
-            html += '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">No events found</td></tr>';
+            html += '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #666;">No events found</td></tr>';
         } else {
             html += renderEventRows(events, newEventsCount);
         }
@@ -5586,6 +5593,20 @@ function renderEventRow(event, isNew) {
     html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(event.set || '') + '</span></td>';
     html += '<td><span class="event-record-id">' + esc(event.recordId || '') + '</span></td>';
 
+    // Details column - show field operation types and counts
+    html += '<td class="event-details">';
+    var fieldOps = getFieldOperationDetails(payload);
+    if (fieldOps) {
+        fieldOps.forEach(function(op) {
+            html += '<span class="field-op-badge ' + op.type + '">' + op.type + ' <span class="field-count">' + op.label + '</span></span>';
+        });
+    } else if (eventType !== 'data') {
+        html += '<span style="color: #9ca3af; font-size: 11px;">–</span>';
+    } else {
+        html += '<span style="color: #9ca3af; font-size: 11px;">–</span>';
+    }
+    html += '</td>';
+
     // Payload preview
     html += '<td class="payload-preview-container">';
     html += '<div class="payload-preview' + (isExpanded ? ' expanded' : '') + '" onclick="togglePayloadExpand(\'' + (event.id || event.recordId) + '\')">';
@@ -5619,6 +5640,32 @@ function renderEventRow(event, isNew) {
 
     html += '</tr>';
     return html;
+}
+
+function getFieldOperationDetails(payload) {
+    if (!payload || !payload.fields) return null;
+
+    var fields = payload.fields;
+    var details = [];
+
+    if (fields.INS && typeof fields.INS === 'object') {
+        var count = Object.keys(fields.INS).length;
+        details.push({ type: 'INS', count: count, label: count + ' field' + (count !== 1 ? 's' : '') });
+    }
+
+    if (fields.ALT && typeof fields.ALT === 'object') {
+        var count = Object.keys(fields.ALT).length;
+        details.push({ type: 'ALT', count: count, label: count + ' field' + (count !== 1 ? 's' : '') });
+    }
+
+    if (fields.NUL && Array.isArray(fields.NUL)) {
+        var count = fields.NUL.length;
+        if (count > 0) {
+            details.push({ type: 'NUL', count: count, label: count + ' field' + (count !== 1 ? 's' : '') });
+        }
+    }
+
+    return details.length > 0 ? details : null;
 }
 
 function formatPayloadPreview(payload, expanded) {
