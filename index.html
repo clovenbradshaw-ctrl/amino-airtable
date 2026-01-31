@@ -4865,11 +4865,12 @@ function nextPage() {
 
 // ============ API ============
 
-async function fetchPage(page, afterId) {
+async function fetchPage(page, afterId, order) {
     var url = API + '?page=' + page + '&per_page=500';
     if (API_KEY) url += '&apiKey=' + encodeURIComponent(API_KEY);
     if (afterId) url += '&id=' + afterId;
     if (SET_FILTER) url += '&set=' + encodeURIComponent(SET_FILTER);
+    if (order) url += '&order=' + encodeURIComponent(order);
 
     var res = await fetch(url);
 
@@ -4897,7 +4898,7 @@ async function fullSync() {
     var fieldsFound = 0;
     var viewsFound = 0;
     var recordsFound = 0;
-    var RENDER_INTERVAL = 10; // Only render UI every N pages to reduce memory churn
+    var overlayHidden = false;
 
     // Show the loading overlay for initial sync
     showLoadingOverlay();
@@ -4906,24 +4907,28 @@ async function fullSync() {
         // Show progress with estimates (assume ~50 pages max for progress bar)
         var progressPct = Math.min(95, (page / 50) * 100);
         var detail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
-        updateStatus('Syncing page ' + page + '...', false, progressPct, detail);
+        updateStatus('Streaming page ' + page + '...', false, progressPct, detail);
 
-        // Update the loading overlay
-        var statusMessages = [
-            'Fetching your data...',
-            'Building your workspace...',
-            'Organizing records...',
-            'Almost there...',
-            'Processing data...',
-            'Loading tables...'
-        ];
-        var statusMsg = statusMessages[page % statusMessages.length];
-        updateLoadingOverlay(statusMsg, 'Page ' + page, progressPct, tablesFound, fieldsFound, recordsFound);
+        // Update the loading overlay (only if still visible)
+        if (!overlayHidden) {
+            var statusMessages = [
+                'Fetching your data...',
+                'Building your workspace...',
+                'Organizing records...',
+                'Almost there...',
+                'Processing data...',
+                'Loading tables...'
+            ];
+            var statusMsg = statusMessages[page % statusMessages.length];
+            updateLoadingOverlay(statusMsg, 'Page ' + page, progressPct, tablesFound, fieldsFound, recordsFound);
+        }
 
-        var result = await fetchPage(page, null);
+        // Fetch with descending order (latest to earliest) for faster initial display
+        var result = await fetchPage(page, null, 'desc');
         if (!result.events || result.events.length === 0) break;
 
         eventsLoaded += result.events.length;
+        // Sort events by ID ascending within each page for correct state processing
         result.events.sort((a, b) => (a.id || 0) - (b.id || 0));
 
         // Count what we're processing for feedback
@@ -4937,23 +4942,25 @@ async function fullSync() {
 
         await processEvents(result.events);
 
-        // Only render UI periodically to reduce memory churn (every RENDER_INTERVAL pages)
-        var shouldRender = page === 1 || page % RENDER_INTERVAL === 0;
+        // Stream data to UI - render after every page for immediate feedback
+        await renderSidebar();
 
-        if (shouldRender) {
-            await renderSidebar();
+        // Auto-select first table and refresh view
+        if (!currentTable && Object.keys(META_TABLES).length > 0) {
+            var firstTable = Object.keys(META_TABLES)[0];
+            await showTable(firstTable);
+        } else if (currentTable) {
+            // Refresh current table view to show new data
+            originalRecordIds = await getRecordIdsForTable(currentTable);
+            currentRecordIds = originalRecordIds.slice();
+            totalRecords = currentRecordIds.length;
+            await renderTable();
+        }
 
-            // Auto-select first table and refresh view
-            if (!currentTable && Object.keys(META_TABLES).length > 0) {
-                var firstTable = Object.keys(META_TABLES)[0];
-                await showTable(firstTable);
-            } else if (currentTable) {
-                // Refresh current table view to show new data
-                originalRecordIds = await getRecordIdsForTable(currentTable);
-                currentRecordIds = originalRecordIds.slice();
-                totalRecords = currentRecordIds.length;
-                await renderTable();
-            }
+        // Hide overlay after first page with data so user can see streaming content
+        if (!overlayHidden && (tablesFound > 0 || recordsFound > 0)) {
+            hideLoadingOverlay();
+            overlayHidden = true;
         }
 
         if (!result.hasMore) break;
@@ -4970,12 +4977,10 @@ async function fullSync() {
         await renderTable();
     }
 
-    // Final update and hide overlay
-    updateLoadingOverlay('Setup complete!', eventsLoaded.toLocaleString() + ' events synced', 100, tablesFound, fieldsFound, recordsFound);
-
-    // Brief pause to show completion before hiding
-    await new Promise(resolve => setTimeout(resolve, 500));
-    hideLoadingOverlay();
+    // Ensure overlay is hidden
+    if (!overlayHidden) {
+        hideLoadingOverlay();
+    }
 
     await setSyncMeta('lastEventId', lastEventId);
     var finalDetail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
