@@ -4948,13 +4948,23 @@ function nextPage() {
 // ============ API ============
 
 // Fetch all records of a specific set type (table, field, view)
+// Since API is append-only and queries by time, we fetch all events and filter client-side
 async function fetchAllBySet(setType, onProgress) {
     var allEvents = [];
     var page = 1;
     while (true) {
-        var result = await fetchPage(page, null, 'asc', setType);
+        // Fetch without set filter - API only supports time-based queries
+        var result = await fetchPage(page, null, 'asc', null);
         if (!result.events || result.events.length === 0) break;
-        allEvents = allEvents.concat(result.events);
+
+        // Filter events client-side by payload._set
+        var matchingEvents = result.events.filter(function(e) {
+            if (!e || !e.payload) return false;
+            var payload = parsePayload(e.payload);
+            return payload && payload._set === setType;
+        });
+
+        allEvents = allEvents.concat(matchingEvents);
         if (onProgress) onProgress(allEvents.length);
         if (!result.hasMore) break;
         page = result.nextPage || page + 1;
@@ -5004,10 +5014,39 @@ async function fullSync() {
     showLoadingOverlay();
 
     // Background function to load schema metadata (proper names for tables/fields/views)
+    // Fetches all events once and filters by type client-side (API is append-only, time-based)
     async function loadSchemaInBackground() {
         try {
-            // Load tables
-            var tableEvents = await fetchAllBySet('table');
+            var tableEvents = [];
+            var fieldEvents = [];
+            var viewEvents = [];
+            var page = 1;
+
+            // Fetch all events once and categorize by payload._set
+            while (true) {
+                var result = await fetchPage(page, null, 'asc', null);
+                if (!result.events || result.events.length === 0) break;
+
+                for (var e of result.events) {
+                    if (!e || !e.payload) continue;
+                    var payload = parsePayload(e.payload);
+                    if (!payload) continue;
+
+                    if (payload._set === 'table') {
+                        tableEvents.push(e);
+                    } else if (payload._set === 'field') {
+                        fieldEvents.push(e);
+                    } else if (payload._set === 'view') {
+                        viewEvents.push(e);
+                    }
+                }
+
+                if (!result.hasMore) break;
+                page = result.nextPage || page + 1;
+                if (page > 100) break; // Safety limit for schema
+            }
+
+            // Process tables
             if (tableEvents.length > 0) {
                 tableEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
                 await processEvents(tableEvents);
@@ -5015,8 +5054,7 @@ async function fullSync() {
                 tablesFound = tableEvents.length;
             }
 
-            // Load fields
-            var fieldEvents = await fetchAllBySet('field');
+            // Process fields
             if (fieldEvents.length > 0) {
                 fieldEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
                 await processEvents(fieldEvents);
@@ -5024,8 +5062,7 @@ async function fullSync() {
                 fieldsFound = fieldEvents.length;
             }
 
-            // Load views
-            var viewEvents = await fetchAllBySet('view');
+            // Process views
             if (viewEvents.length > 0) {
                 viewEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
                 await processEvents(viewEvents);
