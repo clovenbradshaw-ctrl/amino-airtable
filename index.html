@@ -3344,6 +3344,41 @@ function parsePayload(payload) {
     return payload;
 }
 
+// Infer field type from a sample value (used for auto-discovered fields)
+function inferFieldType(value) {
+    if (value === null || value === undefined) return 'unknown';
+    if (Array.isArray(value)) {
+        // Check if it's an attachment array (objects with url property)
+        if (value.length > 0 && typeof value[0] === 'object' && value[0].url) {
+            return 'multipleAttachments';
+        }
+        // Check if it's a linked record array (strings starting with 'rec')
+        if (value.length > 0 && typeof value[0] === 'string' && value[0].startsWith('rec')) {
+            return 'multipleRecordLinks';
+        }
+        return 'multipleSelects';
+    }
+    if (typeof value === 'object') {
+        // Could be a single attachment or other complex type
+        if (value.url) return 'multipleAttachments';
+        return 'object';
+    }
+    if (typeof value === 'number') {
+        return Number.isInteger(value) ? 'number' : 'number';
+    }
+    if (typeof value === 'boolean') return 'checkbox';
+    if (typeof value === 'string') {
+        // Try to detect dates
+        if (/^\d{4}-\d{2}-\d{2}/.test(value)) return 'date';
+        // Try to detect emails
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'email';
+        // Try to detect URLs
+        if (/^https?:\/\//.test(value)) return 'url';
+        return 'singleLineText';
+    }
+    return 'unknown';
+}
+
 async function processEvents(events) {
     if (!events || !Array.isArray(events)) return;
 
@@ -3460,6 +3495,40 @@ async function processEvents(events) {
             var tableId = setName.replace('airtable:', '');
             var pfields = payload.fields;
             if (!pfields || typeof pfields !== 'object') continue;
+
+            // Auto-create placeholder table if not seen yet (will be updated when real metadata arrives)
+            if (!META_TABLES[tableId]) {
+                var placeholderTable = {
+                    tableId: tableId,
+                    tableName: tableId,  // Use ID as placeholder name
+                    _placeholder: true   // Mark as placeholder for later update
+                };
+                META_TABLES[tableId] = placeholderTable;
+                tables.push(placeholderTable);
+            }
+
+            // Auto-create placeholder fields from INS/ALT/NUL keys
+            if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+            var allFieldIds = [
+                ...Object.keys(pfields.INS || {}),
+                ...Object.keys(pfields.ALT || {}),
+                ...(Array.isArray(pfields.NUL) ? pfields.NUL : [])
+            ];
+            for (var fid of allFieldIds) {
+                if (!META_FIELDS[tableId][fid]) {
+                    // Get a sample value to infer type
+                    var sampleValue = (pfields.INS && pfields.INS[fid]) || (pfields.ALT && pfields.ALT[fid]);
+                    var placeholderField = {
+                        tableId: tableId,
+                        fieldId: fid,
+                        fieldName: fid,  // Use ID as placeholder name
+                        fieldType: inferFieldType(sampleValue),
+                        _placeholder: true  // Mark as placeholder for later update
+                    };
+                    META_FIELDS[tableId][fid] = placeholderField;
+                    fields.push(placeholderField);
+                }
+            }
 
             if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
             if (!tableDataMap[tableId][recordId]) {
@@ -4929,108 +4998,107 @@ async function fullSync() {
     var viewsFound = 0;
     var recordsFound = 0;
     var overlayHidden = false;
+    var schemaLoaded = false;
 
     // Show the loading overlay for initial sync
     showLoadingOverlay();
 
-    // PHASE 1: Load schema first (tables, fields, views) to ensure metadata is available
-    // before trying to render any tables
-    updateStatus('Loading schema...', false, 5, 'Fetching tables...');
-    updateLoadingOverlay('Loading tables...', 'Phase 1/4', 5, 0, 0, 0);
+    // Background function to load schema metadata (proper names for tables/fields/views)
+    async function loadSchemaInBackground() {
+        try {
+            // Load tables
+            var tableEvents = await fetchAllBySet('table');
+            if (tableEvents.length > 0) {
+                tableEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
+                await processEvents(tableEvents);
+                eventsLoaded += tableEvents.length;
+                tablesFound = tableEvents.length;
+            }
 
-    // Load all tables first
-    var tableEvents = await fetchAllBySet('table', function(count) {
-        updateLoadingOverlay('Loading tables...', count + ' found', 10, count, 0, 0);
-    });
-    if (tableEvents.length > 0) {
-        tableEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
-        await processEvents(tableEvents);
-        eventsLoaded += tableEvents.length;
-        tablesFound = tableEvents.length;
+            // Load fields
+            var fieldEvents = await fetchAllBySet('field');
+            if (fieldEvents.length > 0) {
+                fieldEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
+                await processEvents(fieldEvents);
+                eventsLoaded += fieldEvents.length;
+                fieldsFound = fieldEvents.length;
+            }
+
+            // Load views
+            var viewEvents = await fetchAllBySet('view');
+            if (viewEvents.length > 0) {
+                viewEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
+                await processEvents(viewEvents);
+                eventsLoaded += viewEvents.length;
+                viewsFound = viewEvents.length;
+            }
+
+            schemaLoaded = true;
+
+            // Re-render UI with proper names
+            await renderSidebar();
+            if (currentTable && currentTable !== '_events') {
+                await renderTable();
+            }
+        } catch (err) {
+            console.error('Background schema load error:', err);
+        }
     }
 
-    updateStatus('Loading schema...', false, 20, 'Fetching fields...');
-    updateLoadingOverlay('Loading fields...', 'Phase 2/4', 20, tablesFound, 0, 0);
+    // PHASE 1: Start streaming data immediately (schema will be auto-discovered from records)
+    // This shows tables/fields right away with ID placeholders
+    updateStatus('Loading recent data...', false, 5, 'Streaming records...');
+    updateLoadingOverlay('Loading data...', 'Starting...', 5, 0, 0, 0);
 
-    // Load all fields
-    var fieldEvents = await fetchAllBySet('field', function(count) {
-        updateLoadingOverlay('Loading fields...', count + ' found', 30, tablesFound, count, 0);
-    });
-    if (fieldEvents.length > 0) {
-        fieldEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
-        await processEvents(fieldEvents);
-        eventsLoaded += fieldEvents.length;
-        fieldsFound = fieldEvents.length;
-    }
-
-    updateStatus('Loading schema...', false, 40, 'Fetching views...');
-    updateLoadingOverlay('Loading views...', 'Phase 3/4', 40, tablesFound, fieldsFound, 0);
-
-    // Load all views
-    var viewEvents = await fetchAllBySet('view', function(count) {
-        updateLoadingOverlay('Loading views...', count + ' found', 45, tablesFound, fieldsFound, 0);
-    });
-    if (viewEvents.length > 0) {
-        viewEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
-        await processEvents(viewEvents);
-        eventsLoaded += viewEvents.length;
-        viewsFound = viewEvents.length;
-    }
-
-    // Render sidebar with schema
-    await renderSidebar();
-
-    // Auto-select first table now that schema is loaded
-    if (!currentTable && Object.keys(META_TABLES).length > 0) {
-        var firstTable = Object.keys(META_TABLES)[0];
-        await showTable(firstTable);
-    }
-
-    // Hide overlay after schema is loaded so user can see structure while records stream
-    if (tablesFound > 0) {
-        hideLoadingOverlay();
-        overlayHidden = true;
-    }
-
-    // PHASE 2: Stream data records
-    updateStatus('Loading records...', false, 50, tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views');
+    // Start schema loading in background (will update placeholders with proper names)
+    var schemaPromise = loadSchemaInBackground();
 
     var page = 1;
     while (true) {
         // Show progress with estimates
-        var progressPct = Math.min(95, 50 + (page / 100) * 45);
-        var detail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
+        var progressPct = Math.min(95, 5 + (page / 100) * 90);
+        var tableCount = Object.keys(META_TABLES).length;
+        var fieldCount = Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0);
+        var detail = tableCount + ' tables, ' + fieldCount + ' fields, ' + recordsFound.toLocaleString() + ' records';
         updateStatus('Streaming page ' + page + '...', false, progressPct, detail);
 
         // Update the loading overlay (only if still visible)
         if (!overlayHidden) {
-            updateLoadingOverlay('Loading records...', 'Page ' + page, progressPct, tablesFound, fieldsFound, recordsFound);
+            updateLoadingOverlay('Loading records...', 'Page ' + page, progressPct, tableCount, fieldCount, recordsFound);
         }
 
-        // Fetch data records (excluding schema which we already loaded)
-        // Pass null for setOverride to use the global SET_FILTER, which may be null (all records)
+        // Fetch all events (including schema - processEvents will handle them correctly)
         var result = await fetchPage(page, null, 'desc');
         if (!result.events || result.events.length === 0) break;
 
-        // Filter out schema events we already processed
-        var dataEvents = result.events.filter(function(e) {
-            var payload = parsePayload(e.payload);
-            var set = payload && payload._set;
-            return set !== 'table' && set !== 'field' && set !== 'view';
-        });
+        // Process all events (data records will auto-create placeholder schema,
+        // schema events will update with proper names)
+        var allEvents = result.events;
+        if (allEvents.length > 0) {
+            eventsLoaded += allEvents.length;
+            // Count data records (non-schema events)
+            var dataCount = allEvents.filter(function(e) {
+                var payload = parsePayload(e.payload);
+                var set = payload && payload._set;
+                return set !== 'table' && set !== 'field' && set !== 'view';
+            }).length;
+            recordsFound += dataCount;
 
-        if (dataEvents.length > 0) {
-            eventsLoaded += dataEvents.length;
-            recordsFound += dataEvents.length;
             // Sort events by ID ascending for correct state processing
-            dataEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
-            await processEvents(dataEvents);
+            allEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
+            await processEvents(allEvents);
 
             // Stream data to UI - render after every page for immediate feedback
             await renderSidebar();
 
+            // Auto-select first table after first batch of data
+            if (!currentTable && Object.keys(META_TABLES).length > 0) {
+                var firstTable = Object.keys(META_TABLES)[0];
+                await showTable(firstTable);
+            }
+
             // Refresh current table view to show new data
-            if (currentTable) {
+            if (currentTable && currentTable !== '_events') {
                 originalRecordIds = await getRecordIdsForTable(currentTable);
                 currentRecordIds = originalRecordIds.slice();
                 totalRecords = currentRecordIds.length;
@@ -5038,8 +5106,8 @@ async function fullSync() {
             }
         }
 
-        // Hide overlay after first page with records
-        if (!overlayHidden && recordsFound > 0) {
+        // Hide overlay after first page with data
+        if (!overlayHidden && Object.keys(META_TABLES).length > 0) {
             hideLoadingOverlay();
             overlayHidden = true;
         }
@@ -5049,9 +5117,12 @@ async function fullSync() {
         if (page > 500) break;
     }
 
+    // Wait for schema to finish loading (ensures proper names are applied)
+    await schemaPromise;
+
     // Final render after sync completes
     await renderSidebar();
-    if (currentTable) {
+    if (currentTable && currentTable !== '_events') {
         originalRecordIds = await getRecordIdsForTable(currentTable);
         currentRecordIds = originalRecordIds.slice();
         totalRecords = currentRecordIds.length;
@@ -5064,7 +5135,9 @@ async function fullSync() {
     }
 
     await setSyncMeta('lastEventId', lastEventId);
-    var finalDetail = tablesFound + ' tables, ' + fieldsFound + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
+    var finalTableCount = Object.keys(META_TABLES).length;
+    var finalFieldCount = Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0);
+    var finalDetail = finalTableCount + ' tables, ' + finalFieldCount + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
     updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
 }
 
