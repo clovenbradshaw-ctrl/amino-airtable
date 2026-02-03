@@ -5514,7 +5514,7 @@ async function showEventsView() {
 
 async function renderEventsView() {
     var container = document.querySelector('.table-container');
-    container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading events...</h3></div>';
+    // No loading spinner - render immediately with cached/local data
 
     // Clean up previous scroll handler
     if (eventsScrollHandler) {
