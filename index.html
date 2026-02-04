@@ -449,6 +449,7 @@
             border-radius: 3px;
             overflow: hidden;
             margin-bottom: 16px;
+            position: relative;
         }
         .loading-progress-fill {
             height: 100%;
@@ -471,6 +472,35 @@
             font-size: 12px;
             color: #718096;
             font-family: "SF Mono", Monaco, monospace;
+        }
+        .loading-time-estimate {
+            font-size: 11px;
+            color: #a0aec0;
+            margin-top: 8px;
+            min-height: 16px;
+        }
+        .loading-progress-activity {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            border-radius: 3px;
+        }
+        .loading-progress-activity::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            height: 100%;
+            width: 50%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+            animation: activity-sweep 1.2s ease-in-out infinite;
+        }
+        @keyframes activity-sweep {
+            0% { left: -50%; }
+            100% { left: 100%; }
         }
         .loading-facts {
             display: flex;
@@ -1569,9 +1599,11 @@
             <div class="loading-progress-container">
                 <div class="loading-progress-bar">
                     <div class="loading-progress-fill" id="loading-progress-fill" style="width: 0%"></div>
+                    <div class="loading-progress-activity"></div>
                 </div>
                 <div class="loading-status" id="loading-status">Connecting to server...</div>
                 <div class="loading-detail" id="loading-detail">Page 1</div>
+                <div class="loading-time-estimate" id="loading-time-estimate"></div>
             </div>
 
             <div class="loading-note">
@@ -4432,13 +4464,14 @@ function hideLoadingOverlay() {
     overlay.classList.add('hidden');
 }
 
-function updateLoadingOverlay(status, detail, progress, tables, fields, records) {
+function updateLoadingOverlay(status, detail, progress, tables, fields, records, timeEstimate) {
     var statusEl = document.getElementById('loading-status');
     var detailEl = document.getElementById('loading-detail');
     var progressEl = document.getElementById('loading-progress-fill');
     var tablesEl = document.getElementById('loading-tables');
     var fieldsEl = document.getElementById('loading-fields');
     var recordsEl = document.getElementById('loading-records');
+    var timeEl = document.getElementById('loading-time-estimate');
 
     if (statusEl) statusEl.textContent = status || 'Loading...';
     if (detailEl) detailEl.textContent = detail || '';
@@ -4446,6 +4479,7 @@ function updateLoadingOverlay(status, detail, progress, tables, fields, records)
     if (tablesEl) tablesEl.textContent = (tables || 0).toLocaleString();
     if (fieldsEl) fieldsEl.textContent = (fields || 0).toLocaleString();
     if (recordsEl) recordsEl.textContent = (records || 0).toLocaleString();
+    if (timeEl) timeEl.textContent = timeEstimate || '';
 }
 
 function setRefreshIndicatorSyncing(isSyncing) {
@@ -5023,6 +5057,18 @@ async function fullSync() {
     var viewsFound = 0;
     var recordsFound = 0;
     var schemaLoaded = false;
+    var syncStartTime = Date.now();
+    var lastBatchTime = syncStartTime;
+    var recordsPerSecond = 0;
+
+    // Helper to format time remaining
+    function formatTimeRemaining(seconds) {
+        if (seconds < 0 || !isFinite(seconds)) return 'Calculating...';
+        if (seconds < 5) return 'Almost done...';
+        if (seconds < 60) return 'About ' + Math.ceil(seconds) + ' seconds remaining';
+        var minutes = Math.ceil(seconds / 60);
+        return 'About ' + minutes + ' minute' + (minutes > 1 ? 's' : '') + ' remaining';
+    }
 
     // Show the loading overlay for initial sync
     showLoadingOverlay();
@@ -5101,27 +5147,64 @@ async function fullSync() {
     // PHASE 1: Start streaming data immediately (schema will be auto-discovered from records)
     // This shows tables/fields right away with ID placeholders
     updateStatus('Loading recent data...', false, 5, 'Streaming records...');
-    updateLoadingOverlay('Loading data...', 'Starting...', 5, 0, 0, 0);
+    updateLoadingOverlay('Loading data...', 'Starting...', 5, 0, 0, 0, 'Connecting to server...');
 
     // Start schema loading in background (will update placeholders with proper names)
     var schemaPromise = loadSchemaInBackground();
 
     var page = 1; // Page-based pagination
     var iterations = 0;
+    var smoothProgress = 5; // For smooth animation between batches
+    var targetProgress = 5;
+
+    // Smooth progress animation - updates every 100ms between batches
+    var progressAnimationInterval = setInterval(function() {
+        if (smoothProgress < targetProgress) {
+            smoothProgress = Math.min(targetProgress, smoothProgress + 0.5);
+            var progressEl = document.getElementById('loading-progress-fill');
+            if (progressEl) progressEl.style.width = smoothProgress + '%';
+        }
+    }, 100);
+
     while (true) {
-        // Show progress with estimates
-        var progressPct = Math.min(95, 5 + (iterations / 100) * 90);
+        // Calculate time-based estimates
+        var elapsed = (Date.now() - syncStartTime) / 1000;
+        var timeEstimate = '';
+
+        if (iterations > 0 && recordsFound > 0) {
+            // Calculate records per second based on overall progress
+            recordsPerSecond = recordsFound / elapsed;
+
+            // Estimate remaining time - we use hasMore to determine if there's more data
+            // Rough estimate: assume linear progress based on batch count
+            var estimatedTotalBatches = Math.max(iterations + 1, iterations * 1.2);
+            var remainingBatches = estimatedTotalBatches - iterations;
+            var avgBatchTime = elapsed / iterations;
+            var remainingSeconds = remainingBatches * avgBatchTime;
+
+            if (remainingSeconds > 0) {
+                timeEstimate = formatTimeRemaining(remainingSeconds) + ' • ' + Math.round(recordsPerSecond).toLocaleString() + ' records/sec';
+            }
+        } else {
+            timeEstimate = 'Calculating speed...';
+        }
+
+        // Show progress with estimates - smoother progress calculation
+        targetProgress = Math.min(95, 5 + (iterations / 50) * 85);
         var tableCount = Object.keys(META_TABLES).length;
         var fieldCount = Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0);
         var detail = tableCount + ' tables, ' + fieldCount + ' fields, ' + recordsFound.toLocaleString() + ' records';
-        updateStatus('Loading page ' + page + '...', false, progressPct, detail);
+        updateStatus('Loading page ' + page + '...', false, targetProgress, detail);
 
-        // Update the loading overlay with progress
-        updateLoadingOverlay('Downloading data...', 'Page ' + page, progressPct, tableCount, fieldCount, recordsFound);
+        // Update the loading overlay with progress and time estimate
+        updateLoadingOverlay('Downloading data...', 'Page ' + page + ' • ' + Math.round(elapsed) + 's elapsed', targetProgress, tableCount, fieldCount, recordsFound, timeEstimate);
 
         // Fetch all events using page-based pagination
         var result = await fetchPage(page);
-        if (!result.events || result.events.length === 0) break;
+        if (!result.events || result.events.length === 0) {
+            clearInterval(progressAnimationInterval);
+            break;
+        }
 
         // Process all events (data records will auto-create placeholder schema,
         // schema events will update with proper names)
@@ -5159,14 +5242,21 @@ async function fullSync() {
         }
 
         // Keep overlay visible during initial sync - only hide when complete
-        if (!result.hasMore) break;
+        if (!result.hasMore) {
+            clearInterval(progressAnimationInterval);
+            break;
+        }
         page = result.nextPage;
         iterations++;
-        if (iterations > 500) break;
+        if (iterations > 500) {
+            clearInterval(progressAnimationInterval);
+            break;
+        }
     }
 
     // Wait for schema to finish loading (ensures proper names are applied)
-    updateLoadingOverlay('Finalizing schema...', 'Processing metadata', 95, Object.keys(META_TABLES).length, Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0), recordsFound);
+    var totalElapsed = Math.round((Date.now() - syncStartTime) / 1000);
+    updateLoadingOverlay('Finalizing schema...', 'Processing metadata', 95, Object.keys(META_TABLES).length, Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0), recordsFound, 'Almost done...');
     await schemaPromise;
 
     // Final render after sync completes
@@ -5184,7 +5274,9 @@ async function fullSync() {
     var finalDetail = finalTableCount + ' tables, ' + finalFieldCount + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
 
     // Show completion on overlay before hiding
-    updateLoadingOverlay('Setup complete!', 'Ready to explore your data', 100, finalTableCount, finalFieldCount, recordsFound);
+    var completionTime = Math.round((Date.now() - syncStartTime) / 1000);
+    var completionMsg = 'Completed in ' + completionTime + ' seconds';
+    updateLoadingOverlay('Setup complete!', 'Ready to explore your data', 100, finalTableCount, finalFieldCount, recordsFound, completionMsg);
 
     // Brief delay to show completion, then hide overlay
     await new Promise(resolve => setTimeout(resolve, 500));
