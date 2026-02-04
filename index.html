@@ -3184,6 +3184,315 @@ var AminoSync = {
             return null;
         }
         return currentData;
+    },
+
+    // Get all local snapshots from IndexedDB
+    async getAllLocalSnapshots() {
+        if (!db || !db.objectStoreNames.contains('snapshot')) return [];
+
+        return new Promise((resolve, reject) => {
+            var tx = db.transaction('snapshot', 'readonly');
+            var req = tx.objectStore('snapshot').getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    },
+
+    // Push a single snapshot to the server
+    async pushSnapshot(snapshot) {
+        try {
+            var response = await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(snapshot.record_id), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(snapshot)
+            });
+
+            // 200 = updated, 201 = created, 409 = stale (remote is newer)
+            if (response.ok) {
+                return { success: true, status: response.status };
+            } else if (response.status === 409) {
+                // Remote has newer data - this is fine, not an error
+                return { success: false, status: 409, stale: true };
+            } else {
+                return { success: false, status: response.status };
+            }
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    },
+
+    // Push local snapshots to server (sync local state to cache)
+    async pushLocalSnapshots(batchSize = 50) {
+        var localSnapshots = await this.getAllLocalSnapshots();
+        if (localSnapshots.length === 0) {
+            return { pushed: 0, stale: 0, errors: 0 };
+        }
+
+        var pushed = 0;
+        var stale = 0;
+        var errors = 0;
+
+        // Process in batches to avoid overwhelming the server
+        for (var i = 0; i < localSnapshots.length; i += batchSize) {
+            var batch = localSnapshots.slice(i, i + batchSize);
+
+            // Push batch in parallel
+            var results = await Promise.all(batch.map(s => this.pushSnapshot(s)));
+
+            for (var result of results) {
+                if (result.success) {
+                    pushed++;
+                } else if (result.stale) {
+                    stale++;
+                } else {
+                    errors++;
+                }
+            }
+        }
+
+        return { pushed, stale, errors, total: localSnapshots.length };
+    },
+
+    // Verify and repair a single record by replaying events from the server
+    async verifyRecord(recordId) {
+        try {
+            // 1. Fetch all events for this record from the server
+            var response = await fetch(
+                API + '?recordId=' + encodeURIComponent(recordId) +
+                (API_KEY ? '&apiKey=' + encodeURIComponent(API_KEY) : '')
+            );
+
+            if (!response.ok) {
+                return { status: 'error', recordId, error: 'HTTP ' + response.status };
+            }
+
+            var events = await response.json();
+
+            if (!events || events.length === 0) {
+                // No events = record shouldn't exist in snapshot
+                var existing = await this.getSnapshot(recordId);
+                if (existing) {
+                    // Orphaned snapshot row, clean it up
+                    await this.deleteSnapshot(recordId);
+                    return { status: 'deleted_orphan', recordId };
+                }
+                return { status: 'not_found', recordId };
+            }
+
+            // 2. Sort by id ascending (chronological order)
+            events.sort(function(a, b) { return (a.id || 0) - (b.id || 0); });
+
+            // 3. Replay to compute current state
+            var state = {};
+            var lastOp = null;
+            var lastEventId = 0;
+            var sourceTable = null;
+
+            for (var event of events) {
+                var payload = parsePayload(event.payload);
+                if (!payload || typeof payload !== 'object') continue;
+
+                sourceTable = event.set;
+                lastEventId = event.id;
+                lastOp = event.operator;
+
+                var pfields = payload.fields || {};
+
+                if (event.operator === 'INS') {
+                    // Insert: initialize state
+                    state = pfields.INS || payload.context?.data || {};
+                } else if (event.operator === 'ALT') {
+                    // Alter: merge changes
+                    if (pfields.ALT) {
+                        Object.assign(state, pfields.ALT);
+                    }
+                    if (payload.context?.data) {
+                        Object.assign(state, payload.context.data);
+                    }
+                } else if (event.operator === 'NUL') {
+                    // Nullify: handle field deletion or record deletion
+                    if (pfields.NUL && Array.isArray(pfields.NUL)) {
+                        pfields.NUL.forEach(function(fid) { delete state[fid]; });
+                    } else {
+                        state = null;
+                    }
+                }
+            }
+
+            // 4. Get current snapshot state from server
+            var snapshotRes = await fetch(
+                XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(recordId)
+            );
+            var currentSnapshot = snapshotRes.ok ? await snapshotRes.json() : null;
+
+            // 5. Compare and repair if needed
+            if (lastOp === 'NUL' || state === null) {
+                // Record was deleted
+                if (currentSnapshot) {
+                    await this.deleteSnapshot(recordId);
+                    return { status: 'repaired_delete', recordId };
+                }
+                return { status: 'verified_deleted', recordId };
+            }
+
+            // Record should exist
+            var replayedSnapshot = {
+                record_id: recordId,
+                source_table: sourceTable ? sourceTable.replace('airtable:', '') : null,
+                data: state,
+                last_amino_event: lastEventId
+            };
+
+            // Check if repair needed
+            var needsRepair = !currentSnapshot ||
+                currentSnapshot.last_amino_event !== lastEventId ||
+                JSON.stringify(currentSnapshot.data) !== JSON.stringify(state);
+
+            if (needsRepair) {
+                await this.pushSnapshot(replayedSnapshot);
+
+                // Also update local IndexedDB
+                if (db && db.objectStoreNames.contains('snapshot')) {
+                    var tx = db.transaction('snapshot', 'readwrite');
+                    tx.objectStore('snapshot').put(replayedSnapshot);
+                }
+
+                return {
+                    status: 'repaired',
+                    recordId: recordId,
+                    eventCount: events.length,
+                    lastEventId: lastEventId,
+                    diff: {
+                        had: currentSnapshot ? currentSnapshot.last_amino_event : null,
+                        expected: lastEventId
+                    }
+                };
+            }
+
+            return { status: 'verified_ok', recordId: recordId, eventCount: events.length };
+
+        } catch (err) {
+            return { status: 'error', recordId: recordId, error: err.message };
+        }
+    },
+
+    // Verify a random record from local snapshot
+    async verifyRandom() {
+        var all = await this.getAllLocalSnapshots();
+        if (all.length === 0) return { status: 'empty' };
+
+        var random = all[Math.floor(Math.random() * all.length)];
+        return this.verifyRecord(random.record_id);
+    },
+
+    // Background verification: check N random records
+    async backgroundVerify(count) {
+        count = count || 5;
+        var results = [];
+
+        for (var i = 0; i < count; i++) {
+            var result = await this.verifyRandom();
+            results.push(result);
+            // Small delay to avoid hammering the API
+            await new Promise(function(r) { setTimeout(r, 100); });
+        }
+
+        return {
+            checked: results.length,
+            repaired: results.filter(function(r) { return r.status === 'repaired'; }).length,
+            results: results
+        };
+    },
+
+    // Background verification interval handle
+    verifyInterval: null,
+
+    // Start background verification loop
+    startBackgroundVerify(intervalMs, countPerInterval) {
+        intervalMs = intervalMs || 60000;
+        countPerInterval = countPerInterval || 3;
+
+        var self = this;
+        this.verifyInterval = setInterval(function() {
+            self.backgroundVerify(countPerInterval);
+        }, intervalMs);
+
+        // Run initial verification
+        return this.backgroundVerify(countPerInterval);
+    },
+
+    // Stop background verification
+    stopBackgroundVerify() {
+        if (this.verifyInterval) {
+            clearInterval(this.verifyInterval);
+            this.verifyInterval = null;
+        }
+    }
+};
+
+// ============ Passive Snapshot Sync ============
+// Wrapper that orchestrates background verification and snapshot pulling
+
+var PassiveSnapshotSync = {
+    // Configuration
+    VERIFY_INTERVAL: 30000,  // 30 seconds between verification cycles
+    VERIFY_COUNT: 3,         // Records to verify per cycle
+    PULL_INTERVAL: 10000,    // 10 seconds between snapshot pulls
+
+    // State
+    isRunning: false,
+    pullInterval: null,
+    stats: {
+        verified: 0,
+        repaired: 0,
+        pulled: 0
+    },
+
+    // Start passive sync (both verification and pulling)
+    start() {
+        if (this.isRunning) return;
+        this.isRunning = true;
+
+        console.log('[PassiveSync] Starting passive snapshot sync');
+
+        // Start background verification (self-healing)
+        AminoSync.startBackgroundVerify(this.VERIFY_INTERVAL, this.VERIFY_COUNT);
+
+        // Start periodic snapshot pulls from server
+        var self = this;
+        this.pullInterval = setInterval(async function() {
+            try {
+                var result = await AminoSync.syncFromSnapshot();
+                if (result.updated > 0) {
+                    self.stats.pulled += result.updated;
+                }
+            } catch (err) {
+                // Silent fail - background operation
+            }
+        }, this.PULL_INTERVAL);
+    },
+
+    // Stop passive sync
+    stop() {
+        if (!this.isRunning) return;
+        this.isRunning = false;
+
+        AminoSync.stopBackgroundVerify();
+
+        if (this.pullInterval) {
+            clearInterval(this.pullInterval);
+            this.pullInterval = null;
+        }
+
+        console.log('[PassiveSync] Stopped');
+    },
+
+    // Get current stats
+    getStats() {
+        return {
+            isRunning: this.isRunning,
+            ...this.stats
+        };
     }
 };
 
@@ -6653,6 +6962,9 @@ async function init() {
 
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(incrementalSync, 60000);
+
+    // Start passive snapshot sync (background verification + pulling)
+    PassiveSnapshotSync.start();
 }
 
 // ============ Field History Modal ============
