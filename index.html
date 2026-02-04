@@ -5199,8 +5199,12 @@ async function incrementalSync() {
 
         if (result.events && result.events.length > 0) {
             updateStatus('Processing ' + result.events.length + ' new events...', false, null, null);
-            // Sort by timestamp for correct processing order
-            result.events.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+            // Sort by timestamp for correct processing order (handle both string and numeric timestamps)
+            result.events.sort((a, b) => {
+                var aTime = a.created_at ? (typeof a.created_at === 'number' ? a.created_at : new Date(a.created_at).getTime()) : 0;
+                var bTime = b.created_at ? (typeof b.created_at === 'number' ? b.created_at : new Date(b.created_at).getTime()) : 0;
+                return aTime - bTime;
+            });
             await processEvents(result.events);
             await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
 
