@@ -567,6 +567,34 @@
         .loading-note strong {
             color: #a0aec0;
         }
+        .loading-skip-section {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .loading-skip-text {
+            font-size: 12px;
+            color: #718096;
+            margin-bottom: 12px;
+        }
+        .loading-skip-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #a0aec0;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .loading-skip-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+            color: #fff;
+        }
+        .loading-skip-btn:active {
+            transform: scale(0.98);
+        }
         /* Floating particles animation */
         .loading-particles {
             position: absolute;
@@ -1827,6 +1855,13 @@
 
             <div class="loading-note">
                 <strong>One-time setup:</strong> This only happens once per device. After this, your data loads instantly from local storage.
+            </div>
+
+            <div class="loading-skip-section">
+                <div class="loading-skip-text">Have a CSV export? Skip the download and import directly.</div>
+                <button class="loading-skip-btn" onclick="skipSetupAndUploadFile()">
+                    Skip &amp; Upload CSV File
+                </button>
             </div>
         </div>
     </div>
@@ -7560,6 +7595,161 @@ function showImportStatus(title, details, type, progress) {
             if (div.parentNode) div.remove();
         }, 5000);
     }
+}
+
+// Skip setup and upload CSV file directly
+var skipSyncAbortController = null;
+
+async function skipSetupAndUploadFile() {
+    // Create file input
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+
+    input.onchange = async function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            // Update the loading overlay to show import progress
+            updateLoadingOverlay('Importing from file...', 'Reading CSV...', 5, 0, 0, 0, 'Starting import...');
+
+            var text = await file.text();
+            var lines = text.split(/\r?\n/);
+
+            if (lines.length < 2) {
+                alert('CSV file is empty or has no data rows.');
+                return;
+            }
+
+            // Parse header
+            var header = parseCSVLine(lines[0]);
+            var idIndex = header.indexOf('id');
+            var setIndex = header.indexOf('set');
+            var recordIdIndex = header.indexOf('recordId');
+            var createdAtIndex = header.indexOf('created_at');
+            var payloadIndex = header.indexOf('payload');
+
+            if (idIndex === -1) {
+                alert('CSV must have an "id" column.');
+                return;
+            }
+
+            updateLoadingOverlay('Importing from file...', 'Parsing CSV data...', 10, 0, 0, 0, '');
+
+            // Parse all event rows
+            var events = [];
+            var tablesCount = 0;
+            var fieldsCount = 0;
+            var recordsCount = 0;
+
+            for (var i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+
+                var fields = parseCSVLine(lines[i]);
+                var event = {
+                    id: parseInt(fields[idIndex], 10)
+                };
+
+                if (isNaN(event.id)) continue;
+
+                if (setIndex !== -1) event.set = fields[setIndex] || '';
+                if (recordIdIndex !== -1) event.recordId = fields[recordIdIndex] || '';
+                if (createdAtIndex !== -1) event.created_at = fields[createdAtIndex] || '';
+                if (payloadIndex !== -1) {
+                    var payloadStr = fields[payloadIndex] || '{}';
+                    try {
+                        event.payload = JSON.parse(payloadStr);
+                    } catch (err) {
+                        event.payload = payloadStr;
+                    }
+                }
+
+                events.push(event);
+
+                // Count types for progress display
+                if (event.payload && event.payload._set) {
+                    if (event.payload._set === 'table') tablesCount++;
+                    else if (event.payload._set === 'field') fieldsCount++;
+                    else recordsCount++;
+                } else {
+                    recordsCount++;
+                }
+
+                if (i % 5000 === 0) {
+                    var progress = 10 + Math.round((i / lines.length) * 30);
+                    updateLoadingOverlay('Importing from file...', 'Parsed ' + events.length.toLocaleString() + ' events...', progress, tablesCount, fieldsCount, recordsCount, '');
+                }
+            }
+
+            if (events.length === 0) {
+                alert('No valid events found in CSV.');
+                return;
+            }
+
+            updateLoadingOverlay('Importing from file...', 'Saving ' + events.length.toLocaleString() + ' events to local storage...', 45, tablesCount, fieldsCount, recordsCount, '');
+
+            // Sort events by ID to ensure proper order
+            events.sort(function(a, b) { return a.id - b.id; });
+
+            // Save raw events in batches
+            var batchSize = 500;
+            var saved = 0;
+
+            for (var j = 0; j < events.length; j += batchSize) {
+                var batch = events.slice(j, j + batchSize);
+                await saveRawEvents(batch);
+                saved += batch.length;
+
+                var progress = 45 + Math.round((saved / events.length) * 25);
+                updateLoadingOverlay('Importing from file...', 'Saved ' + saved.toLocaleString() + ' of ' + events.length.toLocaleString() + ' events...', progress, tablesCount, fieldsCount, recordsCount, '');
+            }
+
+            updateLoadingOverlay('Importing from file...', 'Processing events...', 75, tablesCount, fieldsCount, recordsCount, '');
+
+            // Process all events to build metadata
+            await processEvents(events);
+
+            // Update the last event timestamp
+            var maxId = events.reduce(function(max, e) { return Math.max(max, e.id); }, 0);
+            var lastEvent = events.find(function(e) { return e.id === maxId; });
+            if (lastEvent && lastEvent.created_at) {
+                await setSyncMeta('lastEventTimestamp', lastEvent.created_at);
+                lastEventTimestamp = lastEvent.created_at;
+            }
+
+            updateLoadingOverlay('Import complete!', 'Rendering interface...', 95, tablesCount, fieldsCount, recordsCount, '');
+
+            // Render the UI
+            await renderSidebar();
+
+            // Auto-select first table
+            var firstTable = Object.keys(META_TABLES)[0];
+            if (firstTable) {
+                await showTable(firstTable);
+            }
+
+            // Hide overlay
+            updateLoadingOverlay('Import complete!', events.length.toLocaleString() + ' events imported successfully', 100, tablesCount, fieldsCount, recordsCount, '');
+            setTimeout(hideLoadingOverlay, 500);
+
+            updateStatus('Up to date', true, null, null);
+
+            // Start the refresh indicator countdown
+            lastSyncTime = Date.now();
+            startRefreshCountdown();
+
+            // Start incremental sync polling
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(incrementalSync, 60000);
+
+        } catch (err) {
+            console.error('Error importing file:', err);
+            alert('Error importing file: ' + err.message);
+        }
+    };
+
+    input.click();
 }
 
 // ============ Point in Time View ============
