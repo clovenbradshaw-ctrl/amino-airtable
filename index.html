@@ -2962,6 +2962,28 @@ var VIEW_FOLDERS = {};
 var WORKSPACES = {};
 var currentWorkspace = null; // Current active workspace filter
 
+// Table Settings: User-specific preferences for tables and views
+// Structure: TABLE_SETTINGS = {
+//   tables: {
+//     [tableId]: {
+//       visible: boolean,      // Whether table is visible in sidebar
+//       sortOrder: number      // Custom sort order
+//     }
+//   },
+//   tableOrder: string[],      // Array of tableIds in user's preferred order
+//   views: {
+//     [viewId]: {
+//       isPublic: boolean,     // Whether view is public (shared) or private
+//       sortOrder: number      // Custom sort order within table
+//     }
+//   }
+// }
+var TABLE_SETTINGS = {
+    tables: {},
+    tableOrder: [],
+    views: {}
+};
+
 // Pending view action (when user tries to modify default view)
 var pendingViewAction = null; // { action: 'filter'|'sort'|'fields'|'group', data: any }
 
@@ -4598,7 +4620,159 @@ window.addEventListener('beforeunload', function(e) {
         // Attempt to save (may not complete if user leaves too quickly)
         saveViewToBackend();
     }
+    if (tableSettingsDirty) {
+        // Attempt to save table settings
+        saveTableSettings();
+    }
 });
+
+// ============ Table Settings (User-Specific Table/View Preferences) ============
+
+// Table settings dirty state tracking
+var tableSettingsDirty = false;
+var tableSettingsAutoSaveTimer = null;
+
+// Get current table settings
+function getTableSettings() {
+    return TABLE_SETTINGS;
+}
+
+// Update table visibility
+function setTableVisible(tableId, visible) {
+    if (!TABLE_SETTINGS.tables[tableId]) {
+        TABLE_SETTINGS.tables[tableId] = {};
+    }
+    TABLE_SETTINGS.tables[tableId].visible = visible;
+    markTableSettingsDirty();
+}
+
+// Update table sort order
+function setTableSortOrder(tableId, sortOrder) {
+    if (!TABLE_SETTINGS.tables[tableId]) {
+        TABLE_SETTINGS.tables[tableId] = {};
+    }
+    TABLE_SETTINGS.tables[tableId].sortOrder = sortOrder;
+    markTableSettingsDirty();
+}
+
+// Update the table order array (reorder tables)
+function setTableOrder(tableOrder) {
+    TABLE_SETTINGS.tableOrder = tableOrder;
+    markTableSettingsDirty();
+}
+
+// Update view public/private setting
+function setViewPublic(viewId, isPublic) {
+    if (!TABLE_SETTINGS.views[viewId]) {
+        TABLE_SETTINGS.views[viewId] = {};
+    }
+    TABLE_SETTINGS.views[viewId].isPublic = isPublic;
+    markTableSettingsDirty();
+}
+
+// Update view sort order
+function setViewSortOrder(viewId, sortOrder) {
+    if (!TABLE_SETTINGS.views[viewId]) {
+        TABLE_SETTINGS.views[viewId] = {};
+    }
+    TABLE_SETTINGS.views[viewId].sortOrder = sortOrder;
+    markTableSettingsDirty();
+}
+
+// Check if a table is visible (defaults to true if not set)
+function isTableVisible(tableId) {
+    var settings = TABLE_SETTINGS.tables[tableId];
+    return settings ? settings.visible !== false : true;
+}
+
+// Check if a view is public (defaults to false - private by default)
+function isViewPublic(viewId) {
+    var settings = TABLE_SETTINGS.views[viewId];
+    return settings ? settings.isPublic === true : false;
+}
+
+// Get table sort order (returns null if not set)
+function getTableSortOrder(tableId) {
+    var settings = TABLE_SETTINGS.tables[tableId];
+    return settings ? settings.sortOrder : null;
+}
+
+// Get view sort order (returns null if not set)
+function getViewSortOrder(viewId) {
+    var settings = TABLE_SETTINGS.views[viewId];
+    return settings ? settings.sortOrder : null;
+}
+
+// Mark table settings as dirty and schedule auto-save
+function markTableSettingsDirty() {
+    tableSettingsDirty = true;
+
+    // Clear existing timer
+    if (tableSettingsAutoSaveTimer) {
+        clearTimeout(tableSettingsAutoSaveTimer);
+    }
+
+    // Schedule auto-save after 2 seconds of inactivity
+    tableSettingsAutoSaveTimer = setTimeout(function() {
+        saveTableSettings();
+    }, 2000);
+}
+
+// Save table settings to backend
+async function saveTableSettings() {
+    if (!tableSettingsDirty) return;
+
+    var tableSettingsData = {
+        _set: 'tableSettings',
+        tables: TABLE_SETTINGS.tables,
+        tableOrder: TABLE_SETTINGS.tableOrder,
+        views: TABLE_SETTINGS.views
+    };
+
+    var payload = {
+        uuid: crypto.randomUUID(),
+        recordId: 'tableSettings:' + (API_KEY || 'default'),
+        set: 'userSettings',
+        operator: 'ALT',
+        created_at: new Date().toISOString(),
+        apiKey: API_KEY,
+        payload: JSON.stringify(tableSettingsData)
+    };
+
+    try {
+        // Use AminoSync to post event and update snapshot
+        await AminoSync.postEventWithSnapshot(payload, {
+            source_table: 'tableSettings',
+            data: tableSettingsData
+        });
+
+        // Clear dirty state
+        tableSettingsDirty = false;
+        clearTimeout(tableSettingsAutoSaveTimer);
+
+        console.log('Table settings saved to backend');
+    } catch (error) {
+        console.error('Failed to save table settings to backend:', error);
+        // Keep dirty state, will retry on next trigger
+    }
+}
+
+// Load table settings from snapshots
+async function loadTableSettings() {
+    try {
+        var recordId = 'tableSettings:' + (API_KEY || 'default');
+        var snapshot = await AminoSync.getSnapshot(recordId);
+
+        if (snapshot && snapshot.data) {
+            if (snapshot.data.tables) TABLE_SETTINGS.tables = snapshot.data.tables;
+            if (snapshot.data.tableOrder) TABLE_SETTINGS.tableOrder = snapshot.data.tableOrder;
+            if (snapshot.data.views) TABLE_SETTINGS.views = snapshot.data.views;
+            console.log('Table settings loaded from snapshot');
+        }
+    } catch (error) {
+        console.error('Failed to load table settings:', error);
+    }
+}
 
 // ============ View Field Configuration ============
 
@@ -5148,6 +5322,12 @@ async function processEventsMemoryOnly(events, onProgress) {
             if (payload.sorts) viewData.sorts = payload.sorts;
             if (payload.folderId !== undefined) viewData.folderId = payload.folderId;
 
+        } else if (recordType === 'tableSettings') {
+            // User-specific table and view settings
+            if (payload.tables) TABLE_SETTINGS.tables = payload.tables;
+            if (payload.tableOrder) TABLE_SETTINGS.tableOrder = payload.tableOrder;
+            if (payload.views) TABLE_SETTINGS.views = payload.views;
+
         } else {
             // Data record
             var tableId = setName.replace('airtable:', '');
@@ -5318,6 +5498,12 @@ async function processEvents(events) {
             if (payload.folderId !== undefined) viewData.folderId = payload.folderId;
 
             views.push(viewData);
+
+        } else if (recordType === 'tableSettings') {
+            // User-specific table and view settings
+            if (payload.tables) TABLE_SETTINGS.tables = payload.tables;
+            if (payload.tableOrder) TABLE_SETTINGS.tableOrder = payload.tableOrder;
+            if (payload.views) TABLE_SETTINGS.views = payload.views;
 
         } else {
             // Data record: recordId starts with "rec"
@@ -7156,6 +7342,7 @@ async function init() {
     META_TABLES = {};
     META_FIELDS = {};
     META_VIEWS = {};
+    TABLE_SETTINGS = { tables: {}, tableOrder: [], views: {} };
     currentTable = null;
     currentPage = 0;
     currentRecordIds = [];
@@ -7185,6 +7372,9 @@ async function init() {
         if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
         META_VIEWS[v.tableId][v.viewId] = v;
     });
+
+    // Load user-specific table settings
+    await loadTableSettings();
 
     hideAuthScreen();
 
