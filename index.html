@@ -3228,8 +3228,17 @@ async function initAuthScreen() {
 
     // Check for saved credentials and auto-authenticate
     var savedKey = localStorage.getItem('amino_api_key');
+    var savedFilter = localStorage.getItem('amino_set_filter');
+
+    // Pre-fill input fields with saved credentials
     if (savedKey) {
-        var savedFilter = localStorage.getItem('amino_set_filter');
+        document.getElementById('api-key-input').value = savedKey;
+    }
+    if (savedFilter) {
+        document.getElementById('set-filter-input').value = savedFilter;
+    }
+
+    if (savedKey) {
         API_KEY = savedKey;
         SET_FILTER = savedFilter || null;
 
@@ -3240,9 +3249,8 @@ async function initAuthScreen() {
             console.error('Auto-login failed:', err);
             API_KEY = null;
             SET_FILTER = null;
-            localStorage.removeItem('amino_api_key');
-            localStorage.removeItem('amino_set_filter');
-            showAuthError('Session expired. Please log in again.');
+            // Don't clear localStorage - let user retry with pre-filled credentials
+            showAuthError('Connection failed. Click Connect to retry.');
             if (stats.count > 0) {
                 infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
             } else {
