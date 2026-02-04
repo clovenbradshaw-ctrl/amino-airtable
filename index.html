@@ -2965,6 +2965,12 @@ var isLoadingMoreEvents = false; // Prevent multiple simultaneous loads
 var hasMoreEvents = true; // Whether there are more events to load
 var eventsScrollHandler = null; // Reference to scroll handler for cleanup
 
+// In-memory event cache for fast startup from file import
+// Events are loaded into memory first for instant UI, then saved to IndexedDB in background
+var inMemoryEvents = null; // Array of events or null if not using memory cache
+var inMemoryEventsByRecord = null; // Map of recordId -> array of events for fast lookup
+var isBackgroundSaveInProgress = false; // Track background IndexedDB save status
+
 // ============ View Auto-Save System ============
 var XANO_POST_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostreampost';
 var XANO_SNAPSHOT_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminosnapshot';
@@ -3353,14 +3359,25 @@ async function saveRawEvents(events) {
 }
 
 async function getAllRawEvents(limit, offset) {
+    var maxLimit = limit || 100;
+    var startOffset = offset || 0;
+
+    // Check in-memory events first (from CSV import)
+    if (inMemoryEvents && inMemoryEvents.length > 0) {
+        // Events are sorted by ID ascending, we want newest first (descending)
+        var reversed = [];
+        for (var i = inMemoryEvents.length - 1; i >= 0; i--) {
+            reversed.push(inMemoryEvents[i]);
+        }
+        return reversed.slice(startOffset, startOffset + maxLimit);
+    }
+
     var results = await new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var store = tx.objectStore('events');
         var results = [];
         var skipped = 0;
         var collected = 0;
-        var maxLimit = limit || 100;
-        var startOffset = offset || 0;
 
         // Use a cursor to iterate in reverse order (newest first)
         var req = store.openCursor(null, 'prev');
@@ -3390,6 +3407,11 @@ async function getAllRawEvents(limit, offset) {
 }
 
 function getRawEventsCount() {
+    // Check in-memory events first (from CSV import)
+    if (inMemoryEvents && inMemoryEvents.length > 0) {
+        return Promise.resolve(inMemoryEvents.length);
+    }
+
     return new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var req = tx.objectStore('events').count();
@@ -3399,6 +3421,16 @@ function getRawEventsCount() {
 }
 
 async function getRawEventsByRecordId(recordId, maxEventId) {
+    // Check in-memory events first (from CSV import)
+    if (inMemoryEventsByRecord && inMemoryEventsByRecord.has(recordId)) {
+        var results = inMemoryEventsByRecord.get(recordId).slice();
+        if (maxEventId) {
+            results = results.filter(e => e.id <= maxEventId);
+        }
+        results.sort((a, b) => (a.id || 0) - (b.id || 0));
+        return results;
+    }
+
     var results = await new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var index = tx.objectStore('events').index('by_record');
@@ -3429,6 +3461,17 @@ function getRawEventsBySet(setFilter) {
 
 // Memory-efficient paginated events by set retrieval
 async function getRawEventsBySetPaginated(setFilter, offset, limit) {
+    // Check in-memory events first (from CSV import)
+    if (inMemoryEvents && inMemoryEvents.length > 0) {
+        var filtered = [];
+        for (var i = inMemoryEvents.length - 1; i >= 0; i--) {
+            if (inMemoryEvents[i].set === setFilter) {
+                filtered.push(inMemoryEvents[i]);
+            }
+        }
+        return filtered.slice(offset, offset + limit);
+    }
+
     var results = await new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var index = tx.objectStore('events').index('by_set');
@@ -3453,14 +3496,37 @@ async function getRawEventsBySetPaginated(setFilter, offset, limit) {
 }
 
 function searchRawEvents(query, limit, offset) {
+    var maxLimit = limit || 100;
+    var skipCount = offset || 0;
+    var lowerQuery = query.toLowerCase();
+
+    // Check in-memory events first (from CSV import)
+    if (inMemoryEvents && inMemoryEvents.length > 0) {
+        var results = [];
+        var skipped = 0;
+        for (var i = inMemoryEvents.length - 1; i >= 0 && results.length < maxLimit; i--) {
+            var event = inMemoryEvents[i];
+            var matchesRecord = event.recordId && event.recordId.toLowerCase().includes(lowerQuery);
+            var matchesSet = event.set && event.set.toLowerCase().includes(lowerQuery);
+            var payloadStr = typeof event.payload === 'string' ? event.payload : JSON.stringify(event.payload);
+            var matchesPayload = payloadStr && payloadStr.toLowerCase().includes(lowerQuery);
+
+            if (matchesRecord || matchesSet || matchesPayload) {
+                if (skipped < skipCount) {
+                    skipped++;
+                } else {
+                    results.push(event);
+                }
+            }
+        }
+        return Promise.resolve(results);
+    }
+
     return new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var store = tx.objectStore('events');
         var results = [];
         var skipped = 0;
-        var maxLimit = limit || 100;
-        var skipCount = offset || 0;
-        var lowerQuery = query.toLowerCase();
 
         var req = store.openCursor(null, 'prev');
         req.onsuccess = (e) => {
@@ -3701,6 +3767,11 @@ function getSchemaByPrefix(prefix) {
 }
 
 function getRecordIdsForTable(tableId) {
+    // Check in-memory data first (from CSV import)
+    if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
+        return Promise.resolve(Object.keys(window.IN_MEMORY_DATA[tableId]));
+    }
+
     return new Promise((resolve, reject) => {
         var tx = db.transaction('data', 'readonly');
         var index = tx.objectStore('data').index('by_table');
@@ -3715,6 +3786,15 @@ function getRecordIdsForTable(tableId) {
 }
 
 async function getRecord(tableId, recordId) {
+    // Check in-memory data first (from CSV import)
+    if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
+        return {
+            tableId: tableId,
+            recordId: recordId,
+            fields: window.IN_MEMORY_DATA[tableId][recordId]
+        };
+    }
+
     var result = await new Promise((resolve, reject) => {
         var tx = db.transaction('data', 'readonly');
         var req = tx.objectStore('data').get([tableId, recordId]);
@@ -3730,6 +3810,38 @@ async function getRecord(tableId, recordId) {
 }
 
 async function getRecordsByIds(tableId, recordIds) {
+    if (!recordIds.length) return [];
+
+    // Check in-memory data first (from CSV import)
+    if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
+        var memResults = [];
+        var missingIds = [];
+        for (var i = 0; i < recordIds.length; i++) {
+            var rid = recordIds[i];
+            if (window.IN_MEMORY_DATA[tableId][rid]) {
+                memResults.push({
+                    tableId: tableId,
+                    recordId: rid,
+                    fields: window.IN_MEMORY_DATA[tableId][rid]
+                });
+            } else {
+                missingIds.push(rid);
+            }
+        }
+        // If all records found in memory, return immediately
+        if (missingIds.length === 0) {
+            return memResults;
+        }
+        // Otherwise, also check IndexedDB for missing ones
+        var dbResults = await getRecordsByIdsFromDB(tableId, missingIds);
+        return memResults.concat(dbResults);
+    }
+
+    return getRecordsByIdsFromDB(tableId, recordIds);
+}
+
+// Internal: Get records from IndexedDB only
+async function getRecordsByIdsFromDB(tableId, recordIds) {
     if (!recordIds.length) return [];
 
     var results = await new Promise((resolve, reject) => {
@@ -4644,6 +4756,132 @@ function inferFieldType(value) {
         return 'singleLineText';
     }
     return 'unknown';
+}
+
+// Fast in-memory event processing for CSV import - skips IndexedDB entirely
+// Calls onProgress periodically for UI updates
+async function processEventsMemoryOnly(events, onProgress) {
+    if (!events || !Array.isArray(events)) return;
+
+    var tableDataMap = {}; // tableId -> { recordId -> fields }
+    var total = events.length;
+
+    for (var i = 0; i < events.length; i++) {
+        var e = events[i];
+        if (!e || !e.set || !e.recordId) continue;
+
+        var payload = parsePayload(e.payload);
+        if (!payload || typeof payload !== 'object') continue;
+
+        var recordType = payload._set;
+        var setName = e.set;
+        var recordId = e.recordId;
+
+        if (recordType === 'table') {
+            var tableId = recordId;
+            var tableData = { tableId };
+            applyPayloadFields(tableData, payload);
+            if (payload.tableName) tableData.tableName = payload.tableName;
+            if (payload.primaryFieldId) tableData.primaryFieldId = payload.primaryFieldId;
+            if (payload.tableId) tableData.tableId = payload.tableId;
+            META_TABLES[tableId] = tableData;
+
+        } else if (recordType === 'field') {
+            var tableId = payload.tableId || setName.replace('airtable:', '');
+            var fieldId = recordId;
+            var fieldData = { tableId, fieldId };
+            applyPayloadFields(fieldData, payload);
+            if (payload.fieldName) fieldData.fieldName = payload.fieldName;
+            if (payload.fieldType) fieldData.fieldType = payload.fieldType;
+            if (payload.fieldId) fieldData.fieldId = payload.fieldId;
+            if (payload.options) fieldData.options = payload.options;
+            if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+            META_FIELDS[tableId][fieldId] = fieldData;
+
+        } else if (recordType === 'view') {
+            var tableId = payload.tableId || setName.replace('airtable:', '');
+            var viewId = recordId;
+            var viewData = { tableId, viewId };
+            applyPayloadFields(viewData, payload);
+            if (payload.viewName) viewData.viewName = payload.viewName;
+            if (payload.viewType) viewData.viewType = payload.viewType;
+            if (payload.viewId) viewData.viewId = payload.viewId;
+            if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+            META_VIEWS[tableId][viewId] = viewData;
+
+        } else if (recordType === 'viewConfig') {
+            var tableId = payload.tableId || setName.replace('airtable:', '');
+            var viewId = recordId;
+            if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+            if (!META_VIEWS[tableId][viewId]) {
+                META_VIEWS[tableId][viewId] = { tableId, viewId };
+            }
+            var viewData = META_VIEWS[tableId][viewId];
+            if (payload.viewName) viewData.viewName = payload.viewName;
+            if (payload.hiddenFieldIds) viewData.hiddenFieldIds = payload.hiddenFieldIds;
+            if (payload.fieldOrder) viewData.fieldOrder = payload.fieldOrder;
+            if (payload.filters) viewData.filters = payload.filters;
+            if (payload.sorts) viewData.sorts = payload.sorts;
+            if (payload.folderId !== undefined) viewData.folderId = payload.folderId;
+
+        } else {
+            // Data record
+            var tableId = setName.replace('airtable:', '');
+            var pfields = payload.fields;
+            if (!pfields || typeof pfields !== 'object') continue;
+
+            // Auto-create placeholder table
+            if (!META_TABLES[tableId]) {
+                META_TABLES[tableId] = {
+                    tableId: tableId,
+                    tableName: tableId,
+                    _placeholder: true
+                };
+            }
+
+            // Auto-create placeholder fields
+            if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+            var allFieldIds = [
+                ...Object.keys(pfields.INS || {}),
+                ...Object.keys(pfields.ALT || {}),
+                ...(Array.isArray(pfields.NUL) ? pfields.NUL : [])
+            ];
+            for (var fid of allFieldIds) {
+                if (!META_FIELDS[tableId][fid]) {
+                    var sampleValue = (pfields.INS && pfields.INS[fid]) || (pfields.ALT && pfields.ALT[fid]);
+                    META_FIELDS[tableId][fid] = {
+                        tableId: tableId,
+                        fieldId: fid,
+                        fieldName: fid,
+                        fieldType: inferFieldType(sampleValue),
+                        _placeholder: true
+                    };
+                }
+            }
+
+            if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
+            if (!tableDataMap[tableId][recordId]) tableDataMap[tableId][recordId] = {};
+
+            var state = tableDataMap[tableId][recordId];
+            if (pfields.INS) Object.assign(state, pfields.INS);
+            if (pfields.ALT) Object.assign(state, pfields.ALT);
+            if (pfields.NUL && Array.isArray(pfields.NUL)) {
+                pfields.NUL.forEach(fieldId => delete state[fieldId]);
+            }
+        }
+
+        // Report progress and yield to UI every 5000 events
+        if (i > 0 && i % 5000 === 0) {
+            if (onProgress) onProgress(i, total, Object.keys(META_TABLES).length);
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+    }
+
+    // Store data records in a memory-only snapshot (for showing table data)
+    // Structure: IN_MEMORY_DATA[tableId][recordId] = { fields }
+    window.IN_MEMORY_DATA = tableDataMap;
+
+    if (onProgress) onProgress(total, total, Object.keys(META_TABLES).length);
 }
 
 async function processEvents(events) {
@@ -7600,6 +7838,102 @@ function showImportStatus(title, details, type, progress) {
 // Skip setup and upload CSV file directly
 var skipSyncAbortController = null;
 
+// Build in-memory lookup map for events by recordId
+function buildInMemoryEventsByRecord(events) {
+    var map = new Map();
+    for (var i = 0; i < events.length; i++) {
+        var e = events[i];
+        if (e.recordId) {
+            if (!map.has(e.recordId)) {
+                map.set(e.recordId, []);
+            }
+            map.get(e.recordId).push(e);
+        }
+    }
+    return map;
+}
+
+// Background save events to IndexedDB (non-blocking)
+async function backgroundSaveToIndexedDB(events, onProgress) {
+    isBackgroundSaveInProgress = true;
+    var batchSize = 500;
+    var saved = 0;
+    var total = events.length;
+
+    try {
+        // Phase 1: Save raw events
+        for (var j = 0; j < events.length; j += batchSize) {
+            var batch = events.slice(j, j + batchSize);
+            await saveRawEvents(batch);
+            saved += batch.length;
+
+            if (onProgress) {
+                onProgress(saved, total);
+            }
+
+            // Yield to main thread periodically to keep UI responsive
+            if (j % 2000 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+        }
+
+        // Phase 2: Save metadata (tables, fields, views)
+        var tables = Object.values(META_TABLES);
+        var fields = [];
+        for (var tid in META_FIELDS) {
+            for (var fid in META_FIELDS[tid]) {
+                fields.push(META_FIELDS[tid][fid]);
+            }
+        }
+        var views = [];
+        for (var tid in META_VIEWS) {
+            for (var vid in META_VIEWS[tid]) {
+                views.push(META_VIEWS[tid][vid]);
+            }
+        }
+
+        // Phase 3: Save data records from IN_MEMORY_DATA
+        var dataRecords = [];
+        if (window.IN_MEMORY_DATA) {
+            for (var tableId in window.IN_MEMORY_DATA) {
+                for (var recordId in window.IN_MEMORY_DATA[tableId]) {
+                    dataRecords.push({
+                        tableId: tableId,
+                        recordId: recordId,
+                        fields: window.IN_MEMORY_DATA[tableId][recordId]
+                    });
+                }
+            }
+        }
+
+        // Save metadata and records in batch
+        if (tables.length || fields.length || views.length || dataRecords.length) {
+            await saveBatch(tables, fields, views, dataRecords);
+        }
+
+        // Update the last event timestamp in IndexedDB
+        var maxId = events.reduce(function(max, e) { return Math.max(max, e.id); }, 0);
+        var lastEvent = events.find(function(e) { return e.id === maxId; });
+        if (lastEvent && lastEvent.created_at) {
+            await setSyncMeta('lastEventTimestamp', lastEvent.created_at);
+        }
+
+        console.log('Background IndexedDB save complete: ' + saved + ' events, ' + dataRecords.length + ' records');
+
+        // Clear in-memory cache after successful IndexedDB save to free memory
+        // (functions will now read from IndexedDB)
+        inMemoryEvents = null;
+        inMemoryEventsByRecord = null;
+        window.IN_MEMORY_DATA = null;
+
+    } catch (err) {
+        console.error('Background IndexedDB save failed:', err);
+        // Keep in-memory cache if save failed
+    } finally {
+        isBackgroundSaveInProgress = false;
+    }
+}
+
 async function skipSetupAndUploadFile() {
     // Create file input
     var input = document.createElement('input');
@@ -7677,7 +8011,7 @@ async function skipSetupAndUploadFile() {
                 }
 
                 if (i % 5000 === 0) {
-                    var progress = 10 + Math.round((i / lines.length) * 30);
+                    var progress = 10 + Math.round((i / lines.length) * 40);
                     updateLoadingOverlay('Importing from file...', 'Parsed ' + events.length.toLocaleString() + ' events...', progress, tablesCount, fieldsCount, recordsCount, '');
                 }
             }
@@ -7687,40 +8021,31 @@ async function skipSetupAndUploadFile() {
                 return;
             }
 
-            updateLoadingOverlay('Importing from file...', 'Saving ' + events.length.toLocaleString() + ' events to local storage...', 45, tablesCount, fieldsCount, recordsCount, '');
-
             // Sort events by ID to ensure proper order
             events.sort(function(a, b) { return a.id - b.id; });
 
-            // Save raw events in batches
-            var batchSize = 500;
-            var saved = 0;
+            updateLoadingOverlay('Importing from file...', 'Processing ' + events.length.toLocaleString() + ' events...', 55, tablesCount, fieldsCount, recordsCount, '');
 
-            for (var j = 0; j < events.length; j += batchSize) {
-                var batch = events.slice(j, j + batchSize);
-                await saveRawEvents(batch);
-                saved += batch.length;
+            // Store events in memory for instant access (before IndexedDB save)
+            inMemoryEvents = events;
+            inMemoryEventsByRecord = buildInMemoryEventsByRecord(events);
 
-                var progress = 45 + Math.round((saved / events.length) * 25);
-                updateLoadingOverlay('Importing from file...', 'Saved ' + saved.toLocaleString() + ' of ' + events.length.toLocaleString() + ' events...', progress, tablesCount, fieldsCount, recordsCount, '');
-            }
+            // Process events using fast memory-only approach (no IndexedDB)
+            await processEventsMemoryOnly(events, function(processed, total, tableCount) {
+                var pct = 55 + Math.round((processed / total) * 30);
+                updateLoadingOverlay('Importing from file...', 'Processing events: ' + processed.toLocaleString() + ' / ' + total.toLocaleString(), pct, tableCount, fieldsCount, recordsCount, '');
+            });
 
-            updateLoadingOverlay('Importing from file...', 'Processing events...', 75, tablesCount, fieldsCount, recordsCount, '');
-
-            // Process all events to build metadata
-            await processEvents(events);
-
-            // Update the last event timestamp
+            // Update the last event timestamp in memory
             var maxId = events.reduce(function(max, e) { return Math.max(max, e.id); }, 0);
             var lastEvent = events.find(function(e) { return e.id === maxId; });
             if (lastEvent && lastEvent.created_at) {
-                await setSyncMeta('lastEventTimestamp', lastEvent.created_at);
                 lastEventTimestamp = lastEvent.created_at;
             }
 
-            updateLoadingOverlay('Import complete!', 'Rendering interface...', 95, tablesCount, fieldsCount, recordsCount, '');
+            updateLoadingOverlay('Import complete!', 'Rendering interface...', 90, tablesCount, fieldsCount, recordsCount, '');
 
-            // Render the UI
+            // Render the UI immediately - data is in memory
             await renderSidebar();
 
             // Auto-select first table
@@ -7729,9 +8054,9 @@ async function skipSetupAndUploadFile() {
                 await showTable(firstTable);
             }
 
-            // Hide overlay
-            updateLoadingOverlay('Import complete!', events.length.toLocaleString() + ' events imported successfully', 100, tablesCount, fieldsCount, recordsCount, '');
-            setTimeout(hideLoadingOverlay, 500);
+            // Hide overlay - app is ready to use!
+            updateLoadingOverlay('Import complete!', events.length.toLocaleString() + ' events loaded', 100, tablesCount, fieldsCount, recordsCount, '');
+            setTimeout(hideLoadingOverlay, 300);
 
             updateStatus('Up to date', true, null, null);
 
@@ -7739,9 +8064,19 @@ async function skipSetupAndUploadFile() {
             lastSyncTime = Date.now();
             startRefreshCountdown();
 
-            // Start incremental sync polling
+            // Start incremental sync polling (but don't block on it)
             if (pollInterval) clearInterval(pollInterval);
             pollInterval = setInterval(incrementalSync, 60000);
+
+            // Background: Save to IndexedDB for next visit (non-blocking)
+            // This happens after the UI is ready, so user can start working immediately
+            updateStatus('Caching locally...', true, null, null);
+            backgroundSaveToIndexedDB(events, function(saved, total) {
+                var pct = Math.round((saved / total) * 100);
+                updateStatus('Caching: ' + pct + '%', true, null, null);
+            }).then(function() {
+                updateStatus('Up to date', true, null, null);
+            });
 
         } catch (err) {
             console.error('Error importing file:', err);
