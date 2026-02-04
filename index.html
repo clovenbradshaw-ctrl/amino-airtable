@@ -1306,6 +1306,119 @@
             justify-content: center;
         }
         .profile-close:hover { background: #e0e0e0; color: #333; }
+        .profile-tabs {
+            display: flex;
+            border-bottom: 1px solid #e0e0e0;
+            background: #fff;
+            padding: 0 20px;
+        }
+        .profile-tab {
+            padding: 12px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: all 0.15s;
+        }
+        .profile-tab:hover { color: #333; }
+        .profile-tab.active {
+            color: #2d6cdf;
+            border-bottom-color: #2d6cdf;
+        }
+        .profile-tab-content {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .profile-tab-content.active {
+            display: flex;
+            flex-direction: column;
+        }
+        .profile-sync-history-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            text-align: center;
+            color: #666;
+            flex: 1;
+        }
+        .profile-sync-history-empty svg {
+            width: 48px;
+            height: 48px;
+            color: #ccc;
+            margin-bottom: 16px;
+        }
+        .profile-sync-history-empty h3 {
+            font-size: 16px;
+            font-weight: 500;
+            color: #333;
+            margin: 0 0 8px 0;
+        }
+        .profile-sync-history-empty p {
+            font-size: 13px;
+            color: #666;
+            margin: 0;
+        }
+        .profile-sync-history-list {
+            padding: 16px 20px;
+        }
+        .profile-sync-history-item {
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            background: #fff;
+        }
+        .profile-sync-history-item:last-child { margin-bottom: 0; }
+        .profile-sync-history-item-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .profile-sync-history-field {
+            font-weight: 500;
+            color: #333;
+            font-size: 13px;
+        }
+        .profile-sync-history-type {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+        .profile-sync-history-type.created { background: #dcfce7; color: #166534; }
+        .profile-sync-history-type.updated { background: #dbeafe; color: #1e40af; }
+        .profile-sync-history-type.deleted { background: #fee2e2; color: #991b1b; }
+        .profile-sync-history-time {
+            margin-left: auto;
+            font-size: 11px;
+            color: #999;
+        }
+        .profile-sync-history-values {
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+        }
+        .profile-sync-history-value {
+            flex: 1;
+            padding: 6px 8px;
+            border-radius: 4px;
+            word-break: break-word;
+        }
+        .profile-sync-history-value.old { background: #fee2e2; color: #991b1b; }
+        .profile-sync-history-value.new { background: #dcfce7; color: #166534; }
+        .profile-sync-history-value-label {
+            font-size: 10px;
+            font-weight: 500;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+            opacity: 0.7;
+        }
         .profile-toolbar {
             padding: 10px 20px;
             border-bottom: 1px solid #e0e0e0;
@@ -2047,16 +2160,25 @@
                 <span class="profile-record-id" id="profile-record-id"></span>
                 <button class="profile-close" onclick="closeRecordProfile()">&times;</button>
             </div>
-            <div class="profile-toolbar" id="profile-toolbar">
-                <button class="profile-configure-btn" id="profile-configure-btn" onclick="toggleProfileConfigureMode()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                    Configure
-                </button>
-                <div class="profile-toolbar-spacer"></div>
-                <button class="profile-add-block-btn" id="profile-add-block-btn" onclick="addProfileBlock()" style="display: none;">+ Add Block</button>
+            <div class="profile-tabs">
+                <div class="profile-tab active" data-tab="details" onclick="switchProfileTab('details')">Case Details</div>
+                <div class="profile-tab" data-tab="sync-history" onclick="switchProfileTab('sync-history')">Sync History</div>
             </div>
-            <div class="profile-body" id="profile-body">
-                <!-- Profile content will be rendered here -->
+            <div class="profile-tab-content active" id="profile-tab-details">
+                <div class="profile-toolbar" id="profile-toolbar">
+                    <button class="profile-configure-btn" id="profile-configure-btn" onclick="toggleProfileConfigureMode()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        Configure
+                    </button>
+                    <div class="profile-toolbar-spacer"></div>
+                    <button class="profile-add-block-btn" id="profile-add-block-btn" onclick="addProfileBlock()" style="display: none;">+ Add Block</button>
+                </div>
+                <div class="profile-body" id="profile-body">
+                    <!-- Profile content will be rendered here -->
+                </div>
+            </div>
+            <div class="profile-tab-content" id="profile-tab-sync-history">
+                <!-- Sync history content will be rendered here -->
             </div>
             <div class="profile-nav">
                 <button class="profile-nav-btn" id="profile-prev-btn" onclick="navigateProfile(-1)">
@@ -2067,10 +2189,6 @@
                 <button class="profile-nav-btn" id="profile-next-btn" onclick="navigateProfile(1)">
                     Next
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
-                </button>
-                <button class="profile-nav-history" onclick="openHistoryFromProfile()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
-                    History
                 </button>
             </div>
         </div>
@@ -7081,6 +7199,14 @@ async function openRecordProfile(tableId, recordId, viewId) {
     document.getElementById('profile-add-block-btn').style.display = 'none';
     document.getElementById('profile-configure-btn').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Configure';
 
+    // Reset to details tab
+    profileCurrentTab = 'details';
+    document.querySelectorAll('.profile-tab').forEach(function(tab) {
+        tab.classList.toggle('active', tab.dataset.tab === 'details');
+    });
+    document.getElementById('profile-tab-details').classList.add('active');
+    document.getElementById('profile-tab-sync-history').classList.remove('active');
+
     // Render profile content
     await renderRecordProfile();
 
@@ -7455,6 +7581,11 @@ async function navigateProfile(direction) {
         document.getElementById('profile-record-id').textContent = profileCurrentRecordId;
         await renderRecordProfile();
         updateProfileNavigation();
+
+        // Refresh sync history if that tab is active
+        if (profileCurrentTab === 'sync-history') {
+            renderProfileSyncHistory();
+        }
     }
 }
 
@@ -7463,6 +7594,121 @@ function openHistoryFromProfile() {
     if (profileCurrentTableId && profileCurrentRecordId) {
         openHistoryModal(profileCurrentTableId, profileCurrentRecordId);
     }
+}
+
+// Profile tab state
+var profileCurrentTab = 'details';
+
+// Switch profile tab
+function switchProfileTab(tabName) {
+    profileCurrentTab = tabName;
+
+    // Update tab buttons
+    document.querySelectorAll('.profile-tab').forEach(function(tab) {
+        if (tab.dataset.tab === tabName) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+
+    // Update tab content
+    document.querySelectorAll('.profile-tab-content').forEach(function(content) {
+        content.classList.remove('active');
+    });
+
+    if (tabName === 'details') {
+        document.getElementById('profile-tab-details').classList.add('active');
+    } else if (tabName === 'sync-history') {
+        document.getElementById('profile-tab-sync-history').classList.add('active');
+        renderProfileSyncHistory();
+    }
+}
+
+// Render sync history in the profile tab
+async function renderProfileSyncHistory() {
+    var container = document.getElementById('profile-tab-sync-history');
+    if (!profileCurrentTableId || !profileCurrentRecordId) {
+        container.innerHTML = '<div class="profile-sync-history-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><h3>No record selected</h3><p>Select a record to view its sync history</p></div>';
+        return;
+    }
+
+    // Show loading state
+    container.innerHTML = '<div class="profile-sync-history-empty"><div class="loading-spinner"></div><h3>Loading sync history...</h3></div>';
+
+    try {
+        // Fetch any new history from API first
+        await fetchAndProcessHistoryForRecord(profileCurrentTableId, profileCurrentRecordId);
+
+        // Get history from IndexedDB
+        var history = await getFieldHistoryForRecord(profileCurrentTableId, profileCurrentRecordId, 100);
+
+        if (!history || history.length === 0) {
+            container.innerHTML = '<div class="profile-sync-history-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><h3>No sync history available for this record</h3><p>Field changes will appear here after syncing</p></div>';
+            return;
+        }
+
+        // Get field metadata
+        var fields = META_FIELDS[profileCurrentTableId] || {};
+
+        // Render history items
+        var html = '<div class="profile-sync-history-list">';
+
+        history.forEach(function(item) {
+            var fieldName = fields[item.fieldId]?.fieldName || item.fieldId;
+            var changeType = item.changeType || 'updated';
+            var timestamp = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown';
+
+            html += '<div class="profile-sync-history-item">';
+            html += '<div class="profile-sync-history-item-header">';
+            html += '<span class="profile-sync-history-field">' + esc(fieldName) + '</span>';
+            html += '<span class="profile-sync-history-type ' + changeType + '">' + changeType.charAt(0).toUpperCase() + changeType.slice(1) + '</span>';
+            html += '<span class="profile-sync-history-time">' + esc(timestamp) + '</span>';
+            html += '</div>';
+
+            if (changeType !== 'created' || item.oldValue != null) {
+                html += '<div class="profile-sync-history-values">';
+                if (item.oldValue != null) {
+                    html += '<div class="profile-sync-history-value old">';
+                    html += '<div class="profile-sync-history-value-label">Old</div>';
+                    html += formatHistoryValue(item.oldValue);
+                    html += '</div>';
+                }
+                if (item.newValue != null) {
+                    html += '<div class="profile-sync-history-value new">';
+                    html += '<div class="profile-sync-history-value-label">New</div>';
+                    html += formatHistoryValue(item.newValue);
+                    html += '</div>';
+                }
+                html += '</div>';
+            } else if (item.newValue != null) {
+                html += '<div class="profile-sync-history-values">';
+                html += '<div class="profile-sync-history-value new">';
+                html += '<div class="profile-sync-history-value-label">Value</div>';
+                html += formatHistoryValue(item.newValue);
+                html += '</div>';
+                html += '</div>';
+            }
+
+            html += '</div>';
+        });
+
+        html += '</div>';
+        container.innerHTML = html;
+
+    } catch (err) {
+        console.error('Error loading sync history:', err);
+        container.innerHTML = '<div class="profile-sync-history-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><h3>Error loading sync history</h3><p>' + esc(err.message) + '</p></div>';
+    }
+}
+
+// Format history value for display
+function formatHistoryValue(value) {
+    if (value == null) return '<em>empty</em>';
+    if (typeof value === 'object') {
+        return esc(JSON.stringify(value));
+    }
+    return esc(String(value));
 }
 
 // Handle row click to open profile
