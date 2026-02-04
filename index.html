@@ -5013,7 +5013,6 @@ async function fullSync() {
     var fieldsFound = 0;
     var viewsFound = 0;
     var recordsFound = 0;
-    var overlayHidden = false;
     var schemaLoaded = false;
 
     // Show the loading overlay for initial sync
@@ -5108,10 +5107,8 @@ async function fullSync() {
         var detail = tableCount + ' tables, ' + fieldCount + ' fields, ' + recordsFound.toLocaleString() + ' records';
         updateStatus('Loading batch ' + (iterations + 1) + '...', false, progressPct, detail);
 
-        // Update the loading overlay (only if still visible)
-        if (!overlayHidden) {
-            updateLoadingOverlay('Loading records...', 'Batch ' + (iterations + 1), progressPct, tableCount, fieldCount, recordsFound);
-        }
+        // Update the loading overlay with progress
+        updateLoadingOverlay('Downloading data...', 'Batch ' + (iterations + 1), progressPct, tableCount, fieldCount, recordsFound);
 
         // Fetch all events using timestamp cursor (ascending order)
         var result = await fetchPage(cursor, null);
@@ -5152,12 +5149,7 @@ async function fullSync() {
             }
         }
 
-        // Hide overlay after first page with data
-        if (!overlayHidden && Object.keys(META_TABLES).length > 0) {
-            hideLoadingOverlay();
-            overlayHidden = true;
-        }
-
+        // Keep overlay visible during initial sync - only hide when complete
         if (!result.hasMore) break;
         cursor = result.nextCursor;
         iterations++;
@@ -5165,6 +5157,7 @@ async function fullSync() {
     }
 
     // Wait for schema to finish loading (ensures proper names are applied)
+    updateLoadingOverlay('Finalizing schema...', 'Processing metadata', 95, Object.keys(META_TABLES).length, Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0), recordsFound);
     await schemaPromise;
 
     // Final render after sync completes
@@ -5176,15 +5169,18 @@ async function fullSync() {
         await renderTable();
     }
 
-    // Ensure overlay is hidden
-    if (!overlayHidden) {
-        hideLoadingOverlay();
-    }
-
     await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
     var finalTableCount = Object.keys(META_TABLES).length;
     var finalFieldCount = Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0);
     var finalDetail = finalTableCount + ' tables, ' + finalFieldCount + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
+
+    // Show completion on overlay before hiding
+    updateLoadingOverlay('Setup complete!', 'Ready to explore your data', 100, finalTableCount, finalFieldCount, recordsFound);
+
+    // Brief delay to show completion, then hide overlay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    hideLoadingOverlay();
+
     updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
 }
 
@@ -5199,8 +5195,12 @@ async function incrementalSync() {
 
         if (result.events && result.events.length > 0) {
             updateStatus('Processing ' + result.events.length + ' new events...', false, null, null);
-            // Sort by timestamp for correct processing order
-            result.events.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+            // Sort by timestamp for correct processing order (handle both string and numeric timestamps)
+            result.events.sort((a, b) => {
+                var aTime = a.created_at ? (typeof a.created_at === 'number' ? a.created_at : new Date(a.created_at).getTime()) : 0;
+                var bTime = b.created_at ? (typeof b.created_at === 'number' ? b.created_at : new Date(b.created_at).getTime()) : 0;
+                return aTime - bTime;
+            });
             await processEvents(result.events);
             await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
 
