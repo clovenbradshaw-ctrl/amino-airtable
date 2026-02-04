@@ -250,6 +250,14 @@
         .status-dot.synced { background: #20c933; }
         .status-dot.loading { background: #fcb400; }
 
+        /* Sync toggle switch */
+        .sync-toggle-wrapper { display: flex; align-items: center; gap: 6px; margin-left: 8px; padding-left: 12px; border-left: 1px solid #ddd; }
+        .sync-toggle-label { font-size: 11px; color: #666; white-space: nowrap; }
+        .sync-toggle { position: relative; width: 32px; height: 18px; background: #ccc; border-radius: 9px; cursor: pointer; transition: background 0.2s; }
+        .sync-toggle.active { background: #20c933; }
+        .sync-toggle-knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: left 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+        .sync-toggle.active .sync-toggle-knob { left: 16px; }
+
         /* Table container */
         .table-container { flex: 1; overflow: auto; }
 
@@ -2244,6 +2252,12 @@
                     <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
                 </div>
                 <span id="status-detail" style="color: #999; font-size: 11px;"></span>
+                <div class="sync-toggle-wrapper">
+                    <span class="sync-toggle-label">Sync to Snapshot</span>
+                    <div class="sync-toggle" id="sync-toggle" onclick="toggleSnapshotSync()">
+                        <div class="sync-toggle-knob"></div>
+                    </div>
+                </div>
                 <span style="flex: 1;"></span>
                 <span class="refresh-indicator" id="refresh-indicator">
                     <span class="refresh-dot"></span>
@@ -3328,6 +3342,9 @@ var SIDEBAR_ICONS = {
 // Pending view action (when user tries to modify default view)
 var pendingViewAction = null; // { action: 'filter'|'sort'|'fields'|'group', data: any }
 
+// Snapshot sync toggle state (off by default)
+var snapshotSyncEnabled = false;
+
 // ============ Events View State ============
 var eventsPageSize = 50;
 var eventsTypeFilter = ''; // 'data', 'table', 'field', 'view', 'viewConfig', or '' for all
@@ -3879,6 +3896,34 @@ var PassiveSnapshotSync = {
         };
     }
 };
+
+// Toggle snapshot sync on/off
+function toggleSnapshotSync() {
+    snapshotSyncEnabled = !snapshotSyncEnabled;
+    var toggle = document.getElementById('sync-toggle');
+
+    if (snapshotSyncEnabled) {
+        toggle.classList.add('active');
+        PassiveSnapshotSync.start();
+        console.log('[SnapshotSync] Enabled');
+    } else {
+        toggle.classList.remove('active');
+        PassiveSnapshotSync.stop();
+        console.log('[SnapshotSync] Disabled');
+    }
+}
+
+// Initialize sync toggle UI state
+function initSyncToggle() {
+    var toggle = document.getElementById('sync-toggle');
+    if (toggle) {
+        if (snapshotSyncEnabled) {
+            toggle.classList.add('active');
+        } else {
+            toggle.classList.remove('active');
+        }
+    }
+}
 
 // ============ IndexedDB ============
 
@@ -7914,8 +7959,11 @@ async function init() {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(incrementalSync, 60000);
 
-    // Start passive snapshot sync (background verification + pulling)
-    PassiveSnapshotSync.start();
+    // Initialize sync toggle UI and only start if enabled
+    initSyncToggle();
+    if (snapshotSyncEnabled) {
+        PassiveSnapshotSync.start();
+    }
 }
 
 // ============ Field History Modal ============
