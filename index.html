@@ -10699,7 +10699,8 @@ renderViewItem = function(tableId, view, inFolder) {
 
     // View type badge
     if (view.viewType && view.viewType !== 'grid') {
-        html += '<span class="view-type-badge ' + esc(view.viewType) + '">' + esc(view.viewType) + '</span>';
+        var badgeLabel = view.viewType === 'schema' ? 'cards' : view.viewType;
+        html += '<span class="view-type-badge ' + esc(view.viewType) + '">' + esc(badgeLabel) + '</span>';
     }
 
     html += '</div>';
