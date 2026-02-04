@@ -481,6 +481,7 @@
             border-radius: 3px;
             overflow: hidden;
             margin-bottom: 16px;
+            position: relative;
         }
         .loading-progress-fill {
             height: 100%;
@@ -503,6 +504,35 @@
             font-size: 12px;
             color: #718096;
             font-family: "SF Mono", Monaco, monospace;
+        }
+        .loading-time-estimate {
+            font-size: 11px;
+            color: #a0aec0;
+            margin-top: 8px;
+            min-height: 16px;
+        }
+        .loading-progress-activity {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            border-radius: 3px;
+        }
+        .loading-progress-activity::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            height: 100%;
+            width: 50%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+            animation: activity-sweep 1.2s ease-in-out infinite;
+        }
+        @keyframes activity-sweep {
+            0% { left: -50%; }
+            100% { left: 100%; }
         }
         .loading-facts {
             display: flex;
@@ -1663,9 +1693,11 @@
             <div class="loading-progress-container">
                 <div class="loading-progress-bar">
                     <div class="loading-progress-fill" id="loading-progress-fill" style="width: 0%"></div>
+                    <div class="loading-progress-activity"></div>
                 </div>
                 <div class="loading-status" id="loading-status">Connecting to server...</div>
                 <div class="loading-detail" id="loading-detail">Page 1</div>
+                <div class="loading-time-estimate" id="loading-time-estimate"></div>
             </div>
 
             <div class="loading-note">
@@ -4084,6 +4116,15 @@ async function initAuthScreen() {
 
     // Check for saved credentials and auto-authenticate (encrypted or plaintext)
     var savedCredentials = await loadEncryptedCredentials();
+
+    // Pre-fill input fields with saved credentials
+    if (savedCredentials && savedCredentials.apiKey) {
+        document.getElementById('api-key-input').value = savedCredentials.apiKey;
+    }
+    if (savedCredentials && savedCredentials.setFilter) {
+        document.getElementById('set-filter-input').value = savedCredentials.setFilter;
+    }
+
     if (savedCredentials && savedCredentials.apiKey) {
         API_KEY = savedCredentials.apiKey;
         SET_FILTER = savedCredentials.setFilter || null;
@@ -4095,8 +4136,8 @@ async function initAuthScreen() {
             console.error('Auto-login failed:', err);
             API_KEY = null;
             SET_FILTER = null;
-            clearEncryptedCredentials();
-            showAuthError('Session expired. Please log in again.');
+            // Don't clear credentials - let user retry with pre-filled credentials
+            showAuthError('Connection failed. Click Connect to retry.');
             if (stats.count > 0) {
                 infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
             } else {
@@ -5272,13 +5313,14 @@ function hideLoadingOverlay() {
     overlay.classList.add('hidden');
 }
 
-function updateLoadingOverlay(status, detail, progress, tables, fields, records) {
+function updateLoadingOverlay(status, detail, progress, tables, fields, records, timeEstimate) {
     var statusEl = document.getElementById('loading-status');
     var detailEl = document.getElementById('loading-detail');
     var progressEl = document.getElementById('loading-progress-fill');
     var tablesEl = document.getElementById('loading-tables');
     var fieldsEl = document.getElementById('loading-fields');
     var recordsEl = document.getElementById('loading-records');
+    var timeEl = document.getElementById('loading-time-estimate');
 
     if (statusEl) statusEl.textContent = status || 'Loading...';
     if (detailEl) detailEl.textContent = detail || '';
@@ -5286,6 +5328,7 @@ function updateLoadingOverlay(status, detail, progress, tables, fields, records)
     if (tablesEl) tablesEl.textContent = (tables || 0).toLocaleString();
     if (fieldsEl) fieldsEl.textContent = (fields || 0).toLocaleString();
     if (recordsEl) recordsEl.textContent = (records || 0).toLocaleString();
+    if (timeEl) timeEl.textContent = timeEstimate || '';
 }
 
 function setRefreshIndicatorSyncing(isSyncing) {
@@ -5797,14 +5840,14 @@ function nextPage() {
 // ============ API ============
 
 // Fetch all records of a specific set type (table, field, view)
-// Since API is append-only and queries by time, we fetch all events and filter client-side
+// Fetch all pages and filter events client-side by set type
 async function fetchAllBySet(setType, onProgress) {
     var allEvents = [];
-    var cursor = null;
+    var page = 1;
     var iterations = 0;
     while (true) {
-        // Fetch using timestamp cursor - API only supports time-based queries
-        var result = await fetchPage(cursor, null);
+        // Fetch using page-based pagination
+        var result = await fetchPage(page);
         if (!result.events || result.events.length === 0) break;
 
         // Filter events client-side by payload._set
@@ -5817,20 +5860,21 @@ async function fetchAllBySet(setType, onProgress) {
         allEvents = allEvents.concat(matchingEvents);
         if (onProgress) onProgress(allEvents.length);
         if (!result.hasMore) break;
-        cursor = result.nextCursor;
+        page = result.nextPage;
         iterations++;
         if (iterations > 100) break; // Safety limit for schema
     }
     return allEvents;
 }
 
-// Fetch events using timestamp-based cursor pagination
-// createdAfter/createdBefore are ISO timestamps for cursor-based pagination
-async function fetchPage(createdAfter, createdBefore) {
+// Fetch events using page-based pagination
+// API returns 2500 records per page with nextPage indicator
+// Optional createdAfter parameter for incremental sync (timestamp filtering)
+async function fetchPage(page, createdAfter) {
     var params = [];
     if (API_KEY) params.push('apiKey=' + encodeURIComponent(API_KEY));
+    if (page && page > 1) params.push('page=' + page);
     if (createdAfter) params.push('created_after=' + encodeURIComponent(createdAfter));
-    if (createdBefore) params.push('created_before=' + encodeURIComponent(createdBefore));
 
     var url = API + (params.length > 0 ? '?' + params.join('&') : '');
 
@@ -5846,13 +5890,13 @@ async function fetchPage(createdAfter, createdBefore) {
         throw new Error(data.message || data.error || 'HTTP ' + res.status);
     }
 
+    // Handle paginated response format: { itemsReceived, curPage, nextPage, prevPage, offset, perPage, items }
     var events = Array.isArray(data) ? data : (data.items || data.data || []);
-    // API returns up to 1500 records per page
-    var hasMore = events.length >= 1500;
-    // Use last event's timestamp as cursor for next page (ascending order)
-    var nextCursor = events.length > 0 ? events[events.length - 1].created_at : null;
+    // API returns nextPage as number if more pages exist, null otherwise
+    var hasMore = data.nextPage != null;
+    var nextPage = data.nextPage || null;
 
-    return { events, hasMore, nextCursor };
+    return { events, hasMore, nextPage };
 }
 
 async function fullSync() {
@@ -5861,25 +5905,36 @@ async function fullSync() {
     var fieldsFound = 0;
     var viewsFound = 0;
     var recordsFound = 0;
-    var overlayHidden = false;
     var schemaLoaded = false;
+    var syncStartTime = Date.now();
+    var lastBatchTime = syncStartTime;
+    var recordsPerSecond = 0;
+
+    // Helper to format time remaining
+    function formatTimeRemaining(seconds) {
+        if (seconds < 0 || !isFinite(seconds)) return 'Calculating...';
+        if (seconds < 5) return 'Almost done...';
+        if (seconds < 60) return 'About ' + Math.ceil(seconds) + ' seconds remaining';
+        var minutes = Math.ceil(seconds / 60);
+        return 'About ' + minutes + ' minute' + (minutes > 1 ? 's' : '') + ' remaining';
+    }
 
     // Show the loading overlay for initial sync
     showLoadingOverlay();
 
     // Background function to load schema metadata (proper names for tables/fields/views)
-    // Fetches all events once and filters by type client-side (API is append-only, time-based)
+    // Fetches all events once and filters by type client-side
     async function loadSchemaInBackground() {
         try {
             var tableEvents = [];
             var fieldEvents = [];
             var viewEvents = [];
-            var cursor = null; // Timestamp cursor for pagination
+            var page = 1; // Page-based pagination
             var iterations = 0;
 
             // Fetch all events once and categorize by payload._set
             while (true) {
-                var result = await fetchPage(cursor, null);
+                var result = await fetchPage(page);
                 if (!result.events || result.events.length === 0) break;
 
                 for (var e of result.events) {
@@ -5897,7 +5952,7 @@ async function fullSync() {
                 }
 
                 if (!result.hasMore) break;
-                cursor = result.nextCursor;
+                page = result.nextPage;
                 iterations++;
                 if (iterations > 100) break; // Safety limit for schema
             }
@@ -5941,29 +5996,64 @@ async function fullSync() {
     // PHASE 1: Start streaming data immediately (schema will be auto-discovered from records)
     // This shows tables/fields right away with ID placeholders
     updateStatus('Loading recent data...', false, 5, 'Streaming records...');
-    updateLoadingOverlay('Loading data...', 'Starting...', 5, 0, 0, 0);
+    updateLoadingOverlay('Loading data...', 'Starting...', 5, 0, 0, 0, 'Connecting to server...');
 
     // Start schema loading in background (will update placeholders with proper names)
     var schemaPromise = loadSchemaInBackground();
 
-    var cursor = null; // Timestamp cursor for pagination
+    var page = 1; // Page-based pagination
     var iterations = 0;
+    var smoothProgress = 5; // For smooth animation between batches
+    var targetProgress = 5;
+
+    // Smooth progress animation - updates every 100ms between batches
+    var progressAnimationInterval = setInterval(function() {
+        if (smoothProgress < targetProgress) {
+            smoothProgress = Math.min(targetProgress, smoothProgress + 0.5);
+            var progressEl = document.getElementById('loading-progress-fill');
+            if (progressEl) progressEl.style.width = smoothProgress + '%';
+        }
+    }, 100);
+
     while (true) {
-        // Show progress with estimates
-        var progressPct = Math.min(95, 5 + (iterations / 100) * 90);
+        // Calculate time-based estimates
+        var elapsed = (Date.now() - syncStartTime) / 1000;
+        var timeEstimate = '';
+
+        if (iterations > 0 && recordsFound > 0) {
+            // Calculate records per second based on overall progress
+            recordsPerSecond = recordsFound / elapsed;
+
+            // Estimate remaining time - we use hasMore to determine if there's more data
+            // Rough estimate: assume linear progress based on batch count
+            var estimatedTotalBatches = Math.max(iterations + 1, iterations * 1.2);
+            var remainingBatches = estimatedTotalBatches - iterations;
+            var avgBatchTime = elapsed / iterations;
+            var remainingSeconds = remainingBatches * avgBatchTime;
+
+            if (remainingSeconds > 0) {
+                timeEstimate = formatTimeRemaining(remainingSeconds) + ' • ' + Math.round(recordsPerSecond).toLocaleString() + ' records/sec';
+            }
+        } else {
+            timeEstimate = 'Calculating speed...';
+        }
+
+        // Show progress with estimates - smoother progress calculation
+        targetProgress = Math.min(95, 5 + (iterations / 50) * 85);
         var tableCount = Object.keys(META_TABLES).length;
         var fieldCount = Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0);
         var detail = tableCount + ' tables, ' + fieldCount + ' fields, ' + recordsFound.toLocaleString() + ' records';
-        updateStatus('Loading batch ' + (iterations + 1) + '...', false, progressPct, detail);
+        updateStatus('Loading page ' + page + '...', false, targetProgress, detail);
 
-        // Update the loading overlay (only if still visible)
-        if (!overlayHidden) {
-            updateLoadingOverlay('Loading records...', 'Batch ' + (iterations + 1), progressPct, tableCount, fieldCount, recordsFound);
+        // Update the loading overlay with progress and time estimate
+        updateLoadingOverlay('Downloading data...', 'Page ' + page + ' • ' + Math.round(elapsed) + 's elapsed', targetProgress, tableCount, fieldCount, recordsFound, timeEstimate);
+
+        // Fetch all events using page-based pagination
+        var result = await fetchPage(page);
+        if (!result.events || result.events.length === 0) {
+            clearInterval(progressAnimationInterval);
+            break;
         }
-
-        // Fetch all events using timestamp cursor (ascending order)
-        var result = await fetchPage(cursor, null);
-        if (!result.events || result.events.length === 0) break;
 
         // Process all events (data records will auto-create placeholder schema,
         // schema events will update with proper names)
@@ -6000,19 +6090,22 @@ async function fullSync() {
             }
         }
 
-        // Hide overlay after first page with data
-        if (!overlayHidden && Object.keys(META_TABLES).length > 0) {
-            hideLoadingOverlay();
-            overlayHidden = true;
+        // Keep overlay visible during initial sync - only hide when complete
+        if (!result.hasMore) {
+            clearInterval(progressAnimationInterval);
+            break;
         }
-
-        if (!result.hasMore) break;
-        cursor = result.nextCursor;
+        page = result.nextPage;
         iterations++;
-        if (iterations > 500) break;
+        if (iterations > 500) {
+            clearInterval(progressAnimationInterval);
+            break;
+        }
     }
 
     // Wait for schema to finish loading (ensures proper names are applied)
+    var totalElapsed = Math.round((Date.now() - syncStartTime) / 1000);
+    updateLoadingOverlay('Finalizing schema...', 'Processing metadata', 95, Object.keys(META_TABLES).length, Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0), recordsFound, 'Almost done...');
     await schemaPromise;
 
     // Final render after sync completes
@@ -6024,15 +6117,20 @@ async function fullSync() {
         await renderTable();
     }
 
-    // Ensure overlay is hidden
-    if (!overlayHidden) {
-        hideLoadingOverlay();
-    }
-
     await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
     var finalTableCount = Object.keys(META_TABLES).length;
     var finalFieldCount = Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0);
     var finalDetail = finalTableCount + ' tables, ' + finalFieldCount + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
+
+    // Show completion on overlay before hiding
+    var completionTime = Math.round((Date.now() - syncStartTime) / 1000);
+    var completionMsg = 'Completed in ' + completionTime + ' seconds';
+    updateLoadingOverlay('Setup complete!', 'Ready to explore your data', 100, finalTableCount, finalFieldCount, recordsFound, completionMsg);
+
+    // Brief delay to show completion, then hide overlay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    hideLoadingOverlay();
+
     updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
 }
 
@@ -6042,14 +6140,29 @@ async function incrementalSync() {
         setRefreshIndicatorSyncing(true);
         updateStatus('Checking for updates...', false, null, null);
 
-        // Fetch events created after the last synced timestamp
-        var result = await fetchPage(lastEventTimestamp, null);
+        // Fetch all events created after the last synced timestamp (with pagination)
+        var allEvents = [];
+        var page = 1;
+        var iterations = 0;
+        while (true) {
+            var result = await fetchPage(page, lastEventTimestamp);
+            if (!result.events || result.events.length === 0) break;
+            allEvents = allEvents.concat(result.events);
+            if (!result.hasMore) break;
+            page = result.nextPage;
+            iterations++;
+            if (iterations > 100) break; // Safety limit
+        }
 
-        if (result.events && result.events.length > 0) {
-            updateStatus('Processing ' + result.events.length + ' new events...', false, null, null);
-            // Sort by timestamp for correct processing order
-            result.events.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
-            await processEvents(result.events);
+        if (allEvents.length > 0) {
+            updateStatus('Processing ' + allEvents.length + ' new events...', false, null, null);
+            // Sort by timestamp for correct processing order (handle both string and numeric timestamps)
+            allEvents.sort((a, b) => {
+                var aTime = a.created_at ? (typeof a.created_at === 'number' ? a.created_at : new Date(a.created_at).getTime()) : 0;
+                var bTime = b.created_at ? (typeof b.created_at === 'number' ? b.created_at : new Date(b.created_at).getTime()) : 0;
+                return aTime - bTime;
+            });
+            await processEvents(allEvents);
             await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
 
             updateStatus('Updating views...', false, null, null);
@@ -6063,7 +6176,7 @@ async function incrementalSync() {
                 await renderTable();
             }
 
-            updateStatus('Up to date', true, null, result.events.length + ' events synced');
+            updateStatus('Up to date', true, null, allEvents.length + ' events synced');
         } else {
             updateStatus('Up to date', true, null, null);
         }
