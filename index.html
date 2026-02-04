@@ -13,36 +13,36 @@
         /* Sidebar scrollbar styling */
         .sidebar::-webkit-scrollbar { width: 6px; }
         .sidebar::-webkit-scrollbar-track { background: transparent; }
-        .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
-        .sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+        .sidebar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+        .sidebar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
 
-        /* Sidebar - Enhanced dark style with better contrast */
-        .sidebar { width: 288px; background: #0f1117; border-right: 1px solid rgba(255,255,255,0.08); overflow-y: auto; flex-shrink: 0; font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        .sidebar-header { padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+        /* Sidebar - Light mode style */
+        .sidebar { width: 288px; background: #ffffff; border-right: 1px solid #e5e7eb; overflow-y: auto; flex-shrink: 0; font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid #e5e7eb; }
         .sidebar-header-top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
         .sidebar-logo { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); display: flex; align-items: center; justify-content: center; }
         .sidebar-logo svg { width: 14px; height: 14px; color: #fff; }
-        .sidebar-header h2 { color: #fff; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+        .sidebar-header h2 { color: #1f2937; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 
         /* Sidebar Search */
         .sidebar-search { position: relative; }
-        .sidebar-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #6b7280; pointer-events: none; }
+        .sidebar-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #9ca3af; pointer-events: none; }
         .sidebar-search-icon svg { width: 14px; height: 14px; }
         .sidebar-search input {
             width: 100%;
-            background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.1);
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
             border-radius: 8px;
             padding: 9px 44px 9px 36px;
             font-size: 13px;
-            color: #fff;
+            color: #1f2937;
             transition: all 0.15s;
         }
-        .sidebar-search input::placeholder { color: #6b7280; }
+        .sidebar-search input::placeholder { color: #9ca3af; }
         .sidebar-search input:focus {
             outline: none;
             border-color: rgba(59, 130, 246, 0.5);
-            background: rgba(255,255,255,0.08);
+            background: #ffffff;
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
         }
         .sidebar-search-shortcut {
@@ -51,11 +51,11 @@
             top: 50%;
             transform: translateY(-50%);
             font-size: 10px;
-            color: #4b5563;
-            background: rgba(255,255,255,0.06);
+            color: #9ca3af;
+            background: #e5e7eb;
             padding: 3px 6px;
             border-radius: 4px;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid #d1d5db;
             font-family: system-ui, sans-serif;
         }
 
@@ -74,31 +74,31 @@
             transition: color 0.15s;
             user-select: none;
         }
-        .sidebar-section-header:hover { color: #9ca3af; }
+        .sidebar-section-header:hover { color: #374151; }
         .sidebar-section-header svg { width: 12px; height: 12px; transition: transform 0.2s; }
         .sidebar-section-header.collapsed svg { transform: rotate(-90deg); }
         .sidebar-section-header .section-icon { opacity: 0.8; }
-        .sidebar-section-header .section-count { margin-left: auto; font-weight: 400; color: #4b5563; }
+        .sidebar-section-header .section-count { margin-left: auto; font-weight: 400; color: #9ca3af; }
 
         /* Sidebar Divider */
-        .sidebar-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 8px 16px; }
+        .sidebar-divider { height: 1px; background: #e5e7eb; margin: 8px 16px; }
 
-        /* Table Items - Enhanced contrast */
+        /* Table Items - Light mode */
         .sidebar div.table-item {
             padding: 9px 12px;
             margin: 2px 8px;
             border-radius: 8px;
             cursor: pointer;
             font-size: 13px;
-            color: #d1d5db;
+            color: #4b5563;
             display: flex;
             align-items: center;
             gap: 10px;
             transition: all 0.15s;
             position: relative;
         }
-        .sidebar div.table-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
-        .sidebar div.table-item.active { background: rgba(255,255,255,0.1); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .sidebar div.table-item:hover { background: #f3f4f6; color: #1f2937; }
+        .sidebar div.table-item.active { background: #e5e7eb; color: #1f2937; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .sidebar div.table-item.active::before {
             content: '';
             position: absolute;
@@ -110,9 +110,9 @@
             border-radius: 0 2px 2px 0;
         }
         .sidebar div.table-item .table-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .sidebar div.table-item .count { font-size: 11px; color: #6b7280; font-variant-numeric: tabular-nums; }
-        .sidebar div.table-item.active .count { color: rgba(255,255,255,0.7); }
-        .sidebar div.table-item:hover .count { color: #9ca3af; }
+        .sidebar div.table-item .count { font-size: 11px; color: #9ca3af; font-variant-numeric: tabular-nums; }
+        .sidebar div.table-item.active .count { color: #6b7280; }
+        .sidebar div.table-item:hover .count { color: #6b7280; }
 
         /* Table Type Icons */
         .table-icon {
@@ -149,28 +149,28 @@
             align-items: center;
             justify-content: center;
         }
-        .pin-btn svg { width: 12px; height: 12px; color: #6b7280; }
-        .pin-btn:hover svg { color: #fbbf24; }
+        .pin-btn svg { width: 12px; height: 12px; color: #9ca3af; }
+        .pin-btn:hover svg { color: #f59e0b; }
         .pin-btn.pinned { opacity: 1; }
-        .pin-btn.pinned svg { color: #fbbf24; fill: #fbbf24; }
+        .pin-btn.pinned svg { color: #f59e0b; fill: #f59e0b; }
         .sidebar div.table-item:hover .pin-btn { opacity: 1; }
 
         /* Table item with expandable views */
         .sidebar div.table-item .expand-arrow {
             font-size: 10px;
-            color: #6b7280;
+            color: #9ca3af;
             transition: transform 0.2s;
             padding: 4px;
         }
         .sidebar div.table-item.expanded .expand-arrow { transform: rotate(90deg); }
-        .sidebar div.table-item:hover .expand-arrow { color: #9ca3af; }
+        .sidebar div.table-item:hover .expand-arrow { color: #6b7280; }
 
         /* Table views list (expandable) */
         .table-views-list {
             max-height: 0;
             overflow: hidden;
             transition: max-height 0.25s ease-out;
-            background: rgba(0,0,0,0.2);
+            background: #f9fafb;
             margin: 0 8px;
             border-radius: 0 0 8px 8px;
         }
@@ -181,7 +181,7 @@
             padding: 7px 12px 7px 40px;
             cursor: pointer;
             font-size: 12px;
-            color: #9ca3af;
+            color: #6b7280;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -190,18 +190,18 @@
             border-radius: 6px;
         }
         .table-view-item:hover {
-            background: rgba(255,255,255,0.06);
-            color: #e5e7eb;
+            background: #e5e7eb;
+            color: #1f2937;
         }
         .table-view-item.active {
-            background: rgba(59, 130, 246, 0.2);
-            color: #fff;
+            background: rgba(59, 130, 246, 0.15);
+            color: #1d4ed8;
         }
         .table-view-item .view-icon {
             font-size: 12px;
             width: 16px;
             text-align: center;
-            color: #6b7280;
+            color: #9ca3af;
         }
         .table-view-item:hover .view-icon,
         .table-view-item.active .view-icon {
@@ -215,10 +215,10 @@
         }
         .table-view-item .view-name-input {
             flex: 1;
-            background: rgba(0,0,0,0.3);
+            background: #ffffff;
             border: 1px solid rgba(59, 130, 246, 0.5);
             border-radius: 4px;
-            color: #fff;
+            color: #1f2937;
             font-size: 12px;
             padding: 3px 8px;
             outline: none;
@@ -229,7 +229,7 @@
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
         }
         .table-view-default {
-            color: #6b7280;
+            color: #9ca3af;
             font-style: italic;
         }
 
@@ -1281,7 +1281,7 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: #6b7280;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
+            border-bottom: 1px solid #e5e7eb;
         }
         .sidebar div.table-item.events-item {
             margin: 2px 8px;
@@ -1290,15 +1290,15 @@
             border: none;
         }
         .sidebar div.table-item.events-item .table-icon {
-            background: rgba(245, 158, 11, 0.2);
+            background: rgba(245, 158, 11, 0.15);
             border-radius: 5px;
         }
-        .sidebar div.table-item.events-item .table-icon svg { color: #f59e0b; }
+        .sidebar div.table-item.events-item .table-icon svg { color: #d97706; }
         .sidebar div.table-item.events-item:hover {
-            background: rgba(255,255,255,0.06);
+            background: #f3f4f6;
         }
         .sidebar div.table-item.events-item.active {
-            background: rgba(139, 92, 246, 0.2);
+            background: rgba(139, 92, 246, 0.15);
         }
         .sidebar div.table-item.events-item.active::before {
             background: #8b5cf6;
