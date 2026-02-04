@@ -9046,6 +9046,82 @@ function switchProfileTab(tabName) {
     }
 }
 
+// Build field history entries from raw events (used for in-memory events from CSV)
+function buildFieldHistoryFromRawEvents(tableId, recordId, events) {
+    // Sort events by id ascending (oldest first for proper state tracking)
+    var sorted = events.slice().sort((a, b) => (a.id || 0) - (b.id || 0));
+
+    var state = {};
+    var fieldHistoryEntries = [];
+
+    for (var e of sorted) {
+        if (!e || !e.recordId || e.recordId !== recordId) continue;
+
+        var payload = parsePayload(e.payload);
+        if (!payload || typeof payload !== 'object') continue;
+
+        var pfields = payload.fields;
+        if (!pfields || typeof pfields !== 'object') continue;
+
+        var eventId = e.id;
+        var timestamp = e.created_at ? new Date(e.created_at).getTime() : Date.now();
+
+        // Process INS (insert/create)
+        if (pfields.INS) {
+            for (var fieldId in pfields.INS) {
+                fieldHistoryEntries.push({
+                    tableId: tableId,
+                    recordId: recordId,
+                    fieldId: fieldId,
+                    eventId: eventId,
+                    timestamp: timestamp,
+                    changeType: 'created',
+                    oldValue: null,
+                    newValue: pfields.INS[fieldId]
+                });
+            }
+            Object.assign(state, pfields.INS);
+        }
+
+        // Process ALT (alter/update)
+        if (pfields.ALT) {
+            for (var fieldId in pfields.ALT) {
+                fieldHistoryEntries.push({
+                    tableId: tableId,
+                    recordId: recordId,
+                    fieldId: fieldId,
+                    eventId: eventId,
+                    timestamp: timestamp,
+                    changeType: 'updated',
+                    oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                    newValue: pfields.ALT[fieldId]
+                });
+            }
+            Object.assign(state, pfields.ALT);
+        }
+
+        // Process NUL (nullify/delete)
+        if (pfields.NUL && Array.isArray(pfields.NUL)) {
+            pfields.NUL.forEach(fieldId => {
+                fieldHistoryEntries.push({
+                    tableId: tableId,
+                    recordId: recordId,
+                    fieldId: fieldId,
+                    eventId: eventId,
+                    timestamp: timestamp,
+                    changeType: 'deleted',
+                    oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                    newValue: null
+                });
+                delete state[fieldId];
+            });
+        }
+    }
+
+    // Return sorted by eventId descending (most recent first) for display
+    return fieldHistoryEntries.sort((a, b) => (b.eventId || 0) - (a.eventId || 0));
+}
+
 // Render sync history in the profile tab
 async function renderProfileSyncHistory() {
     var container = document.getElementById('profile-tab-sync-history');
@@ -9058,11 +9134,22 @@ async function renderProfileSyncHistory() {
     container.innerHTML = '<div class="profile-sync-history-empty"><div class="loading-spinner"></div><h3>Loading sync history...</h3></div>';
 
     try {
-        // Fetch any new history from API first
-        await fetchAndProcessHistoryForRecord(profileCurrentTableId, profileCurrentRecordId);
+        var history;
 
-        // Get history from IndexedDB
-        var history = await getFieldHistoryForRecord(profileCurrentTableId, profileCurrentRecordId, 100);
+        // Check if we have in-memory events (from CSV import) - use them for instant display
+        if (inMemoryEventsByRecord && inMemoryEventsByRecord.has(profileCurrentRecordId)) {
+            var rawEvents = inMemoryEventsByRecord.get(profileCurrentRecordId);
+            history = buildFieldHistoryFromRawEvents(profileCurrentTableId, profileCurrentRecordId, rawEvents);
+            // Limit to 100 most recent entries
+            if (history.length > 100) {
+                history = history.slice(0, 100);
+            }
+        } else {
+            // Fall back to API + IndexedDB when no in-memory events
+            await fetchAndProcessHistoryForRecord(profileCurrentTableId, profileCurrentRecordId);
+            // Get history from IndexedDB
+            history = await getFieldHistoryForRecord(profileCurrentTableId, profileCurrentRecordId, 100);
+        }
 
         if (!history || history.length === 0) {
             container.innerHTML = '<div class="profile-sync-history-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><h3>No sync history available for this record</h3><p>Field changes will appear here after syncing</p></div>';
