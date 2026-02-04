@@ -188,6 +188,44 @@
         .security-note { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 12px; color: #555; line-height: 1.5; }
         .security-note strong { color: #333; }
 
+        /* Email 2FA styles */
+        .email-2fa-box { background: #fff; border-radius: 12px; padding: 32px; width: 420px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+        .email-2fa-box h2 { font-size: 22px; margin-bottom: 8px; color: #333; display: flex; align-items: center; gap: 10px; }
+        .email-2fa-box h2 .email-icon { font-size: 24px; }
+        .email-2fa-box .subtitle { font-size: 13px; color: #666; margin-bottom: 24px; }
+        .email-2fa-box input { width: 100%; padding: 12px 14px; background: #fff; border: 1px solid #ddd; border-radius: 6px; color: #333; font-size: 14px; margin-bottom: 12px; }
+        .email-2fa-box input:focus { outline: none; border-color: #2d6cdf; box-shadow: 0 0 0 3px rgba(45,108,223,0.15); }
+        .email-2fa-box input:disabled { background: #f5f5f5; color: #999; }
+        .email-2fa-box button { width: 100%; padding: 12px; background: #2d6cdf; border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; margin-bottom: 8px; font-weight: 500; transition: background 0.15s; }
+        .email-2fa-box button:hover { background: #2560c9; }
+        .email-2fa-box button:disabled { background: #ccc; cursor: not-allowed; }
+        .email-2fa-box button.secondary { background: #f5f5f5; color: #333; border: 1px solid #ddd; }
+        .email-2fa-box button.secondary:hover { background: #e8e8e8; }
+        .email-2fa-error { color: #dc3545; font-size: 13px; margin-bottom: 12px; padding: 10px 12px; background: #f8d7da; border-radius: 6px; display: none; }
+        .email-2fa-success { color: #155724; font-size: 13px; margin-bottom: 12px; padding: 10px 12px; background: #d4edda; border-radius: 6px; display: none; }
+        .email-2fa-info { color: #666; font-size: 12px; margin-top: 16px; text-align: center; line-height: 1.5; }
+        .otp-input-wrapper { display: flex; gap: 8px; justify-content: center; margin-bottom: 16px; }
+        .otp-input { width: 48px !important; height: 56px; text-align: center; font-size: 24px; font-weight: 600; letter-spacing: 0; padding: 0; }
+        .otp-input:focus { border-color: #2d6cdf; box-shadow: 0 0 0 3px rgba(45,108,223,0.15); }
+        .email-display { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 14px; color: #333; text-align: center; word-break: break-all; }
+        .email-display .label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 4px; }
+        .resend-link { color: #2d6cdf; cursor: pointer; text-decoration: none; font-size: 13px; }
+        .resend-link:hover { text-decoration: underline; }
+        .resend-link.disabled { color: #999; cursor: not-allowed; }
+        .countdown { color: #666; font-size: 13px; }
+        .step-indicator { display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; }
+        .step-dot { width: 8px; height: 8px; border-radius: 50%; background: #e0e0e0; transition: background 0.2s; }
+        .step-dot.active { background: #2d6cdf; }
+        .step-dot.completed { background: #20c933; }
+        .auth-method-selector { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+        .auth-method-btn { display: flex; align-items: center; gap: 12px; padding: 16px; background: #f8f9fa; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer; transition: all 0.15s; text-align: left; }
+        .auth-method-btn:hover { border-color: #2d6cdf; background: #f0f7ff; }
+        .auth-method-btn.selected { border-color: #2d6cdf; background: #e8f0fe; }
+        .auth-method-icon { font-size: 24px; width: 40px; text-align: center; }
+        .auth-method-text { flex: 1; }
+        .auth-method-text .title { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 2px; }
+        .auth-method-text .desc { font-size: 12px; color: #666; }
+
         /* Empty state */
         .empty-state { padding: 60px 20px; text-align: center; color: #666; }
         .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: #333; }
@@ -1735,10 +1773,14 @@
                 <span class="passkey-icon">&#128273;</span> Set Up with Passkey
             </button>
 
+            <button id="setup-email-2fa-btn" class="passkey-btn" onclick="showUnlockScreen('email-setup')" style="background: #16a34a;">
+                <span class="passkey-icon">&#9993;</span> Set Up with Email 2FA
+            </button>
+
             <button id="skip-encryption-btn" class="secondary" onclick="skipEncryption()">Skip (Not Recommended)</button>
 
             <div class="unlock-info">
-                Passkeys use your device's biometrics (Face ID, Touch ID, Windows Hello) for secure, passwordless authentication.
+                Passkeys use your device's biometrics. Email 2FA sends a code to your email each time you unlock.
             </div>
         </div>
 
@@ -1762,6 +1804,121 @@
 
             <div class="unlock-info">
                 Forgot your password? You'll need to clear all local data and start fresh. Your data on the server is not affected.
+            </div>
+        </div>
+
+        <!-- Email 2FA Setup Mode -->
+        <div id="email-2fa-setup" class="email-2fa-box hidden">
+            <div class="step-indicator" id="email-setup-steps">
+                <div class="step-dot active" id="email-setup-step-1"></div>
+                <div class="step-dot" id="email-setup-step-2"></div>
+                <div class="step-dot" id="email-setup-step-3"></div>
+            </div>
+
+            <!-- Step 1: Enter Email -->
+            <div id="email-setup-step1">
+                <h2><span class="email-icon">&#9993;</span> Email 2FA Setup</h2>
+                <p class="subtitle">Secure your data with email-based two-factor authentication</p>
+                <div id="email-setup-error" class="email-2fa-error"></div>
+
+                <div class="security-note">
+                    <strong>How it works:</strong> Your encryption key is split between your device and our server. To decrypt your data, you'll need to verify your email each time. This ensures only you can access your data.
+                </div>
+
+                <div class="setup-section">
+                    <label for="email-setup-input">Enter your email address</label>
+                    <input type="email" id="email-setup-input" placeholder="you@example.com" autocomplete="email">
+                </div>
+
+                <button id="email-setup-send-btn" onclick="emailSetupSendCode()">Send Verification Code</button>
+                <button class="secondary" onclick="showUnlockScreen('setup')">Back to Options</button>
+            </div>
+
+            <!-- Step 2: Verify OTP -->
+            <div id="email-setup-step2" class="hidden">
+                <h2><span class="email-icon">&#128172;</span> Enter Verification Code</h2>
+                <p class="subtitle">We've sent a 6-digit code to your email</p>
+                <div id="email-setup-otp-error" class="email-2fa-error"></div>
+                <div id="email-setup-otp-success" class="email-2fa-success"></div>
+
+                <div class="email-display">
+                    <div class="label">Sent to</div>
+                    <span id="email-setup-display"></span>
+                </div>
+
+                <div class="otp-input-wrapper">
+                    <input type="text" class="otp-input" maxlength="1" id="otp-setup-1" oninput="otpInputHandler(this, 'setup')" onkeydown="otpKeyHandler(event, this, 'setup')">
+                    <input type="text" class="otp-input" maxlength="1" id="otp-setup-2" oninput="otpInputHandler(this, 'setup')" onkeydown="otpKeyHandler(event, this, 'setup')">
+                    <input type="text" class="otp-input" maxlength="1" id="otp-setup-3" oninput="otpInputHandler(this, 'setup')" onkeydown="otpKeyHandler(event, this, 'setup')">
+                    <input type="text" class="otp-input" maxlength="1" id="otp-setup-4" oninput="otpInputHandler(this, 'setup')" onkeydown="otpKeyHandler(event, this, 'setup')">
+                    <input type="text" class="otp-input" maxlength="1" id="otp-setup-5" oninput="otpInputHandler(this, 'setup')" onkeydown="otpKeyHandler(event, this, 'setup')">
+                    <input type="text" class="otp-input" maxlength="1" id="otp-setup-6" oninput="otpInputHandler(this, 'setup')" onkeydown="otpKeyHandler(event, this, 'setup')">
+                </div>
+
+                <button id="email-setup-verify-btn" onclick="emailSetupVerifyCode()">Verify & Continue</button>
+
+                <div class="email-2fa-info">
+                    <span id="email-setup-resend-wrapper">
+                        Didn't receive the code? <span id="email-setup-resend" class="resend-link disabled" onclick="emailSetupResendCode()">Resend</span>
+                        <span id="email-setup-countdown" class="countdown">(60s)</span>
+                    </span>
+                </div>
+
+                <button class="secondary" onclick="emailSetupGoBack()" style="margin-top: 16px;">Change Email</button>
+            </div>
+
+            <!-- Step 3: Setup Complete -->
+            <div id="email-setup-step3" class="hidden">
+                <h2><span class="email-icon">&#10004;</span> Setup Complete!</h2>
+                <p class="subtitle">Your data is now protected with email 2FA</p>
+
+                <div class="security-note" style="background: #d4edda; border-color: #c3e6cb;">
+                    <strong>You're all set!</strong> From now on, you'll need to verify your email each time you open this app to decrypt your data. Make sure you have access to your email.
+                </div>
+
+                <div class="email-display">
+                    <div class="label">Registered Email</div>
+                    <span id="email-setup-final-display"></span>
+                </div>
+
+                <button id="email-setup-continue-btn" onclick="emailSetupComplete()">Continue to App</button>
+            </div>
+        </div>
+
+        <!-- Email 2FA Login Mode -->
+        <div id="email-2fa-login" class="email-2fa-box hidden">
+            <h2><span class="email-icon">&#9993;</span> Verify Your Email</h2>
+            <p class="subtitle">Enter the verification code to unlock your encrypted data</p>
+            <div id="email-login-error" class="email-2fa-error"></div>
+            <div id="email-login-success" class="email-2fa-success"></div>
+
+            <div class="email-display">
+                <div class="label">Verification code sent to</div>
+                <span id="email-login-display"></span>
+            </div>
+
+            <div class="otp-input-wrapper">
+                <input type="text" class="otp-input" maxlength="1" id="otp-login-1" oninput="otpInputHandler(this, 'login')" onkeydown="otpKeyHandler(event, this, 'login')">
+                <input type="text" class="otp-input" maxlength="1" id="otp-login-2" oninput="otpInputHandler(this, 'login')" onkeydown="otpKeyHandler(event, this, 'login')">
+                <input type="text" class="otp-input" maxlength="1" id="otp-login-3" oninput="otpInputHandler(this, 'login')" onkeydown="otpKeyHandler(event, this, 'login')">
+                <input type="text" class="otp-input" maxlength="1" id="otp-login-4" oninput="otpInputHandler(this, 'login')" onkeydown="otpKeyHandler(event, this, 'login')">
+                <input type="text" class="otp-input" maxlength="1" id="otp-login-5" oninput="otpInputHandler(this, 'login')" onkeydown="otpKeyHandler(event, this, 'login')">
+                <input type="text" class="otp-input" maxlength="1" id="otp-login-6" oninput="otpInputHandler(this, 'login')" onkeydown="otpKeyHandler(event, this, 'login')">
+            </div>
+
+            <button id="email-login-verify-btn" onclick="emailLoginVerifyCode()">Unlock</button>
+
+            <div class="email-2fa-info">
+                <span id="email-login-resend-wrapper">
+                    Didn't receive the code? <span id="email-login-resend" class="resend-link disabled" onclick="emailLoginResendCode()">Resend</span>
+                    <span id="email-login-countdown" class="countdown">(60s)</span>
+                </span>
+            </div>
+
+            <button class="secondary" onclick="clearEncryptedData()" style="margin-top: 16px;">Clear All Data & Start Fresh</button>
+
+            <div class="email-2fa-info">
+                Lost access to your email? You'll need to clear all local data and start fresh. Your data on the server is not affected.
             </div>
         </div>
     </div>
@@ -2488,24 +2645,51 @@ function saveEncryptionConfig(config) {
     localStorage.setItem(ENCRYPTION_CONFIG_KEY, JSON.stringify(config));
 }
 
-// Show the unlock screen (setup or prompt mode)
+// Show the unlock screen (setup, prompt, email-setup, or email-login mode)
 function showUnlockScreen(mode) {
     var unlockScreen = document.getElementById('unlock-screen');
     var setupBox = document.getElementById('unlock-setup');
     var promptBox = document.getElementById('unlock-prompt');
+    var email2faSetup = document.getElementById('email-2fa-setup');
+    var email2faLogin = document.getElementById('email-2fa-login');
 
     unlockScreen.classList.remove('hidden');
 
+    // Hide all boxes first
+    setupBox.classList.add('hidden');
+    promptBox.classList.add('hidden');
+    email2faSetup.classList.add('hidden');
+    email2faLogin.classList.add('hidden');
+
     if (mode === 'setup') {
         setupBox.classList.remove('hidden');
-        promptBox.classList.add('hidden');
 
         // Hide passkey button if not supported
         if (!isPasskeySupported()) {
             document.getElementById('setup-passkey-btn').style.display = 'none';
         }
+    } else if (mode === 'email-setup') {
+        email2faSetup.classList.remove('hidden');
+
+        // Reset email setup to step 1
+        document.getElementById('email-setup-step1').classList.remove('hidden');
+        document.getElementById('email-setup-step2').classList.add('hidden');
+        document.getElementById('email-setup-step3').classList.add('hidden');
+        document.getElementById('email-setup-step-1').classList.add('active');
+        document.getElementById('email-setup-step-1').classList.remove('completed');
+        document.getElementById('email-setup-step-2').classList.remove('active', 'completed');
+        document.getElementById('email-setup-step-3').classList.remove('active', 'completed');
+        document.getElementById('email-setup-input').value = '';
+        hideEmail2FAError('email-setup-error');
+    } else if (mode === 'email-login') {
+        email2faLogin.classList.remove('hidden');
+        hideEmail2FAError('email-login-error');
+        clearOtpInputs('login');
+
+        // Initiate the login flow (send OTP)
+        email2FALogin();
     } else {
-        setupBox.classList.add('hidden');
+        // Default: 'prompt' mode
         promptBox.classList.remove('hidden');
 
         // Check encryption config for passkey
@@ -2788,6 +2972,502 @@ async function clearEncryptedData() {
     }
 }
 
+// ============ Email 2FA Authentication System ============
+
+// Email 2FA API endpoint (configure this to your Xano backend)
+var EMAIL_2FA_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/email2fa';
+
+// Email 2FA state
+var email2faState = {
+    email: null,
+    sessionToken: null,  // Temporary token from server during setup/login
+    serverSecret: null,  // Server's portion of the key material
+    localSalt: null,     // Client's salt stored locally
+    resendCountdown: 0,
+    resendTimer: null
+};
+
+// Validate email format
+function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// Get OTP value from input fields
+function getOtpValue(prefix) {
+    var otp = '';
+    for (var i = 1; i <= 6; i++) {
+        otp += document.getElementById('otp-' + prefix + '-' + i).value;
+    }
+    return otp;
+}
+
+// Clear OTP input fields
+function clearOtpInputs(prefix) {
+    for (var i = 1; i <= 6; i++) {
+        document.getElementById('otp-' + prefix + '-' + i).value = '';
+    }
+    document.getElementById('otp-' + prefix + '-1').focus();
+}
+
+// OTP input handler - auto-advance to next field
+function otpInputHandler(input, prefix) {
+    var value = input.value.replace(/[^0-9]/g, '');
+    input.value = value;
+
+    if (value.length === 1) {
+        var currentNum = parseInt(input.id.split('-')[2]);
+        if (currentNum < 6) {
+            document.getElementById('otp-' + prefix + '-' + (currentNum + 1)).focus();
+        }
+    }
+
+    // Auto-submit when all 6 digits are entered
+    var fullOtp = getOtpValue(prefix);
+    if (fullOtp.length === 6) {
+        if (prefix === 'setup') {
+            emailSetupVerifyCode();
+        } else if (prefix === 'login') {
+            emailLoginVerifyCode();
+        }
+    }
+}
+
+// OTP key handler - handle backspace
+function otpKeyHandler(event, input, prefix) {
+    if (event.key === 'Backspace' && input.value === '') {
+        var currentNum = parseInt(input.id.split('-')[2]);
+        if (currentNum > 1) {
+            var prevInput = document.getElementById('otp-' + prefix + '-' + (currentNum - 1));
+            prevInput.focus();
+            prevInput.value = '';
+        }
+    }
+}
+
+// Start resend countdown
+function startResendCountdown(prefix, seconds) {
+    email2faState.resendCountdown = seconds;
+    var resendLink = document.getElementById('email-' + prefix + '-resend');
+    var countdownEl = document.getElementById('email-' + prefix + '-countdown');
+
+    resendLink.classList.add('disabled');
+    countdownEl.style.display = 'inline';
+    countdownEl.textContent = '(' + seconds + 's)';
+
+    if (email2faState.resendTimer) {
+        clearInterval(email2faState.resendTimer);
+    }
+
+    email2faState.resendTimer = setInterval(function() {
+        email2faState.resendCountdown--;
+        if (email2faState.resendCountdown <= 0) {
+            clearInterval(email2faState.resendTimer);
+            resendLink.classList.remove('disabled');
+            countdownEl.style.display = 'none';
+        } else {
+            countdownEl.textContent = '(' + email2faState.resendCountdown + 's)';
+        }
+    }, 1000);
+}
+
+// Derive encryption key from server secret and local salt
+async function deriveKeyFromEmail2FA(serverSecret, localSalt) {
+    // Combine server secret with local salt using HKDF
+    var serverSecretBytes = base64ToArrayBuffer(serverSecret);
+
+    var keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        serverSecretBytes,
+        'HKDF',
+        false,
+        ['deriveBits', 'deriveKey']
+    );
+
+    return crypto.subtle.deriveKey(
+        {
+            name: 'HKDF',
+            salt: localSalt,
+            info: new TextEncoder().encode('amino-email-2fa-encryption-key'),
+            hash: 'SHA-256'
+        },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+// Show email 2FA error
+function showEmail2FAError(elementId, message) {
+    var el = document.getElementById(elementId);
+    el.textContent = message;
+    el.style.display = 'block';
+}
+
+// Hide email 2FA error
+function hideEmail2FAError(elementId) {
+    document.getElementById(elementId).style.display = 'none';
+}
+
+// Show email 2FA success
+function showEmail2FASuccess(elementId, message) {
+    var el = document.getElementById(elementId);
+    el.textContent = message;
+    el.style.display = 'block';
+}
+
+// ============ Email 2FA Setup Flow ============
+
+// Step 1: Send verification code to email
+async function emailSetupSendCode() {
+    hideEmail2FAError('email-setup-error');
+
+    var email = document.getElementById('email-setup-input').value.trim().toLowerCase();
+
+    if (!email) {
+        showEmail2FAError('email-setup-error', 'Please enter your email address');
+        return;
+    }
+
+    if (!isValidEmail(email)) {
+        showEmail2FAError('email-setup-error', 'Please enter a valid email address');
+        return;
+    }
+
+    var btn = document.getElementById('email-setup-send-btn');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+        // Call backend API to initiate setup and send OTP
+        var response = await fetch(EMAIL_2FA_API + '/setup/init', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email })
+        });
+
+        var result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || 'Failed to send verification code');
+        }
+
+        // Store state
+        email2faState.email = email;
+        email2faState.sessionToken = result.sessionToken;
+
+        // Show step 2
+        document.getElementById('email-setup-step1').classList.add('hidden');
+        document.getElementById('email-setup-step2').classList.remove('hidden');
+        document.getElementById('email-setup-display').textContent = email;
+        document.getElementById('email-setup-step-1').classList.remove('active');
+        document.getElementById('email-setup-step-1').classList.add('completed');
+        document.getElementById('email-setup-step-2').classList.add('active');
+
+        // Focus first OTP input
+        document.getElementById('otp-setup-1').focus();
+
+        // Start resend countdown
+        startResendCountdown('setup', 60);
+
+    } catch (e) {
+        console.error('Email 2FA setup error:', e);
+        showEmail2FAError('email-setup-error', e.message || 'Failed to send verification code');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send Verification Code';
+    }
+}
+
+// Step 2: Verify OTP and complete setup
+async function emailSetupVerifyCode() {
+    hideEmail2FAError('email-setup-otp-error');
+
+    var otp = getOtpValue('setup');
+
+    if (otp.length !== 6) {
+        showEmail2FAError('email-setup-otp-error', 'Please enter the 6-digit code');
+        return;
+    }
+
+    var btn = document.getElementById('email-setup-verify-btn');
+    btn.disabled = true;
+    btn.textContent = 'Verifying...';
+
+    try {
+        // Call backend API to verify OTP and get server secret
+        var response = await fetch(EMAIL_2FA_API + '/setup/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email2faState.email,
+                sessionToken: email2faState.sessionToken,
+                otp: otp
+            })
+        });
+
+        var result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || 'Invalid verification code');
+        }
+
+        // Store server secret temporarily
+        email2faState.serverSecret = result.serverSecret;
+
+        // Generate local salt
+        email2faState.localSalt = generateSalt();
+
+        // Derive encryption key
+        encryptionKey = await deriveKeyFromEmail2FA(email2faState.serverSecret, email2faState.localSalt);
+
+        // Create verification token
+        var verificationToken = await encryptData({ verify: 'amino-email-2fa-check' }, encryptionKey);
+
+        // Save encryption config
+        saveEncryptionConfig({
+            type: 'email2fa',
+            email: email2faState.email,
+            localSalt: arrayBufferToBase64(email2faState.localSalt),
+            verificationToken: verificationToken
+        });
+
+        encryptionEnabled = true;
+
+        // Show step 3 (success)
+        document.getElementById('email-setup-step2').classList.add('hidden');
+        document.getElementById('email-setup-step3').classList.remove('hidden');
+        document.getElementById('email-setup-final-display').textContent = email2faState.email;
+        document.getElementById('email-setup-step-2').classList.remove('active');
+        document.getElementById('email-setup-step-2').classList.add('completed');
+        document.getElementById('email-setup-step-3').classList.add('active');
+
+        // Clear sensitive state
+        email2faState.serverSecret = null;
+        email2faState.sessionToken = null;
+
+    } catch (e) {
+        console.error('Email 2FA verify error:', e);
+        showEmail2FAError('email-setup-otp-error', e.message || 'Verification failed');
+        clearOtpInputs('setup');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Verify & Continue';
+    }
+}
+
+// Go back to step 1
+function emailSetupGoBack() {
+    document.getElementById('email-setup-step2').classList.add('hidden');
+    document.getElementById('email-setup-step1').classList.remove('hidden');
+    document.getElementById('email-setup-step-2').classList.remove('active');
+    document.getElementById('email-setup-step-1').classList.add('active');
+    document.getElementById('email-setup-step-1').classList.remove('completed');
+    clearOtpInputs('setup');
+    if (email2faState.resendTimer) {
+        clearInterval(email2faState.resendTimer);
+    }
+}
+
+// Resend setup code
+async function emailSetupResendCode() {
+    if (email2faState.resendCountdown > 0) return;
+
+    hideEmail2FAError('email-setup-otp-error');
+
+    try {
+        var response = await fetch(EMAIL_2FA_API + '/setup/resend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email2faState.email,
+                sessionToken: email2faState.sessionToken
+            })
+        });
+
+        var result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || 'Failed to resend code');
+        }
+
+        // Update session token if a new one is provided
+        if (result.sessionToken) {
+            email2faState.sessionToken = result.sessionToken;
+        }
+
+        showEmail2FASuccess('email-setup-otp-success', 'New code sent to your email');
+        setTimeout(function() {
+            document.getElementById('email-setup-otp-success').style.display = 'none';
+        }, 3000);
+
+        startResendCountdown('setup', 60);
+        clearOtpInputs('setup');
+
+    } catch (e) {
+        console.error('Resend error:', e);
+        showEmail2FAError('email-setup-otp-error', e.message || 'Failed to resend code');
+    }
+}
+
+// Complete setup and continue to app
+function emailSetupComplete() {
+    hideUnlockScreen();
+    initAuthScreen();
+}
+
+// ============ Email 2FA Login Flow ============
+
+// Initiate login and send OTP
+async function email2FALogin() {
+    var config = getEncryptionConfig();
+    if (!config || config.type !== 'email2fa') {
+        console.error('Email 2FA not configured');
+        return;
+    }
+
+    email2faState.email = config.email;
+    email2faState.localSalt = base64ToArrayBuffer(config.localSalt);
+
+    // Show login screen and send OTP
+    document.getElementById('email-login-display').textContent = config.email;
+
+    try {
+        var response = await fetch(EMAIL_2FA_API + '/login/init', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: config.email })
+        });
+
+        var result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || 'Failed to send verification code');
+        }
+
+        email2faState.sessionToken = result.sessionToken;
+
+        // Focus first OTP input
+        setTimeout(function() {
+            document.getElementById('otp-login-1').focus();
+        }, 100);
+
+        // Start resend countdown
+        startResendCountdown('login', 60);
+
+    } catch (e) {
+        console.error('Email 2FA login init error:', e);
+        showEmail2FAError('email-login-error', e.message || 'Failed to send verification code');
+    }
+}
+
+// Verify login OTP
+async function emailLoginVerifyCode() {
+    hideEmail2FAError('email-login-error');
+
+    var otp = getOtpValue('login');
+
+    if (otp.length !== 6) {
+        showEmail2FAError('email-login-error', 'Please enter the 6-digit code');
+        return;
+    }
+
+    var btn = document.getElementById('email-login-verify-btn');
+    btn.disabled = true;
+    btn.textContent = 'Unlocking...';
+
+    try {
+        var config = getEncryptionConfig();
+
+        // Verify OTP and get server secret
+        var response = await fetch(EMAIL_2FA_API + '/login/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email2faState.email,
+                sessionToken: email2faState.sessionToken,
+                otp: otp
+            })
+        });
+
+        var result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || 'Invalid verification code');
+        }
+
+        // Derive encryption key
+        encryptionKey = await deriveKeyFromEmail2FA(result.serverSecret, email2faState.localSalt);
+
+        // Verify the key works
+        try {
+            await decryptData(config.verificationToken, encryptionKey);
+        } catch (e) {
+            throw new Error('Key verification failed. Please try again.');
+        }
+
+        encryptionEnabled = true;
+
+        // Clear sensitive state
+        email2faState.serverSecret = null;
+        email2faState.sessionToken = null;
+
+        // Continue to app
+        hideUnlockScreen();
+        clearOtpInputs('login');
+        initAuthScreen();
+
+    } catch (e) {
+        console.error('Email 2FA verify error:', e);
+        showEmail2FAError('email-login-error', e.message || 'Verification failed');
+        clearOtpInputs('login');
+        encryptionKey = null;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Unlock';
+    }
+}
+
+// Resend login code
+async function emailLoginResendCode() {
+    if (email2faState.resendCountdown > 0) return;
+
+    hideEmail2FAError('email-login-error');
+
+    try {
+        var response = await fetch(EMAIL_2FA_API + '/login/resend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email2faState.email,
+                sessionToken: email2faState.sessionToken
+            })
+        });
+
+        var result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || 'Failed to resend code');
+        }
+
+        if (result.sessionToken) {
+            email2faState.sessionToken = result.sessionToken;
+        }
+
+        showEmail2FASuccess('email-login-success', 'New code sent to your email');
+        setTimeout(function() {
+            document.getElementById('email-login-success').style.display = 'none';
+        }, 3000);
+
+        startResendCountdown('login', 60);
+        clearOtpInputs('login');
+
+    } catch (e) {
+        console.error('Resend error:', e);
+        showEmail2FAError('email-login-error', e.message || 'Failed to resend code');
+    }
+}
+
 // ============ Encrypted Credentials Storage ============
 
 // Save API credentials (encrypted if encryption is enabled)
@@ -2882,7 +3562,13 @@ async function initEncryption() {
         return true;
     }
 
-    // User has encryption set up - show unlock screen
+    if (config.type === 'email2fa') {
+        // Email 2FA configured - show email login screen
+        showUnlockScreen('email-login');
+        return false;
+    }
+
+    // User has password/passkey encryption set up - show unlock screen
     showUnlockScreen('prompt');
     return false;
 }
@@ -9921,6 +10607,9 @@ document.addEventListener('keydown', function(e) {
 document.getElementById('unlock-password').onkeydown = (e) => { if (e.key === 'Enter') unlockWithPassword(); };
 document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('setup-password-confirm').focus(); };
 document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
+
+// Keyboard handler for email 2FA setup
+document.getElementById('email-setup-input').onkeydown = (e) => { if (e.key === 'Enter') emailSetupSendCode(); };
 
 // Initialize: check encryption first, then auth
 (async function() {
