@@ -3,66 +3,205 @@
 <head>
     <meta charset="UTF-8">
     <title>DB Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f5f5f5; color: #333; display: flex; height: 100vh; }
 
-        /* Sidebar - Airtable dark style */
-        .sidebar { width: 260px; background: #1d1f25; border-right: 1px solid #2d2f36; overflow-y: auto; flex-shrink: 0; }
-        .sidebar-header { padding: 16px; border-bottom: 1px solid #2d2f36; }
-        .sidebar-header h2 { color: #fff; font-size: 14px; font-weight: 600; }
-        .sidebar div.table-item { padding: 8px 16px; cursor: pointer; font-size: 13px; color: #b3b3b3; display: flex; align-items: center; gap: 8px; }
-        .sidebar div.table-item:hover { background: #2d2f36; color: #fff; }
-        .sidebar div.table-item.active { background: #2d6cdf; color: #fff; }
-        .sidebar div.table-item .count { margin-left: auto; font-size: 11px; color: #666; }
+        /* Sidebar scrollbar styling */
+        .sidebar::-webkit-scrollbar { width: 6px; }
+        .sidebar::-webkit-scrollbar-track { background: transparent; }
+        .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        .sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        /* Sidebar - Enhanced dark style with better contrast */
+        .sidebar { width: 288px; background: #0f1117; border-right: 1px solid rgba(255,255,255,0.08); overflow-y: auto; flex-shrink: 0; font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+        .sidebar-header-top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+        .sidebar-logo { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); display: flex; align-items: center; justify-content: center; }
+        .sidebar-logo svg { width: 14px; height: 14px; color: #fff; }
+        .sidebar-header h2 { color: #fff; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+
+        /* Sidebar Search */
+        .sidebar-search { position: relative; }
+        .sidebar-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #6b7280; pointer-events: none; }
+        .sidebar-search-icon svg { width: 14px; height: 14px; }
+        .sidebar-search input {
+            width: 100%;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 9px 44px 9px 36px;
+            font-size: 13px;
+            color: #fff;
+            transition: all 0.15s;
+        }
+        .sidebar-search input::placeholder { color: #6b7280; }
+        .sidebar-search input:focus {
+            outline: none;
+            border-color: rgba(59, 130, 246, 0.5);
+            background: rgba(255,255,255,0.08);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+        }
+        .sidebar-search-shortcut {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10px;
+            color: #4b5563;
+            background: rgba(255,255,255,0.06);
+            padding: 3px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.1);
+            font-family: system-ui, sans-serif;
+        }
+
+        /* Section Headers */
+        .sidebar-section-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #6b7280;
+            cursor: pointer;
+            transition: color 0.15s;
+            user-select: none;
+        }
+        .sidebar-section-header:hover { color: #9ca3af; }
+        .sidebar-section-header svg { width: 12px; height: 12px; transition: transform 0.2s; }
+        .sidebar-section-header.collapsed svg { transform: rotate(-90deg); }
+        .sidebar-section-header .section-icon { opacity: 0.8; }
+        .sidebar-section-header .section-count { margin-left: auto; font-weight: 400; color: #4b5563; }
+
+        /* Sidebar Divider */
+        .sidebar-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 8px 16px; }
+
+        /* Table Items - Enhanced contrast */
+        .sidebar div.table-item {
+            padding: 9px 12px;
+            margin: 2px 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #d1d5db;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.15s;
+            position: relative;
+        }
+        .sidebar div.table-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+        .sidebar div.table-item.active { background: rgba(255,255,255,0.1); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .sidebar div.table-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 20px;
+            border-radius: 0 2px 2px 0;
+        }
+        .sidebar div.table-item .table-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sidebar div.table-item .count { font-size: 11px; color: #6b7280; font-variant-numeric: tabular-nums; }
         .sidebar div.table-item.active .count { color: rgba(255,255,255,0.7); }
-        .table-icon { width: 16px; height: 16px; background: #2d6cdf; border-radius: 3px; flex-shrink: 0; }
+        .sidebar div.table-item:hover .count { color: #9ca3af; }
+
+        /* Table Type Icons */
+        .table-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 5px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .table-icon svg { width: 12px; height: 12px; }
+        .table-icon.type-events { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+        .table-icon.type-operational { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+        .table-icon.type-collection { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
+        .table-icon.type-reference { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+        .table-icon.type-dev { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+
+        /* Count Bar Visualization */
+        .count-bar-wrapper { display: flex; align-items: center; gap: 6px; min-width: 54px; justify-content: flex-end; }
+        .count-bar { height: 4px; border-radius: 2px; transition: all 0.15s; opacity: 0.6; }
+        .count-value { font-size: 11px; font-variant-numeric: tabular-nums; min-width: 28px; text-align: right; }
+
+        /* Pin Button */
+        .pin-btn {
+            padding: 4px;
+            border-radius: 4px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .pin-btn svg { width: 12px; height: 12px; color: #6b7280; }
+        .pin-btn:hover svg { color: #fbbf24; }
+        .pin-btn.pinned { opacity: 1; }
+        .pin-btn.pinned svg { color: #fbbf24; fill: #fbbf24; }
+        .sidebar div.table-item:hover .pin-btn { opacity: 1; }
 
         /* Table item with expandable views */
-        .sidebar div.table-item { position: relative; }
         .sidebar div.table-item .expand-arrow {
-            margin-left: auto;
             font-size: 10px;
-            color: #666;
+            color: #6b7280;
             transition: transform 0.2s;
             padding: 4px;
         }
         .sidebar div.table-item.expanded .expand-arrow { transform: rotate(90deg); }
-        .sidebar div.table-item .count { margin-left: 8px; }
+        .sidebar div.table-item:hover .expand-arrow { color: #9ca3af; }
 
         /* Table views list (expandable) */
         .table-views-list {
             max-height: 0;
             overflow: hidden;
             transition: max-height 0.25s ease-out;
-            background: #16181d;
+            background: rgba(0,0,0,0.2);
+            margin: 0 8px;
+            border-radius: 0 0 8px 8px;
         }
         .table-views-list.expanded {
             max-height: 500px;
         }
         .table-view-item {
-            padding: 6px 16px 6px 44px;
+            padding: 7px 12px 7px 40px;
             cursor: pointer;
             font-size: 12px;
-            color: #8a8a8a;
+            color: #9ca3af;
             display: flex;
             align-items: center;
             gap: 8px;
             transition: all 0.15s;
+            margin: 1px 4px;
+            border-radius: 6px;
         }
         .table-view-item:hover {
-            background: #2d2f36;
-            color: #fff;
+            background: rgba(255,255,255,0.06);
+            color: #e5e7eb;
         }
         .table-view-item.active {
-            background: #1e4fa8;
+            background: rgba(59, 130, 246, 0.2);
             color: #fff;
         }
         .table-view-item .view-icon {
             font-size: 12px;
             width: 16px;
             text-align: center;
-            color: #666;
+            color: #6b7280;
         }
         .table-view-item:hover .view-icon,
         .table-view-item.active .view-icon {
@@ -76,21 +215,21 @@
         }
         .table-view-item .view-name-input {
             flex: 1;
-            background: #1a1b1e;
-            border: 1px solid #4a90d9;
-            border-radius: 3px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(59, 130, 246, 0.5);
+            border-radius: 4px;
             color: #fff;
             font-size: 12px;
-            padding: 2px 6px;
+            padding: 3px 8px;
             outline: none;
             min-width: 0;
         }
         .table-view-item .view-name-input:focus {
-            border-color: #6ab0ff;
-            box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.3);
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
         }
         .table-view-default {
-            color: #666;
+            color: #6b7280;
             font-style: italic;
         }
 
@@ -1126,28 +1265,35 @@
         .view-type-badge.schema { background: #7c3aed; color: #fff; }
         .view-type-badge.grid { background: #2d6cdf; color: #fff; }
 
-        /* Events View Styles */
+        /* Events View Styles - Events section header is now handled by sidebar-section-header */
         .events-section-header {
             padding: 12px 16px 8px;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #666;
-            border-bottom: 1px solid #2d2f36;
+            letter-spacing: 0.05em;
+            color: #6b7280;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
         }
         .sidebar div.table-item.events-item {
-            background: linear-gradient(90deg, #1a1c21 0%, #1d1f25 100%);
-            border-bottom: 1px solid #2d2f36;
+            margin: 2px 8px;
+            border-radius: 8px;
+            background: transparent;
+            border: none;
         }
         .sidebar div.table-item.events-item .table-icon {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            background: rgba(245, 158, 11, 0.2);
+            border-radius: 5px;
         }
+        .sidebar div.table-item.events-item .table-icon svg { color: #f59e0b; }
         .sidebar div.table-item.events-item:hover {
-            background: linear-gradient(90deg, #2d2f36 0%, #1d1f25 100%);
+            background: rgba(255,255,255,0.06);
         }
         .sidebar div.table-item.events-item.active {
-            background: linear-gradient(90deg, #7c3aed 0%, #6d28d9 100%);
+            background: rgba(139, 92, 246, 0.2);
+        }
+        .sidebar div.table-item.events-item.active::before {
+            background: #8b5cf6;
         }
 
         /* Events Table */
@@ -1882,7 +2028,26 @@
 
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <h2>Amino Viewer</h2>
+            <div class="sidebar-header-top">
+                <div class="sidebar-logo">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                        <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
+                    </svg>
+                </div>
+                <h2>Amino Viewer</h2>
+            </div>
+            <div class="sidebar-search">
+                <span class="sidebar-search-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.3-4.3"/>
+                    </svg>
+                </span>
+                <input type="text" id="sidebar-search-input" placeholder="Search tables..." />
+                <span class="sidebar-search-shortcut">&#8984;K</span>
+            </div>
         </div>
         <div id="table-list"></div>
     </div>
@@ -2982,6 +3147,182 @@ var TABLE_SETTINGS = {
     tables: {},
     tableOrder: [],
     views: {}
+};
+
+// ============ Sidebar Configuration ============
+// Table type definitions with colors and icons
+var TABLE_TYPE_CONFIG = {
+    events: {
+        color: '#f59e0b',
+        label: 'Events',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
+    },
+    operational: {
+        color: '#3b82f6',
+        label: 'Operational',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="3" x2="21" y1="15" y2="15"/><line x1="9" x2="9" y1="9" y2="21"/><line x1="15" x2="15" y1="9" y2="21"/></svg>'
+    },
+    collection: {
+        color: '#8b5cf6',
+        label: 'Collections',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>'
+    },
+    reference: {
+        color: '#10b981',
+        label: 'Reference',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>'
+    },
+    dev: {
+        color: '#6b7280',
+        label: 'Dev / Testing',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>'
+    }
+};
+
+// Sidebar state (pinned tables, recent tables, expanded sections, search)
+var SIDEBAR_STATE = {
+    pinnedTables: [],
+    recentTables: [],
+    expandedSections: {
+        pinned: true,
+        recent: true,
+        operational: true,
+        collections: false,
+        reference: false,
+        dev: false
+    },
+    searchQuery: '',
+    maxRecentTables: 5
+};
+
+// Determine table type based on name patterns
+function getTableType(tableName) {
+    var name = (tableName || '').toLowerCase();
+
+    // Events
+    if (name.includes('event') && name.includes('stream')) return 'events';
+    if (name === 'events') return 'events';
+
+    // Collections (date patterns)
+    if (name.includes('collection')) return 'collection';
+    if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/.test(name)) return 'collection';
+    if (/\d{1,2}(st|nd|rd|th)?\s*-\s*\d{1,2}(st|nd|rd|th)?/.test(name)) return 'collection';
+
+    // Reference (small lookup tables)
+    if (name.includes('dictionary') || name.includes('appendix') || name.includes('info')) return 'reference';
+    if (name.includes('type') && !name.includes('activity')) return 'reference';
+
+    // Dev
+    if (name.includes('test') || name.includes('dev') || name.includes('data test')) return 'dev';
+
+    // Default to operational
+    return 'operational';
+}
+
+// Format record count (e.g., 73262 -> "73.3k")
+function formatRecordCount(count) {
+    if (count >= 1000) return (count / 1000).toFixed(1) + 'k';
+    return count.toString();
+}
+
+// Get count bar width ratio (logarithmic scale)
+function getCountBarWidth(count, maxCount) {
+    if (count <= 0 || maxCount <= 0) return 0;
+    var ratio = Math.log(count + 1) / Math.log(maxCount + 1);
+    return Math.max(0.15, ratio);
+}
+
+// Add table to recent list
+function addToRecentTables(tableId) {
+    if (tableId === '_events') return;
+    var recent = SIDEBAR_STATE.recentTables.filter(id => id !== tableId);
+    recent.unshift(tableId);
+    SIDEBAR_STATE.recentTables = recent.slice(0, SIDEBAR_STATE.maxRecentTables);
+    saveSidebarState();
+}
+
+// Toggle table pin
+function toggleTablePin(tableId, event) {
+    if (event) event.stopPropagation();
+    var idx = SIDEBAR_STATE.pinnedTables.indexOf(tableId);
+    if (idx >= 0) {
+        SIDEBAR_STATE.pinnedTables.splice(idx, 1);
+    } else {
+        SIDEBAR_STATE.pinnedTables.push(tableId);
+    }
+    saveSidebarState();
+    renderSidebar();
+}
+
+// Toggle sidebar section
+function toggleSidebarSection(sectionId) {
+    SIDEBAR_STATE.expandedSections[sectionId] = !SIDEBAR_STATE.expandedSections[sectionId];
+    saveSidebarState();
+    renderSidebar();
+}
+
+// Save sidebar state to localStorage
+function saveSidebarState() {
+    try {
+        localStorage.setItem('aminoSidebarState', JSON.stringify(SIDEBAR_STATE));
+    } catch (e) { /* ignore */ }
+}
+
+// Load sidebar state from localStorage
+function loadSidebarState() {
+    try {
+        var saved = localStorage.getItem('aminoSidebarState');
+        if (saved) {
+            var parsed = JSON.parse(saved);
+            SIDEBAR_STATE.pinnedTables = parsed.pinnedTables || [];
+            SIDEBAR_STATE.recentTables = parsed.recentTables || [];
+            SIDEBAR_STATE.expandedSections = Object.assign({}, SIDEBAR_STATE.expandedSections, parsed.expandedSections || {});
+        }
+    } catch (e) { /* ignore */ }
+}
+
+// Initialize sidebar search functionality
+function initSidebarSearch() {
+    var searchInput = document.getElementById('sidebar-search-input');
+    if (!searchInput) return;
+
+    var debounceTimer = null;
+
+    // Search input handler with debounce
+    searchInput.addEventListener('input', function(e) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+            SIDEBAR_STATE.searchQuery = e.target.value;
+            renderSidebar();
+        }, 200);
+    });
+
+    // Clear search on Escape
+    searchInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            searchInput.value = '';
+            SIDEBAR_STATE.searchQuery = '';
+            searchInput.blur();
+            renderSidebar();
+        }
+    });
+
+    // Keyboard shortcut: Cmd+K / Ctrl+K to focus search
+    document.addEventListener('keydown', function(e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            searchInput.focus();
+            searchInput.select();
+        }
+    });
+}
+
+// SVG icons for sidebar
+var SIDEBAR_ICONS = {
+    chevronDown: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+    star: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+    starFilled: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+    clock: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
 };
 
 // Pending view action (when user tries to modify default view)
@@ -5652,31 +5993,7 @@ async function renderSidebar() {
     var tableList = document.getElementById('table-list');
     tableList.innerHTML = '';
 
-    // Add Events Stream item at the top
-    var eventsWrapper = document.createElement('div');
-    eventsWrapper.className = 'table-wrapper';
-    eventsWrapper.setAttribute('data-table-id', '_events');
-
-    var eventsDiv = document.createElement('div');
-    eventsDiv.className = 'table-item events-item' + (currentTable === '_events' ? ' active' : '');
-    eventsDiv.innerHTML = '<span class="table-icon"></span>Events Stream' +
-                          '<span class="count" id="count-_events"></span>';
-    eventsDiv.onclick = () => showEventsView();
-    eventsWrapper.appendChild(eventsDiv);
-    tableList.appendChild(eventsWrapper);
-
-    // Update events count asynchronously
-    getRawEventsCount().then(count => {
-        var el = document.getElementById('count-_events');
-        if (el) el.textContent = count.toLocaleString();
-    });
-
-    // Add section header for tables
-    var tablesHeader = document.createElement('div');
-    tablesHeader.className = 'events-section-header';
-    tablesHeader.textContent = 'Tables';
-    tableList.appendChild(tablesHeader);
-
+    // Get all tables
     var tables = await getAllTables();
 
     // Also get tables from META_TABLES (in-memory from current session)
@@ -5686,46 +6003,226 @@ async function renderSidebar() {
         }
     }
 
-    tables.sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
-
+    // Get record counts for all tables (for count bar visualization)
+    var tableCounts = {};
+    var maxCount = 0;
     for (var table of tables) {
+        var ids = await getRecordIdsForTable(table.tableId);
+        tableCounts[table.tableId] = ids.length;
+        if (ids.length > maxCount) maxCount = ids.length;
+    }
+
+    // Get events count
+    var eventsCount = await getRawEventsCount();
+    if (eventsCount > maxCount) maxCount = eventsCount;
+
+    // Filter tables by search query
+    var searchQuery = SIDEBAR_STATE.searchQuery.toLowerCase().trim();
+    var filteredTables = tables;
+    if (searchQuery) {
+        filteredTables = tables.filter(t => {
+            var name = (t.tableName || t.tableId || '').toLowerCase();
+            return name.includes(searchQuery);
+        });
+    }
+
+    // Group tables by type
+    var groupedTables = {
+        operational: [],
+        collection: [],
+        reference: [],
+        dev: []
+    };
+
+    filteredTables.forEach(table => {
+        var tableName = table.tableName || table.tableId;
+        var type = getTableType(tableName);
+        // Map 'events' type to operational
+        if (type === 'events') type = 'operational';
+        if (groupedTables[type]) {
+            groupedTables[type].push(table);
+        } else {
+            groupedTables.operational.push(table);
+        }
+    });
+
+    // Sort each group alphabetically
+    Object.keys(groupedTables).forEach(type => {
+        groupedTables[type].sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
+    });
+
+    // Helper to render a table item
+    function renderTableItem(table, showExpandArrow = true) {
         var tableId = table.tableId;
         var tableName = table.tableName || tableId;
+        var type = getTableType(tableName);
+        var config = TABLE_TYPE_CONFIG[type] || TABLE_TYPE_CONFIG.operational;
+        var count = tableCounts[tableId] || 0;
+        var isPinned = SIDEBAR_STATE.pinnedTables.includes(tableId);
+        var isActive = tableId === currentTable;
+        var barWidth = Math.round(getCountBarWidth(count, maxCount) * 20);
 
-        // Create wrapper for table item and its views
         var wrapper = document.createElement('div');
         wrapper.className = 'table-wrapper';
         wrapper.setAttribute('data-table-id', tableId);
 
-        // Create table item
         var div = document.createElement('div');
-        div.className = 'table-item' + (tableId === currentTable ? ' active expanded' : '');
-        div.innerHTML = '<span class="table-icon"></span>' + esc(tableName) +
-                        '<span class="count" id="count-' + tableId + '"></span>' +
-                        '<span class="expand-arrow">&#9654;</span>';
-        div.onclick = ((t) => (e) => toggleTableViews(t, e))(tableId);
+        div.className = 'table-item' + (isActive ? ' active expanded' : '');
+        div.style.cssText = isActive ? '--active-color: ' + config.color + ';' : '';
+
+        // Set the ::before background color for active state
+        if (isActive) {
+            div.style.setProperty('--type-color', config.color);
+        }
+
+        div.innerHTML =
+            '<span class="table-icon type-' + type + '">' + config.icon + '</span>' +
+            '<span class="table-name">' + esc(tableName) + '</span>' +
+            '<button class="pin-btn' + (isPinned ? ' pinned' : '') + '" onclick="toggleTablePin(\'' + esc(tableId) + '\', event)" title="' + (isPinned ? 'Unpin' : 'Pin') + '">' +
+                (isPinned ? SIDEBAR_ICONS.starFilled : SIDEBAR_ICONS.star) +
+            '</button>' +
+            '<span class="count-bar-wrapper">' +
+                '<span class="count-bar" style="width: ' + barWidth + 'px; background: ' + config.color + ';"></span>' +
+                '<span class="count-value" style="color: ' + config.color + ';">' + formatRecordCount(count) + '</span>' +
+            '</span>' +
+            (showExpandArrow ? '<span class="expand-arrow">&#9654;</span>' : '');
+
+        div.onclick = ((t) => (e) => {
+            // Don't toggle if clicking pin button
+            if (e.target.closest('.pin-btn')) return;
+            toggleTableViews(t, e);
+        })(tableId);
+
         wrapper.appendChild(div);
 
         // Create views list container
         var viewsList = document.createElement('div');
-        viewsList.className = 'table-views-list' + (tableId === currentTable ? ' expanded' : '');
+        viewsList.className = 'table-views-list' + (isActive ? ' expanded' : '');
         viewsList.id = 'views-list-' + tableId;
-        viewsList.innerHTML = '<div class="table-view-item loading" style="color: #666; font-style: italic;">Loading views...</div>';
+        viewsList.innerHTML = '<div class="table-view-item loading" style="color: #6b7280; font-style: italic;">Loading views...</div>';
         wrapper.appendChild(viewsList);
 
-        tableList.appendChild(wrapper);
-
-        // Load views for this table asynchronously
-        loadTableViewsAsync(tableId);
+        return wrapper;
     }
 
-    // Update counts asynchronously
-    for (var table of tables) {
-        getRecordIdsForTable(table.tableId).then(((tid) => (ids) => {
-            var el = document.getElementById('count-' + tid);
-            if (el) el.textContent = ids.length.toLocaleString();
-        })(table.tableId));
+    // Helper to render a section header
+    function renderSectionHeader(sectionId, title, icon, color, count) {
+        var isExpanded = SIDEBAR_STATE.expandedSections[sectionId];
+        var header = document.createElement('div');
+        header.className = 'sidebar-section-header' + (isExpanded ? '' : ' collapsed');
+        header.innerHTML =
+            SIDEBAR_ICONS.chevronDown +
+            '<span class="section-icon" style="color: ' + color + ';">' + icon + '</span>' +
+            '<span>' + title + '</span>' +
+            '<span class="section-count">' + count + '</span>';
+        header.onclick = () => toggleSidebarSection(sectionId);
+        return header;
     }
+
+    // If not searching, show pinned and recent sections
+    if (!searchQuery) {
+        // Events Stream (always at top)
+        var eventsWrapper = document.createElement('div');
+        eventsWrapper.className = 'table-wrapper';
+        eventsWrapper.setAttribute('data-table-id', '_events');
+
+        var eventsDiv = document.createElement('div');
+        eventsDiv.className = 'table-item events-item' + (currentTable === '_events' ? ' active' : '');
+        var eventsBarWidth = Math.round(getCountBarWidth(eventsCount, maxCount) * 20);
+        eventsDiv.innerHTML =
+            '<span class="table-icon type-events">' + TABLE_TYPE_CONFIG.events.icon + '</span>' +
+            '<span class="table-name">Events Stream</span>' +
+            '<span class="count-bar-wrapper">' +
+                '<span class="count-bar" style="width: ' + eventsBarWidth + 'px; background: ' + TABLE_TYPE_CONFIG.events.color + ';"></span>' +
+                '<span class="count-value" style="color: ' + TABLE_TYPE_CONFIG.events.color + ';">' + formatRecordCount(eventsCount) + '</span>' +
+            '</span>';
+        eventsDiv.onclick = () => showEventsView();
+        eventsWrapper.appendChild(eventsDiv);
+        tableList.appendChild(eventsWrapper);
+
+        // Pinned Section
+        var pinnedTables = tables.filter(t => SIDEBAR_STATE.pinnedTables.includes(t.tableId));
+        if (pinnedTables.length > 0) {
+            tableList.appendChild(renderSectionHeader('pinned', 'Pinned', SIDEBAR_ICONS.starFilled, '#fbbf24', pinnedTables.length));
+            if (SIDEBAR_STATE.expandedSections.pinned) {
+                pinnedTables.forEach(table => {
+                    tableList.appendChild(renderTableItem(table));
+                    loadTableViewsAsync(table.tableId);
+                });
+            }
+        }
+
+        // Recent Section
+        var recentTables = SIDEBAR_STATE.recentTables
+            .filter(id => !SIDEBAR_STATE.pinnedTables.includes(id))
+            .map(id => tables.find(t => t.tableId === id))
+            .filter(t => t);
+        if (recentTables.length > 0) {
+            tableList.appendChild(renderSectionHeader('recent', 'Recent', SIDEBAR_ICONS.clock, '#9ca3af', recentTables.length));
+            if (SIDEBAR_STATE.expandedSections.recent) {
+                recentTables.forEach(table => {
+                    tableList.appendChild(renderTableItem(table));
+                    loadTableViewsAsync(table.tableId);
+                });
+            }
+        }
+
+        // Divider
+        if (pinnedTables.length > 0 || recentTables.length > 0) {
+            var divider = document.createElement('div');
+            divider.className = 'sidebar-divider';
+            tableList.appendChild(divider);
+        }
+    }
+
+    // Grouped Sections
+    var sectionConfig = [
+        { id: 'operational', key: 'operational', label: 'Operational', color: '#3b82f6' },
+        { id: 'collections', key: 'collection', label: 'Collections', color: '#8b5cf6' },
+        { id: 'reference', key: 'reference', label: 'Reference', color: '#10b981' },
+        { id: 'dev', key: 'dev', label: 'Dev / Testing', color: '#6b7280' }
+    ];
+
+    sectionConfig.forEach(section => {
+        var sectionTables = groupedTables[section.key] || [];
+        // When searching, show all matching tables; otherwise filter out pinned from main sections
+        if (!searchQuery) {
+            sectionTables = sectionTables.filter(t => !SIDEBAR_STATE.pinnedTables.includes(t.tableId));
+        }
+        if (sectionTables.length === 0 && searchQuery) return;
+        if (sectionTables.length === 0 && !SIDEBAR_STATE.expandedSections[section.id]) return;
+
+        var config = TABLE_TYPE_CONFIG[section.key] || TABLE_TYPE_CONFIG.operational;
+        tableList.appendChild(renderSectionHeader(section.id, section.label, config.icon, section.color, sectionTables.length));
+
+        if (SIDEBAR_STATE.expandedSections[section.id] || searchQuery) {
+            sectionTables.forEach(table => {
+                tableList.appendChild(renderTableItem(table));
+                loadTableViewsAsync(table.tableId);
+            });
+        }
+    });
+
+    // Update active indicator color via CSS variable
+    document.querySelectorAll('.sidebar .table-item.active').forEach(el => {
+        var tableId = el.closest('.table-wrapper')?.getAttribute('data-table-id');
+        if (tableId && tableId !== '_events') {
+            var table = tables.find(t => t.tableId === tableId);
+            if (table) {
+                var type = getTableType(table.tableName || table.tableId);
+                var config = TABLE_TYPE_CONFIG[type] || TABLE_TYPE_CONFIG.operational;
+                el.style.setProperty('--before-bg', config.color);
+                // Also update the ::before pseudo element
+                var styleId = 'active-indicator-' + tableId.replace(/[^a-z0-9]/gi, '');
+                var existingStyle = document.getElementById(styleId);
+                if (existingStyle) existingStyle.remove();
+                var style = document.createElement('style');
+                style.id = styleId;
+                style.textContent = '.table-wrapper[data-table-id="' + tableId + '"] .table-item.active::before { background: ' + config.color + ' !important; }';
+                document.head.appendChild(style);
+            }
+        }
+    });
 }
 
 // Load views for a table and populate the views list
@@ -6511,6 +7008,9 @@ async function showTable(tableId) {
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
     currentPage = 0;
+
+    // Track as recently accessed table
+    addToRecentTables(tableId);
 
     // Reset search and other controls (filters/sorts will be loaded from view)
     if (typeof currentGroupBy !== 'undefined') currentGroupBy = null;
@@ -7349,6 +7849,10 @@ async function init() {
     originalRecordIds = [];
     totalRecords = 0;
     lastEventTimestamp = null;
+
+    // Load sidebar state (pinned, recent, expanded sections)
+    loadSidebarState();
+    initSidebarSearch();
 
     db = await openDB();
 
