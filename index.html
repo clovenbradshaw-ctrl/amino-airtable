@@ -4797,43 +4797,47 @@ async function toggleFieldVisibility(fieldId) {
     await renderTable();
 }
 
-// Move field up in order
-async function moveFieldUp(fieldId) {
+// Move field up in order (optimized with DOM manipulation)
+function moveFieldUp(fieldId) {
     if (!currentTable) return;
     var viewId = currentView || '_default';
     var config = getViewFieldConfig(currentTable, viewId);
 
     var idx = config.fieldOrder.indexOf(fieldId);
     if (idx > 0) {
-        // Swap with previous
+        // Move column in DOM immediately (no full re-render)
+        moveColumnInDOM(idx, idx - 1);
+
+        // Swap with previous in array
         var temp = config.fieldOrder[idx - 1];
         config.fieldOrder[idx - 1] = config.fieldOrder[idx];
         config.fieldOrder[idx] = temp;
 
-        await saveViewFieldConfig(currentTable, viewId, config);
-        markViewDirty('fieldOrder', config.fieldOrder);
+        // Fast update: in-memory + debounced save
+        updateFieldOrderFast(currentTable, viewId, config.fieldOrder);
         renderFieldsDropdown();
-        await renderTable();
     }
 }
 
-// Move field down in order
-async function moveFieldDown(fieldId) {
+// Move field down in order (optimized with DOM manipulation)
+function moveFieldDown(fieldId) {
     if (!currentTable) return;
     var viewId = currentView || '_default';
     var config = getViewFieldConfig(currentTable, viewId);
 
     var idx = config.fieldOrder.indexOf(fieldId);
     if (idx >= 0 && idx < config.fieldOrder.length - 1) {
-        // Swap with next
+        // Move column in DOM immediately (no full re-render)
+        moveColumnInDOM(idx, idx + 1);
+
+        // Swap with next in array
         var temp = config.fieldOrder[idx + 1];
         config.fieldOrder[idx + 1] = config.fieldOrder[idx];
         config.fieldOrder[idx] = temp;
 
-        await saveViewFieldConfig(currentTable, viewId, config);
-        markViewDirty('fieldOrder', config.fieldOrder);
+        // Fast update: in-memory + debounced save
+        updateFieldOrderFast(currentTable, viewId, config.fieldOrder);
         renderFieldsDropdown();
-        await renderTable();
     }
 }
 
@@ -10160,6 +10164,77 @@ document.addEventListener('click', function(e) {
 
 var draggedColumnFieldId = null;
 
+// Optimized DOM-based column movement (no full table re-render)
+function moveColumnInDOM(fromIndex, toIndex) {
+    var table = document.getElementById('table');
+    if (!table) return false;
+
+    // Account for the Actions column at index 0
+    var domFromIndex = fromIndex + 1;
+    var domToIndex = toIndex + 1;
+
+    // Move header
+    var headerRow = table.querySelector('thead tr');
+    if (!headerRow) return false;
+
+    var headers = headerRow.children;
+    if (domFromIndex >= headers.length || domToIndex >= headers.length) return false;
+
+    var headerToMove = headers[domFromIndex];
+    var targetHeader = headers[domToIndex];
+
+    if (domFromIndex < domToIndex) {
+        // Moving right: insert after target
+        targetHeader.after(headerToMove);
+    } else {
+        // Moving left: insert before target
+        targetHeader.before(headerToMove);
+    }
+
+    // Update data-field-index attributes on all headers
+    Array.from(headers).forEach((th, idx) => {
+        if (idx > 0 && th.dataset.fieldIndex !== undefined) {
+            th.dataset.fieldIndex = idx - 1;
+        }
+    });
+
+    // Move cells in all body rows
+    var bodyRows = table.querySelectorAll('tbody tr:not(.group-header-row)');
+    bodyRows.forEach(row => {
+        var cells = row.children;
+        if (domFromIndex >= cells.length || domToIndex >= cells.length) return;
+
+        var cellToMove = cells[domFromIndex];
+        var targetCell = cells[domToIndex];
+
+        if (domFromIndex < domToIndex) {
+            targetCell.after(cellToMove);
+        } else {
+            targetCell.before(cellToMove);
+        }
+    });
+
+    return true;
+}
+
+// Update field order in memory and trigger debounced save
+function updateFieldOrderFast(tableId, viewId, newFieldOrder) {
+    // Update in-memory config
+    if (!VIEW_FIELD_CONFIG[tableId]) VIEW_FIELD_CONFIG[tableId] = {};
+    if (!VIEW_FIELD_CONFIG[tableId][viewId]) {
+        VIEW_FIELD_CONFIG[tableId][viewId] = { hiddenFieldIds: [], fieldOrder: [] };
+    }
+    VIEW_FIELD_CONFIG[tableId][viewId].fieldOrder = newFieldOrder;
+
+    // Update META_VIEWS as well for consistency
+    if (META_VIEWS[tableId] && META_VIEWS[tableId][viewId]) {
+        META_VIEWS[tableId][viewId].fieldOrder = newFieldOrder;
+    }
+
+    // Mark dirty for debounced auto-save (uses existing system)
+    markViewDirty('fieldOrder', newFieldOrder);
+}
+
 function handleColumnDragStart(event) {
     var th = event.target.closest('th');
     if (!th || !th.dataset.fieldId) return;
@@ -10194,7 +10269,7 @@ function handleColumnDragEnd(event) {
     draggedColumnFieldId = null;
 }
 
-async function handleColumnDrop(event) {
+function handleColumnDrop(event) {
     event.preventDefault();
 
     var th = event.target.closest('th');
@@ -10209,13 +10284,13 @@ async function handleColumnDrop(event) {
         return;
     }
 
-    // Reorder the fields
-    await reorderColumn(draggedColumnFieldId, targetFieldId);
+    // Reorder the fields (synchronous DOM update)
+    reorderColumn(draggedColumnFieldId, targetFieldId);
 
     handleColumnDragEnd(event);
 }
 
-async function reorderColumn(draggedFieldId, targetFieldId) {
+function reorderColumn(draggedFieldId, targetFieldId) {
     if (!currentTable) return;
 
     var viewId = currentView || '_default';
@@ -10226,20 +10301,19 @@ async function reorderColumn(draggedFieldId, targetFieldId) {
 
     if (fromIdx < 0 || toIdx < 0) return;
 
-    // Remove the dragged field from its current position
-    config.fieldOrder.splice(fromIdx, 1);
+    // Optimized: Move columns in DOM immediately (no full re-render)
+    var domMoved = moveColumnInDOM(fromIdx, toIdx);
 
-    // Insert at the new position
-    // If dragging right (fromIdx < toIdx), insert before target
-    // If dragging left (fromIdx > toIdx), insert at target
-    var insertIdx = fromIdx < toIdx ? toIdx : toIdx;
+    // Update the field order array
+    config.fieldOrder.splice(fromIdx, 1);
+    var insertIdx = fromIdx < toIdx ? toIdx - 1 : toIdx;
     config.fieldOrder.splice(insertIdx, 0, draggedFieldId);
 
-    // Save and re-render
-    await saveViewFieldConfig(currentTable, viewId, config);
-    markViewDirty('fieldOrder', config.fieldOrder);
+    // Fast update: in-memory + debounced save (no blocking await)
+    updateFieldOrderFast(currentTable, viewId, config.fieldOrder);
+
+    // Update fields dropdown to reflect new order
     renderFieldsDropdown();
-    await renderTable();
 }
 
 // ============ Default View Protection & View Creation ============
