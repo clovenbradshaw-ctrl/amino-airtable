@@ -4991,14 +4991,14 @@ function nextPage() {
 // ============ API ============
 
 // Fetch all records of a specific set type (table, field, view)
-// Since API is append-only and queries by time, we fetch all events and filter client-side
+// Fetch all pages and filter events client-side by set type
 async function fetchAllBySet(setType, onProgress) {
     var allEvents = [];
-    var cursor = null;
+    var page = 1;
     var iterations = 0;
     while (true) {
-        // Fetch using timestamp cursor - API only supports time-based queries
-        var result = await fetchPage(cursor, null);
+        // Fetch using page-based pagination
+        var result = await fetchPage(page);
         if (!result.events || result.events.length === 0) break;
 
         // Filter events client-side by payload._set
@@ -5011,20 +5011,21 @@ async function fetchAllBySet(setType, onProgress) {
         allEvents = allEvents.concat(matchingEvents);
         if (onProgress) onProgress(allEvents.length);
         if (!result.hasMore) break;
-        cursor = result.nextCursor;
+        page = result.nextPage;
         iterations++;
         if (iterations > 100) break; // Safety limit for schema
     }
     return allEvents;
 }
 
-// Fetch events using timestamp-based cursor pagination
-// createdAfter/createdBefore are ISO timestamps for cursor-based pagination
-async function fetchPage(createdAfter, createdBefore) {
+// Fetch events using page-based pagination
+// API returns 2500 records per page with nextPage indicator
+// Optional createdAfter parameter for incremental sync (timestamp filtering)
+async function fetchPage(page, createdAfter) {
     var params = [];
     if (API_KEY) params.push('apiKey=' + encodeURIComponent(API_KEY));
+    if (page && page > 1) params.push('page=' + page);
     if (createdAfter) params.push('created_after=' + encodeURIComponent(createdAfter));
-    if (createdBefore) params.push('created_before=' + encodeURIComponent(createdBefore));
 
     var url = API + (params.length > 0 ? '?' + params.join('&') : '');
 
@@ -5040,13 +5041,13 @@ async function fetchPage(createdAfter, createdBefore) {
         throw new Error(data.message || data.error || 'HTTP ' + res.status);
     }
 
+    // Handle paginated response format: { itemsReceived, curPage, nextPage, prevPage, offset, perPage, items }
     var events = Array.isArray(data) ? data : (data.items || data.data || []);
-    // API returns up to 1500 records per page
-    var hasMore = events.length >= 1500;
-    // Use last event's timestamp as cursor for next page (ascending order)
-    var nextCursor = events.length > 0 ? events[events.length - 1].created_at : null;
+    // API returns nextPage as number if more pages exist, null otherwise
+    var hasMore = data.nextPage != null;
+    var nextPage = data.nextPage || null;
 
-    return { events, hasMore, nextCursor };
+    return { events, hasMore, nextPage };
 }
 
 async function fullSync() {
@@ -5073,18 +5074,18 @@ async function fullSync() {
     showLoadingOverlay();
 
     // Background function to load schema metadata (proper names for tables/fields/views)
-    // Fetches all events once and filters by type client-side (API is append-only, time-based)
+    // Fetches all events once and filters by type client-side
     async function loadSchemaInBackground() {
         try {
             var tableEvents = [];
             var fieldEvents = [];
             var viewEvents = [];
-            var cursor = null; // Timestamp cursor for pagination
+            var page = 1; // Page-based pagination
             var iterations = 0;
 
             // Fetch all events once and categorize by payload._set
             while (true) {
-                var result = await fetchPage(cursor, null);
+                var result = await fetchPage(page);
                 if (!result.events || result.events.length === 0) break;
 
                 for (var e of result.events) {
@@ -5102,7 +5103,7 @@ async function fullSync() {
                 }
 
                 if (!result.hasMore) break;
-                cursor = result.nextCursor;
+                page = result.nextPage;
                 iterations++;
                 if (iterations > 100) break; // Safety limit for schema
             }
@@ -5151,7 +5152,7 @@ async function fullSync() {
     // Start schema loading in background (will update placeholders with proper names)
     var schemaPromise = loadSchemaInBackground();
 
-    var cursor = null; // Timestamp cursor for pagination
+    var page = 1; // Page-based pagination
     var iterations = 0;
     var smoothProgress = 5; // For smooth animation between batches
     var targetProgress = 5;
@@ -5193,13 +5194,13 @@ async function fullSync() {
         var tableCount = Object.keys(META_TABLES).length;
         var fieldCount = Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0);
         var detail = tableCount + ' tables, ' + fieldCount + ' fields, ' + recordsFound.toLocaleString() + ' records';
-        updateStatus('Loading batch ' + (iterations + 1) + '...', false, targetProgress, detail);
+        updateStatus('Loading page ' + page + '...', false, targetProgress, detail);
 
         // Update the loading overlay with progress and time estimate
-        updateLoadingOverlay('Downloading data...', 'Batch ' + (iterations + 1) + ' • ' + Math.round(elapsed) + 's elapsed', targetProgress, tableCount, fieldCount, recordsFound, timeEstimate);
+        updateLoadingOverlay('Downloading data...', 'Page ' + page + ' • ' + Math.round(elapsed) + 's elapsed', targetProgress, tableCount, fieldCount, recordsFound, timeEstimate);
 
-        // Fetch all events using timestamp cursor (ascending order)
-        var result = await fetchPage(cursor, null);
+        // Fetch all events using page-based pagination
+        var result = await fetchPage(page);
         if (!result.events || result.events.length === 0) {
             clearInterval(progressAnimationInterval);
             break;
@@ -5245,7 +5246,7 @@ async function fullSync() {
             clearInterval(progressAnimationInterval);
             break;
         }
-        cursor = result.nextCursor;
+        page = result.nextPage;
         iterations++;
         if (iterations > 500) {
             clearInterval(progressAnimationInterval);
@@ -5290,18 +5291,29 @@ async function incrementalSync() {
         setRefreshIndicatorSyncing(true);
         updateStatus('Checking for updates...', false, null, null);
 
-        // Fetch events created after the last synced timestamp
-        var result = await fetchPage(lastEventTimestamp, null);
+        // Fetch all events created after the last synced timestamp (with pagination)
+        var allEvents = [];
+        var page = 1;
+        var iterations = 0;
+        while (true) {
+            var result = await fetchPage(page, lastEventTimestamp);
+            if (!result.events || result.events.length === 0) break;
+            allEvents = allEvents.concat(result.events);
+            if (!result.hasMore) break;
+            page = result.nextPage;
+            iterations++;
+            if (iterations > 100) break; // Safety limit
+        }
 
-        if (result.events && result.events.length > 0) {
-            updateStatus('Processing ' + result.events.length + ' new events...', false, null, null);
+        if (allEvents.length > 0) {
+            updateStatus('Processing ' + allEvents.length + ' new events...', false, null, null);
             // Sort by timestamp for correct processing order (handle both string and numeric timestamps)
-            result.events.sort((a, b) => {
+            allEvents.sort((a, b) => {
                 var aTime = a.created_at ? (typeof a.created_at === 'number' ? a.created_at : new Date(a.created_at).getTime()) : 0;
                 var bTime = b.created_at ? (typeof b.created_at === 'number' ? b.created_at : new Date(b.created_at).getTime()) : 0;
                 return aTime - bTime;
             });
-            await processEvents(result.events);
+            await processEvents(allEvents);
             await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
 
             updateStatus('Updating views...', false, null, null);
@@ -5315,7 +5327,7 @@ async function incrementalSync() {
                 await renderTable();
             }
 
-            updateStatus('Up to date', true, null, result.events.length + ' events synced');
+            updateStatus('Up to date', true, null, allEvents.length + ' events synced');
         } else {
             updateStatus('Up to date', true, null, null);
         }
