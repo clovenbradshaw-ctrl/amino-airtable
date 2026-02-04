@@ -156,6 +156,38 @@
         .auth-info { color: #666; font-size: 12px; margin-top: 16px; text-align: center; }
         .hidden { display: none !important; }
 
+        /* Encryption unlock screen */
+        #unlock-screen { position: fixed; inset: 0; background: #1d1f25; display: flex; align-items: center; justify-content: center; z-index: 110; }
+        .unlock-box { background: #fff; border-radius: 12px; padding: 32px; width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+        .unlock-box h2 { font-size: 22px; margin-bottom: 8px; color: #333; display: flex; align-items: center; gap: 10px; }
+        .unlock-box h2 .lock-icon { font-size: 24px; }
+        .unlock-box .subtitle { font-size: 13px; color: #666; margin-bottom: 24px; }
+        .unlock-box input { width: 100%; padding: 12px 14px; background: #fff; border: 1px solid #ddd; border-radius: 6px; color: #333; font-size: 14px; margin-bottom: 12px; }
+        .unlock-box input:focus { outline: none; border-color: #2d6cdf; box-shadow: 0 0 0 3px rgba(45,108,223,0.15); }
+        .unlock-box button { width: 100%; padding: 12px; background: #2d6cdf; border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; margin-bottom: 8px; font-weight: 500; transition: background 0.15s; }
+        .unlock-box button:hover { background: #2560c9; }
+        .unlock-box button:disabled { background: #ccc; cursor: not-allowed; }
+        .unlock-box button.secondary { background: #f5f5f5; color: #333; border: 1px solid #ddd; }
+        .unlock-box button.secondary:hover { background: #e8e8e8; }
+        .unlock-box button.passkey-btn { background: #1a1a2e; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .unlock-box button.passkey-btn:hover { background: #16162a; }
+        .unlock-box button.passkey-btn .passkey-icon { font-size: 18px; }
+        .unlock-error { color: #dc3545; font-size: 13px; margin-bottom: 12px; padding: 10px 12px; background: #f8d7da; border-radius: 6px; display: none; }
+        .unlock-divider { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: #999; font-size: 12px; }
+        .unlock-divider::before, .unlock-divider::after { content: ''; flex: 1; height: 1px; background: #e0e0e0; }
+        .unlock-info { color: #666; font-size: 12px; margin-top: 16px; text-align: center; line-height: 1.5; }
+        .unlock-info a { color: #2d6cdf; text-decoration: none; }
+        .unlock-info a:hover { text-decoration: underline; }
+        .setup-section { margin-bottom: 20px; }
+        .setup-section label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: 500; }
+        .password-strength { height: 4px; background: #e0e0e0; border-radius: 2px; margin-top: -8px; margin-bottom: 12px; overflow: hidden; }
+        .password-strength-fill { height: 100%; transition: width 0.2s, background 0.2s; width: 0%; }
+        .password-strength-fill.weak { background: #dc3545; width: 33%; }
+        .password-strength-fill.medium { background: #fcb400; width: 66%; }
+        .password-strength-fill.strong { background: #20c933; width: 100%; }
+        .security-note { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 12px; color: #555; line-height: 1.5; }
+        .security-note strong { color: #333; }
+
         /* Empty state */
         .empty-state { padding: 60px 20px; text-align: center; color: #666; }
         .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: #333; }
@@ -1517,6 +1549,68 @@
     </style>
 </head>
 <body>
+    <!-- Encryption Unlock Screen -->
+    <div id="unlock-screen" class="hidden">
+        <!-- Setup Mode (first time) -->
+        <div id="unlock-setup" class="unlock-box">
+            <h2><span class="lock-icon">&#128274;</span> Secure Your Data</h2>
+            <p class="subtitle">Set up encryption to protect your locally cached data</p>
+            <div id="unlock-setup-error" class="unlock-error"></div>
+
+            <div class="security-note">
+                <strong>Why encrypt?</strong> Your API key and cached data will be encrypted before being stored in your browser. If someone gains access to your browser's storage, they won't be able to read your data without your password or passkey.
+            </div>
+
+            <div class="setup-section">
+                <label for="setup-password">Create a password</label>
+                <input type="password" id="setup-password" placeholder="Enter a strong password" autocomplete="new-password" oninput="updatePasswordStrength()">
+                <div class="password-strength"><div class="password-strength-fill" id="password-strength-fill"></div></div>
+            </div>
+
+            <div class="setup-section">
+                <label for="setup-password-confirm">Confirm password</label>
+                <input type="password" id="setup-password-confirm" placeholder="Confirm your password" autocomplete="new-password">
+            </div>
+
+            <button id="setup-password-btn" onclick="setupEncryptionWithPassword()">Set Up with Password</button>
+
+            <div class="unlock-divider">or</div>
+
+            <button id="setup-passkey-btn" class="passkey-btn" onclick="setupEncryptionWithPasskey()">
+                <span class="passkey-icon">&#128273;</span> Set Up with Passkey
+            </button>
+
+            <button id="skip-encryption-btn" class="secondary" onclick="skipEncryption()">Skip (Not Recommended)</button>
+
+            <div class="unlock-info">
+                Passkeys use your device's biometrics (Face ID, Touch ID, Windows Hello) for secure, passwordless authentication.
+            </div>
+        </div>
+
+        <!-- Unlock Mode (returning user) -->
+        <div id="unlock-prompt" class="unlock-box hidden">
+            <h2><span class="lock-icon">&#128274;</span> Unlock Your Data</h2>
+            <p class="subtitle">Enter your password or use your passkey to access your encrypted data</p>
+            <div id="unlock-prompt-error" class="unlock-error"></div>
+
+            <div id="passkey-unlock-section">
+                <button id="passkey-unlock-btn" class="passkey-btn" onclick="unlockWithPasskey()">
+                    <span class="passkey-icon">&#128273;</span> Unlock with Passkey
+                </button>
+                <div class="unlock-divider">or enter your password</div>
+            </div>
+
+            <input type="password" id="unlock-password" placeholder="Enter your password" autocomplete="current-password">
+            <button id="unlock-password-btn" onclick="unlockWithPassword()">Unlock</button>
+
+            <button id="clear-encrypted-data-btn" class="secondary" onclick="clearEncryptedData()">Clear All Data & Start Fresh</button>
+
+            <div class="unlock-info">
+                Forgot your password? You'll need to clear all local data and start fresh. Your data on the server is not affected.
+            </div>
+        </div>
+    </div>
+
     <div id="auth-screen">
         <div class="auth-box">
             <h2>Amino Viewer</h2>
@@ -1960,6 +2054,677 @@ var API_KEY = null;
 var SET_FILTER = null;
 var db = null;
 
+// ============ Encryption Configuration ============
+var ENCRYPTION_CONFIG_KEY = 'amino_encryption_config';
+var ENCRYPTED_CREDENTIALS_KEY = 'amino_encrypted_credentials';
+var encryptionKey = null; // CryptoKey object, only kept in memory
+var encryptionEnabled = false;
+var passkeyCredentialId = null; // For WebAuthn
+
+// ============ Web Crypto API Utilities ============
+
+// Generate a random salt for key derivation
+function generateSalt() {
+    return crypto.getRandomValues(new Uint8Array(16));
+}
+
+// Generate a random IV for AES-GCM encryption
+function generateIV() {
+    return crypto.getRandomValues(new Uint8Array(12));
+}
+
+// Derive an encryption key from a password using PBKDF2
+async function deriveKeyFromPassword(password, salt) {
+    var encoder = new TextEncoder();
+    var passwordKey = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(password),
+        'PBKDF2',
+        false,
+        ['deriveBits', 'deriveKey']
+    );
+
+    return crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt: salt,
+            iterations: 100000,
+            hash: 'SHA-256'
+        },
+        passwordKey,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+// Encrypt data using AES-GCM
+async function encryptData(data, key) {
+    var encoder = new TextEncoder();
+    var iv = generateIV();
+    var encodedData = encoder.encode(JSON.stringify(data));
+
+    var encryptedBuffer = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: iv },
+        key,
+        encodedData
+    );
+
+    // Combine IV and encrypted data
+    var combined = new Uint8Array(iv.length + encryptedBuffer.byteLength);
+    combined.set(iv);
+    combined.set(new Uint8Array(encryptedBuffer), iv.length);
+
+    return arrayBufferToBase64(combined);
+}
+
+// Decrypt data using AES-GCM
+async function decryptData(encryptedBase64, key) {
+    var combined = base64ToArrayBuffer(encryptedBase64);
+    var iv = combined.slice(0, 12);
+    var encryptedData = combined.slice(12);
+
+    var decryptedBuffer = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv },
+        key,
+        encryptedData
+    );
+
+    var decoder = new TextDecoder();
+    return JSON.parse(decoder.decode(decryptedBuffer));
+}
+
+// Helper: Convert ArrayBuffer to Base64
+function arrayBufferToBase64(buffer) {
+    var bytes = new Uint8Array(buffer);
+    var binary = '';
+    for (var i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+
+// Helper: Convert Base64 to ArrayBuffer
+function base64ToArrayBuffer(base64) {
+    var binary = atob(base64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+// ============ WebAuthn Passkey Utilities ============
+
+// Check if WebAuthn is supported
+function isPasskeySupported() {
+    return !!(window.PublicKeyCredential && navigator.credentials);
+}
+
+// Create a new passkey for encryption
+async function createPasskey() {
+    if (!isPasskeySupported()) {
+        throw new Error('Passkeys are not supported in this browser');
+    }
+
+    // Generate a random challenge
+    var challenge = crypto.getRandomValues(new Uint8Array(32));
+    var userId = crypto.getRandomValues(new Uint8Array(16));
+
+    var publicKeyOptions = {
+        challenge: challenge,
+        rp: {
+            name: 'Amino Viewer',
+            id: window.location.hostname
+        },
+        user: {
+            id: userId,
+            name: 'amino-user',
+            displayName: 'Amino Viewer User'
+        },
+        pubKeyCredParams: [
+            { alg: -7, type: 'public-key' },   // ES256
+            { alg: -257, type: 'public-key' }  // RS256
+        ],
+        authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required',
+            residentKey: 'required'
+        },
+        timeout: 60000,
+        attestation: 'none',
+        extensions: {
+            prf: {
+                eval: {
+                    first: new TextEncoder().encode('amino-encryption-key')
+                }
+            }
+        }
+    };
+
+    var credential = await navigator.credentials.create({ publicKey: publicKeyOptions });
+
+    // Check if PRF extension is supported
+    var prfSupported = credential.getClientExtensionResults().prf !== undefined;
+
+    return {
+        credentialId: arrayBufferToBase64(credential.rawId),
+        userId: arrayBufferToBase64(userId),
+        prfSupported: prfSupported
+    };
+}
+
+// Authenticate with an existing passkey
+async function authenticateWithPasskey(credentialId) {
+    if (!isPasskeySupported()) {
+        throw new Error('Passkeys are not supported in this browser');
+    }
+
+    var challenge = crypto.getRandomValues(new Uint8Array(32));
+
+    var publicKeyOptions = {
+        challenge: challenge,
+        allowCredentials: [{
+            id: base64ToArrayBuffer(credentialId),
+            type: 'public-key'
+        }],
+        userVerification: 'required',
+        timeout: 60000,
+        extensions: {
+            prf: {
+                eval: {
+                    first: new TextEncoder().encode('amino-encryption-key')
+                }
+            }
+        }
+    };
+
+    var assertion = await navigator.credentials.get({ publicKey: publicKeyOptions });
+
+    // Check if PRF was used
+    var prfResult = assertion.getClientExtensionResults().prf;
+
+    return {
+        credentialId: arrayBufferToBase64(assertion.rawId),
+        prfOutput: prfResult ? arrayBufferToBase64(prfResult.results.first) : null,
+        authenticatorData: arrayBufferToBase64(assertion.response.authenticatorData)
+    };
+}
+
+// Derive encryption key from passkey authentication
+async function deriveKeyFromPasskey(prfOutput, salt) {
+    if (prfOutput) {
+        // PRF is supported - use PRF output directly
+        var prfBytes = base64ToArrayBuffer(prfOutput);
+        var keyMaterial = await crypto.subtle.importKey(
+            'raw',
+            prfBytes,
+            'HKDF',
+            false,
+            ['deriveBits', 'deriveKey']
+        );
+
+        return crypto.subtle.deriveKey(
+            {
+                name: 'HKDF',
+                salt: salt,
+                info: new TextEncoder().encode('amino-aes-key'),
+                hash: 'SHA-256'
+            },
+            keyMaterial,
+            { name: 'AES-GCM', length: 256 },
+            false,
+            ['encrypt', 'decrypt']
+        );
+    } else {
+        // PRF not supported - fall back to using authenticator data hash
+        throw new Error('Your authenticator does not support the PRF extension needed for encryption. Please use a password instead.');
+    }
+}
+
+// ============ Password Strength Checker ============
+
+function checkPasswordStrength(password) {
+    var strength = 0;
+    if (password.length >= 8) strength++;
+    if (password.length >= 12) strength++;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
+    if (/[0-9]/.test(password)) strength++;
+    if (/[^a-zA-Z0-9]/.test(password)) strength++;
+
+    if (strength <= 2) return 'weak';
+    if (strength <= 3) return 'medium';
+    return 'strong';
+}
+
+function updatePasswordStrength() {
+    var password = document.getElementById('setup-password').value;
+    var strengthFill = document.getElementById('password-strength-fill');
+    strengthFill.className = 'password-strength-fill';
+
+    if (password.length > 0) {
+        var strength = checkPasswordStrength(password);
+        strengthFill.classList.add(strength);
+    }
+}
+
+// ============ Encryption Setup & Unlock Functions ============
+
+// Check if encryption is already set up
+function getEncryptionConfig() {
+    var configStr = localStorage.getItem(ENCRYPTION_CONFIG_KEY);
+    if (!configStr) return null;
+    try {
+        return JSON.parse(configStr);
+    } catch (e) {
+        return null;
+    }
+}
+
+// Save encryption configuration
+function saveEncryptionConfig(config) {
+    localStorage.setItem(ENCRYPTION_CONFIG_KEY, JSON.stringify(config));
+}
+
+// Show the unlock screen (setup or prompt mode)
+function showUnlockScreen(mode) {
+    var unlockScreen = document.getElementById('unlock-screen');
+    var setupBox = document.getElementById('unlock-setup');
+    var promptBox = document.getElementById('unlock-prompt');
+
+    unlockScreen.classList.remove('hidden');
+
+    if (mode === 'setup') {
+        setupBox.classList.remove('hidden');
+        promptBox.classList.add('hidden');
+
+        // Hide passkey button if not supported
+        if (!isPasskeySupported()) {
+            document.getElementById('setup-passkey-btn').style.display = 'none';
+        }
+    } else {
+        setupBox.classList.add('hidden');
+        promptBox.classList.remove('hidden');
+
+        // Check encryption config for passkey
+        var config = getEncryptionConfig();
+        var passkeySection = document.getElementById('passkey-unlock-section');
+        if (config && config.type === 'passkey' && isPasskeySupported()) {
+            passkeySection.style.display = 'block';
+            passkeyCredentialId = config.credentialId;
+        } else {
+            passkeySection.style.display = 'none';
+        }
+    }
+}
+
+// Hide the unlock screen
+function hideUnlockScreen() {
+    document.getElementById('unlock-screen').classList.add('hidden');
+}
+
+// Show error on unlock screen
+function showUnlockError(mode, message) {
+    var errorId = mode === 'setup' ? 'unlock-setup-error' : 'unlock-prompt-error';
+    var errorEl = document.getElementById(errorId);
+    errorEl.textContent = message;
+    errorEl.style.display = 'block';
+}
+
+// Hide error on unlock screen
+function hideUnlockError(mode) {
+    var errorId = mode === 'setup' ? 'unlock-setup-error' : 'unlock-prompt-error';
+    document.getElementById(errorId).style.display = 'none';
+}
+
+// Set up encryption with password
+async function setupEncryptionWithPassword() {
+    hideUnlockError('setup');
+
+    var password = document.getElementById('setup-password').value;
+    var confirmPassword = document.getElementById('setup-password-confirm').value;
+
+    if (!password) {
+        showUnlockError('setup', 'Please enter a password');
+        return;
+    }
+
+    if (password.length < 8) {
+        showUnlockError('setup', 'Password must be at least 8 characters');
+        return;
+    }
+
+    if (password !== confirmPassword) {
+        showUnlockError('setup', 'Passwords do not match');
+        return;
+    }
+
+    var btn = document.getElementById('setup-password-btn');
+    btn.disabled = true;
+    btn.textContent = 'Setting up...';
+
+    try {
+        var salt = generateSalt();
+        encryptionKey = await deriveKeyFromPassword(password, salt);
+
+        // Create verification token
+        var verificationToken = await encryptData({ verify: 'amino-encryption-check' }, encryptionKey);
+
+        // Save config
+        saveEncryptionConfig({
+            type: 'password',
+            salt: arrayBufferToBase64(salt),
+            verificationToken: verificationToken
+        });
+
+        encryptionEnabled = true;
+        hideUnlockScreen();
+        initAuthScreen();
+    } catch (e) {
+        console.error('Encryption setup failed:', e);
+        showUnlockError('setup', 'Failed to set up encryption: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Set Up with Password';
+    }
+}
+
+// Set up encryption with passkey
+async function setupEncryptionWithPasskey() {
+    hideUnlockError('setup');
+
+    if (!isPasskeySupported()) {
+        showUnlockError('setup', 'Passkeys are not supported in this browser');
+        return;
+    }
+
+    var btn = document.getElementById('setup-passkey-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="passkey-icon">&#128273;</span> Setting up...';
+
+    try {
+        var passkeyResult = await createPasskey();
+
+        if (!passkeyResult.prfSupported) {
+            showUnlockError('setup', 'Your device does not support the encryption features needed for passkey-based encryption. Please use a password instead.');
+            return;
+        }
+
+        // Authenticate immediately to get PRF output
+        var authResult = await authenticateWithPasskey(passkeyResult.credentialId);
+
+        if (!authResult.prfOutput) {
+            showUnlockError('setup', 'Failed to get encryption key from passkey. Please use a password instead.');
+            return;
+        }
+
+        var salt = generateSalt();
+        encryptionKey = await deriveKeyFromPasskey(authResult.prfOutput, salt);
+
+        // Create verification token
+        var verificationToken = await encryptData({ verify: 'amino-encryption-check' }, encryptionKey);
+
+        // Save config
+        saveEncryptionConfig({
+            type: 'passkey',
+            credentialId: passkeyResult.credentialId,
+            salt: arrayBufferToBase64(salt),
+            verificationToken: verificationToken
+        });
+
+        encryptionEnabled = true;
+        passkeyCredentialId = passkeyResult.credentialId;
+        hideUnlockScreen();
+        initAuthScreen();
+    } catch (e) {
+        console.error('Passkey setup failed:', e);
+        if (e.name === 'NotAllowedError') {
+            showUnlockError('setup', 'Passkey setup was cancelled. Please try again.');
+        } else {
+            showUnlockError('setup', 'Failed to set up passkey: ' + e.message);
+        }
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="passkey-icon">&#128273;</span> Set Up with Passkey';
+    }
+}
+
+// Skip encryption (not recommended)
+function skipEncryption() {
+    if (!confirm('Are you sure? Your API key and cached data will be stored unencrypted, which means anyone with access to your browser could read them.')) {
+        return;
+    }
+
+    saveEncryptionConfig({ type: 'none' });
+    encryptionEnabled = false;
+    encryptionKey = null;
+    hideUnlockScreen();
+    initAuthScreen();
+}
+
+// Unlock with password
+async function unlockWithPassword() {
+    hideUnlockError('prompt');
+
+    var password = document.getElementById('unlock-password').value;
+    if (!password) {
+        showUnlockError('prompt', 'Please enter your password');
+        return;
+    }
+
+    var btn = document.getElementById('unlock-password-btn');
+    btn.disabled = true;
+    btn.textContent = 'Unlocking...';
+
+    try {
+        var config = getEncryptionConfig();
+        if (!config || !config.salt) {
+            throw new Error('Invalid encryption configuration');
+        }
+
+        var salt = base64ToArrayBuffer(config.salt);
+        encryptionKey = await deriveKeyFromPassword(password, salt);
+
+        // Verify the key
+        try {
+            await decryptData(config.verificationToken, encryptionKey);
+        } catch (e) {
+            throw new Error('Incorrect password');
+        }
+
+        encryptionEnabled = true;
+        hideUnlockScreen();
+        document.getElementById('unlock-password').value = '';
+        initAuthScreen();
+    } catch (e) {
+        console.error('Unlock failed:', e);
+        showUnlockError('prompt', e.message || 'Failed to unlock');
+        encryptionKey = null;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Unlock';
+    }
+}
+
+// Unlock with passkey
+async function unlockWithPasskey() {
+    hideUnlockError('prompt');
+
+    var btn = document.getElementById('passkey-unlock-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="passkey-icon">&#128273;</span> Unlocking...';
+
+    try {
+        var config = getEncryptionConfig();
+        if (!config || config.type !== 'passkey') {
+            throw new Error('Passkey not configured');
+        }
+
+        var authResult = await authenticateWithPasskey(config.credentialId);
+
+        if (!authResult.prfOutput) {
+            throw new Error('Failed to get encryption key from passkey');
+        }
+
+        var salt = base64ToArrayBuffer(config.salt);
+        encryptionKey = await deriveKeyFromPasskey(authResult.prfOutput, salt);
+
+        // Verify the key
+        try {
+            await decryptData(config.verificationToken, encryptionKey);
+        } catch (e) {
+            throw new Error('Passkey authentication failed');
+        }
+
+        encryptionEnabled = true;
+        passkeyCredentialId = config.credentialId;
+        hideUnlockScreen();
+        initAuthScreen();
+    } catch (e) {
+        console.error('Passkey unlock failed:', e);
+        if (e.name === 'NotAllowedError') {
+            showUnlockError('prompt', 'Passkey authentication was cancelled. Please try again.');
+        } else {
+            showUnlockError('prompt', e.message || 'Failed to unlock with passkey');
+        }
+        encryptionKey = null;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="passkey-icon">&#128273;</span> Unlock with Passkey';
+    }
+}
+
+// Clear all encrypted data and start fresh
+async function clearEncryptedData() {
+    if (!confirm('This will delete ALL local data including your cached database. Your data on the server is not affected. Continue?')) {
+        return;
+    }
+
+    try {
+        // Clear localStorage encryption config and credentials
+        localStorage.removeItem(ENCRYPTION_CONFIG_KEY);
+        localStorage.removeItem(ENCRYPTED_CREDENTIALS_KEY);
+        localStorage.removeItem('amino_api_key');
+        localStorage.removeItem('amino_set_filter');
+
+        // Clear IndexedDB
+        await new Promise((resolve, reject) => {
+            var req = indexedDB.deleteDatabase(DB_NAME);
+            req.onsuccess = resolve;
+            req.onerror = () => reject(req.error);
+        });
+
+        encryptionKey = null;
+        encryptionEnabled = false;
+        passkeyCredentialId = null;
+
+        // Show setup screen
+        showUnlockScreen('setup');
+    } catch (e) {
+        console.error('Failed to clear data:', e);
+        alert('Failed to clear data: ' + e.message);
+    }
+}
+
+// ============ Encrypted Credentials Storage ============
+
+// Save API credentials (encrypted if encryption is enabled)
+async function saveEncryptedCredentials(apiKey, setFilter) {
+    var credentials = { apiKey: apiKey, setFilter: setFilter };
+
+    if (encryptionEnabled && encryptionKey) {
+        var encrypted = await encryptData(credentials, encryptionKey);
+        localStorage.setItem(ENCRYPTED_CREDENTIALS_KEY, encrypted);
+        // Remove plaintext credentials
+        localStorage.removeItem('amino_api_key');
+        localStorage.removeItem('amino_set_filter');
+    } else {
+        // Store as plaintext (no encryption)
+        localStorage.setItem('amino_api_key', apiKey);
+        if (setFilter) {
+            localStorage.setItem('amino_set_filter', setFilter);
+        } else {
+            localStorage.removeItem('amino_set_filter');
+        }
+    }
+}
+
+// Load API credentials (decrypt if necessary)
+async function loadEncryptedCredentials() {
+    if (encryptionEnabled && encryptionKey) {
+        var encrypted = localStorage.getItem(ENCRYPTED_CREDENTIALS_KEY);
+        if (encrypted) {
+            try {
+                return await decryptData(encrypted, encryptionKey);
+            } catch (e) {
+                console.error('Failed to decrypt credentials:', e);
+                return null;
+            }
+        }
+    } else {
+        var apiKey = localStorage.getItem('amino_api_key');
+        if (apiKey) {
+            return {
+                apiKey: apiKey,
+                setFilter: localStorage.getItem('amino_set_filter')
+            };
+        }
+    }
+    return null;
+}
+
+// Clear saved credentials
+function clearEncryptedCredentials() {
+    localStorage.removeItem(ENCRYPTED_CREDENTIALS_KEY);
+    localStorage.removeItem('amino_api_key');
+    localStorage.removeItem('amino_set_filter');
+}
+
+// ============ Encrypted IndexedDB Wrapper ============
+
+// Encrypt data before storing in IndexedDB
+async function encryptForStorage(data) {
+    if (encryptionEnabled && encryptionKey) {
+        return {
+            _encrypted: true,
+            data: await encryptData(data, encryptionKey)
+        };
+    }
+    return data;
+}
+
+// Decrypt data after retrieving from IndexedDB
+async function decryptFromStorage(data) {
+    if (data && data._encrypted && encryptionEnabled && encryptionKey) {
+        return await decryptData(data.data, encryptionKey);
+    }
+    return data;
+}
+
+// ============ Encryption Init Flow ============
+
+// Initialize encryption system - called before anything else
+async function initEncryption() {
+    var config = getEncryptionConfig();
+
+    if (!config) {
+        // First time user - show setup screen
+        showUnlockScreen('setup');
+        return false;
+    }
+
+    if (config.type === 'none') {
+        // User chose to skip encryption
+        encryptionEnabled = false;
+        encryptionKey = null;
+        return true;
+    }
+
+    // User has encryption set up - show unlock screen
+    showUnlockScreen('prompt');
+    return false;
+}
+
 // Only keep lightweight metadata in memory
 var META_TABLES = {};
 var META_FIELDS = {};
@@ -2114,19 +2879,70 @@ function setSyncMeta(key, value) {
 
 // ============ Events Store Functions ============
 
-function saveRawEvents(events) {
+// Encrypt event payloads for storage
+async function encryptEventForStorage(event) {
+    if (!encryptionEnabled || !encryptionKey || !event.payload) {
+        return event;
+    }
+    var encrypted = { ...event };
+    encrypted._encryptedPayload = await encryptData(event.payload, encryptionKey);
+    delete encrypted.payload;
+    return encrypted;
+}
+
+// Decrypt event payload after retrieval
+async function decryptEventFromStorage(event) {
+    if (!event || !event._encryptedPayload || !encryptionEnabled || !encryptionKey) {
+        return event;
+    }
+    var decrypted = { ...event };
+    decrypted.payload = await decryptData(event._encryptedPayload, encryptionKey);
+    delete decrypted._encryptedPayload;
+    return decrypted;
+}
+
+// Encrypt data record fields for storage
+async function encryptRecordForStorage(record) {
+    if (!encryptionEnabled || !encryptionKey || !record.fields) {
+        return record;
+    }
+    var encrypted = { ...record };
+    encrypted._encryptedFields = await encryptData(record.fields, encryptionKey);
+    delete encrypted.fields;
+    return encrypted;
+}
+
+// Decrypt data record fields after retrieval
+async function decryptRecordFromStorage(record) {
+    if (!record || !record._encryptedFields || !encryptionEnabled || !encryptionKey) {
+        return record;
+    }
+    var decrypted = { ...record };
+    decrypted.fields = await decryptData(record._encryptedFields, encryptionKey);
+    delete decrypted._encryptedFields;
+    return decrypted;
+}
+
+async function saveRawEvents(events) {
+    if (!events || events.length === 0) return;
+
+    // Encrypt events if encryption is enabled
+    var eventsToStore = events;
+    if (encryptionEnabled && encryptionKey) {
+        eventsToStore = await Promise.all(events.map(e => encryptEventForStorage(e)));
+    }
+
     return new Promise((resolve, reject) => {
-        if (!events || events.length === 0) return resolve();
         var tx = db.transaction('events', 'readwrite');
         var store = tx.objectStore('events');
-        events.forEach(e => store.put(e));
+        eventsToStore.forEach(e => store.put(e));
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
 }
 
-function getAllRawEvents(limit, offset) {
-    return new Promise((resolve, reject) => {
+async function getAllRawEvents(limit, offset) {
+    var results = await new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var store = tx.objectStore('events');
         var results = [];
@@ -2154,6 +2970,12 @@ function getAllRawEvents(limit, offset) {
         };
         req.onerror = () => reject(req.error);
     });
+
+    // Decrypt events if needed
+    if (encryptionEnabled && encryptionKey) {
+        return Promise.all(results.map(e => decryptEventFromStorage(e)));
+    }
+    return results;
 }
 
 function getRawEventsCount() {
@@ -2165,8 +2987,8 @@ function getRawEventsCount() {
     });
 }
 
-function getRawEventsByRecordId(recordId, maxEventId) {
-    return new Promise((resolve, reject) => {
+async function getRawEventsByRecordId(recordId, maxEventId) {
+    var results = await new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var index = tx.objectStore('events').index('by_record');
         var req = index.getAll(recordId);
@@ -2181,6 +3003,12 @@ function getRawEventsByRecordId(recordId, maxEventId) {
         };
         req.onerror = () => reject(req.error);
     });
+
+    // Decrypt events if needed
+    if (encryptionEnabled && encryptionKey) {
+        return Promise.all(results.map(e => decryptEventFromStorage(e)));
+    }
+    return results;
 }
 
 function getRawEventsBySet(setFilter) {
@@ -2189,12 +3017,10 @@ function getRawEventsBySet(setFilter) {
 }
 
 // Memory-efficient paginated events by set retrieval
-function getRawEventsBySetPaginated(setFilter, offset, limit) {
-    return new Promise((resolve, reject) => {
+async function getRawEventsBySetPaginated(setFilter, offset, limit) {
+    var results = await new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var index = tx.objectStore('events').index('by_set');
-        var results = [];
-        var skipped = 0;
 
         // Get all matching, then sort and paginate
         // Note: IndexedDB index doesn't support ordering by different field, so we collect and sort
@@ -2203,11 +3029,16 @@ function getRawEventsBySetPaginated(setFilter, offset, limit) {
             var all = req.result || [];
             all.sort((a, b) => (b.id || 0) - (a.id || 0)); // Newest first
             // Apply pagination
-            results = all.slice(offset, offset + limit);
-            resolve(results);
+            resolve(all.slice(offset, offset + limit));
         };
         req.onerror = () => reject(req.error);
     });
+
+    // Decrypt events if needed
+    if (encryptionEnabled && encryptionKey) {
+        return Promise.all(results.map(e => decryptEventFromStorage(e)));
+    }
+    return results;
 }
 
 function searchRawEvents(query, limit, offset) {
@@ -2472,18 +3303,25 @@ function getRecordIdsForTable(tableId) {
     });
 }
 
-function getRecord(tableId, recordId) {
-    return new Promise((resolve, reject) => {
+async function getRecord(tableId, recordId) {
+    var result = await new Promise((resolve, reject) => {
         var tx = db.transaction('data', 'readonly');
         var req = tx.objectStore('data').get([tableId, recordId]);
         req.onsuccess = () => resolve(req.result || null);
         req.onerror = () => reject(req.error);
     });
+
+    // Decrypt record if needed
+    if (result && encryptionEnabled && encryptionKey) {
+        return decryptRecordFromStorage(result);
+    }
+    return result;
 }
 
-function getRecordsByIds(tableId, recordIds) {
-    return new Promise((resolve, reject) => {
-        if (!recordIds.length) return resolve([]);
+async function getRecordsByIds(tableId, recordIds) {
+    if (!recordIds.length) return [];
+
+    var results = await new Promise((resolve, reject) => {
         var tx = db.transaction('data', 'readonly');
         var store = tx.objectStore('data');
         var results = [];
@@ -2500,6 +3338,12 @@ function getRecordsByIds(tableId, recordIds) {
             };
         });
     });
+
+    // Decrypt records if needed
+    if (encryptionEnabled && encryptionKey) {
+        return Promise.all(results.map(r => decryptRecordFromStorage(r)));
+    }
+    return results;
 }
 
 function saveTable(table) {
@@ -2529,30 +3373,42 @@ function saveView(view) {
     });
 }
 
-function saveDataRecord(record) {
+async function saveDataRecord(record) {
+    // Encrypt record if needed
+    var recordToStore = record;
+    if (encryptionEnabled && encryptionKey) {
+        recordToStore = await encryptRecordForStorage(record);
+    }
+
     return new Promise((resolve, reject) => {
         var tx = db.transaction('data', 'readwrite');
-        tx.objectStore('data').put(record);
+        tx.objectStore('data').put(recordToStore);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
 }
 
-function saveBatch(tables, fields, views, dataRecords) {
-    return new Promise((resolve, reject) => {
-        var stores = [];
-        if (tables.length) stores.push('tables');
-        if (fields.length) stores.push('fields');
-        if (views.length) stores.push('views');
-        if (dataRecords.length) stores.push('data');
-        if (!stores.length) return resolve();
+async function saveBatch(tables, fields, views, dataRecords) {
+    var stores = [];
+    if (tables.length) stores.push('tables');
+    if (fields.length) stores.push('fields');
+    if (views.length) stores.push('views');
+    if (dataRecords.length) stores.push('data');
+    if (!stores.length) return;
 
+    // Encrypt data records if needed
+    var recordsToStore = dataRecords;
+    if (encryptionEnabled && encryptionKey && dataRecords.length) {
+        recordsToStore = await Promise.all(dataRecords.map(r => encryptRecordForStorage(r)));
+    }
+
+    return new Promise((resolve, reject) => {
         var tx = db.transaction(stores, 'readwrite');
 
         tables.forEach(t => tx.objectStore('tables').put(t));
         fields.forEach(f => tx.objectStore('fields').put(f));
         views.forEach(v => tx.objectStore('views').put(v));
-        dataRecords.forEach(d => tx.objectStore('data').put(d));
+        recordsToStore.forEach(d => tx.objectStore('data').put(d));
 
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -3226,12 +4082,11 @@ async function initAuthScreen() {
         clearBtn.classList.add('hidden');
     }
 
-    // Check for saved credentials and auto-authenticate
-    var savedKey = localStorage.getItem('amino_api_key');
-    if (savedKey) {
-        var savedFilter = localStorage.getItem('amino_set_filter');
-        API_KEY = savedKey;
-        SET_FILTER = savedFilter || null;
+    // Check for saved credentials and auto-authenticate (encrypted or plaintext)
+    var savedCredentials = await loadEncryptedCredentials();
+    if (savedCredentials && savedCredentials.apiKey) {
+        API_KEY = savedCredentials.apiKey;
+        SET_FILTER = savedCredentials.setFilter || null;
 
         infoEl.textContent = 'Reconnecting...';
         try {
@@ -3240,8 +4095,7 @@ async function initAuthScreen() {
             console.error('Auto-login failed:', err);
             API_KEY = null;
             SET_FILTER = null;
-            localStorage.removeItem('amino_api_key');
-            localStorage.removeItem('amino_set_filter');
+            clearEncryptedCredentials();
             showAuthError('Session expired. Please log in again.');
             if (stats.count > 0) {
                 infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
@@ -3292,13 +4146,8 @@ async function tryAuth() {
         return;
     }
 
-    // Save credentials to localStorage on successful login
-    localStorage.setItem('amino_api_key', API_KEY);
-    if (SET_FILTER) {
-        localStorage.setItem('amino_set_filter', SET_FILTER);
-    } else {
-        localStorage.removeItem('amino_set_filter');
-    }
+    // Save credentials (encrypted if encryption is enabled)
+    await saveEncryptedCredentials(API_KEY, SET_FILTER);
 
     btn.textContent = 'Connect';
     btn.disabled = false;
@@ -3324,9 +4173,8 @@ function logout() {
     if (pollInterval) clearInterval(pollInterval);
     API_KEY = null;
     SET_FILTER = null;
-    // Clear saved credentials from localStorage
-    localStorage.removeItem('amino_api_key');
-    localStorage.removeItem('amino_set_filter');
+    // Clear saved credentials (both encrypted and plaintext)
+    clearEncryptedCredentials();
     showAuthScreen();
 }
 
@@ -8151,7 +8999,19 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-initAuthScreen();
+// Keyboard handler for unlock screen
+document.getElementById('unlock-password').onkeydown = (e) => { if (e.key === 'Enter') unlockWithPassword(); };
+document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('setup-password-confirm').focus(); };
+document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
+
+// Initialize: check encryption first, then auth
+(async function() {
+    var encryptionReady = await initEncryption();
+    if (encryptionReady) {
+        initAuthScreen();
+    }
+    // If encryption is not ready, the unlock screen handlers will call initAuthScreen after unlock
+})();
     </script>
 </body>
 </html>
