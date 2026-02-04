@@ -1236,6 +1236,18 @@
         .events-filter-group select, .events-filter-group input { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
         .events-filter-group input { width: 150px; }
         .events-stats { margin-left: auto; font-size: 12px; color: #666; }
+        .events-actions { display: flex; gap: 8px; margin-left: 12px; }
+        .events-actions .btn { padding: 5px 10px; font-size: 11px; }
+        .events-actions .btn svg { width: 14px; height: 14px; }
+        .import-status { position: fixed; bottom: 20px; right: 20px; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; min-width: 280px; }
+        .import-status.success { border-color: #10b981; }
+        .import-status.error { border-color: #ef4444; }
+        .import-status-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+        .import-status-title.success { color: #059669; }
+        .import-status-title.error { color: #dc2626; }
+        .import-status-details { font-size: 12px; color: #666; }
+        .import-progress { margin-top: 8px; height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
+        .import-progress-bar { height: 100%; background: #2d6cdf; transition: width 0.3s; }
 
         /* Record Profile Slide-out Panel */
         .record-profile-overlay {
@@ -6668,6 +6680,18 @@ async function renderEventsView() {
         }
         html += '</div>';
 
+        // Import/Export buttons
+        html += '<div class="events-actions">';
+        html += '<button class="btn" onclick="exportEventsToCSV()" title="Export events to CSV">';
+        html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
+        html += ' Export CSV';
+        html += '</button>';
+        html += '<button class="btn" onclick="importEventsFromCSV()" title="Import events from CSV (deduplicates by ID)">';
+        html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>';
+        html += ' Import CSV';
+        html += '</button>';
+        html += '</div>';
+
         html += '</div>';
 
         // Events table
@@ -7007,6 +7031,302 @@ function setEventsSetFilter(set) {
 function setEventsSearch(query) {
     eventsSearchQuery = query;
     renderEventsView();
+}
+
+// ============ Events CSV Export/Import ============
+
+async function exportEventsToCSV() {
+    try {
+        // Show progress
+        showImportStatus('Exporting...', 'Collecting events from database...', 'progress', 0);
+
+        // Get all events from IndexedDB
+        var allEvents = [];
+        var batchSize = 1000;
+        var offset = 0;
+        var totalCount = await getRawEventsCount();
+
+        while (true) {
+            var batch = await getRawEventsPaginated(offset, batchSize);
+            if (batch.length === 0) break;
+            allEvents = allEvents.concat(batch);
+            offset += batch.length;
+
+            var progress = Math.round((allEvents.length / totalCount) * 50);
+            showImportStatus('Exporting...', 'Collected ' + allEvents.length.toLocaleString() + ' of ' + totalCount.toLocaleString() + ' events', 'progress', progress);
+        }
+
+        if (allEvents.length === 0) {
+            showImportStatus('No Events', 'No events to export.', 'error');
+            return;
+        }
+
+        showImportStatus('Exporting...', 'Building CSV file...', 'progress', 60);
+
+        // CSV header
+        var csvLines = ['id,set,recordId,created_at,payload'];
+
+        // Convert events to CSV rows
+        for (var i = 0; i < allEvents.length; i++) {
+            var event = allEvents[i];
+            var payloadStr = typeof event.payload === 'string' ? event.payload : JSON.stringify(event.payload);
+
+            // Escape CSV fields
+            var row = [
+                event.id,
+                escapeCSVField(event.set || ''),
+                escapeCSVField(event.recordId || ''),
+                escapeCSVField(event.created_at || ''),
+                escapeCSVField(payloadStr)
+            ];
+            csvLines.push(row.join(','));
+
+            if (i % 1000 === 0) {
+                var progress = 60 + Math.round((i / allEvents.length) * 30);
+                showImportStatus('Exporting...', 'Processing event ' + i.toLocaleString() + ' of ' + allEvents.length.toLocaleString(), 'progress', progress);
+            }
+        }
+
+        showImportStatus('Exporting...', 'Creating download...', 'progress', 95);
+
+        // Create and download file
+        var csvContent = csvLines.join('\n');
+        var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = 'events_export_' + new Date().toISOString().slice(0, 10) + '.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        showImportStatus('Export Complete', 'Exported ' + allEvents.length.toLocaleString() + ' events to CSV.', 'success');
+
+    } catch (err) {
+        console.error('Error exporting events:', err);
+        showImportStatus('Export Failed', err.message, 'error');
+    }
+}
+
+function escapeCSVField(value) {
+    if (value === null || value === undefined) return '';
+    var str = String(value);
+    // If contains comma, newline, or quote, wrap in quotes and escape inner quotes
+    if (str.includes(',') || str.includes('\n') || str.includes('"') || str.includes('\r')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+}
+
+function parseCSVLine(line) {
+    var result = [];
+    var current = '';
+    var inQuotes = false;
+    var i = 0;
+
+    while (i < line.length) {
+        var char = line[i];
+
+        if (inQuotes) {
+            if (char === '"') {
+                // Check for escaped quote
+                if (i + 1 < line.length && line[i + 1] === '"') {
+                    current += '"';
+                    i += 2;
+                    continue;
+                } else {
+                    inQuotes = false;
+                    i++;
+                    continue;
+                }
+            }
+            current += char;
+        } else {
+            if (char === '"') {
+                inQuotes = true;
+            } else if (char === ',') {
+                result.push(current);
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        i++;
+    }
+    result.push(current);
+    return result;
+}
+
+async function importEventsFromCSV() {
+    // Create file input
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+
+    input.onchange = async function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            showImportStatus('Importing...', 'Reading file...', 'progress', 0);
+
+            var text = await file.text();
+            var lines = text.split(/\r?\n/);
+
+            if (lines.length < 2) {
+                showImportStatus('Import Failed', 'CSV file is empty or has no data rows.', 'error');
+                return;
+            }
+
+            // Parse header
+            var header = parseCSVLine(lines[0]);
+            var idIndex = header.indexOf('id');
+            var setIndex = header.indexOf('set');
+            var recordIdIndex = header.indexOf('recordId');
+            var createdAtIndex = header.indexOf('created_at');
+            var payloadIndex = header.indexOf('payload');
+
+            if (idIndex === -1) {
+                showImportStatus('Import Failed', 'CSV must have an "id" column.', 'error');
+                return;
+            }
+
+            showImportStatus('Importing...', 'Parsing CSV data...', 'progress', 10);
+
+            // Parse all event rows
+            var events = [];
+            for (var i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+
+                var fields = parseCSVLine(lines[i]);
+                var event = {
+                    id: parseInt(fields[idIndex], 10)
+                };
+
+                if (isNaN(event.id)) continue; // Skip invalid IDs
+
+                if (setIndex !== -1) event.set = fields[setIndex] || '';
+                if (recordIdIndex !== -1) event.recordId = fields[recordIdIndex] || '';
+                if (createdAtIndex !== -1) event.created_at = fields[createdAtIndex] || '';
+                if (payloadIndex !== -1) {
+                    var payloadStr = fields[payloadIndex] || '{}';
+                    try {
+                        event.payload = JSON.parse(payloadStr);
+                    } catch (e) {
+                        event.payload = payloadStr;
+                    }
+                }
+
+                events.push(event);
+
+                if (i % 1000 === 0) {
+                    showImportStatus('Importing...', 'Parsed ' + events.length.toLocaleString() + ' events...', 'progress', 10 + Math.round((i / lines.length) * 20));
+                }
+            }
+
+            if (events.length === 0) {
+                showImportStatus('Import Failed', 'No valid events found in CSV.', 'error');
+                return;
+            }
+
+            showImportStatus('Importing...', 'Checking for duplicates...', 'progress', 35);
+
+            // Get existing event IDs from IndexedDB for deduplication
+            var existingIds = await getExistingEventIds();
+
+            showImportStatus('Importing...', 'Found ' + existingIds.size.toLocaleString() + ' existing events. Filtering duplicates...', 'progress', 50);
+
+            // Filter out duplicates
+            var newEvents = events.filter(function(e) {
+                return !existingIds.has(e.id);
+            });
+
+            var duplicateCount = events.length - newEvents.length;
+
+            if (newEvents.length === 0) {
+                showImportStatus('Import Complete', 'All ' + events.length.toLocaleString() + ' events already exist (no new events to import).', 'success');
+                return;
+            }
+
+            showImportStatus('Importing...', 'Importing ' + newEvents.length.toLocaleString() + ' new events (skipping ' + duplicateCount.toLocaleString() + ' duplicates)...', 'progress', 60);
+
+            // Import events in batches
+            var batchSize = 500;
+            var imported = 0;
+
+            for (var j = 0; j < newEvents.length; j += batchSize) {
+                var batch = newEvents.slice(j, j + batchSize);
+                await saveRawEvents(batch);
+                imported += batch.length;
+
+                var progress = 60 + Math.round((imported / newEvents.length) * 35);
+                showImportStatus('Importing...', 'Imported ' + imported.toLocaleString() + ' of ' + newEvents.length.toLocaleString() + ' events...', 'progress', progress);
+            }
+
+            showImportStatus('Import Complete',
+                'Imported ' + newEvents.length.toLocaleString() + ' new events' +
+                (duplicateCount > 0 ? ' (skipped ' + duplicateCount.toLocaleString() + ' duplicates)' : '') + '.',
+                'success');
+
+            // Refresh the events view
+            if (currentTable === '_events') {
+                renderEventsView();
+            }
+
+        } catch (err) {
+            console.error('Error importing events:', err);
+            showImportStatus('Import Failed', err.message, 'error');
+        }
+    };
+
+    input.click();
+}
+
+async function getExistingEventIds() {
+    return new Promise(function(resolve, reject) {
+        var tx = db.transaction('events', 'readonly');
+        var store = tx.objectStore('events');
+        var ids = new Set();
+
+        var req = store.openKeyCursor();
+        req.onsuccess = function(e) {
+            var cursor = e.target.result;
+            if (cursor) {
+                ids.add(cursor.key);
+                cursor.continue();
+            } else {
+                resolve(ids);
+            }
+        };
+        req.onerror = function() {
+            reject(req.error);
+        };
+    });
+}
+
+function showImportStatus(title, details, type, progress) {
+    var existing = document.querySelector('.import-status');
+    if (existing) existing.remove();
+
+    var div = document.createElement('div');
+    div.className = 'import-status' + (type === 'success' ? ' success' : type === 'error' ? ' error' : '');
+
+    var icon = type === 'success' ? '✓' : type === 'error' ? '✗' : '⟳';
+    var titleClass = type === 'success' ? ' success' : type === 'error' ? ' error' : '';
+
+    div.innerHTML = '<div class="import-status-title' + titleClass + '">' + icon + ' ' + esc(title) + '</div>' +
+                    '<div class="import-status-details">' + esc(details) + '</div>' +
+                    (type === 'progress' ? '<div class="import-progress"><div class="import-progress-bar" style="width: ' + (progress || 0) + '%"></div></div>' : '');
+
+    document.body.appendChild(div);
+
+    // Auto-remove success/error messages after 5 seconds
+    if (type === 'success' || type === 'error') {
+        setTimeout(function() {
+            if (div.parentNode) div.remove();
+        }, 5000);
+    }
 }
 
 // ============ Point in Time View ============
