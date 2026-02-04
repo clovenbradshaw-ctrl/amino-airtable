@@ -1318,7 +1318,6 @@
             background: #fafafa;
         }
         .profile-header h2 {
-            flex: 1;
             font-size: 16px;
             font-weight: 600;
             color: #333;
@@ -1326,6 +1325,21 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+        .profile-header .profile-view-name {
+            flex: 1;
+            font-size: 11px;
+            color: #666;
+            background: #e8f4fd;
+            border: 1px solid #b8d9f0;
+            padding: 3px 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .profile-header .profile-view-name:empty {
+            display: none;
         }
         .profile-header .profile-record-id {
             font-size: 11px;
@@ -2204,6 +2218,7 @@
         <div class="record-profile-panel" onclick="event.stopPropagation()">
             <div class="profile-header">
                 <h2 id="profile-title">Record</h2>
+                <span class="profile-view-name" id="profile-view-name"></span>
                 <span class="profile-record-id" id="profile-record-id"></span>
                 <button class="profile-close" onclick="closeRecordProfile()">&times;</button>
             </div>
@@ -8230,12 +8245,13 @@ function getDefaultProfileConfig(tableId, viewId) {
 }
 
 // Get profile configuration for a view
+// Returns { config: {...}, isDefault: boolean }
 function getProfileConfig(tableId, viewId) {
     var view = META_VIEWS[tableId]?.[viewId || '_default'];
     if (view && view.profileConfig && view.profileConfig.blocks && view.profileConfig.blocks.length > 0) {
-        return view.profileConfig;
+        return { config: view.profileConfig, isDefault: false };
     }
-    return getDefaultProfileConfig(tableId, viewId);
+    return { config: getDefaultProfileConfig(tableId, viewId), isDefault: true };
 }
 
 // Save profile configuration for a view
@@ -8269,6 +8285,13 @@ async function openRecordProfile(tableId, recordId, viewId) {
     // Update header
     var tableName = META_TABLES[tableId]?.tableName || tableId;
     document.getElementById('profile-title').textContent = tableName;
+
+    // Show view name
+    var actualViewId = viewId || currentView || '_default';
+    var viewData = META_VIEWS[tableId]?.[actualViewId];
+    var viewName = viewData?.viewName || (actualViewId === '_default' ? 'All Fields' : actualViewId);
+    document.getElementById('profile-view-name').textContent = viewName;
+
     document.getElementById('profile-record-id').textContent = recordId;
 
     // Reset configure mode
@@ -8320,7 +8343,9 @@ async function renderRecordProfile() {
     var fields = META_FIELDS[profileCurrentTableId] || {};
 
     // Get profile configuration
-    var config = getProfileConfig(profileCurrentTableId, viewId);
+    var profileResult = getProfileConfig(profileCurrentTableId, viewId);
+    var config = profileResult.config;
+    var isDefaultConfig = profileResult.isDefault;
 
     var html = '';
 
@@ -8349,9 +8374,9 @@ async function renderRecordProfile() {
             var value = recordFields[fieldId];
             if (value === undefined) value = recordFields[fieldName];
 
-            // Skip fields with no data when not in configure mode
+            // Skip fields with no data when using default config and not in configure mode
             var isEmpty = value == null || value === '' || (Array.isArray(value) && value.length === 0);
-            if (isEmpty && !profileConfigureMode) {
+            if (isEmpty && isDefaultConfig && !profileConfigureMode) {
                 return; // Skip this field
             }
 
@@ -8412,7 +8437,7 @@ function toggleProfileConfigureMode() {
 // Set block columns
 async function setBlockColumns(blockIndex, columns) {
     var viewId = currentView || '_default';
-    var config = getProfileConfig(profileCurrentTableId, viewId);
+    var config = getProfileConfig(profileCurrentTableId, viewId).config;
 
     if (config.blocks[blockIndex]) {
         config.blocks[blockIndex].columns = parseInt(columns);
@@ -8424,7 +8449,7 @@ async function setBlockColumns(blockIndex, columns) {
 // Add a new block
 async function addProfileBlock() {
     var viewId = currentView || '_default';
-    var config = getProfileConfig(profileCurrentTableId, viewId);
+    var config = getProfileConfig(profileCurrentTableId, viewId).config;
 
     config.blocks.push({
         id: 'block-' + (config.blocks.length + 1) + '-' + Date.now(),
@@ -8439,7 +8464,7 @@ async function addProfileBlock() {
 // Remove a block
 async function removeProfileBlock(blockIndex) {
     var viewId = currentView || '_default';
-    var config = getProfileConfig(profileCurrentTableId, viewId);
+    var config = getProfileConfig(profileCurrentTableId, viewId).config;
 
     if (config.blocks.length > 1) {
         config.blocks.splice(blockIndex, 1);
@@ -8512,7 +8537,7 @@ function closeFieldPicker() {
 // Add field to a block
 async function addFieldToBlock(blockIndex, fieldId) {
     var viewId = currentView || '_default';
-    var config = getProfileConfig(profileCurrentTableId, viewId);
+    var config = getProfileConfig(profileCurrentTableId, viewId).config;
 
     if (config.blocks[blockIndex]) {
         config.blocks[blockIndex].fieldIds.push(fieldId);
@@ -8524,7 +8549,7 @@ async function addFieldToBlock(blockIndex, fieldId) {
 // Remove field from a block
 async function removeFieldFromBlock(blockIndex, fieldIndex) {
     var viewId = currentView || '_default';
-    var config = getProfileConfig(profileCurrentTableId, viewId);
+    var config = getProfileConfig(profileCurrentTableId, viewId).config;
 
     if (config.blocks[blockIndex]) {
         config.blocks[blockIndex].fieldIds.splice(fieldIndex, 1);
@@ -8579,7 +8604,7 @@ async function handleFieldDrop(event) {
     var targetFieldIndex = parseInt(targetCard.dataset.fieldIndex);
 
     var viewId = currentView || '_default';
-    var config = getProfileConfig(profileCurrentTableId, viewId);
+    var config = getProfileConfig(profileCurrentTableId, viewId).config;
 
     // Remove from source
     var fieldId = config.blocks[profileDragData.blockIndex].fieldIds.splice(profileDragData.fieldIndex, 1)[0];
@@ -8623,7 +8648,7 @@ async function handleBlockDrop(event, targetBlockIndex) {
     if (targetBlockIndex === profileDragData.blockIndex) return;
 
     var viewId = currentView || '_default';
-    var config = getProfileConfig(profileCurrentTableId, viewId);
+    var config = getProfileConfig(profileCurrentTableId, viewId).config;
 
     // Remove from source
     var block = config.blocks.splice(profileDragData.blockIndex, 1)[0];
