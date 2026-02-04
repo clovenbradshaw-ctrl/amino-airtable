@@ -8349,6 +8349,12 @@ async function renderRecordProfile() {
             var value = recordFields[fieldId];
             if (value === undefined) value = recordFields[fieldName];
 
+            // Skip fields with no data when not in configure mode
+            var isEmpty = value == null || value === '' || (Array.isArray(value) && value.length === 0);
+            if (isEmpty && !profileConfigureMode) {
+                return; // Skip this field
+            }
+
             html += '<div class="profile-field-card" data-field-id="' + esc(fieldId) + '" data-block-index="' + blockIndex + '" data-field-index="' + fieldIndex + '" draggable="true" ondragstart="handleFieldDragStart(event)" ondragover="handleFieldDragOver(event)" ondragleave="handleFieldDragLeave(event)" ondrop="handleFieldDrop(event)">';
             html += '<div class="profile-field-name">';
             html += '<span class="field-drag-handle">&#8942;&#8942;</span>';
@@ -8357,7 +8363,7 @@ async function renderRecordProfile() {
                 html += '<button style="margin-left: auto; background: none; border: none; color: #ccc; cursor: pointer; font-size: 12px;" onclick="removeFieldFromBlock(' + blockIndex + ', ' + fieldIndex + ')">&times;</button>';
             }
             html += '</div>';
-            if (value == null || value === '') {
+            if (isEmpty) {
                 html += '<div class="profile-field-value empty">—</div>';
             } else {
                 html += '<div class="profile-field-value">' + formatCell(value) + '</div>';
