@@ -2209,7 +2209,7 @@
     <script>
 var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
 var DB_NAME = 'aminostream';
-var DB_VERSION = 6;
+var DB_VERSION = 7;
 var PAGE_SIZE = 100;
 
 var API_KEY = null;
@@ -2932,6 +2932,7 @@ var eventsScrollHandler = null; // Reference to scroll handler for cleanup
 
 // ============ View Auto-Save System ============
 var XANO_POST_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostreampost';
+var XANO_SNAPSHOT_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminosnapshot';
 var AUTO_SAVE_DELAY = 5 * 60 * 1000; // 5 minutes
 var autoSaveTimer = null;
 
@@ -2942,6 +2943,212 @@ var viewDirtyState = {
         tableId: null,
         viewId: null,
         changes: {}
+    }
+};
+
+// ============ AminoSync - Client-Side Snapshot Maintenance ============
+
+var AminoSync = {
+    // Post event to aminoStream and update snapshot
+    async postEventWithSnapshot(event, snapshotData) {
+        // Step 1: POST to aminoStream (append event, get event ID)
+        var streamRes = await fetch(XANO_POST_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(event)
+        });
+
+        if (!streamRes.ok) {
+            throw new Error('Failed to post event: HTTP ' + streamRes.status);
+        }
+
+        var streamResult = await streamRes.json();
+        var eventId = streamResult.id;
+
+        // Step 2: PUT to aminoSnapshot (upsert state + event ID)
+        if (snapshotData && event.recordId) {
+            var snapshotRecord = {
+                record_id: event.recordId,
+                source_table: snapshotData.source_table || event.set,
+                data: snapshotData.data,
+                last_amino_event: eventId
+            };
+
+            try {
+                await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(event.recordId), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(snapshotRecord)
+                });
+
+                // Step 3: Update local IndexedDB snapshot
+                if (db && db.objectStoreNames.contains('snapshot')) {
+                    var tx = db.transaction('snapshot', 'readwrite');
+                    tx.objectStore('snapshot').put(snapshotRecord);
+                }
+            } catch (snapshotErr) {
+                console.warn('Snapshot update failed (event still recorded):', snapshotErr);
+            }
+        }
+
+        return { eventId, streamResult };
+    },
+
+    // Delete from snapshot (for NUL operations)
+    async deleteSnapshot(recordId) {
+        try {
+            await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(recordId), {
+                method: 'DELETE'
+            });
+
+            // Remove from local IndexedDB
+            if (db && db.objectStoreNames.contains('snapshot')) {
+                var tx = db.transaction('snapshot', 'readwrite');
+                tx.objectStore('snapshot').delete(recordId);
+            }
+        } catch (err) {
+            console.warn('Snapshot delete failed:', err);
+        }
+    },
+
+    // Get snapshot record from local IndexedDB
+    async getSnapshot(recordId) {
+        if (!db || !db.objectStoreNames.contains('snapshot')) return null;
+
+        return new Promise((resolve, reject) => {
+            var tx = db.transaction('snapshot', 'readonly');
+            var req = tx.objectStore('snapshot').get(recordId);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    },
+
+    // Get all snapshots by source table
+    async getSnapshotsByTable(sourceTable) {
+        if (!db || !db.objectStoreNames.contains('snapshot')) return [];
+
+        return new Promise((resolve, reject) => {
+            var tx = db.transaction('snapshot', 'readonly');
+            var index = tx.objectStore('snapshot').index('by_source_table');
+            var req = index.getAll(sourceTable);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    },
+
+    // Get last synced snapshot event ID
+    async getLastSnapshotEventId() {
+        var meta = await getSyncMeta('lastSnapshotEventId');
+        return meta || 0;
+    },
+
+    // Set last synced snapshot event ID
+    async setLastSnapshotEventId(eventId) {
+        await setSyncMeta('lastSnapshotEventId', eventId);
+    },
+
+    // Incremental sync from snapshot endpoint
+    async syncFromSnapshot() {
+        var lastEventId = await this.getLastSnapshotEventId();
+
+        try {
+            var response = await fetch(
+                XANO_SNAPSHOT_API + '?last_amino_event_gt=' + lastEventId +
+                (API_KEY ? '&apiKey=' + encodeURIComponent(API_KEY) : '')
+            );
+
+            if (!response.ok) {
+                throw new Error('Snapshot sync failed: HTTP ' + response.status);
+            }
+
+            var updates = await response.json();
+            if (!updates || updates.length === 0) {
+                return { updated: 0 };
+            }
+
+            // Update local IndexedDB
+            if (db && db.objectStoreNames.contains('snapshot')) {
+                var tx = db.transaction('snapshot', 'readwrite');
+                var store = tx.objectStore('snapshot');
+                var maxEventId = lastEventId;
+
+                for (var record of updates) {
+                    store.put(record);
+                    if (record.last_amino_event > maxEventId) {
+                        maxEventId = record.last_amino_event;
+                    }
+                }
+
+                await new Promise((resolve, reject) => {
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error);
+                });
+
+                await this.setLastSnapshotEventId(maxEventId);
+            }
+
+            return { updated: updates.length };
+        } catch (err) {
+            console.error('Snapshot sync error:', err);
+            return { updated: 0, error: err.message };
+        }
+    },
+
+    // Bootstrap from snapshot file (for new clients)
+    async bootstrapFromSnapshot(snapshotUrl) {
+        try {
+            var response = await fetch(snapshotUrl);
+            if (!response.ok) {
+                throw new Error('Bootstrap failed: HTTP ' + response.status);
+            }
+
+            var records = await response.json();
+            if (!records || records.length === 0) {
+                return { records: 0, lastEvent: 0 };
+            }
+
+            if (db && db.objectStoreNames.contains('snapshot')) {
+                var tx = db.transaction('snapshot', 'readwrite');
+                var store = tx.objectStore('snapshot');
+                var maxEventId = 0;
+
+                for (var record of records) {
+                    store.put(record);
+                    if (record.last_amino_event > maxEventId) {
+                        maxEventId = record.last_amino_event;
+                    }
+                }
+
+                await new Promise((resolve, reject) => {
+                    tx.oncomplete = resolve;
+                    tx.onerror = () => reject(tx.error);
+                });
+
+                await this.setLastSnapshotEventId(maxEventId);
+                return { records: records.length, lastEvent: maxEventId };
+            }
+
+            return { records: 0, lastEvent: 0 };
+        } catch (err) {
+            console.error('Bootstrap error:', err);
+            throw err;
+        }
+    },
+
+    // Compute current state from event (for snapshot data)
+    computeSnapshotData(currentData, eventPayload, operator) {
+        if (operator === 'INS') {
+            // Insert: use the event data as initial state
+            return eventPayload.context?.data || eventPayload.fields?.INS || eventPayload;
+        } else if (operator === 'ALT') {
+            // Alter: merge changes into current data
+            var changes = eventPayload.context?.data || eventPayload.fields?.ALT || eventPayload;
+            return { ...(currentData || {}), ...changes };
+        } else if (operator === 'NUL') {
+            // Nullify: record should be deleted
+            return null;
+        }
+        return currentData;
     }
 };
 
@@ -3016,6 +3223,13 @@ function openDB() {
                 eventsStore.createIndex('by_set', 'set');
                 eventsStore.createIndex('by_record', 'recordId');
                 eventsStore.createIndex('by_timestamp', 'created_at');
+            }
+
+            // Snapshot: materialized current state, keyed by record_id
+            if (!db.objectStoreNames.contains('snapshot')) {
+                var snapshotStore = db.createObjectStore('snapshot', { keyPath: 'record_id' });
+                snapshotStore.createIndex('by_source_table', 'source_table');
+                snapshotStore.createIndex('by_last_amino_event', 'last_amino_event');
             }
         };
     });
@@ -3848,6 +4062,20 @@ async function saveViewToBackend() {
     var view = META_VIEWS[tableId]?.[viewId] || {};
     var config = VIEW_FIELD_CONFIG[tableId]?.[viewId] || {};
 
+    // Build the complete view config data for snapshot
+    var viewConfigData = {
+        _set: 'viewConfig',
+        tableId: tableId,
+        viewId: viewId,
+        viewName: view.viewName || viewId,
+        hiddenFieldIds: config.hiddenFieldIds || [],
+        fieldOrder: config.fieldOrder || [],
+        filters: view.filters || [],
+        sorts: view.sorts || [],
+        folderId: view.folderId || null,
+        ...changes
+    };
+
     var payload = {
         uuid: crypto.randomUUID(),
         recordId: viewId,
@@ -3855,30 +4083,15 @@ async function saveViewToBackend() {
         operator: 'ALT',
         created_at: new Date().toISOString(),
         apiKey: API_KEY,
-        payload: JSON.stringify({
-            _set: 'viewConfig',
-            tableId: tableId,
-            viewId: viewId,
-            viewName: view.viewName || viewId,
-            hiddenFieldIds: config.hiddenFieldIds || [],
-            fieldOrder: config.fieldOrder || [],
-            filters: view.filters || [],
-            sorts: view.sorts || [],
-            folderId: view.folderId || null,
-            ...changes
-        })
+        payload: JSON.stringify(viewConfigData)
     };
 
     try {
-        var response = await fetch(XANO_POST_API, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+        // Use AminoSync to post event and update snapshot
+        await AminoSync.postEventWithSnapshot(payload, {
+            source_table: 'viewConfig:' + tableId,
+            data: viewConfigData
         });
-
-        if (!response.ok) {
-            throw new Error('HTTP ' + response.status);
-        }
 
         // Clear dirty state
         viewDirtyState.isDirty = false;
@@ -4944,11 +5157,17 @@ async function saveFolderToBackend(folder, operator) {
     };
 
     try {
-        await fetch(XANO_POST_API, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        if (operator === 'NUL') {
+            // For delete operations, post event and delete from snapshot
+            await AminoSync.postEventWithSnapshot(payload, null);
+            await AminoSync.deleteSnapshot(folder.folderId);
+        } else {
+            // For INS/ALT operations, post event and update snapshot
+            await AminoSync.postEventWithSnapshot(payload, {
+                source_table: 'viewFolders',
+                data: folder
+            });
+        }
     } catch (error) {
         console.error('Failed to save folder to backend:', error);
     }
@@ -6270,6 +6489,12 @@ async function incrementalSync() {
         setRefreshIndicatorSyncing(true);
         updateStatus('Checking for updates...', false, null, null);
 
+        // Sync snapshot table in parallel with event stream
+        var snapshotSyncPromise = AminoSync.syncFromSnapshot().catch(err => {
+            console.warn('Snapshot sync failed:', err);
+            return { updated: 0 };
+        });
+
         // Fetch all events created after the last synced timestamp (with pagination)
         var allEvents = [];
         var page = 1;
@@ -6283,6 +6508,9 @@ async function incrementalSync() {
             iterations++;
             if (iterations > 100) break; // Safety limit
         }
+
+        // Wait for snapshot sync to complete
+        var snapshotResult = await snapshotSyncPromise;
 
         if (allEvents.length > 0) {
             updateStatus('Processing ' + allEvents.length + ' new events...', false, null, null);
@@ -6306,9 +6534,14 @@ async function incrementalSync() {
                 await renderTable();
             }
 
-            updateStatus('Up to date', true, null, allEvents.length + ' events synced');
+            var syncDetail = allEvents.length + ' events synced';
+            if (snapshotResult.updated > 0) {
+                syncDetail += ', ' + snapshotResult.updated + ' snapshots updated';
+            }
+            updateStatus('Up to date', true, null, syncDetail);
         } else {
-            updateStatus('Up to date', true, null, null);
+            var statusDetail = snapshotResult.updated > 0 ? snapshotResult.updated + ' snapshots updated' : null;
+            updateStatus('Up to date', true, null, statusDetail);
         }
 
         // Reset indicator and start countdown
@@ -9335,11 +9568,17 @@ async function saveWorkspaceToBackend(workspace, operator) {
     };
 
     try {
-        await fetch(XANO_POST_API, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        if (operator === 'NUL') {
+            // For delete operations, post event and delete from snapshot
+            await AminoSync.postEventWithSnapshot(payload, null);
+            await AminoSync.deleteSnapshot(workspace.workspaceId);
+        } else {
+            // For INS/ALT operations, post event and update snapshot
+            await AminoSync.postEventWithSnapshot(payload, {
+                source_table: 'workspaces',
+                data: workspace
+            });
+        }
     } catch (error) {
         console.error('Failed to save workspace to backend:', error);
     }
