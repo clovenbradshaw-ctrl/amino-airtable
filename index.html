@@ -1456,6 +1456,7 @@
         .events-table .event-type-badge.INS { background: #d1fae5; color: #065f46; }
         .events-table .event-type-badge.ALT { background: #fef3c7; color: #92400e; }
         .events-table .event-type-badge.NUL { background: #fee2e2; color: #991b1b; }
+        .events-table .event-type-badge.SYN { background: #dbeafe; color: #1d4ed8; }
         .events-table .event-type-badge.table { background: #fef3c7; color: #92400e; }
         .events-table .event-type-badge.field { background: #ede9fe; color: #6d28d9; }
         .events-table .event-type-badge.view { background: #fce7f3; color: #be185d; }
@@ -1465,6 +1466,7 @@
         .events-table .field-op-badge.INS { background: #d1fae5; color: #065f46; }
         .events-table .field-op-badge.ALT { background: #fef3c7; color: #92400e; }
         .events-table .field-op-badge.NUL { background: #fee2e2; color: #991b1b; }
+        .events-table .field-op-badge.SYN { background: #dbeafe; color: #1d4ed8; }
         .events-table .field-op-badge .field-count { font-weight: 400; opacity: 0.8; }
         .events-table .event-details { white-space: nowrap; }
         .events-table .current-state-row { background: #f0fdf4; }
@@ -3534,7 +3536,7 @@ var snapshotSyncEnabled = false;
 
 // ============ Events View State ============
 var eventsPageSize = 50;
-var eventsTypeFilter = ''; // 'INS', 'ALT', 'NUL', 'table', 'field', 'view', 'viewConfig', or '' for all
+var eventsTypeFilter = ''; // 'INS', 'ALT', 'NUL', 'SYN', 'table', 'field', 'view', 'viewConfig', or '' for all
 var eventsSetFilter = ''; // Filter by set (table id)
 var eventsSearchQuery = '';
 var expandedPayloads = new Set(); // Set of event IDs with expanded payloads
@@ -9022,6 +9024,7 @@ async function renderEventsView() {
         html += '<option value="INS"' + (eventsTypeFilter === 'INS' ? ' selected' : '') + '>INS (Insert)</option>';
         html += '<option value="ALT"' + (eventsTypeFilter === 'ALT' ? ' selected' : '') + '>ALT (Alter)</option>';
         html += '<option value="NUL"' + (eventsTypeFilter === 'NUL' ? ' selected' : '') + '>NUL (Nullify)</option>';
+        html += '<option value="SYN"' + (eventsTypeFilter === 'SYN' ? ' selected' : '') + '>SYN (Sync)</option>';
         html += '<option value="table"' + (eventsTypeFilter === 'table' ? ' selected' : '') + '>Table Events</option>';
         html += '<option value="field"' + (eventsTypeFilter === 'field' ? ' selected' : '') + '>Field Events</option>';
         html += '<option value="view"' + (eventsTypeFilter === 'view' ? ' selected' : '') + '>View Events</option>';
@@ -9147,6 +9150,7 @@ async function fetchEventsForInfiniteScroll(offset, limit) {
                         if (payload.fields.INS) type = 'INS';
                         else if (payload.fields.ALT) type = 'ALT';
                         else if (payload.fields.NUL) type = 'NUL';
+                        else if (payload.fields.SYN) type = 'SYN';
                     }
                 }
                 return type === eventsTypeFilter;
@@ -9275,6 +9279,7 @@ function renderEventRow(event, isNew) {
             if (payload.fields.INS) eventType = 'INS';
             else if (payload.fields.ALT) eventType = 'ALT';
             else if (payload.fields.NUL) eventType = 'NUL';
+            else if (payload.fields.SYN) eventType = 'SYN';
         }
     }
     var isCurrentState = event._isCurrentState || eventType === 'current';
@@ -9368,6 +9373,11 @@ function getFieldOperationDetails(payload) {
         }
     }
 
+    if (fields.SYN && typeof fields.SYN === 'object') {
+        var count = Object.keys(fields.SYN).length;
+        details.push({ type: 'SYN', count: count, label: count + ' field' + (count !== 1 ? 's' : '') });
+    }
+
     return details.length > 0 ? details : null;
 }
 
@@ -9376,7 +9386,7 @@ function formatPayloadPreview(payload, expanded) {
 
     // Try to extract INS/ALT/NUL field data for nice display
     var fields = payload.fields;
-    var hasFieldData = fields && (fields.INS || fields.ALT || fields.NUL);
+    var hasFieldData = fields && (fields.INS || fields.ALT || fields.NUL || fields.SYN);
 
     if (hasFieldData) {
         return formatPayloadFields(fields, expanded);
