@@ -8986,13 +8986,15 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
 
         // Phase 4: Build and save field history from raw events
         // Group events by tableId and recordId, then build history for each record
+        // Only process data events (set starts with 'airtable:')
         var eventsByTableAndRecord = {};
         for (var i = 0; i < events.length; i++) {
             var evt = events[i];
-            if (evt.recordId && evt.set) {
-                var key = evt.set + '|' + evt.recordId;
+            if (evt.recordId && evt.set && evt.set.startsWith('airtable:')) {
+                var tableId = evt.set.replace('airtable:', '');
+                var key = tableId + '|' + evt.recordId;
                 if (!eventsByTableAndRecord[key]) {
-                    eventsByTableAndRecord[key] = { tableId: evt.set, recordId: evt.recordId, events: [] };
+                    eventsByTableAndRecord[key] = { tableId: tableId, recordId: evt.recordId, events: [] };
                 }
                 eventsByTableAndRecord[key].events.push(evt);
             }
