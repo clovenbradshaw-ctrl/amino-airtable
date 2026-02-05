@@ -377,10 +377,14 @@
         .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: #333; }
 
         /* Loading states */
-        .loading-state { padding: 60px 20px; text-align: center; color: #666; }
+        .loading-state { padding: 60px 20px; text-align: center; color: #666; animation: fadeIn 0.15s ease-out; }
         .loading-state h3 { font-size: 16px; margin-bottom: 8px; color: #333; }
         .loading-spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid #e0e0e0; border-top-color: #2d6cdf; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Smooth content transitions for view switching */
+        .table-container > * { animation: fadeIn 0.15s ease-out; }
 
         /* Skeleton loading for table */
         .skeleton-row td { background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
@@ -3302,6 +3306,7 @@ var currentRecordIds = [];
 var totalRecords = 0;
 var lastEventTimestamp = null; // ISO timestamp of last synced event
 var pollInterval = null;
+var navVersion = 0; // Navigation guard to prevent race conditions when rapidly switching views
 
 // View field configuration cache (in-memory, persisted to IndexedDB)
 // Structure: VIEW_FIELD_CONFIG[tableId][viewId] = { hiddenFieldIds: [...], fieldOrder: [...] }
@@ -7321,6 +7326,30 @@ document.addEventListener('click', function() {
     closeViewContextMenu();
 });
 
+// Clean up state from special views (Events, Sync Status) before switching
+function cleanupSpecialViewState() {
+    // Clean up events view state
+    expandedPayloads.clear();
+    loadedEvents = [];
+    eventsOffset = 0;
+    isLoadingMoreEvents = false;
+    hasMoreEvents = true;
+    if (eventsScrollHandler) {
+        var container = document.querySelector('.table-container');
+        if (container) container.removeEventListener('scroll', eventsScrollHandler);
+        eventsScrollHandler = null;
+    }
+
+    // Clean up sync status listener
+    if (syncStatusUnsubscribe) { syncStatusUnsubscribe(); syncStatusUnsubscribe = null; }
+
+    // Restore view controls bar visibility
+    var viewControlsBar = document.getElementById('view-controls-bar');
+    if (viewControlsBar) viewControlsBar.style.display = '';
+    var toolbarViews = document.querySelector('.toolbar-views');
+    if (toolbarViews) toolbarViews.style.display = '';
+}
+
 // Toggle the expanded views list for a table
 function toggleTableViews(tableId, event) {
     event.stopPropagation();
@@ -7339,13 +7368,25 @@ function toggleTableViews(tableId, event) {
         // Expand
         tableItem.classList.add('expanded');
         viewsList.classList.add('expanded');
+
+        // If clicking a different table, also load it with its default view
+        if (currentTable !== tableId) {
+            showTable(tableId);
+        }
     }
 }
 
 // Select a view from the sidebar and show the table
 async function selectTableView(tableId, viewId) {
+    // Navigation guard: increment version and capture it
+    var myNav = ++navVersion;
+
     // Auto-save any pending changes before navigating
     await autoSaveBeforeNavigation();
+    if (navVersion !== myNav) return; // Another navigation started, abort
+
+    // Clean up any special view state (Events, Sync Status)
+    cleanupSpecialViewState();
 
     // Update sidebar active states
     document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
@@ -7370,6 +7411,7 @@ async function selectTableView(tableId, viewId) {
         currentPage = 0;
 
         var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
+        if (navVersion !== myNav) return;
         var tableName = table.tableName || tableId;
         document.getElementById('title').textContent = tableName;
 
@@ -7378,16 +7420,19 @@ async function selectTableView(tableId, viewId) {
 
         // Load fields first (table structure)
         var fields = await getFieldsForTable(tableId);
+        if (navVersion !== myNav) return;
         META_FIELDS[tableId] = {};
         fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
 
         // Load views for this table
         var views = await getViewsForTable(tableId);
+        if (navVersion !== myNav) return;
         META_VIEWS[tableId] = {};
         views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
 
         // Load record IDs
         originalRecordIds = await getRecordIdsForTable(tableId);
+        if (navVersion !== myNav) return;
         currentRecordIds = originalRecordIds.slice();
         totalRecords = currentRecordIds.length;
     }
@@ -7508,16 +7553,15 @@ function startRefreshCountdown() {
 }
 
 async function showTable(tableId) {
+    // Navigation guard: increment version and capture it
+    var myNav = ++navVersion;
+
     // Auto-save any pending changes before switching tables
     await autoSaveBeforeNavigation();
+    if (navVersion !== myNav) return;
 
-    // Clear events view state to free memory
-    expandedPayloads.clear();
-    loadedEvents = [];
-    eventsOffset = 0;
-
-    // Clean up sync status listener
-    if (syncStatusUnsubscribe) { syncStatusUnsubscribe(); syncStatusUnsubscribe = null; }
+    // Clean up special view state (Events, Sync Status)
+    cleanupSpecialViewState();
 
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
@@ -7540,14 +7584,10 @@ async function showTable(tableId) {
     if (searchInput) searchInput.value = '';
 
     var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
+    if (navVersion !== myNav) return;
     var tableName = table.tableName || tableId;
 
     document.getElementById('title').textContent = tableName;
-
-    // Restore view controls when switching from Events view
-    document.getElementById('view-controls-bar').style.display = '';
-    var toolbarViews = document.querySelector('.toolbar-views');
-    if (toolbarViews) toolbarViews.style.display = '';
 
     // Update sidebar - expand the selected table and highlight it
     document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
@@ -7570,11 +7610,13 @@ async function showTable(tableId) {
 
     // Load fields first (table structure)
     var fields = await getFieldsForTable(tableId);
+    if (navVersion !== myNav) return;
     META_FIELDS[tableId] = {};
     fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
 
     // Load views for this table
     var views = await getViewsForTable(tableId);
+    if (navVersion !== myNav) return;
     META_VIEWS[tableId] = {};
     views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
 
@@ -7614,6 +7656,7 @@ async function showTable(tableId) {
 
     // Load record IDs
     originalRecordIds = await getRecordIdsForTable(tableId);
+    if (navVersion !== myNav) return;
     currentRecordIds = originalRecordIds.slice();
     totalRecords = currentRecordIds.length;
 
@@ -7685,6 +7728,10 @@ function renderTableHeaders() {
 
 async function renderTable() {
     if (!currentTable) return;
+    // Skip rendering if we're in a special view (Events or Sync Status)
+    if (currentTable === '_events' || currentTable === '_sync_status') return;
+
+    var renderNav = navVersion; // Capture current nav version for stale check
 
     // Check if table container exists - may not exist during early loading
     var tableContainer = document.getElementById('table-container');
@@ -7697,6 +7744,7 @@ async function renderTable() {
     var needsFiltering = currentFilters.length > 0 || currentSearchQuery || currentSorts.length > 0;
     if (needsFiltering) {
         currentRecordIds = await getFilteredSortedRecords();
+        if (navVersion !== renderNav) return; // Navigation changed, abort stale render
     } else {
         currentRecordIds = originalRecordIds.slice();
     }
@@ -7738,6 +7786,7 @@ async function renderTable() {
 
     // Get records
     var records = await getRecordsByIds(currentTable, displayRecordIds);
+    if (navVersion !== renderNav) return; // Navigation changed, abort stale render
     var recordMap = {};
     records.forEach(r => recordMap[r.recordId] = r.fields || {});
 
@@ -8385,11 +8434,27 @@ async function incrementalSync() {
 var syncStatusUnsubscribe = null;
 
 async function showSyncStatusView() {
+    // Navigation guard: increment version and capture it
+    var myNav = ++navVersion;
+
+    // Clean up events view state
+    expandedPayloads.clear();
+    loadedEvents = [];
+    eventsOffset = 0;
+    isLoadingMoreEvents = false;
+    hasMoreEvents = true;
+    if (eventsScrollHandler) {
+        var evContainer = document.querySelector('.table-container');
+        if (evContainer) evContainer.removeEventListener('scroll', eventsScrollHandler);
+        eventsScrollHandler = null;
+    }
+
     currentTable = '_sync_status';
     currentView = null;
 
     // Update sidebar selection
     document.querySelectorAll('.sidebar .table-item').forEach(el => el.classList.remove('active', 'expanded'));
+    document.querySelectorAll('.sidebar .table-view-item').forEach(el => el.classList.remove('active'));
     document.querySelector('.sidebar .table-item.sync-status-item')?.classList.add('active');
 
     // Hide view controls and show sync status view
@@ -8401,7 +8466,12 @@ async function showSyncStatusView() {
     var toolbarViews = document.querySelector('.toolbar-views');
     if (toolbarViews) toolbarViews.style.display = 'none';
 
+    // Show loading state immediately
+    var container = document.querySelector('.table-container');
+    if (container) container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading sync status...</h3></div>';
+
     await renderSyncStatusView();
+    if (navVersion !== myNav) return;
 
     // Subscribe to live updates
     if (syncStatusUnsubscribe) syncStatusUnsubscribe();
@@ -8844,25 +8914,31 @@ document.addEventListener('keydown', function(e) {
 // ============ Events View ============
 
 async function showEventsView() {
-    currentTable = '_events';
-    currentView = null;
+    // Navigation guard: increment version and capture it
+    var myNav = ++navVersion;
 
     // Clean up sync status listener
     if (syncStatusUnsubscribe) { syncStatusUnsubscribe(); syncStatusUnsubscribe = null; }
 
+    currentTable = '_events';
+    currentView = null;
+
     // Update sidebar selection
     document.querySelectorAll('.sidebar .table-item').forEach(el => el.classList.remove('active', 'expanded'));
+    document.querySelectorAll('.sidebar .table-view-item').forEach(el => el.classList.remove('active'));
     document.querySelector('.sidebar .table-item.events-item')?.classList.add('active');
 
     // Hide view controls and show events view
     document.getElementById('view-controls-bar').style.display = 'none';
     document.getElementById('title').textContent = 'Events Stream';
+    document.getElementById('pagination').style.display = 'none';
 
     // Hide toolbar views section for events view
     var toolbarViews = document.querySelector('.toolbar-views');
     if (toolbarViews) toolbarViews.style.display = 'none';
 
     await renderEventsView();
+    // Navigation guard check after async work (renderEventsView handles its own loading state)
 }
 
 async function renderEventsView() {
