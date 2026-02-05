@@ -2458,6 +2458,13 @@
         </div>
     </div>
 
+    <!-- Table Context Menu -->
+    <div class="view-context-menu" id="table-context-menu">
+        <div class="view-context-menu-item" onclick="createViewFolderFromContextMenu()">
+            <span>&#128193;</span> New folder
+        </div>
+    </div>
+
     <!-- Field History Modal -->
     <div class="modal-overlay" id="history-modal-overlay" onclick="closeHistoryModal(event)">
         <div class="modal history-modal" onclick="event.stopPropagation()">
@@ -6609,6 +6616,10 @@ async function renderSidebar() {
             '</span>' +
             (showExpandArrow ? '<span class="expand-arrow">&#9654;</span>' : '');
 
+        div.oncontextmenu = ((t) => (e) => {
+            showTableContextMenu(e, t);
+        })(tableId);
+
         div.onclick = ((t) => (e) => {
             // Don't toggle if clicking pin button
             if (e.target.closest('.pin-btn')) return;
@@ -6836,11 +6847,6 @@ async function loadTableViewsAsync(tableId) {
     html += '<span>New view</span>';
     html += '</div>';
 
-    // Add "New folder" button
-    html += '<div class="table-view-add-btn" onclick="createViewFolder(\'' + esc(tableId) + '\')">';
-    html += '<span class="add-icon">+</span>';
-    html += '<span>New folder</span>';
-    html += '</div>';
 
     viewsList.innerHTML = html;
 }
@@ -7013,6 +7019,50 @@ function closeViewContextMenu() {
     menu.classList.remove('open');
     contextMenuViewId = null;
     contextMenuTableId = null;
+}
+
+// Table context menu state
+var tableContextMenuTableId = null;
+
+// Show table context menu
+function showTableContextMenu(event, tableId) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    tableContextMenuTableId = tableId;
+
+    var menu = document.getElementById('table-context-menu');
+    menu.style.left = event.clientX + 'px';
+    menu.style.top = event.clientY + 'px';
+    menu.classList.add('open');
+}
+
+// Close table context menu
+function closeTableContextMenu() {
+    var menu = document.getElementById('table-context-menu');
+    menu.classList.remove('open');
+    tableContextMenuTableId = null;
+}
+
+// Create view folder from table context menu
+async function createViewFolderFromContextMenu() {
+    if (!tableContextMenuTableId) return;
+    var tableId = tableContextMenuTableId;
+    closeTableContextMenu();
+    await createViewFolder(tableId);
+
+    // Ensure the table's views list is expanded so the user can see the new folder
+    var wrapper = document.querySelector('.table-wrapper[data-table-id="' + tableId + '"]');
+    if (wrapper) {
+        var tableItem = wrapper.querySelector('.table-item');
+        var viewsList = wrapper.querySelector('.table-views-list');
+        if (tableItem && !tableItem.classList.contains('expanded')) {
+            tableItem.classList.add('expanded');
+        }
+        if (viewsList && !viewsList.classList.contains('expanded')) {
+            viewsList.classList.add('expanded');
+        }
+    }
 }
 
 // Move view to folder
@@ -7344,6 +7394,7 @@ function openCreateViewModal(tableId) {
 // Close context menu on click outside
 document.addEventListener('click', function() {
     closeViewContextMenu();
+    closeTableContextMenu();
 });
 
 // Clean up state from special views (Events, Sync Status) before switching
