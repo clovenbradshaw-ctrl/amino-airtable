@@ -1345,6 +1345,99 @@
             background: #8b5cf6;
         }
 
+        /* Sync Status sidebar item */
+        .sidebar div.table-item.sync-status-item {
+            margin: 2px 8px;
+            border-radius: 8px;
+            background: transparent;
+            border: none;
+        }
+        .sidebar div.table-item.sync-status-item .table-icon {
+            background: rgba(16, 185, 129, 0.15);
+            border-radius: 5px;
+        }
+        .sidebar div.table-item.sync-status-item .table-icon svg { color: #10b981; }
+        .sidebar div.table-item.sync-status-item:hover {
+            background: #f3f4f6;
+        }
+        .sidebar div.table-item.sync-status-item:active {
+            background: rgba(16, 185, 129, 0.15);
+            transition: background-color 0.05s;
+        }
+        .sidebar div.table-item.sync-status-item.active {
+            background: rgba(16, 185, 129, 0.15);
+        }
+        .sidebar div.table-item.sync-status-item.active::before {
+            background: #10b981;
+        }
+
+        /* Sync Status View */
+        .sync-status-view { padding: 24px; max-width: 1200px; }
+        .sync-status-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+        .sync-status-header h2 { font-size: 18px; font-weight: 600; color: #1f2937; }
+        .sync-status-header .sync-status-badge {
+            font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 12px;
+        }
+        .sync-status-badge.synced { background: #d1fae5; color: #065f46; }
+        .sync-status-badge.syncing { background: #fef3c7; color: #92400e; }
+        .sync-status-badge.error { background: #fee2e2; color: #991b1b; }
+
+        .sync-status-cards {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;
+        }
+        .sync-status-card {
+            background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px;
+        }
+        .sync-status-card .card-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-bottom: 6px; }
+        .sync-status-card .card-value { font-size: 22px; font-weight: 600; color: #1f2937; }
+        .sync-status-card .card-sub { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+
+        .sync-status-section { margin-bottom: 24px; }
+        .sync-status-section h3 { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .sync-status-section h3 .section-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .sync-status-section h3 .section-dot.green { background: #10b981; }
+        .sync-status-section h3 .section-dot.amber { background: #f59e0b; }
+        .sync-status-section h3 .section-dot.red { background: #ef4444; }
+
+        .sync-history-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+        .sync-history-table th { background: #f9fafb; border-bottom: 1px solid #e5e7eb; padding: 10px 14px; text-align: left; font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .sync-history-table td { border-bottom: 1px solid #f3f4f6; padding: 10px 14px; color: #4b5563; }
+        .sync-history-table tr:last-child td { border-bottom: none; }
+        .sync-history-table tr:hover td { background: #f9fafb; }
+        .sync-history-table .sync-type-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; }
+        .sync-history-table .sync-type-badge.incremental { background: #dbeafe; color: #1d4ed8; }
+        .sync-history-table .sync-type-badge.full { background: #ede9fe; color: #6d28d9; }
+        .sync-history-table .sync-type-badge.snapshot { background: #d1fae5; color: #065f46; }
+        .sync-history-table .sync-type-badge.error { background: #fee2e2; color: #991b1b; }
+        .sync-result-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+        .sync-result-badge.success { background: #d1fae5; color: #065f46; }
+        .sync-result-badge.error { background: #fee2e2; color: #991b1b; }
+        .sync-result-badge.no-change { background: #f3f4f6; color: #6b7280; }
+
+        .sync-poll-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .sync-poll-controls .btn-poll {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 16px; border-radius: 8px; border: 1px solid #e5e7eb;
+            background: #fff; font-size: 13px; font-weight: 500; color: #374151;
+            cursor: pointer; transition: all 0.15s;
+        }
+        .sync-poll-controls .btn-poll:hover { background: #f9fafb; border-color: #d1d5db; }
+        .sync-poll-controls .btn-poll.primary { background: #10b981; color: #fff; border-color: #10b981; }
+        .sync-poll-controls .btn-poll.primary:hover { background: #059669; }
+        .sync-poll-controls .btn-poll:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .sync-activity-log {
+            background: #1a1a2e; border-radius: 10px; padding: 16px; max-height: 300px; overflow-y: auto;
+            font-family: "SF Mono", Monaco, Consolas, monospace; font-size: 12px; line-height: 1.6;
+        }
+        .sync-activity-log .log-line { color: #8b92a8; }
+        .sync-activity-log .log-line .timestamp { color: #5a6178; margin-right: 8px; }
+        .sync-activity-log .log-line.info .message { color: #60a5fa; }
+        .sync-activity-log .log-line.success .message { color: #34d399; }
+        .sync-activity-log .log-line.error .message { color: #f87171; }
+        .sync-activity-log .log-line.warn .message { color: #fbbf24; }
+        .sync-activity-log .log-empty { color: #5a6178; text-align: center; padding: 20px; }
+
         /* Events Table */
         .events-table { min-width: 100%; border-collapse: collapse; font-size: 13px; }
         .events-table th { background: #f5f5f5; border-bottom: 2px solid #ddd; padding: 10px 12px; text-align: left; font-weight: 500; color: #333; position: sticky; top: 0; z-index: 10; white-space: nowrap; }
@@ -3252,6 +3345,11 @@ var TABLE_TYPE_CONFIG = {
         label: 'Events',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
     },
+    syncStatus: {
+        color: '#10b981',
+        label: 'Sync Status',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>'
+    },
     operational: {
         color: '#3b82f6',
         label: 'Operational',
@@ -4048,6 +4146,123 @@ var SyncStatusFeed = {
         this.render();
         var btn = document.getElementById('sync-feed-btn');
         if (btn) btn.classList.remove('has-activity');
+    }
+};
+
+// ============ Sync History Tracker ============
+// Tracks all sync operations for the Sync Status view
+
+var SyncHistory = {
+    maxEntries: 200,
+    entries: [],
+    pollInterval: null,
+    POLL_INTERVAL: 15000, // 15 seconds - poll DB for new events
+    isPolling: false,
+    listeners: [],
+
+    // Record a sync operation
+    record(entry) {
+        this.entries.unshift({
+            id: Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+            timestamp: new Date(),
+            type: entry.type || 'incremental',    // 'incremental', 'full', 'snapshot', 'poll'
+            result: entry.result || 'success',      // 'success', 'error', 'no-change'
+            eventsFound: entry.eventsFound || 0,
+            snapshotsUpdated: entry.snapshotsUpdated || 0,
+            duration: entry.duration || 0,
+            detail: entry.detail || '',
+            error: entry.error || null
+        });
+        if (this.entries.length > this.maxEntries) {
+            this.entries = this.entries.slice(0, this.maxEntries);
+        }
+        this.notify();
+    },
+
+    // Poll the DB to check for events since last known timestamp
+    async pollForUpdates() {
+        if (this.isPolling || !API_KEY) return;
+        this.isPolling = true;
+        var pollStart = Date.now();
+        try {
+            var result = await fetchPage(1, lastEventTimestamp);
+            var newCount = (result.events && result.events.length) || 0;
+            this.record({
+                type: 'poll',
+                result: newCount > 0 ? 'success' : 'no-change',
+                eventsFound: newCount,
+                duration: Date.now() - pollStart,
+                detail: newCount > 0
+                    ? 'Found ' + newCount + ' new event(s) waiting'
+                    : 'No new events since last sync'
+            });
+
+            // If events found, trigger an incremental sync
+            if (newCount > 0) {
+                await incrementalSync();
+            }
+        } catch (err) {
+            this.record({
+                type: 'poll',
+                result: 'error',
+                duration: Date.now() - pollStart,
+                error: err.message,
+                detail: 'Poll failed: ' + err.message
+            });
+        } finally {
+            this.isPolling = false;
+        }
+    },
+
+    // Start background polling
+    startPolling() {
+        if (this.pollInterval) return;
+        this.pollInterval = setInterval(() => this.pollForUpdates(), this.POLL_INTERVAL);
+        this.record({ type: 'poll', result: 'no-change', detail: 'Background polling started (' + (this.POLL_INTERVAL / 1000) + 's interval)' });
+    },
+
+    // Stop background polling
+    stopPolling() {
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+            this.record({ type: 'poll', result: 'no-change', detail: 'Background polling stopped' });
+        }
+    },
+
+    // Get summary stats
+    getStats() {
+        var now = Date.now();
+        var last5min = this.entries.filter(e => (now - e.timestamp.getTime()) < 300000);
+        var lastHour = this.entries.filter(e => (now - e.timestamp.getTime()) < 3600000);
+        var errors = this.entries.filter(e => e.result === 'error');
+        var totalEvents = this.entries.reduce((sum, e) => sum + (e.eventsFound || 0), 0);
+        var totalSnapshots = this.entries.reduce((sum, e) => sum + (e.snapshotsUpdated || 0), 0);
+        var lastSync = this.entries.find(e => e.type !== 'poll' && e.result === 'success');
+        var lastPoll = this.entries.find(e => e.type === 'poll');
+
+        return {
+            totalSyncs: this.entries.filter(e => e.type !== 'poll').length,
+            totalPolls: this.entries.filter(e => e.type === 'poll').length,
+            last5minOps: last5min.length,
+            lastHourOps: lastHour.length,
+            totalEventsProcessed: totalEvents,
+            totalSnapshotsUpdated: totalSnapshots,
+            errorCount: errors.length,
+            lastSyncTime: lastSync ? lastSync.timestamp : null,
+            lastPollTime: lastPoll ? lastPoll.timestamp : null,
+            isPolling: !!this.pollInterval
+        };
+    },
+
+    // Subscribe to changes (for live UI updates)
+    onChange(fn) {
+        this.listeners.push(fn);
+        return () => { this.listeners = this.listeners.filter(l => l !== fn); };
+    },
+
+    notify() {
+        this.listeners.forEach(fn => { try { fn(); } catch(e) {} });
     }
 };
 
@@ -6422,6 +6637,20 @@ async function renderSidebar() {
         eventsWrapper.appendChild(eventsDiv);
         tableList.appendChild(eventsWrapper);
 
+        // Sync Status (below Events Stream)
+        var syncStatusWrapper = document.createElement('div');
+        syncStatusWrapper.className = 'table-wrapper';
+        syncStatusWrapper.setAttribute('data-table-id', '_sync_status');
+
+        var syncStatusDiv = document.createElement('div');
+        syncStatusDiv.className = 'table-item sync-status-item' + (currentTable === '_sync_status' ? ' active' : '');
+        syncStatusDiv.innerHTML =
+            '<span class="table-icon type-sync-status">' + TABLE_TYPE_CONFIG.syncStatus.icon + '</span>' +
+            '<span class="table-name">Sync Status</span>';
+        syncStatusDiv.onclick = () => showSyncStatusView();
+        syncStatusWrapper.appendChild(syncStatusDiv);
+        tableList.appendChild(syncStatusWrapper);
+
         // Pinned Section
         var pinnedTables = tables.filter(t => SIDEBAR_STATE.pinnedTables.includes(t.tableId));
         if (pinnedTables.length > 0) {
@@ -7287,6 +7516,9 @@ async function showTable(tableId) {
     loadedEvents = [];
     eventsOffset = 0;
 
+    // Clean up sync status listener
+    if (syncStatusUnsubscribe) { syncStatusUnsubscribe(); syncStatusUnsubscribe = null; }
+
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
     currentPage = 0;
@@ -8049,6 +8281,7 @@ async function fullSync() {
 }
 
 async function incrementalSync() {
+    var syncStartTime = Date.now();
     try {
         // Show syncing indicator
         setRefreshIndicatorSyncing(true);
@@ -8092,7 +8325,7 @@ async function incrementalSync() {
             await renderSidebar();
 
             // Update data view if table is selected
-            if (currentTable) {
+            if (currentTable && currentTable !== '_sync_status') {
                 originalRecordIds = await getRecordIdsForTable(currentTable);
                 currentRecordIds = originalRecordIds.slice();
                 totalRecords = currentRecordIds.length;
@@ -8104,9 +8337,29 @@ async function incrementalSync() {
                 syncDetail += ', ' + snapshotResult.updated + ' snapshots updated';
             }
             updateStatus('Up to date', true, null, syncDetail);
+
+            // Record to sync history
+            SyncHistory.record({
+                type: 'incremental',
+                result: 'success',
+                eventsFound: allEvents.length,
+                snapshotsUpdated: snapshotResult.updated || 0,
+                duration: Date.now() - syncStartTime,
+                detail: syncDetail
+            });
         } else {
             var statusDetail = snapshotResult.updated > 0 ? snapshotResult.updated + ' snapshots updated' : null;
             updateStatus('Up to date', true, null, statusDetail);
+
+            // Record no-change sync
+            SyncHistory.record({
+                type: 'incremental',
+                result: snapshotResult.updated > 0 ? 'success' : 'no-change',
+                eventsFound: 0,
+                snapshotsUpdated: snapshotResult.updated || 0,
+                duration: Date.now() - syncStartTime,
+                detail: statusDetail || 'No new events'
+            });
         }
 
         // Reset indicator and start countdown
@@ -8115,7 +8368,201 @@ async function incrementalSync() {
         console.error('Sync error:', err);
         updateStatus('Sync error: ' + err.message, false, null, null);
         setRefreshIndicatorSyncing(false);
+
+        // Record error to sync history
+        SyncHistory.record({
+            type: 'incremental',
+            result: 'error',
+            duration: Date.now() - syncStartTime,
+            error: err.message,
+            detail: 'Sync error: ' + err.message
+        });
     }
+}
+
+// ============ Sync Status View ============
+
+var syncStatusUnsubscribe = null;
+
+async function showSyncStatusView() {
+    currentTable = '_sync_status';
+    currentView = null;
+
+    // Update sidebar selection
+    document.querySelectorAll('.sidebar .table-item').forEach(el => el.classList.remove('active', 'expanded'));
+    document.querySelector('.sidebar .table-item.sync-status-item')?.classList.add('active');
+
+    // Hide view controls and show sync status view
+    document.getElementById('view-controls-bar').style.display = 'none';
+    document.getElementById('title').textContent = 'Sync Status';
+    document.getElementById('pagination').style.display = 'none';
+
+    // Hide toolbar views section
+    var toolbarViews = document.querySelector('.toolbar-views');
+    if (toolbarViews) toolbarViews.style.display = 'none';
+
+    await renderSyncStatusView();
+
+    // Subscribe to live updates
+    if (syncStatusUnsubscribe) syncStatusUnsubscribe();
+    syncStatusUnsubscribe = SyncHistory.onChange(() => {
+        if (currentTable === '_sync_status') renderSyncStatusView();
+    });
+}
+
+async function renderSyncStatusView() {
+    var container = document.querySelector('.table-container');
+    var stats = SyncHistory.getStats();
+    var passiveStats = PassiveSnapshotSync.getStats();
+    var totalEventsCount = await getRawEventsCount();
+
+    // Determine overall sync state
+    var syncState = 'synced';
+    var syncLabel = 'Up to Date';
+    if (SyncHistory.isPolling) {
+        syncState = 'syncing';
+        syncLabel = 'Checking...';
+    } else if (stats.errorCount > 0 && stats.errorCount === stats.totalSyncs + stats.totalPolls) {
+        syncState = 'error';
+        syncLabel = 'Errors Detected';
+    }
+
+    var html = '<div class="sync-status-view">';
+
+    // Header
+    html += '<div class="sync-status-header">';
+    html += '<h2>Sync Status</h2>';
+    html += '<span class="sync-status-badge ' + syncState + '">' + syncLabel + '</span>';
+    html += '</div>';
+
+    // Summary cards
+    html += '<div class="sync-status-cards">';
+
+    html += '<div class="sync-status-card">';
+    html += '<div class="card-label">Total Events in DB</div>';
+    html += '<div class="card-value">' + totalEventsCount.toLocaleString() + '</div>';
+    html += '<div class="card-sub">Last event timestamp: ' + (lastEventTimestamp ? formatTimestamp(lastEventTimestamp) : 'N/A') + '</div>';
+    html += '</div>';
+
+    html += '<div class="sync-status-card">';
+    html += '<div class="card-label">Events Synced (Session)</div>';
+    html += '<div class="card-value">' + stats.totalEventsProcessed.toLocaleString() + '</div>';
+    html += '<div class="card-sub">' + stats.totalSyncs + ' sync operation' + (stats.totalSyncs !== 1 ? 's' : '') + '</div>';
+    html += '</div>';
+
+    html += '<div class="sync-status-card">';
+    html += '<div class="card-label">Snapshots Updated</div>';
+    html += '<div class="card-value">' + stats.totalSnapshotsUpdated.toLocaleString() + '</div>';
+    html += '<div class="card-sub">Passive: ' + passiveStats.pulled + ' pulled, ' + passiveStats.verified + ' verified</div>';
+    html += '</div>';
+
+    html += '<div class="sync-status-card">';
+    html += '<div class="card-label">Last Sync</div>';
+    html += '<div class="card-value" style="font-size: 16px;">' + (stats.lastSyncTime ? formatSyncTimestamp(stats.lastSyncTime) : 'Never') + '</div>';
+    html += '<div class="card-sub">Last poll: ' + (stats.lastPollTime ? formatSyncTimestamp(stats.lastPollTime) : 'Never') + '</div>';
+    html += '</div>';
+
+    html += '</div>';
+
+    // Polling controls
+    html += '<div class="sync-status-section">';
+    html += '<h3><span class="section-dot ' + (SyncHistory.pollInterval ? 'green' : 'amber') + '"></span>Database Polling</h3>';
+    html += '<div class="sync-poll-controls">';
+    html += '<button class="btn-poll primary" onclick="SyncHistory.pollForUpdates()" ' + (SyncHistory.isPolling ? 'disabled' : '') + '>';
+    html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>';
+    html += 'Poll Now</button>';
+    if (SyncHistory.pollInterval) {
+        html += '<button class="btn-poll" onclick="SyncHistory.stopPolling(); renderSyncStatusView();">Stop Auto-Poll</button>';
+        html += '<span style="font-size: 12px; color: #6b7280;">Polling every ' + (SyncHistory.POLL_INTERVAL / 1000) + 's</span>';
+    } else {
+        html += '<button class="btn-poll" onclick="SyncHistory.startPolling(); renderSyncStatusView();">Start Auto-Poll</button>';
+        html += '<span style="font-size: 12px; color: #6b7280;">Auto-poll is off</span>';
+    }
+    html += '</div>';
+    html += '</div>';
+
+    // Sync history table
+    html += '<div class="sync-status-section">';
+    html += '<h3><span class="section-dot ' + (stats.errorCount > 0 ? 'red' : 'green') + '"></span>Sync History</h3>';
+
+    if (SyncHistory.entries.length === 0) {
+        html += '<div style="text-align: center; padding: 32px; color: #9ca3af; font-size: 13px;">No sync operations recorded yet. Syncs will appear here as they occur.</div>';
+    } else {
+        html += '<table class="sync-history-table">';
+        html += '<thead><tr>';
+        html += '<th>Time</th>';
+        html += '<th>Type</th>';
+        html += '<th>Result</th>';
+        html += '<th>Events</th>';
+        html += '<th>Snapshots</th>';
+        html += '<th>Duration</th>';
+        html += '<th>Detail</th>';
+        html += '</tr></thead>';
+        html += '<tbody>';
+
+        var displayEntries = SyncHistory.entries.slice(0, 50);
+        for (var i = 0; i < displayEntries.length; i++) {
+            var entry = displayEntries[i];
+            html += '<tr>';
+            html += '<td style="white-space: nowrap; font-size: 12px; color: #6b7280;">' + formatSyncTimestamp(entry.timestamp) + '</td>';
+            html += '<td><span class="sync-type-badge ' + entry.type + '">' + entry.type + '</span></td>';
+            html += '<td><span class="sync-result-badge ' + entry.result + '">' + entry.result.replace('-', ' ') + '</span></td>';
+            html += '<td>' + (entry.eventsFound || 0) + '</td>';
+            html += '<td>' + (entry.snapshotsUpdated || 0) + '</td>';
+            html += '<td style="font-size: 12px; color: #6b7280;">' + (entry.duration > 0 ? entry.duration + 'ms' : '-') + '</td>';
+            html += '<td style="font-size: 12px; color: #6b7280; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + esc(entry.detail || '') + '</td>';
+            html += '</tr>';
+        }
+
+        html += '</tbody></table>';
+        if (SyncHistory.entries.length > 50) {
+            html += '<div style="text-align: center; padding: 8px; color: #9ca3af; font-size: 12px;">Showing 50 of ' + SyncHistory.entries.length + ' entries</div>';
+        }
+    }
+    html += '</div>';
+
+    // Activity log (mirrors SyncStatusFeed)
+    html += '<div class="sync-status-section">';
+    html += '<h3><span class="section-dot ' + (SyncStatusFeed.isActive ? 'green' : 'amber') + '"></span>Activity Log</h3>';
+    html += '<div class="sync-activity-log">';
+    if (SyncStatusFeed.lines.length === 0) {
+        html += '<div class="log-empty">No sync activity logged yet</div>';
+    } else {
+        var logLines = SyncStatusFeed.lines.slice(-50);
+        for (var j = 0; j < logLines.length; j++) {
+            var line = logLines[j];
+            html += '<div class="log-line ' + line.type + '">';
+            html += '<span class="timestamp">' + line.timestamp + '</span>';
+            html += '<span class="message">' + esc(line.message) + '</span>';
+            html += '</div>';
+        }
+    }
+    html += '</div>';
+    html += '</div>';
+
+    html += '</div>';
+    container.innerHTML = html;
+
+    // Scroll activity log to bottom
+    var logEl = container.querySelector('.sync-activity-log');
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+}
+
+function formatSyncTimestamp(ts) {
+    var d;
+    if (ts instanceof Date) {
+        d = ts;
+    } else if (typeof ts === 'number') {
+        d = new Date(ts);
+    } else {
+        d = new Date(ts);
+    }
+    if (isNaN(d.getTime())) return String(ts);
+    var now = new Date();
+    var isToday = d.toDateString() === now.toDateString();
+    var time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    if (isToday) return time;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time;
 }
 
 // ============ Init ============
@@ -8399,6 +8846,9 @@ document.addEventListener('keydown', function(e) {
 async function showEventsView() {
     currentTable = '_events';
     currentView = null;
+
+    // Clean up sync status listener
+    if (syncStatusUnsubscribe) { syncStatusUnsubscribe(); syncStatusUnsubscribe = null; }
 
     // Update sidebar selection
     document.querySelectorAll('.sidebar .table-item').forEach(el => el.classList.remove('active', 'expanded'));
