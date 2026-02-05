@@ -1453,6 +1453,9 @@
         .events-table .event-record-id { font-family: "SF Mono", Monaco, monospace; font-size: 11px; color: #059669; background: #d1fae5; padding: 2px 6px; border-radius: 4px; display: inline-block; }
         .events-table .event-type-badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
         .events-table .event-type-badge.data { background: #dbeafe; color: #1d4ed8; }
+        .events-table .event-type-badge.INS { background: #d1fae5; color: #065f46; }
+        .events-table .event-type-badge.ALT { background: #fef3c7; color: #92400e; }
+        .events-table .event-type-badge.NUL { background: #fee2e2; color: #991b1b; }
         .events-table .event-type-badge.table { background: #fef3c7; color: #92400e; }
         .events-table .event-type-badge.field { background: #ede9fe; color: #6d28d9; }
         .events-table .event-type-badge.view { background: #fce7f3; color: #be185d; }
@@ -3531,7 +3534,7 @@ var snapshotSyncEnabled = false;
 
 // ============ Events View State ============
 var eventsPageSize = 50;
-var eventsTypeFilter = ''; // 'data', 'table', 'field', 'view', 'viewConfig', or '' for all
+var eventsTypeFilter = ''; // 'INS', 'ALT', 'NUL', 'table', 'field', 'view', 'viewConfig', or '' for all
 var eventsSetFilter = ''; // Filter by set (table id)
 var eventsSearchQuery = '';
 var expandedPayloads = new Set(); // Set of event IDs with expanded payloads
@@ -9016,7 +9019,9 @@ async function renderEventsView() {
         html += '<select onchange="setEventsTypeFilter(this.value)">';
         html += '<option value=""' + (!eventsTypeFilter ? ' selected' : '') + '>All Events</option>';
         html += '<option value="current"' + (eventsTypeFilter === 'current' ? ' selected' : '') + '>All Records (Current State)</option>';
-        html += '<option value="data"' + (eventsTypeFilter === 'data' ? ' selected' : '') + '>Data Events</option>';
+        html += '<option value="INS"' + (eventsTypeFilter === 'INS' ? ' selected' : '') + '>INS (Insert)</option>';
+        html += '<option value="ALT"' + (eventsTypeFilter === 'ALT' ? ' selected' : '') + '>ALT (Alter)</option>';
+        html += '<option value="NUL"' + (eventsTypeFilter === 'NUL' ? ' selected' : '') + '>NUL (Nullify)</option>';
         html += '<option value="table"' + (eventsTypeFilter === 'table' ? ' selected' : '') + '>Table Events</option>';
         html += '<option value="field"' + (eventsTypeFilter === 'field' ? ' selected' : '') + '>Field Events</option>';
         html += '<option value="view"' + (eventsTypeFilter === 'view' ? ' selected' : '') + '>View Events</option>';
@@ -9132,7 +9137,18 @@ async function fetchEventsForInfiniteScroll(offset, limit) {
         if (eventsTypeFilter) {
             events = events.filter(e => {
                 var payload = parsePayload(e.payload);
-                var type = payload?._set || 'data';
+                var baseType = payload?._set || 'data';
+                // For data events, resolve to operator type (INS/ALT/NUL)
+                var type = baseType;
+                if (baseType === 'data') {
+                    if (e.operator) {
+                        type = e.operator;
+                    } else if (payload && payload.fields) {
+                        if (payload.fields.INS) type = 'INS';
+                        else if (payload.fields.ALT) type = 'ALT';
+                        else if (payload.fields.NUL) type = 'NUL';
+                    }
+                }
                 return type === eventsTypeFilter;
             });
         }
@@ -9248,7 +9264,19 @@ function updateEventsStats(totalEventsCount, totalRecordsCount) {
 
 function renderEventRow(event, isNew) {
     var payload = parsePayload(event.payload);
-    var eventType = payload?._set || 'data';
+    var baseType = payload?._set || 'data';
+    // For data events, show the operator (INS/ALT/NUL) instead of generic "data"
+    var eventType = baseType;
+    if (baseType === 'data') {
+        if (event.operator) {
+            eventType = event.operator;
+        } else if (payload && payload.fields) {
+            // Infer from payload fields
+            if (payload.fields.INS) eventType = 'INS';
+            else if (payload.fields.ALT) eventType = 'ALT';
+            else if (payload.fields.NUL) eventType = 'NUL';
+        }
+    }
     var isCurrentState = event._isCurrentState || eventType === 'current';
     var timestamp = event.created_at ? formatTimestamp(new Date(event.created_at).getTime()) : (isCurrentState ? 'Current' : 'Unknown');
     var isExpanded = expandedPayloads.has(event.id || event.recordId);
