@@ -75,6 +75,7 @@
             user-select: none;
         }
         .sidebar-section-header:hover { color: #374151; }
+        .sidebar-section-header:active { color: #1f2937; background: #f3f4f6; transition: background-color 0.05s, color 0.05s; border-radius: 4px; }
         .sidebar-section-header svg { width: 12px; height: 12px; transition: transform 0.2s; }
         .sidebar-section-header.collapsed svg { transform: rotate(-90deg); }
         .sidebar-section-header .section-icon { opacity: 0.8; }
@@ -98,6 +99,7 @@
             position: relative;
         }
         .sidebar div.table-item:hover { background: #f3f4f6; color: #1f2937; }
+        .sidebar div.table-item:active { background: #e5e7eb; color: #1f2937; transition: background-color 0.05s, color 0.05s; }
         .sidebar div.table-item.active { background: #e5e7eb; color: #1f2937; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .sidebar div.table-item.active::before {
             content: '';
@@ -193,9 +195,17 @@
             background: #e5e7eb;
             color: #1f2937;
         }
+        .table-view-item:active {
+            background: #d1d5db;
+            color: #1f2937;
+            transition: background-color 0.05s, color 0.05s;
+        }
         .table-view-item.active {
             background: rgba(59, 130, 246, 0.15);
             color: #1d4ed8;
+        }
+        .table-view-item.active:active {
+            background: rgba(59, 130, 246, 0.25);
         }
         .table-view-item .view-icon {
             font-size: 12px;
@@ -1296,6 +1306,10 @@
         .sidebar div.table-item.events-item .table-icon svg { color: #d97706; }
         .sidebar div.table-item.events-item:hover {
             background: #f3f4f6;
+        }
+        .sidebar div.table-item.events-item:active {
+            background: rgba(139, 92, 246, 0.15);
+            transition: background-color 0.05s;
         }
         .sidebar div.table-item.events-item.active {
             background: rgba(139, 92, 246, 0.15);
