@@ -4184,27 +4184,45 @@ var SyncHistory = {
         this.notify();
     },
 
-    // Poll the DB to check for events since last known timestamp
+    // Poll the API for new events since last known timestamp.
+    // Uses a lightweight "last" query to check if any new events exist,
+    // then triggers a full incremental sync only when new data is available.
     async pollForUpdates() {
         if (this.isPolling || !API_KEY) return;
         this.isPolling = true;
         var pollStart = Date.now();
         try {
-            var result = await fetchPage(1, lastEventTimestamp);
-            var newCount = (result.events && result.events.length) || 0;
-            this.record({
-                type: 'poll',
-                result: newCount > 0 ? 'success' : 'no-change',
-                eventsFound: newCount,
-                duration: Date.now() - pollStart,
-                detail: newCount > 0
-                    ? 'Found ' + newCount + ' new event(s) waiting'
-                    : 'No new events since last sync'
-            });
+            // Lightweight check: fetch only the single most recent event
+            // If created_after is set, this tells us if anything new exists since our last sync
+            var hasNewEvents = false;
+            if (lastEventTimestamp) {
+                var peek = await fetchPage(1, lastEventTimestamp, { last: true });
+                hasNewEvents = peek.events && peek.events.length > 0;
+            } else {
+                // No lastEventTimestamp means we haven't synced yet - check for any events
+                var peek = await fetchPage(1, null, { last: true });
+                hasNewEvents = peek.events && peek.events.length > 0;
+            }
 
-            // If events found, trigger an incremental sync
-            if (newCount > 0) {
+            if (hasNewEvents) {
+                this.record({
+                    type: 'poll',
+                    result: 'success',
+                    eventsFound: 1,
+                    duration: Date.now() - pollStart,
+                    detail: 'New events detected since ' + (lastEventTimestamp || 'start') + ', syncing...'
+                });
+
+                // Trigger full incremental sync to fetch all new events with pagination
                 await incrementalSync();
+            } else {
+                this.record({
+                    type: 'poll',
+                    result: 'no-change',
+                    eventsFound: 0,
+                    duration: Date.now() - pollStart,
+                    detail: 'No new events since last sync'
+                });
             }
         } catch (err) {
             this.record({
@@ -6038,11 +6056,13 @@ function hideAuthScreen() {
 function showAuthScreen() {
     document.getElementById('auth-screen').classList.remove('hidden');
     if (pollInterval) clearInterval(pollInterval);
+    SyncHistory.stopPolling();
     initAuthScreen();
 }
 
 function logout() {
     if (pollInterval) clearInterval(pollInterval);
+    SyncHistory.stopPolling();
     API_KEY = null;
     SET_FILTER = null;
     // Clear saved credentials (both encrypted and plaintext)
@@ -8064,12 +8084,18 @@ async function fetchAllBySet(setType, onProgress) {
 
 // Fetch events using page-based pagination
 // API returns 2500 records per page with nextPage indicator
-// Optional createdAfter parameter for incremental sync (timestamp filtering)
-async function fetchPage(page, createdAfter) {
+// Supports aminoStream query parameters:
+//   page (int, min:1, default 1), per_page (int, min:1, max:10000, default 2500),
+//   created_after (timestamp), created_before (timestamp), last (bool - single most recent record)
+async function fetchPage(page, createdAfter, options) {
+    options = options || {};
     var params = [];
     if (API_KEY) params.push('apiKey=' + encodeURIComponent(API_KEY));
     if (page && page > 1) params.push('page=' + page);
     if (createdAfter) params.push('created_after=' + encodeURIComponent(createdAfter));
+    if (options.createdBefore) params.push('created_before=' + encodeURIComponent(options.createdBefore));
+    if (options.perPage) params.push('per_page=' + encodeURIComponent(options.perPage));
+    if (options.last) params.push('last=true');
 
     var url = API + (params.length > 0 ? '?' + params.join('&') : '');
 
@@ -8083,6 +8109,12 @@ async function fetchPage(page, createdAfter) {
 
     if (!res.ok) {
         throw new Error(data.message || data.error || 'HTTP ' + res.status);
+    }
+
+    // If 'last' was requested, API returns a single record instead of a paginated list
+    if (options.last) {
+        var singleEvent = Array.isArray(data) ? data[0] : (data.items ? data.items[0] : data);
+        return { events: singleEvent ? [singleEvent] : [], hasMore: false, nextPage: null };
     }
 
     // Handle paginated response format: { itemsReceived, curPage, nextPage, prevPage, offset, perPage, items }
@@ -8708,6 +8740,11 @@ async function init() {
 
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(incrementalSync, 60000);
+
+    // Start background polling for new events (lightweight 15s checks)
+    // This uses the 'last' query parameter to efficiently detect new events
+    // and triggers incremental sync only when new data is available
+    SyncHistory.startPolling();
 
     // Initialize sync toggle UI and only start if enabled
     initSyncToggle();
@@ -10051,6 +10088,9 @@ async function skipSetupAndUploadFile() {
             // Start incremental sync polling (but don't block on it)
             if (pollInterval) clearInterval(pollInterval);
             pollInterval = setInterval(incrementalSync, 60000);
+
+            // Start background polling for new events (lightweight 15s checks)
+            SyncHistory.startPolling();
 
             // Background: Save to IndexedDB for next visit (non-blocking)
             // This happens after the UI is ready, so user can start working immediately
