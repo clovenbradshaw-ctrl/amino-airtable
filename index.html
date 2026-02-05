@@ -2128,7 +2128,7 @@
         </div>
     </div>
 
-    <div id="auth-screen">
+    <div id="auth-screen" class="hidden">
         <div class="auth-box">
             <h2>Amino Viewer</h2>
             <p>Connect to your Amino event stream</p>
@@ -2679,7 +2679,7 @@ async function deriveKeyFromPassword(password, salt) {
         },
         passwordKey,
         { name: 'AES-GCM', length: 256 },
-        false,
+        true,
         ['encrypt', 'decrypt']
     );
 }
@@ -2859,7 +2859,7 @@ async function deriveKeyFromPasskey(prfOutput, salt) {
             },
             keyMaterial,
             { name: 'AES-GCM', length: 256 },
-            false,
+            true,
             ['encrypt', 'decrypt']
         );
     } else {
@@ -2910,6 +2910,41 @@ function getEncryptionConfig() {
 // Save encryption configuration
 function saveEncryptionConfig(config) {
     localStorage.setItem(ENCRYPTION_CONFIG_KEY, JSON.stringify(config));
+}
+
+// Session key persistence: store encryption key in sessionStorage to survive refresh
+var SESSION_KEY_STORAGE = 'amino_session_key';
+
+async function saveSessionKey(key) {
+    try {
+        var raw = await crypto.subtle.exportKey('raw', key);
+        sessionStorage.setItem(SESSION_KEY_STORAGE, arrayBufferToBase64(raw));
+    } catch (e) {
+        console.warn('Could not save session key:', e);
+    }
+}
+
+async function loadSessionKey() {
+    var stored = sessionStorage.getItem(SESSION_KEY_STORAGE);
+    if (!stored) return null;
+    try {
+        var raw = base64ToArrayBuffer(stored);
+        return await crypto.subtle.importKey(
+            'raw',
+            raw,
+            { name: 'AES-GCM', length: 256 },
+            true,
+            ['encrypt', 'decrypt']
+        );
+    } catch (e) {
+        console.warn('Could not restore session key:', e);
+        sessionStorage.removeItem(SESSION_KEY_STORAGE);
+        return null;
+    }
+}
+
+function clearSessionKey() {
+    sessionStorage.removeItem(SESSION_KEY_STORAGE);
 }
 
 // Show the unlock screen (setup or prompt mode)
@@ -3004,6 +3039,7 @@ async function setupEncryptionWithPassword() {
         });
 
         encryptionEnabled = true;
+        await saveSessionKey(encryptionKey);
         hideUnlockScreen();
         initAuthScreen();
     } catch (e) {
@@ -3060,6 +3096,7 @@ async function setupEncryptionWithPasskey() {
 
         encryptionEnabled = true;
         passkeyCredentialId = passkeyResult.credentialId;
+        await saveSessionKey(encryptionKey);
         hideUnlockScreen();
         initAuthScreen();
     } catch (e) {
@@ -3119,6 +3156,7 @@ async function unlockWithPassword() {
         }
 
         encryptionEnabled = true;
+        await saveSessionKey(encryptionKey);
         hideUnlockScreen();
         document.getElementById('unlock-password').value = '';
         initAuthScreen();
@@ -3164,6 +3202,7 @@ async function unlockWithPasskey() {
 
         encryptionEnabled = true;
         passkeyCredentialId = config.credentialId;
+        await saveSessionKey(encryptionKey);
         hideUnlockScreen();
         initAuthScreen();
     } catch (e) {
@@ -3304,6 +3343,21 @@ async function initEncryption() {
         encryptionEnabled = false;
         encryptionKey = null;
         return true;
+    }
+
+    // Check for session key (survives page refresh within same tab)
+    var sessionKey = await loadSessionKey();
+    if (sessionKey && config.verificationToken) {
+        try {
+            await decryptData(config.verificationToken, sessionKey);
+            // Session key is valid
+            encryptionKey = sessionKey;
+            encryptionEnabled = true;
+            return true;
+        } catch (e) {
+            // Session key is stale or invalid
+            clearSessionKey();
+        }
     }
 
     // User has encryption set up - show unlock screen
@@ -6292,17 +6346,18 @@ async function initAuthScreen() {
     }
 
     if (savedCredentials && savedCredentials.apiKey) {
+        // Auto-login without showing auth screen
         API_KEY = savedCredentials.apiKey;
         SET_FILTER = savedCredentials.setFilter || null;
 
-        infoEl.textContent = 'Reconnecting...';
         try {
             await init();
+            return; // Success - auth screen stays hidden
         } catch (err) {
             console.error('Auto-login failed:', err);
             API_KEY = null;
             SET_FILTER = null;
-            // Don't clear credentials - let user retry with pre-filled credentials
+            // Show auth screen with error so user can retry
             showAuthError('Connection failed. Click Connect to retry.');
             if (stats.count > 0) {
                 infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
@@ -6311,6 +6366,9 @@ async function initAuthScreen() {
             }
         }
     }
+
+    // No saved credentials or auto-login failed - show auth screen
+    document.getElementById('auth-screen').classList.remove('hidden');
 }
 
 async function clearLocalAndReset() {
@@ -6384,6 +6442,7 @@ function logout() {
     SET_FILTER = null;
     // Clear saved credentials (both encrypted and plaintext)
     clearEncryptedCredentials();
+    clearSessionKey();
     showAuthScreen();
 }
 
