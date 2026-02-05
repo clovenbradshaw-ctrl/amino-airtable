@@ -1430,6 +1430,8 @@
         .sync-poll-controls .btn-poll.primary:hover { background: #059669; }
         .sync-poll-controls .btn-poll:disabled { opacity: 0.5; cursor: not-allowed; }
 
+        .snapshot-export-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+
         .sync-activity-log {
             background: #1a1a2e; border-radius: 10px; padding: 16px; max-height: 300px; overflow-y: auto;
             font-family: "SF Mono", Monaco, Consolas, monospace; font-size: 12px; line-height: 1.6;
@@ -8839,6 +8841,41 @@ async function showSyncStatusView() {
     });
 }
 
+async function handleSnapshotExport() {
+    var btn = document.getElementById('snapshot-export-btn');
+    var resultEl = document.getElementById('snapshot-export-result');
+    if (!btn || !resultEl) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exporting...';
+    resultEl.textContent = '';
+
+    try {
+        var result = await AminoSync.downloadSnapshotAsAmo();
+        if (!result.blob) {
+            resultEl.textContent = 'No snapshots available to export.';
+            resultEl.style.color = '#f59e0b';
+        } else {
+            var sizeStr = result.stats.bytes < 1024
+                ? result.stats.bytes + ' B'
+                : result.stats.bytes < 1048576
+                    ? (result.stats.bytes / 1024).toFixed(1) + ' KB'
+                    : (result.stats.bytes / 1048576).toFixed(1) + ' MB';
+            resultEl.innerHTML = '<span style="color: #10b981;">&#10003;</span> ' +
+                result.stats.records.toLocaleString() + ' records across ' +
+                result.stats.tables + ' table' + (result.stats.tables !== 1 ? 's' : '') +
+                ' &middot; ' + sizeStr;
+            resultEl.style.color = '#d1d5db';
+        }
+    } catch (err) {
+        resultEl.textContent = 'Export failed: ' + (err.message || err);
+        resultEl.style.color = '#ef4444';
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export .amo Snapshot';
+}
+
 async function renderSyncStatusView() {
     var container = document.querySelector('.table-container');
     var stats = SyncHistory.getStats();
@@ -8907,6 +8944,17 @@ async function renderSyncStatusView() {
         html += '<button class="btn-poll" onclick="SyncHistory.startPolling(); renderSyncStatusView();">Start Auto-Poll</button>';
         html += '<span style="font-size: 12px; color: #6b7280;">Auto-poll is off</span>';
     }
+    html += '</div>';
+    html += '</div>';
+
+    // Snapshot Export
+    html += '<div class="sync-status-section">';
+    html += '<h3><span class="section-dot green"></span>Snapshot Export</h3>';
+    html += '<div class="snapshot-export-controls">';
+    html += '<button class="btn-poll primary snapshot-export-btn" id="snapshot-export-btn" onclick="handleSnapshotExport()">';
+    html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+    html += 'Export .amo Snapshot</button>';
+    html += '<span id="snapshot-export-result" style="font-size: 12px; color: #6b7280;"></span>';
     html += '</div>';
     html += '</div>';
 
