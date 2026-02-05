@@ -1451,7 +1451,7 @@
         .events-table .event-timestamp { font-size: 12px; color: #666; white-space: nowrap; }
         .events-table .event-set { font-family: "SF Mono", Monaco, monospace; font-size: 11px; color: #2d6cdf; background: #e8f0fe; padding: 2px 6px; border-radius: 4px; display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
         .events-table .event-record-id { font-family: "SF Mono", Monaco, monospace; font-size: 11px; color: #059669; background: #d1fae5; padding: 2px 6px; border-radius: 4px; display: inline-block; }
-        .events-table .event-type-badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
+        .events-table .event-type-badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
         .events-table .event-type-badge.data { background: #dbeafe; color: #1d4ed8; }
         .events-table .event-type-badge.INS { background: #d1fae5; color: #065f46; }
         .events-table .event-type-badge.ALT { background: #fef3c7; color: #92400e; }
@@ -3310,6 +3310,21 @@ async function initEncryption() {
 var META_TABLES = {};
 var META_FIELDS = {};
 var META_VIEWS = {};
+
+// Human-readable names for entity/event types
+var ENTITY_TYPE_NAMES = {
+    'data': 'Data',
+    'INS': 'Insert',
+    'ALT': 'Alter',
+    'NUL': 'Nullify',
+    'SYN': 'Sync',
+    'table': 'Table',
+    'field': 'Field',
+    'view': 'View',
+    'viewConfig': 'View Config',
+    'tableSettings': 'Table Settings',
+    'current': 'Current State'
+};
 
 var currentTable = null;
 var currentView = null; // Current view ID or null for "All Fields" default
@@ -9103,15 +9118,10 @@ async function renderEventsView() {
         html += '<label>Type:</label>';
         html += '<select onchange="setEventsTypeFilter(this.value)">';
         html += '<option value=""' + (!eventsTypeFilter ? ' selected' : '') + '>All Events</option>';
-        html += '<option value="current"' + (eventsTypeFilter === 'current' ? ' selected' : '') + '>All Records (Current State)</option>';
-        html += '<option value="INS"' + (eventsTypeFilter === 'INS' ? ' selected' : '') + '>INS (Insert)</option>';
-        html += '<option value="ALT"' + (eventsTypeFilter === 'ALT' ? ' selected' : '') + '>ALT (Alter)</option>';
-        html += '<option value="NUL"' + (eventsTypeFilter === 'NUL' ? ' selected' : '') + '>NUL (Nullify)</option>';
-        html += '<option value="SYN"' + (eventsTypeFilter === 'SYN' ? ' selected' : '') + '>SYN (Sync)</option>';
-        html += '<option value="table"' + (eventsTypeFilter === 'table' ? ' selected' : '') + '>Table Events</option>';
-        html += '<option value="field"' + (eventsTypeFilter === 'field' ? ' selected' : '') + '>Field Events</option>';
-        html += '<option value="view"' + (eventsTypeFilter === 'view' ? ' selected' : '') + '>View Events</option>';
-        html += '<option value="viewConfig"' + (eventsTypeFilter === 'viewConfig' ? ' selected' : '') + '>View Config Events</option>';
+        html += '<option value="current"' + (eventsTypeFilter === 'current' ? ' selected' : '') + '>All Records (' + ENTITY_TYPE_NAMES['current'] + ')</option>';
+        ['INS', 'ALT', 'NUL', 'SYN', 'table', 'field', 'view', 'viewConfig'].forEach(function(t) {
+            html += '<option value="' + t + '"' + (eventsTypeFilter === t ? ' selected' : '') + '>' + ENTITY_TYPE_NAMES[t] + '</option>';
+        });
         html += '</select>';
         html += '</div>';
 
@@ -9165,7 +9175,7 @@ async function renderEventsView() {
         html += '<thead><tr>';
         html += '<th style="width: 80px;">ID</th>';
         html += '<th style="width: 140px;">Timestamp</th>';
-        html += '<th style="width: 60px;">Type</th>';
+        html += '<th style="width: 90px;">Type</th>';
         html += '<th style="width: 140px;">Set</th>';
         html += '<th style="width: 130px;">Record ID</th>';
         html += '<th style="width: 140px;">Details</th>';
@@ -9380,7 +9390,7 @@ function renderEventRow(event, isNew) {
     }
 
     html += '<td><span class="event-timestamp">' + esc(timestamp) + '</span></td>';
-    html += '<td><span class="event-type-badge ' + eventType + '">' + esc(eventType) + '</span></td>';
+    html += '<td><span class="event-type-badge ' + eventType + '">' + esc(ENTITY_TYPE_NAMES[eventType] || eventType) + '</span></td>';
     html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(event.set || '') + '</span></td>';
     html += '<td><span class="event-record-id">' + esc(event.recordId || '') + '</span></td>';
 
