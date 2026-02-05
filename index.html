@@ -2625,6 +2625,9 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@msgpack/msgpack@3.1.2/dist.umd/msgpack.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
     <script>
 var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
 var DB_NAME = 'aminostream';
@@ -3737,6 +3740,7 @@ var AminoSync = {
     },
 
     // Bootstrap from snapshot file (for new clients)
+    // Supports .amo binary format, gzipped JSON, and plain JSON
     async bootstrapFromSnapshot(snapshotUrl) {
         try {
             var response = await fetch(snapshotUrl);
@@ -3744,9 +3748,26 @@ var AminoSync = {
                 throw new Error('Bootstrap failed: HTTP ' + response.status);
             }
 
-            var records = await response.json();
+            var buffer = await response.arrayBuffer();
+            var format = AmoFormat.detectFormat(buffer);
+            var records;
+
+            if (format === 'amo') {
+                // Binary .amo format
+                var amo = AmoFormat.read(buffer);
+                records = AmoFormat.toSnapshotRecords(amo.tables, amo.cursor);
+            } else if (format === 'json-gz') {
+                // Gzipped JSON
+                var decompressed = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
+                records = JSON.parse(decompressed);
+            } else {
+                // Plain JSON
+                var text = new TextDecoder().decode(buffer);
+                records = JSON.parse(text);
+            }
+
             if (!records || records.length === 0) {
-                return { records: 0, lastEvent: 0 };
+                return { records: 0, lastEvent: 0, format: format };
             }
 
             if (db && db.objectStoreNames.contains('snapshot')) {
@@ -3767,10 +3788,10 @@ var AminoSync = {
                 });
 
                 await this.setLastSnapshotEventId(maxEventId);
-                return { records: records.length, lastEvent: maxEventId };
+                return { records: records.length, lastEvent: maxEventId, format: format };
             }
 
-            return { records: 0, lastEvent: 0 };
+            return { records: 0, lastEvent: 0, format: format };
         } catch (err) {
             console.error('Bootstrap error:', err);
             throw err;
@@ -3791,6 +3812,57 @@ var AminoSync = {
             return null;
         }
         return currentData;
+    },
+
+    // Export all local snapshots as a .amo binary file
+    // Returns: { blob: Blob, filename: string, stats: { tables, records, bytes } }
+    async exportSnapshotAsAmo() {
+        var snapshots = await this.getAllLocalSnapshots();
+        if (snapshots.length === 0) {
+            return { blob: null, filename: null, stats: { tables: 0, records: 0, bytes: 0 } };
+        }
+
+        var binary = AmoFormat.produce(snapshots);
+        var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
+
+        // Count unique tables
+        var tableSet = {};
+        for (var i = 0; i < snapshots.length; i++) {
+            tableSet[snapshots[i].source_table] = true;
+        }
+
+        var timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        var filename = 'amino-snapshot-' + timestamp + '.amo';
+
+        return {
+            blob: blob,
+            filename: filename,
+            stats: {
+                tables: Object.keys(tableSet).length,
+                records: snapshots.length,
+                bytes: binary.length
+            }
+        };
+    },
+
+    // Download .amo snapshot file via browser
+    async downloadSnapshotAsAmo() {
+        var result = await this.exportSnapshotAsAmo();
+        if (!result.blob) {
+            console.warn('No snapshots to export');
+            return result;
+        }
+
+        var url = URL.createObjectURL(result.blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = result.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        return result;
     },
 
     // Get all local snapshots from IndexedDB
@@ -4044,6 +4116,158 @@ var AminoSync = {
             clearInterval(this.verifyInterval);
             this.verifyInterval = null;
         }
+    }
+};
+
+// ============ AmoFormat - Binary Snapshot Format (.amo) ============
+// Compact binary representation using MessagePack + gzip with schema deduplication.
+// Extension: .amo | MIME: application/x-amino-snapshot
+
+var AmoFormat = {
+    MAGIC: 'AMO1',
+    VERSION: 1,
+    HEADER_SIZE: 8,
+
+    // Produce a .amo binary snapshot from snapshot records
+    // snapshotRecords: array of { record_id, source_table, data: { field: value }, last_amino_event }
+    // Returns: Uint8Array
+    produce: function(snapshotRecords) {
+        var schema = {};
+        var records = {};
+        var maxCursor = 0;
+
+        // First pass: collect all column names per table
+        for (var i = 0; i < snapshotRecords.length; i++) {
+            var rec = snapshotRecords[i];
+            var table = rec.source_table;
+            if (rec.last_amino_event > maxCursor) maxCursor = rec.last_amino_event;
+
+            if (!schema[table]) {
+                schema[table] = [];
+                records[table] = [];
+            }
+            var keys = Object.keys(rec.data || {});
+            for (var k = 0; k < keys.length; k++) {
+                if (schema[table].indexOf(keys[k]) === -1) {
+                    schema[table].push(keys[k]);
+                }
+            }
+        }
+
+        // Second pass: convert records to positional arrays
+        for (var j = 0; j < snapshotRecords.length; j++) {
+            var r = snapshotRecords[j];
+            var cols = schema[r.source_table];
+            var row = [];
+            for (var c = 0; c < cols.length; c++) {
+                var val = r.data ? r.data[cols[c]] : null;
+                row.push(val !== undefined ? val : null);
+            }
+            records[r.source_table].push(row);
+        }
+
+        // Encode payload with MessagePack
+        var payload = { v: 1, ts: Math.floor(Date.now() / 1000), cursor: maxCursor, schema: schema, records: records };
+        var encoded = MessagePack.encode(payload);
+
+        // Compress with gzip
+        var compressed = pako.gzipSync(encoded);
+
+        // Prepend 8-byte header: "AMO1" + version(1) + flags(0) + reserved(0,0)
+        var header = new Uint8Array([0x41, 0x4D, 0x4F, 0x31, 0x01, 0x00, 0x00, 0x00]);
+        var out = new Uint8Array(8 + compressed.length);
+        out.set(header);
+        out.set(compressed, 8);
+        return out;
+    },
+
+    // Read a .amo binary snapshot
+    // arrayBuffer: ArrayBuffer or Uint8Array of the .amo file
+    // Returns: { tables: { tableName: [{ field: value, ... }, ...] }, cursor, ts }
+    read: function(arrayBuffer) {
+        var bytes = new Uint8Array(arrayBuffer);
+
+        // Validate header
+        if (bytes.length < this.HEADER_SIZE) {
+            throw new Error('File too small to be a .amo file');
+        }
+        var magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+        if (magic !== this.MAGIC) {
+            throw new Error('Not a .amo file (bad magic bytes)');
+        }
+        if (bytes[4] !== this.VERSION) {
+            throw new Error('Unknown .amo version: ' + bytes[4]);
+        }
+        if (bytes[5] !== 0x00) {
+            throw new Error('Unsupported .amo flags: 0x' + bytes[5].toString(16));
+        }
+
+        // Decompress + decode
+        var compressed = bytes.slice(this.HEADER_SIZE);
+        var decompressed = pako.ungzip(compressed);
+        var payload = MessagePack.decode(decompressed);
+
+        // Re-hydrate positional arrays back into objects
+        var tables = {};
+        var schemaEntries = Object.entries(payload.schema);
+        for (var i = 0; i < schemaEntries.length; i++) {
+            var tableName = schemaEntries[i][0];
+            var columns = schemaEntries[i][1];
+            var rows = payload.records[tableName] || [];
+            tables[tableName] = [];
+            for (var j = 0; j < rows.length; j++) {
+                var obj = {};
+                for (var k = 0; k < columns.length; k++) {
+                    obj[columns[k]] = (k < rows[j].length) ? (rows[j][k] !== undefined ? rows[j][k] : null) : null;
+                }
+                tables[tableName].push(obj);
+            }
+        }
+
+        return { tables: tables, cursor: payload.cursor, ts: payload.ts };
+    },
+
+    // Detect the format of a snapshot buffer
+    // Returns: 'amo' | 'json-gz' | 'json'
+    detectFormat: function(buffer) {
+        var b = new Uint8Array(buffer.slice(0, 4));
+        if (b[0] === 0x41 && b[1] === 0x4D && b[2] === 0x4F && b[3] === 0x31) return 'amo';
+        if (b[0] === 0x1F && b[1] === 0x8B) return 'json-gz';
+        if (b[0] === 0x7B || b[0] === 0x5B) return 'json';
+        throw new Error('Unknown snapshot format');
+    },
+
+    // Convert re-hydrated tables back to flat snapshot records for IndexedDB
+    // tables: { tableName: [{ field: value }, ...] }
+    // cursor: the cursor value from the .amo file
+    // Returns: array of { record_id, source_table, data, last_amino_event }
+    toSnapshotRecords: function(tables, cursor) {
+        var records = [];
+        var tableNames = Object.keys(tables);
+        for (var i = 0; i < tableNames.length; i++) {
+            var tableName = tableNames[i];
+            var rows = tables[tableName];
+            for (var j = 0; j < rows.length; j++) {
+                var row = rows[j];
+                var recordId = row.record_id;
+                if (!recordId) continue;
+                // Build data object excluding record_id itself
+                var data = {};
+                var keys = Object.keys(row);
+                for (var k = 0; k < keys.length; k++) {
+                    if (keys[k] !== 'record_id') {
+                        data[keys[k]] = row[keys[k]];
+                    }
+                }
+                records.push({
+                    record_id: recordId,
+                    source_table: tableName,
+                    data: data,
+                    last_amino_event: cursor
+                });
+            }
+        }
+        return records;
     }
 };
 
