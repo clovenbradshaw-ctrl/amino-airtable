@@ -2135,6 +2135,12 @@
             <input type="text" id="set-filter-input" placeholder="Filter by set (optional)" autocomplete="off">
             <button id="auth-submit">Connect</button>
             <button id="auth-clear" class="secondary hidden">Clear Local Data</button>
+            <div class="auth-divider" style="display: flex; align-items: center; gap: 12px; margin: 16px 0 12px;">
+                <div style="flex: 1; height: 1px; background: #e0e0e0;"></div>
+                <span style="font-size: 12px; color: #999;">or</span>
+                <div style="flex: 1; height: 1px; background: #e0e0e0;"></div>
+            </div>
+            <button id="auth-skip-upload" class="secondary" onclick="skipAuthAndUploadCSV()">Skip - Upload CSV Only</button>
             <div id="auth-info" class="auth-info"></div>
         </div>
     </div>
@@ -2195,6 +2201,19 @@
                     Skip &amp; Upload CSV File
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- Connect API Key Modal -->
+    <div id="connect-api-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center;">
+        <div style="background: #fff; border-radius: 8px; padding: 24px; width: 360px; box-shadow: 0 4px 24px rgba(0,0,0,0.3);">
+            <h3 style="font-size: 16px; margin-bottom: 6px; color: #333;">Connect API Key</h3>
+            <p style="font-size: 13px; color: #666; margin-bottom: 16px;">Add your API key to enable syncing with the server.</p>
+            <div id="connect-api-error" style="color: #dc3545; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: #f8d7da; border-radius: 4px; display: none;"></div>
+            <input type="password" id="connect-api-key-input" placeholder="API Key" autocomplete="off" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; box-sizing: border-box;">
+            <input type="text" id="connect-api-set-filter" placeholder="Filter by set (optional)" autocomplete="off" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; box-sizing: border-box;">
+            <button id="connect-api-submit" onclick="submitConnectApi()" style="width: 100%; padding: 10px; background: #2d6cdf; border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; margin-bottom: 8px; font-weight: 500;">Connect</button>
+            <button onclick="hideConnectApiModal()" style="width: 100%; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; color: #333; font-size: 14px; cursor: pointer; font-weight: 500;">Cancel</button>
         </div>
     </div>
 
@@ -2274,6 +2293,7 @@
                 <button class="view-save-btn" id="manual-save-btn" onclick="saveViewToBackendNow()" style="display: none;">Save Now</button>
 
                 <button class="btn" onclick="manualSync()">Sync</button>
+                <button class="btn" id="connect-api-btn" onclick="showConnectApiModal()" style="display: none; background: #2d6cdf; color: #fff;">Connect API</button>
                 <button class="btn" onclick="logout()">Logout</button>
             </div>
 
@@ -3699,6 +3719,7 @@ var AminoSync = {
 
     // Incremental sync from snapshot endpoint
     async syncFromSnapshot() {
+        if (!API_KEY) return { updated: 0 };
         var lastEventId = await this.getLastSnapshotEventId();
 
         try {
@@ -4684,7 +4705,7 @@ function toggleSnapshotSync() {
 
     if (snapshotSyncEnabled) {
         toggle.classList.add('active');
-        PassiveSnapshotSync.start();
+        if (API_KEY) PassiveSnapshotSync.start();
         console.log('[SnapshotSync] Enabled');
     } else {
         toggle.classList.remove('active');
@@ -5716,7 +5737,7 @@ function updateSaveIndicator(state) {
 
 // Save view changes to backend
 async function saveViewToBackend() {
-    if (!viewDirtyState.isDirty) return;
+    if (!viewDirtyState.isDirty || !API_KEY) return;
 
     var { tableId, viewId, changes } = viewDirtyState.pendingChanges;
     if (!tableId || !viewId) return;
@@ -5892,7 +5913,7 @@ function markTableSettingsDirty() {
 
 // Save table settings to backend
 async function saveTableSettings() {
-    if (!tableSettingsDirty) return;
+    if (!tableSettingsDirty || !API_KEY) return;
 
     var tableSettingsData = {
         _set: 'tableSettings',
@@ -6264,6 +6285,8 @@ document.getElementById('auth-submit').onclick = tryAuth;
 document.getElementById('api-key-input').onkeydown = (e) => { if (e.key === 'Enter') tryAuth(); };
 document.getElementById('set-filter-input').onkeydown = (e) => { if (e.key === 'Enter') tryAuth(); };
 document.getElementById('auth-clear').onclick = clearLocalAndReset;
+document.getElementById('connect-api-key-input').onkeydown = (e) => { if (e.key === 'Enter') submitConnectApi(); };
+document.getElementById('connect-api-set-filter').onkeydown = (e) => { if (e.key === 'Enter') submitConnectApi(); };
 
 async function initAuthScreen() {
     var stats = await getLocalStats();
@@ -6386,8 +6409,128 @@ function logout() {
 }
 
 async function manualSync() {
-    if (!API_KEY) return;
+    if (!API_KEY) {
+        showConnectApiModal();
+        return;
+    }
     await incrementalSync();
+}
+
+// Skip auth and go directly to CSV upload
+async function skipAuthAndUploadCSV() {
+    // Hide auth screen and show the app without an API key
+    hideAuthScreen();
+
+    // Initialize the database and app state
+    META_TABLES = {};
+    META_FIELDS = {};
+    META_VIEWS = {};
+    TABLE_SETTINGS = { tables: {}, tableOrder: [], views: {} };
+    currentTable = null;
+    currentPage = 0;
+    currentRecordIds = [];
+    originalRecordIds = [];
+    totalRecords = 0;
+    lastEventTimestamp = null;
+
+    loadSidebarState();
+    initSidebarSearch();
+
+    db = await openDB();
+    appOpenedEventId = await getMaxEventId();
+
+    // Load any existing local data
+    var tables = await getAllTables();
+    var fields = await getAllFields();
+    var views = await getAllViews();
+
+    tables.forEach(t => META_TABLES[t.tableId] = t);
+    fields.forEach(f => {
+        if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+        META_FIELDS[f.tableId][f.fieldId] = f;
+    });
+    views.forEach(v => {
+        if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+        META_VIEWS[v.tableId][v.viewId] = v;
+    });
+
+    await loadTableSettings();
+    updateConnectApiButton();
+
+    // Trigger the CSV file upload
+    skipSetupAndUploadFile();
+}
+
+// Show/hide the Connect API button based on API_KEY state
+function updateConnectApiButton() {
+    var btn = document.getElementById('connect-api-btn');
+    if (btn) {
+        btn.style.display = API_KEY ? 'none' : '';
+    }
+}
+
+// Connect API modal functions
+function showConnectApiModal() {
+    var modal = document.getElementById('connect-api-modal');
+    modal.style.display = 'flex';
+    document.getElementById('connect-api-key-input').value = '';
+    document.getElementById('connect-api-set-filter').value = '';
+    document.getElementById('connect-api-error').style.display = 'none';
+    document.getElementById('connect-api-key-input').focus();
+}
+
+function hideConnectApiModal() {
+    document.getElementById('connect-api-modal').style.display = 'none';
+}
+
+async function submitConnectApi() {
+    var key = document.getElementById('connect-api-key-input').value.trim();
+    if (!key) {
+        var errEl = document.getElementById('connect-api-error');
+        errEl.textContent = 'Please enter an API key';
+        errEl.style.display = 'block';
+        return;
+    }
+
+    var btn = document.getElementById('connect-api-submit');
+    btn.textContent = 'Connecting...';
+    btn.disabled = true;
+    document.getElementById('connect-api-error').style.display = 'none';
+
+    API_KEY = key;
+    SET_FILTER = document.getElementById('connect-api-set-filter').value.trim() || null;
+
+    try {
+        // Test the connection with a lightweight check
+        var testResult = await fetchPage(1, null, { last: true });
+
+        // Save credentials
+        await saveEncryptedCredentials(API_KEY, SET_FILTER);
+
+        // Hide modal and update UI
+        hideConnectApiModal();
+        updateConnectApiButton();
+
+        // Start syncing
+        updateStatus('Connected! Syncing...', false, null, null);
+        await incrementalSync();
+
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(incrementalSync, 60000);
+        SyncHistory.startPolling();
+
+        updateStatus('Up to date', true, null, null);
+    } catch (err) {
+        console.error('Connect API failed:', err);
+        var errEl = document.getElementById('connect-api-error');
+        errEl.textContent = 'Connection failed: ' + err.message;
+        errEl.style.display = 'block';
+        API_KEY = null;
+        SET_FILTER = null;
+    }
+
+    btn.textContent = 'Connect';
+    btn.disabled = false;
 }
 
 // ============ Data Processing ============
@@ -7282,6 +7425,7 @@ async function deleteViewFolder(tableId, folderId, event) {
 
 // Save folder to backend
 async function saveFolderToBackend(folder, operator) {
+    if (!API_KEY) return;
     var payload = {
         uuid: crypto.randomUUID(),
         recordId: folder.folderId,
@@ -8502,6 +8646,7 @@ async function fetchPage(page, createdAfter, options) {
 }
 
 async function fullSync() {
+    if (!API_KEY) return;
     var eventsLoaded = 0;
     var tablesFound = 0;
     var fieldsFound = 0;
@@ -8737,6 +8882,7 @@ async function fullSync() {
 }
 
 async function incrementalSync() {
+    if (!API_KEY) return;
     var syncStartTime = Date.now();
     try {
         // Show syncing indicator
@@ -9103,31 +9249,38 @@ async function init() {
         }
 
         lastEventTimestamp = storedLastTimestamp || null;
-        await incrementalSync();
-    } else {
+        if (API_KEY) await incrementalSync();
+    } else if (API_KEY) {
         updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
         await renderSidebar();
         await fullSync();
         await renderSidebar();
+    } else {
+        // No API key and no local data - just show empty state
+        updateStatus('Offline mode - upload CSV or add API key', true, null, null);
+        await renderSidebar();
     }
 
-    updateStatus('Up to date', true, null, null);
+    updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
+    updateConnectApiButton();
 
     // Start the refresh indicator countdown
     lastSyncTime = Date.now();
     startRefreshCountdown();
 
-    if (pollInterval) clearInterval(pollInterval);
-    pollInterval = setInterval(incrementalSync, 60000);
+    if (API_KEY) {
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(incrementalSync, 60000);
 
-    // Start background polling for new events (lightweight 15s checks)
-    // This uses the 'last' query parameter to efficiently detect new events
-    // and triggers incremental sync only when new data is available
-    SyncHistory.startPolling();
+        // Start background polling for new events (lightweight 15s checks)
+        // This uses the 'last' query parameter to efficiently detect new events
+        // and triggers incremental sync only when new data is available
+        SyncHistory.startPolling();
+    }
 
     // Initialize sync toggle UI and only start if enabled
     initSyncToggle();
-    if (snapshotSyncEnabled) {
+    if (snapshotSyncEnabled && API_KEY) {
         PassiveSnapshotSync.start();
     }
 }
@@ -10488,18 +10641,22 @@ async function skipSetupAndUploadFile() {
             updateLoadingOverlay('Import complete!', events.length.toLocaleString() + ' events loaded', 100, tablesCount, fieldsCount, recordsCount, '');
             setTimeout(hideLoadingOverlay, 300);
 
-            updateStatus('Up to date', true, null, null);
+            updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
 
             // Start the refresh indicator countdown
             lastSyncTime = Date.now();
             startRefreshCountdown();
 
             // Start incremental sync polling (but don't block on it)
-            if (pollInterval) clearInterval(pollInterval);
-            pollInterval = setInterval(incrementalSync, 60000);
+            if (API_KEY) {
+                if (pollInterval) clearInterval(pollInterval);
+                pollInterval = setInterval(incrementalSync, 60000);
 
-            // Start background polling for new events (lightweight 15s checks)
-            SyncHistory.startPolling();
+                // Start background polling for new events (lightweight 15s checks)
+                SyncHistory.startPolling();
+            }
+
+            updateConnectApiButton();
 
             // Background: Save to IndexedDB for next visit (non-blocking)
             // This happens after the UI is ready, so user can start working immediately
@@ -12693,6 +12850,7 @@ async function deleteWorkspace(workspaceId) {
 
 // Save workspace to backend
 async function saveWorkspaceToBackend(workspace, operator) {
+    if (!API_KEY) return;
     var payload = {
         uuid: crypto.randomUUID(),
         recordId: workspace.workspaceId,
