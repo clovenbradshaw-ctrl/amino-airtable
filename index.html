@@ -3893,10 +3893,20 @@ var AminoSync = {
 
                 var pfields = payload.fields || {};
 
-                if (event.operator === 'INS') {
+                // Default first ALT as INS: if state is empty and operator is ALT, treat as INS
+                var effectiveOp = event.operator;
+                if (effectiveOp === 'ALT' && state !== null && Object.keys(state).length === 0) {
+                    effectiveOp = 'INS';
+                    // Promote ALT fields to INS for consistent handling
+                    if (!pfields.INS && pfields.ALT) {
+                        pfields = { INS: pfields.ALT, NUL: pfields.NUL };
+                    }
+                }
+
+                if (effectiveOp === 'INS') {
                     // Insert: initialize state
                     state = pfields.INS || payload.context?.data || {};
-                } else if (event.operator === 'ALT') {
+                } else if (effectiveOp === 'ALT') {
                     // Alter: merge changes
                     if (pfields.ALT) {
                         Object.assign(state, pfields.ALT);
@@ -4786,8 +4796,8 @@ function getAllRawEventsNoPagination() {
 }
 
 // Memory-efficient paginated events retrieval using IndexedDB cursor
-function getRawEventsPaginated(offset, limit) {
-    return new Promise((resolve, reject) => {
+async function getRawEventsPaginated(offset, limit) {
+    var results = await new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var store = tx.objectStore('events');
         var results = [];
@@ -4813,6 +4823,12 @@ function getRawEventsPaginated(offset, limit) {
         };
         req.onerror = () => reject(req.error);
     });
+
+    // Decrypt events if needed
+    if (encryptionEnabled && encryptionKey) {
+        return Promise.all(results.map(e => decryptEventFromStorage(e)));
+    }
+    return results;
 }
 
 // Get total count of raw events
@@ -6415,6 +6431,12 @@ async function processEvents(events) {
             }
 
             var state = tableDataMap[tableId][recordId];
+
+            // Default first ALT as INS: if record state is empty (new record) and
+            // there's no INS but there IS ALT, promote ALT to INS
+            if (Object.keys(state).length === 0 && !pfields.INS && pfields.ALT) {
+                pfields = { INS: pfields.ALT, NUL: pfields.NUL };
+            }
 
             // Capture field history for INS (insert/create)
             if (pfields.INS) {
@@ -8122,6 +8144,16 @@ async function fetchPage(page, createdAfter, options) {
     // API returns nextPage as number if more pages exist, null otherwise
     var hasMore = data.nextPage != null;
     var nextPage = data.nextPage || null;
+
+    // Normalize event fields: API may return payload under alternative field names
+    for (var i = 0; i < events.length; i++) {
+        var ev = events[i];
+        if (ev && ev.payload === undefined) {
+            // Check for alternative payload field names from Xano/API
+            if (ev._payload !== undefined) { ev.payload = ev._payload; delete ev._payload; }
+            else if (ev.event_payload !== undefined) { ev.payload = ev.event_payload; delete ev.event_payload; }
+        }
+    }
 
     return { events, hasMore, nextPage };
 }
@@ -10142,6 +10174,11 @@ async function viewRecordAtPointInTime(eventId, recordId, set) {
             if (!payload || !payload.fields) continue;
 
             var fields = payload.fields;
+
+            // Default first ALT as INS if record state is empty and no INS exists
+            if (Object.keys(recordState).length === 0 && !fields.INS && fields.ALT) {
+                fields = { INS: fields.ALT, NUL: fields.NUL };
+            }
 
             // Apply INS (insert)
             if (fields.INS) {
