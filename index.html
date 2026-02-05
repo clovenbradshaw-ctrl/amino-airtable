@@ -9391,7 +9391,9 @@ function renderEventRow(event, isNew) {
 
     html += '<td><span class="event-timestamp">' + esc(timestamp) + '</span></td>';
     html += '<td><span class="event-type-badge ' + eventType + '">' + esc(ENTITY_TYPE_NAMES[eventType] || eventType) + '</span></td>';
-    html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(event.set || '') + '</span></td>';
+    var setTableId = (event.set || '').replace('airtable:', '');
+    var setDisplayName = (META_TABLES[setTableId] && META_TABLES[setTableId].tableName) || event.set || '';
+    html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(setDisplayName) + '</span></td>';
     html += '<td><span class="event-record-id">' + esc(event.recordId || '') + '</span></td>';
 
     // Details column - show field operation types and counts
