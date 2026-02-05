@@ -4422,9 +4422,23 @@ var SyncHistory = {
     maxEntries: 200,
     entries: [],
     pollInterval: null,
-    POLL_INTERVAL: 15000, // 15 seconds - poll DB for new events
+    POLL_INTERVAL: 15000, // 15 seconds - base poll interval
+    MAX_POLL_INTERVAL: 300000, // 5 minutes - max backoff cap
     isPolling: false,
+    consecutiveFailures: 0,
+    currentPollInterval: 15000, // tracks the active interval (may be backed off)
     listeners: [],
+
+    // Calculate next poll interval with exponential backoff + jitter
+    getBackoffInterval() {
+        if (this.consecutiveFailures === 0) return this.POLL_INTERVAL;
+        // Exponential backoff: base * 2^failures, capped at MAX_POLL_INTERVAL
+        var exponential = this.POLL_INTERVAL * Math.pow(2, this.consecutiveFailures);
+        var capped = Math.min(exponential, this.MAX_POLL_INTERVAL);
+        // Add jitter: +/- 20% to avoid thundering herd
+        var jitter = capped * 0.2 * (Math.random() * 2 - 1);
+        return Math.round(capped + jitter);
+    },
 
     // Record a sync operation
     record(entry) {
@@ -4465,6 +4479,19 @@ var SyncHistory = {
                 hasNewEvents = peek.events && peek.events.length > 0;
             }
 
+            // Poll succeeded - reset backoff state
+            if (this.consecutiveFailures > 0) {
+                var wasBackedOff = this.consecutiveFailures;
+                this.consecutiveFailures = 0;
+                this.currentPollInterval = this.POLL_INTERVAL;
+                this.record({
+                    type: 'poll',
+                    result: 'success',
+                    duration: Date.now() - pollStart,
+                    detail: 'Server recovered after ' + wasBackedOff + ' failure(s), resuming normal ' + (this.POLL_INTERVAL / 1000) + 's polling'
+                });
+            }
+
             if (hasNewEvents) {
                 this.record({
                     type: 'poll',
@@ -4486,30 +4513,51 @@ var SyncHistory = {
                 });
             }
         } catch (err) {
+            this.consecutiveFailures++;
+            var nextInterval = this.getBackoffInterval();
+            this.currentPollInterval = nextInterval;
             this.record({
                 type: 'poll',
                 result: 'error',
                 duration: Date.now() - pollStart,
                 error: err.message,
-                detail: 'Poll failed: ' + err.message
+                detail: 'Poll failed: ' + err.message + ' (failure ' + this.consecutiveFailures + ', next retry in ' + Math.round(nextInterval / 1000) + 's)'
             });
         } finally {
             this.isPolling = false;
+            // If auto-polling is active, reschedule the next poll with the current interval
+            if (this.pollInterval) {
+                this.scheduleNextPoll();
+            }
         }
+    },
+
+    // Schedule the next poll using setTimeout (allows dynamic interval changes)
+    scheduleNextPoll() {
+        if (this.pollInterval) {
+            clearTimeout(this.pollInterval);
+        }
+        var interval = this.consecutiveFailures > 0 ? this.currentPollInterval : this.POLL_INTERVAL;
+        this.currentPollInterval = interval;
+        this.pollInterval = setTimeout(() => this.pollForUpdates(), interval);
     },
 
     // Start background polling
     startPolling() {
         if (this.pollInterval) return;
-        this.pollInterval = setInterval(() => this.pollForUpdates(), this.POLL_INTERVAL);
+        this.consecutiveFailures = 0;
+        this.currentPollInterval = this.POLL_INTERVAL;
+        this.scheduleNextPoll();
         this.record({ type: 'poll', result: 'no-change', detail: 'Background polling started (' + (this.POLL_INTERVAL / 1000) + 's interval)' });
     },
 
     // Stop background polling
     stopPolling() {
         if (this.pollInterval) {
-            clearInterval(this.pollInterval);
+            clearTimeout(this.pollInterval);
             this.pollInterval = null;
+            this.consecutiveFailures = 0;
+            this.currentPollInterval = this.POLL_INTERVAL;
             this.record({ type: 'poll', result: 'no-change', detail: 'Background polling stopped' });
         }
     },
@@ -8895,14 +8943,18 @@ async function renderSyncStatusView() {
 
     // Polling controls
     html += '<div class="sync-status-section">';
-    html += '<h3><span class="section-dot ' + (SyncHistory.pollInterval ? 'green' : 'amber') + '"></span>Database Polling</h3>';
+    html += '<h3><span class="section-dot ' + (SyncHistory.pollInterval ? (SyncHistory.consecutiveFailures > 0 ? 'red' : 'green') : 'amber') + '"></span>Database Polling</h3>';
     html += '<div class="sync-poll-controls">';
     html += '<button class="btn-poll primary" onclick="SyncHistory.pollForUpdates()" ' + (SyncHistory.isPolling ? 'disabled' : '') + '>';
     html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>';
     html += 'Poll Now</button>';
     if (SyncHistory.pollInterval) {
         html += '<button class="btn-poll" onclick="SyncHistory.stopPolling(); renderSyncStatusView();">Stop Auto-Poll</button>';
-        html += '<span style="font-size: 12px; color: #6b7280;">Polling every ' + (SyncHistory.POLL_INTERVAL / 1000) + 's</span>';
+        if (SyncHistory.consecutiveFailures > 0) {
+            html += '<span style="font-size: 12px; color: #ef4444;">Backing off: ' + Math.round(SyncHistory.currentPollInterval / 1000) + 's interval (' + SyncHistory.consecutiveFailures + ' consecutive failure' + (SyncHistory.consecutiveFailures > 1 ? 's' : '') + ')</span>';
+        } else {
+            html += '<span style="font-size: 12px; color: #6b7280;">Polling every ' + (SyncHistory.POLL_INTERVAL / 1000) + 's</span>';
+        }
     } else {
         html += '<button class="btn-poll" onclick="SyncHistory.startPolling(); renderSyncStatusView();">Start Auto-Poll</button>';
         html += '<span style="font-size: 12px; color: #6b7280;">Auto-poll is off</span>';
