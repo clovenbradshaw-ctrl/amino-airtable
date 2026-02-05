@@ -9331,6 +9331,44 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
             await saveBatch(tables, fields, views, dataRecords);
         }
 
+        // Phase 4: Build and save field history from raw events
+        // Group events by tableId and recordId, then build history for each record
+        // Only process data events (set starts with 'airtable:')
+        var eventsByTableAndRecord = {};
+        for (var i = 0; i < events.length; i++) {
+            var evt = events[i];
+            if (evt.recordId && evt.set && evt.set.startsWith('airtable:')) {
+                var tableId = evt.set.replace('airtable:', '');
+                var key = tableId + '|' + evt.recordId;
+                if (!eventsByTableAndRecord[key]) {
+                    eventsByTableAndRecord[key] = { tableId: tableId, recordId: evt.recordId, events: [] };
+                }
+                eventsByTableAndRecord[key].events.push(evt);
+            }
+        }
+
+        var allFieldHistoryEntries = [];
+        var recordKeys = Object.keys(eventsByTableAndRecord);
+        for (var k = 0; k < recordKeys.length; k++) {
+            var group = eventsByTableAndRecord[recordKeys[k]];
+            var historyEntries = buildFieldHistoryFromRawEvents(group.tableId, group.recordId, group.events);
+            allFieldHistoryEntries = allFieldHistoryEntries.concat(historyEntries);
+
+            // Yield periodically to keep UI responsive
+            if (k % 500 === 0 && k > 0) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+        }
+
+        // Save field history in batches
+        if (allFieldHistoryEntries.length > 0) {
+            for (var h = 0; h < allFieldHistoryEntries.length; h += batchSize) {
+                var historyBatch = allFieldHistoryEntries.slice(h, h + batchSize);
+                await saveFieldHistory(historyBatch);
+            }
+            console.log('Saved ' + allFieldHistoryEntries.length + ' field history entries');
+        }
+
         // Update the last event timestamp in IndexedDB
         var maxId = events.reduce(function(max, e) { return Math.max(max, e.id); }, 0);
         var lastEvent = events.find(function(e) { return e.id === maxId; });
