@@ -258,6 +258,33 @@
         .sync-toggle-knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: left 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
         .sync-toggle.active .sync-toggle-knob { left: 16px; }
 
+        /* Sync Status Feed */
+        .sync-feed-btn { background: none; border: none; padding: 2px 6px; cursor: pointer; font-size: 11px; color: #666; border-radius: 3px; margin-left: 4px; }
+        .sync-feed-btn:hover { background: #e8e8e8; color: #333; }
+        .sync-feed-btn.has-activity { color: #2d6cdf; }
+        .sync-feed-panel { position: fixed; bottom: 60px; right: 20px; width: 420px; max-height: 300px; background: #1a1a2e; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.3); z-index: 1000; display: none; flex-direction: column; font-family: "SF Mono", Monaco, "Cascadia Code", monospace; }
+        .sync-feed-panel.visible { display: flex; }
+        .sync-feed-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #333; color: #fff; font-size: 12px; font-weight: 500; }
+        .sync-feed-header-left { display: flex; align-items: center; gap: 8px; }
+        .sync-feed-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
+        .sync-feed-status-dot.active { background: #20c933; animation: pulse 2s infinite; }
+        .sync-feed-status-dot.error { background: #ff4757; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .sync-feed-close { background: none; border: none; color: #666; cursor: pointer; font-size: 16px; padding: 0 4px; }
+        .sync-feed-close:hover { color: #fff; }
+        .sync-feed-body { flex: 1; overflow-y: auto; padding: 8px 0; max-height: 240px; }
+        .sync-feed-line { padding: 2px 12px; font-size: 11px; line-height: 1.6; color: #a0a0a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sync-feed-line.info { color: #7ec8e3; }
+        .sync-feed-line.success { color: #20c933; }
+        .sync-feed-line.error { color: #ff4757; }
+        .sync-feed-line.warn { color: #fcb400; }
+        .sync-feed-line .timestamp { color: #555; margin-right: 8px; }
+        .sync-feed-line .prefix { color: #888; }
+        .sync-feed-empty { padding: 20px; text-align: center; color: #555; font-size: 11px; }
+        .sync-feed-footer { padding: 8px 12px; border-top: 1px solid #333; display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #555; }
+        .sync-feed-footer button { background: #333; border: none; color: #888; font-size: 10px; padding: 4px 8px; border-radius: 3px; cursor: pointer; }
+        .sync-feed-footer button:hover { background: #444; color: #fff; }
+
         /* Table container */
         .table-container { flex: 1; overflow: auto; }
 
@@ -1354,6 +1381,27 @@
         .json-boolean { color: #dc2626; }
         .json-null { color: #6b7280; font-style: italic; }
 
+        /* Payload Fields Display */
+        .payload-fields { }
+        .payload-op-group { margin-bottom: 6px; }
+        .payload-op-group:last-child { margin-bottom: 0; }
+        .payload-op-label { display: inline-block; font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .payload-op-label.INS { background: #dcfce7; color: #166534; }
+        .payload-op-label.ALT { background: #fef3c7; color: #92400e; }
+        .payload-op-label.NUL { background: #fee2e2; color: #991b1b; }
+        .payload-field-row { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
+        .payload-field-row:last-child { border-bottom: none; }
+        .payload-field-name { color: #6366f1; font-weight: 500; min-width: 80px; flex-shrink: 0; }
+        .payload-field-value { color: #374151; word-break: break-word; }
+        .payload-field-value.string { color: #059669; }
+        .payload-field-value.number { color: #2563eb; }
+        .payload-field-value.boolean { color: #dc2626; }
+        .payload-field-value.null { color: #9ca3af; font-style: italic; }
+        .payload-field-value.array { color: #7c3aed; }
+        .payload-field-value.object { color: #0891b2; }
+        .payload-raw-toggle { font-size: 10px; color: #6b7280; cursor: pointer; margin-top: 6px; }
+        .payload-raw-toggle:hover { color: #2d6cdf; text-decoration: underline; }
+
         /* Event Actions */
         .event-actions { display: flex; gap: 6px; }
         .event-action-btn { padding: 4px 8px; background: #fff; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; color: #666; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s; white-space: nowrap; }
@@ -2257,6 +2305,7 @@
                     <div class="sync-toggle" id="sync-toggle" onclick="toggleSnapshotSync()">
                         <div class="sync-toggle-knob"></div>
                     </div>
+                    <button class="sync-feed-btn" id="sync-feed-btn" onclick="SyncStatusFeed.toggle()" title="View sync activity log">[log]</button>
                 </div>
                 <span style="flex: 1;"></span>
                 <span class="refresh-indicator" id="refresh-indicator">
@@ -2432,6 +2481,24 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- Sync Status Feed Panel -->
+    <div class="sync-feed-panel" id="sync-feed-panel">
+        <div class="sync-feed-header">
+            <div class="sync-feed-header-left">
+                <span class="sync-feed-status-dot" id="sync-feed-status-dot"></span>
+                <span>Sync Activity</span>
+            </div>
+            <button class="sync-feed-close" onclick="SyncStatusFeed.hide()">&times;</button>
+        </div>
+        <div class="sync-feed-body" id="sync-feed-body">
+            <div class="sync-feed-empty">No sync activity yet</div>
+        </div>
+        <div class="sync-feed-footer">
+            <span id="sync-feed-stats">Idle</span>
+            <button onclick="SyncStatusFeed.clear()">Clear</button>
         </div>
     </div>
 
@@ -3498,7 +3565,17 @@ var AminoSync = {
             }
 
             var updates = await response.json();
-            if (!updates || updates.length === 0) {
+
+            // Handle non-array responses (API might return object or null)
+            if (!updates || !Array.isArray(updates)) {
+                if (updates && typeof updates === 'object' && updates.message) {
+                    // API returned an error object
+                    return { updated: 0, error: updates.message };
+                }
+                return { updated: 0 };
+            }
+
+            if (updates.length === 0) {
                 return { updated: 0 };
             }
 
@@ -3831,6 +3908,135 @@ var AminoSync = {
     }
 };
 
+// ============ Sync Status Feed ============
+// Terminal-style log for sync activity visibility
+
+var SyncStatusFeed = {
+    maxLines: 100,
+    lines: [],
+    isVisible: false,
+    isActive: false,
+
+    // Log a message to the feed
+    log(message, type) {
+        type = type || 'info';
+        var timestamp = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        this.lines.push({ timestamp: timestamp, message: message, type: type });
+
+        // Trim to max lines
+        if (this.lines.length > this.maxLines) {
+            this.lines = this.lines.slice(-this.maxLines);
+        }
+
+        this.render();
+        this.updateButton();
+    },
+
+    info(message) { this.log(message, 'info'); },
+    success(message) { this.log(message, 'success'); },
+    error(message) { this.log(message, 'error'); },
+    warn(message) { this.log(message, 'warn'); },
+
+    // Set active state (sync in progress)
+    setActive(active) {
+        this.isActive = active;
+        var dot = document.getElementById('sync-feed-status-dot');
+        if (dot) {
+            dot.className = 'sync-feed-status-dot' + (active ? ' active' : '');
+        }
+        this.updateStats();
+    },
+
+    // Set error state
+    setError() {
+        var dot = document.getElementById('sync-feed-status-dot');
+        if (dot) {
+            dot.className = 'sync-feed-status-dot error';
+        }
+    },
+
+    // Update the [log] button to indicate activity
+    updateButton() {
+        var btn = document.getElementById('sync-feed-btn');
+        if (btn && this.lines.length > 0) {
+            btn.classList.add('has-activity');
+        }
+    },
+
+    // Update stats display
+    updateStats() {
+        var statsEl = document.getElementById('sync-feed-stats');
+        if (statsEl) {
+            var stats = PassiveSnapshotSync.getStats();
+            if (stats.isRunning) {
+                statsEl.textContent = 'Running | Pulled: ' + stats.pulled + ' | Verified: ' + stats.verified;
+            } else {
+                statsEl.textContent = 'Idle';
+            }
+        }
+    },
+
+    // Render the feed content
+    render() {
+        var body = document.getElementById('sync-feed-body');
+        if (!body) return;
+
+        if (this.lines.length === 0) {
+            body.innerHTML = '<div class="sync-feed-empty">No sync activity yet</div>';
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < this.lines.length; i++) {
+            var line = this.lines[i];
+            html += '<div class="sync-feed-line ' + line.type + '">';
+            html += '<span class="timestamp">' + line.timestamp + '</span>';
+            html += '<span class="message">' + esc(line.message) + '</span>';
+            html += '</div>';
+        }
+        body.innerHTML = html;
+
+        // Auto-scroll to bottom
+        body.scrollTop = body.scrollHeight;
+    },
+
+    // Show the panel
+    show() {
+        var panel = document.getElementById('sync-feed-panel');
+        if (panel) {
+            panel.classList.add('visible');
+            this.isVisible = true;
+            this.updateStats();
+        }
+    },
+
+    // Hide the panel
+    hide() {
+        var panel = document.getElementById('sync-feed-panel');
+        if (panel) {
+            panel.classList.remove('visible');
+            this.isVisible = false;
+        }
+    },
+
+    // Toggle visibility
+    toggle() {
+        if (this.isVisible) {
+            this.hide();
+        } else {
+            this.show();
+        }
+    },
+
+    // Clear all lines
+    clear() {
+        this.lines = [];
+        this.render();
+        var btn = document.getElementById('sync-feed-btn');
+        if (btn) btn.classList.remove('has-activity');
+    }
+};
+
 // ============ Passive Snapshot Sync ============
 // Wrapper that orchestrates background verification and snapshot pulling
 
@@ -3855,20 +4061,31 @@ var PassiveSnapshotSync = {
         this.isRunning = true;
 
         console.log('[PassiveSync] Starting passive snapshot sync');
+        SyncStatusFeed.info('Snapshot sync started');
+        SyncStatusFeed.setActive(true);
 
         // Start background verification (self-healing)
         AminoSync.startBackgroundVerify(this.VERIFY_INTERVAL, this.VERIFY_COUNT);
+        SyncStatusFeed.info('Background verification enabled (every ' + (this.VERIFY_INTERVAL / 1000) + 's)');
 
         // Start periodic snapshot pulls from server
         var self = this;
+        SyncStatusFeed.info('Snapshot pull interval: ' + (this.PULL_INTERVAL / 1000) + 's');
         this.pullInterval = setInterval(async function() {
             try {
+                SyncStatusFeed.info('Pulling snapshots from server...');
                 var result = await AminoSync.syncFromSnapshot();
                 if (result.updated > 0) {
                     self.stats.pulled += result.updated;
+                    SyncStatusFeed.success('Pulled ' + result.updated + ' snapshot(s)');
+                } else if (result.error) {
+                    SyncStatusFeed.error('Pull failed: ' + result.error);
+                } else {
+                    SyncStatusFeed.info('No new snapshots');
                 }
+                SyncStatusFeed.updateStats();
             } catch (err) {
-                // Silent fail - background operation
+                SyncStatusFeed.error('Pull error: ' + err.message);
             }
         }, this.PULL_INTERVAL);
     },
@@ -3886,6 +4103,8 @@ var PassiveSnapshotSync = {
         }
 
         console.log('[PassiveSync] Stopped');
+        SyncStatusFeed.warn('Snapshot sync stopped');
+        SyncStatusFeed.setActive(false);
     },
 
     // Get current stats
@@ -8550,6 +8769,20 @@ function getFieldOperationDetails(payload) {
 function formatPayloadPreview(payload, expanded) {
     if (!payload) return '<span class="json-null">null</span>';
 
+    // Try to extract INS/ALT/NUL field data for nice display
+    var fields = payload.fields;
+    var hasFieldData = fields && (fields.INS || fields.ALT || fields.NUL);
+
+    if (hasFieldData) {
+        return formatPayloadFields(fields, expanded);
+    }
+
+    // Check if payload has context.data (alternative structure)
+    if (payload.context && payload.context.data) {
+        return formatPayloadFields({ INS: payload.context.data }, expanded);
+    }
+
+    // Fallback to raw JSON display
     try {
         var str = typeof payload === 'string' ? payload : JSON.stringify(payload, null, expanded ? 2 : 0);
 
@@ -8565,6 +8798,106 @@ function formatPayloadPreview(payload, expanded) {
     } catch (e) {
         return esc(String(payload));
     }
+}
+
+function formatPayloadFields(fields, expanded) {
+    var html = '<div class="payload-fields">';
+    var ops = ['INS', 'ALT', 'NUL'];
+    var hasAnyFields = false;
+
+    for (var i = 0; i < ops.length; i++) {
+        var op = ops[i];
+        var data = fields[op];
+        if (!data) continue;
+
+        // NUL is an array of field names, INS/ALT are objects
+        if (op === 'NUL' && Array.isArray(data) && data.length > 0) {
+            hasAnyFields = true;
+            html += '<div class="payload-op-group">';
+            html += '<span class="payload-op-label ' + op + '">' + op + '</span>';
+            html += '<div class="payload-field-row">';
+            html += '<span class="payload-field-value null">' + esc(data.join(', ')) + '</span>';
+            html += '</div></div>';
+        } else if (typeof data === 'object' && !Array.isArray(data)) {
+            var keys = Object.keys(data);
+            if (keys.length === 0) continue;
+
+            hasAnyFields = true;
+            html += '<div class="payload-op-group">';
+            html += '<span class="payload-op-label ' + op + '">' + op + '</span>';
+
+            // In collapsed mode, show limited fields
+            var displayKeys = expanded ? keys : keys.slice(0, 3);
+
+            for (var j = 0; j < displayKeys.length; j++) {
+                var key = displayKeys[j];
+                var value = data[key];
+                html += '<div class="payload-field-row">';
+                html += '<span class="payload-field-name">' + esc(getFieldDisplayName(key)) + '</span>';
+                html += '<span class="payload-field-value ' + getValueClass(value) + '">' + formatFieldValue(value, expanded) + '</span>';
+                html += '</div>';
+            }
+
+            if (!expanded && keys.length > 3) {
+                html += '<div class="payload-field-row" style="color: #9ca3af; font-style: italic;">+' + (keys.length - 3) + ' more fields</div>';
+            }
+
+            html += '</div>';
+        }
+    }
+
+    html += '</div>';
+    return hasAnyFields ? html : '<span class="json-null">no field data</span>';
+}
+
+function getFieldDisplayName(fieldId) {
+    // Try to get human-readable field name from schema
+    if (window.fields && window.fields[fieldId]) {
+        return window.fields[fieldId].name || fieldId;
+    }
+    // Truncate long field IDs
+    if (fieldId.length > 20) {
+        return fieldId.substring(0, 17) + '...';
+    }
+    return fieldId;
+}
+
+function getValueClass(value) {
+    if (value === null || value === undefined) return 'null';
+    if (Array.isArray(value)) return 'array';
+    if (typeof value === 'object') return 'object';
+    if (typeof value === 'number') return 'number';
+    if (typeof value === 'boolean') return 'boolean';
+    return 'string';
+}
+
+function formatFieldValue(value, expanded) {
+    if (value === null || value === undefined) return 'null';
+
+    if (Array.isArray(value)) {
+        if (value.length === 0) return '[]';
+        if (!expanded && value.length > 2) {
+            return '[' + esc(String(value[0])) + ', ... +' + (value.length - 1) + ']';
+        }
+        return '[' + value.map(function(v) { return esc(String(v)); }).join(', ') + ']';
+    }
+
+    if (typeof value === 'object') {
+        var keys = Object.keys(value);
+        if (keys.length === 0) return '{}';
+        if (!expanded) return '{' + keys.length + ' keys}';
+        return esc(JSON.stringify(value));
+    }
+
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (typeof value === 'number') return String(value);
+
+    // String value - truncate if too long
+    var str = String(value);
+    if (!expanded && str.length > 50) {
+        return esc(str.substring(0, 47)) + '...';
+    }
+    return esc(str);
 }
 
 function togglePayloadExpand(eventId) {
