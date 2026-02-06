@@ -1432,8 +1432,6 @@
         .sync-poll-controls .btn-poll.primary:hover { background: #059669; }
         .sync-poll-controls .btn-poll:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        .snapshot-export-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-
         .sync-activity-log {
             background: #1a1a2e; border-radius: 10px; padding: 16px; max-height: 300px; overflow-y: auto;
             font-family: "SF Mono", Monaco, Consolas, monospace; font-size: 12px; line-height: 1.6;
@@ -9494,41 +9492,6 @@ async function showSyncStatusView() {
     });
 }
 
-async function handleSnapshotExport() {
-    var btn = document.getElementById('snapshot-export-btn');
-    var resultEl = document.getElementById('snapshot-export-result');
-    if (!btn || !resultEl) return;
-
-    btn.disabled = true;
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exporting...';
-    resultEl.textContent = '';
-
-    try {
-        var result = await AminoSync.downloadSnapshotAsAmo();
-        if (!result.blob) {
-            resultEl.textContent = 'No snapshots available to export.';
-            resultEl.style.color = '#f59e0b';
-        } else {
-            var sizeStr = result.stats.bytes < 1024
-                ? result.stats.bytes + ' B'
-                : result.stats.bytes < 1048576
-                    ? (result.stats.bytes / 1024).toFixed(1) + ' KB'
-                    : (result.stats.bytes / 1048576).toFixed(1) + ' MB';
-            resultEl.innerHTML = '<span style="color: #10b981;">&#10003;</span> ' +
-                result.stats.records.toLocaleString() + ' records across ' +
-                result.stats.tables + ' table' + (result.stats.tables !== 1 ? 's' : '') +
-                ' &middot; ' + sizeStr;
-            resultEl.style.color = '#d1d5db';
-        }
-    } catch (err) {
-        resultEl.textContent = 'Export failed: ' + (err.message || err);
-        resultEl.style.color = '#ef4444';
-    }
-
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export .amo Snapshot';
-}
-
 async function renderSyncStatusView() {
     var container = document.querySelector('.table-container');
     var stats = SyncHistory.getStats();
@@ -9601,17 +9564,6 @@ async function renderSyncStatusView() {
         html += '<button class="btn-poll" onclick="SyncHistory.startPolling(); renderSyncStatusView();">Start Auto-Poll</button>';
         html += '<span style="font-size: 12px; color: #6b7280;">Auto-poll is off</span>';
     }
-    html += '</div>';
-    html += '</div>';
-
-    // Snapshot Export
-    html += '<div class="sync-status-section">';
-    html += '<h3><span class="section-dot green"></span>Snapshot Export</h3>';
-    html += '<div class="snapshot-export-controls">';
-    html += '<button class="btn-poll primary snapshot-export-btn" id="snapshot-export-btn" onclick="generateAndDownloadSnapshot()">';
-    html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
-    html += 'Download .amo Snapshot</button>';
-    html += '<span id="snapshot-export-result" style="font-size: 12px; color: #6b7280;">Generates from current data records</span>';
     html += '</div>';
     html += '</div>';
 
@@ -10104,10 +10056,6 @@ async function renderEventsView() {
         html += '<button class="btn" onclick="importEventsFromCSV()" title="Import events from CSV (deduplicates by ID)">';
         html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>';
         html += ' Import CSV';
-        html += '</button>';
-        html += '<button class="btn" onclick="generateAndDownloadSnapshot()" title="Generate and download .amo snapshot from current data">';
-        html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
-        html += ' Download .amo';
         html += '</button>';
         html += '</div>';
 
@@ -10868,125 +10816,6 @@ async function getExistingEventIds() {
             reject(req.error);
         };
     });
-}
-
-// Generate snapshot from current data records and download as .amo file
-async function generateAndDownloadSnapshot() {
-    try {
-        showImportStatus('Generating Snapshot...', 'Reading records from database...', 'progress', 0);
-
-        var snapshotRecords = [];
-
-        // Collect from in-memory data first (CSV import cache)
-        if (window.IN_MEMORY_DATA) {
-            var memTables = Object.keys(window.IN_MEMORY_DATA);
-            for (var t = 0; t < memTables.length; t++) {
-                var tableId = memTables[t];
-                var records = window.IN_MEMORY_DATA[tableId];
-                var recordIds = Object.keys(records);
-                for (var r = 0; r < recordIds.length; r++) {
-                    snapshotRecords.push({
-                        record_id: recordIds[r],
-                        source_table: 'airtable:' + tableId,
-                        data: records[recordIds[r]],
-                        last_amino_event: 0
-                    });
-                }
-            }
-        }
-
-        // Read all records from IndexedDB data store
-        if (db && db.objectStoreNames.contains('data')) {
-            var allDbRecords = await new Promise(function(resolve, reject) {
-                var tx = db.transaction('data', 'readonly');
-                var store = tx.objectStore('data');
-                var results = [];
-                var req = store.openCursor();
-                req.onsuccess = function(e) {
-                    var cursor = e.target.result;
-                    if (cursor) {
-                        results.push(cursor.value);
-                        cursor.continue();
-                    } else {
-                        resolve(results);
-                    }
-                };
-                req.onerror = function() { reject(req.error); };
-            });
-
-            // Decrypt if encryption is active
-            if (encryptionEnabled && encryptionKey) {
-                allDbRecords = await Promise.all(allDbRecords.map(function(r) { return decryptRecordFromStorage(r); }));
-            }
-
-            showImportStatus('Generating Snapshot...', 'Processing ' + allDbRecords.length.toLocaleString() + ' records...', 'progress', 40);
-
-            // Deduplicate against in-memory records
-            var existingIds = {};
-            for (var i = 0; i < snapshotRecords.length; i++) {
-                existingIds[snapshotRecords[i].record_id] = true;
-            }
-
-            for (var j = 0; j < allDbRecords.length; j++) {
-                var rec = allDbRecords[j];
-                if (rec.recordId && !existingIds[rec.recordId]) {
-                    snapshotRecords.push({
-                        record_id: rec.recordId,
-                        source_table: 'airtable:' + rec.tableId,
-                        data: rec.fields || {},
-                        last_amino_event: 0
-                    });
-                }
-            }
-        }
-
-        if (snapshotRecords.length === 0) {
-            showImportStatus('No Data', 'No records available to export as snapshot.', 'error');
-            return;
-        }
-
-        showImportStatus('Generating Snapshot...', 'Building .amo file from ' + snapshotRecords.length.toLocaleString() + ' records...', 'progress', 70);
-
-        // Generate .amo binary
-        var binary = AmoFormat.produce(snapshotRecords, { tables: META_TABLES, fields: META_FIELDS });
-        var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
-
-        // Count unique tables
-        var tableSet = {};
-        for (var k = 0; k < snapshotRecords.length; k++) {
-            tableSet[snapshotRecords[k].source_table] = true;
-        }
-        var tableCount = Object.keys(tableSet).length;
-
-        showImportStatus('Generating Snapshot...', 'Starting download...', 'progress', 90);
-
-        // Trigger browser download
-        var timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        var filename = 'amino-snapshot-' + timestamp + '.amo';
-        var url = URL.createObjectURL(blob);
-        var link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-
-        var sizeStr = binary.length < 1024
-            ? binary.length + ' B'
-            : binary.length < 1048576
-                ? (binary.length / 1024).toFixed(1) + ' KB'
-                : (binary.length / 1048576).toFixed(1) + ' MB';
-
-        showImportStatus('Snapshot Exported',
-            snapshotRecords.length.toLocaleString() + ' records across ' +
-            tableCount + ' table' + (tableCount !== 1 ? 's' : '') +
-            ' \u00b7 ' + sizeStr, 'success');
-
-    } catch (err) {
-        console.error('Error generating snapshot:', err);
-        showImportStatus('Snapshot Export Failed', err.message, 'error');
-    }
 }
 
 function showImportStatus(title, details, type, progress) {
