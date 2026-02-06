@@ -8129,7 +8129,7 @@ function startRefreshCountdown() {
 
     function updateCountdown() {
         var elapsed = Math.floor((Date.now() - lastSyncTime) / 1000);
-        var remaining = Math.max(0, 60 - elapsed);
+        var remaining = Math.max(0, 180 - elapsed);
 
         if (remaining > 0) {
             textEl.textContent = 'Auto-refresh in ' + remaining + 's';
@@ -9377,7 +9377,7 @@ async function init() {
 
     if (API_KEY) {
         if (pollInterval) clearInterval(pollInterval);
-        pollInterval = setInterval(incrementalSync, 60000);
+        pollInterval = setInterval(incrementalSync, 180000);
 
         // Start background polling for new events (lightweight 15s checks)
         // This uses the 'last' query parameter to efficiently detect new events
@@ -10757,7 +10757,7 @@ async function skipSetupAndUploadFile() {
             // Start incremental sync polling (but don't block on it)
             if (API_KEY) {
                 if (pollInterval) clearInterval(pollInterval);
-                pollInterval = setInterval(incrementalSync, 60000);
+                pollInterval = setInterval(incrementalSync, 180000);
 
                 // Start background polling for new events (lightweight 15s checks)
                 SyncHistory.startPolling();
