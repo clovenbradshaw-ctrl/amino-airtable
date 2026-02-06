@@ -326,6 +326,7 @@
 
         /* Auth screen */
         #auth-screen { position: fixed; inset: 0; background: #1d1f25; display: flex; align-items: center; justify-content: center; z-index: 100; }
+        #auth-screen.fading-out { opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
         .auth-box { background: #fff; border-radius: 8px; padding: 32px; width: 360px; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
         .auth-box h2 { font-size: 20px; margin-bottom: 8px; color: #333; }
         .auth-box p { font-size: 13px; color: #666; margin-bottom: 24px; }
@@ -342,6 +343,7 @@
 
         /* Encryption unlock screen */
         #unlock-screen { position: fixed; inset: 0; background: #1d1f25; display: flex; align-items: center; justify-content: center; z-index: 110; }
+        #unlock-screen.fading-out { opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
         .unlock-box { background: #fff; border-radius: 12px; padding: 32px; width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
         .unlock-box h2 { font-size: 22px; margin-bottom: 8px; color: #333; display: flex; align-items: center; gap: 10px; }
         .unlock-box h2 .lock-icon { font-size: 24px; }
@@ -612,11 +614,11 @@
             align-items: center;
             justify-content: center;
             z-index: 200;
-            transition: opacity 0.5s, visibility 0.5s;
         }
-        #loading-overlay.hidden {
+        #loading-overlay.fading-out {
             opacity: 0;
-            visibility: hidden;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
         }
         .loading-content {
             text-align: center;
@@ -2973,7 +2975,7 @@ function showUnlockScreen(mode) {
     var setupBox = document.getElementById('unlock-setup');
     var promptBox = document.getElementById('unlock-prompt');
 
-    unlockScreen.classList.remove('hidden');
+    unlockScreen.classList.remove('hidden', 'fading-out');
 
     if (mode === 'setup') {
         setupBox.classList.remove('hidden');
@@ -3001,7 +3003,15 @@ function showUnlockScreen(mode) {
 
 // Hide the unlock screen
 function hideUnlockScreen() {
-    document.getElementById('unlock-screen').classList.add('hidden');
+    var el = document.getElementById('unlock-screen');
+    el.classList.add('fading-out');
+    el.addEventListener('transitionend', function handler() {
+        el.removeEventListener('transitionend', handler);
+        el.classList.add('hidden');
+        el.classList.remove('fading-out');
+    }, { once: true });
+    // Fallback in case transitionend doesn't fire
+    setTimeout(function() { el.classList.add('hidden'); el.classList.remove('fading-out'); }, 400);
 }
 
 // Show error on unlock screen
@@ -6413,7 +6423,8 @@ async function initAuthScreen() {
     }
 
     // No saved credentials or auto-login failed - show auth screen
-    document.getElementById('auth-screen').classList.remove('hidden');
+    var authEl = document.getElementById('auth-screen');
+    authEl.classList.remove('hidden', 'fading-out');
 }
 
 async function clearLocalAndReset() {
@@ -6470,11 +6481,20 @@ function showAuthError(msg) {
 }
 
 function hideAuthScreen() {
-    document.getElementById('auth-screen').classList.add('hidden');
+    var el = document.getElementById('auth-screen');
+    el.classList.add('fading-out');
+    el.addEventListener('transitionend', function handler() {
+        el.removeEventListener('transitionend', handler);
+        el.classList.add('hidden');
+        el.classList.remove('fading-out');
+    }, { once: true });
+    // Fallback in case transitionend doesn't fire
+    setTimeout(function() { el.classList.add('hidden'); el.classList.remove('fading-out'); }, 400);
 }
 
 function showAuthScreen() {
-    document.getElementById('auth-screen').classList.remove('hidden');
+    var el = document.getElementById('auth-screen');
+    el.classList.remove('hidden', 'fading-out');
     if (pollInterval) clearInterval(pollInterval);
     SyncHistory.stopPolling();
     initAuthScreen();
@@ -8123,12 +8143,19 @@ var lastSyncTime = null;
 
 function showLoadingOverlay() {
     var overlay = document.getElementById('loading-overlay');
-    overlay.classList.remove('hidden');
+    overlay.classList.remove('hidden', 'fading-out');
 }
 
 function hideLoadingOverlay() {
     var overlay = document.getElementById('loading-overlay');
-    overlay.classList.add('hidden');
+    overlay.classList.add('fading-out');
+    overlay.addEventListener('transitionend', function handler() {
+        overlay.removeEventListener('transitionend', handler);
+        overlay.classList.add('hidden');
+        overlay.classList.remove('fading-out');
+    }, { once: true });
+    // Fallback in case transitionend doesn't fire
+    setTimeout(function() { overlay.classList.add('hidden'); overlay.classList.remove('fading-out'); }, 500);
 }
 
 function updateLoadingOverlay(status, detail, progress, tables, fields, records, timeEstimate) {
@@ -8414,10 +8441,7 @@ async function renderTable() {
         return;
     }
 
-    tableContainer.innerHTML = '<table id="table"></table>';
-    tableEl = document.getElementById('table');
-
-    // Get records
+    // Fetch records before clearing the container to avoid a white flash
     var records = await getRecordsByIds(currentTable, displayRecordIds);
     if (navVersion !== renderNav) return; // Navigation changed, abort stale render
     var recordMap = {};
@@ -8511,6 +8535,10 @@ async function renderTable() {
     }
 
     html += '</tbody>';
+
+    // Replace container content in one shot after data is ready (no intermediate blank state)
+    tableContainer.innerHTML = '<table id="table"></table>';
+    tableEl = document.getElementById('table');
     tableEl.innerHTML = html;
 
     // Update pagination (hide when grouped)
