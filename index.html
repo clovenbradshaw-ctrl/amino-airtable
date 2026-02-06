@@ -2145,6 +2145,7 @@
                 <div style="flex: 1; height: 1px; background: #e0e0e0;"></div>
             </div>
             <button id="auth-skip-upload" class="secondary" onclick="skipAuthAndUploadCSV()">Skip - Upload CSV Only</button>
+            <button id="auth-skip-upload-amo" class="secondary" onclick="skipAuthAndUploadAmo()" style="margin-top: 8px;">Skip - Upload .amo Snapshot</button>
             <div id="auth-info" class="auth-info"></div>
         </div>
     </div>
@@ -2200,9 +2201,12 @@
             </div>
 
             <div class="loading-skip-section">
-                <div class="loading-skip-text">Have a CSV export? Skip the download and import directly.</div>
+                <div class="loading-skip-text">Have a CSV export or .amo snapshot? Skip the download and import directly.</div>
                 <button class="loading-skip-btn" onclick="skipSetupAndUploadFile()">
                     Skip &amp; Upload CSV File
+                </button>
+                <button class="loading-skip-btn" onclick="skipSetupAndUploadAmoFile()" style="margin-top: 8px;">
+                    Skip &amp; Upload .amo Snapshot
                 </button>
             </div>
         </div>
@@ -6562,6 +6566,51 @@ async function skipAuthAndUploadCSV() {
 
     // Trigger the CSV file upload
     skipSetupAndUploadFile();
+}
+
+// Skip auth and go directly to .amo snapshot upload
+async function skipAuthAndUploadAmo() {
+    // Hide auth screen and show the app without an API key
+    hideAuthScreen();
+
+    // Initialize the database and app state
+    META_TABLES = {};
+    META_FIELDS = {};
+    META_VIEWS = {};
+    TABLE_SETTINGS = { tables: {}, tableOrder: [], views: {} };
+    currentTable = null;
+    currentPage = 0;
+    currentRecordIds = [];
+    originalRecordIds = [];
+    totalRecords = 0;
+    lastEventTimestamp = null;
+
+    loadSidebarState();
+    initSidebarSearch();
+
+    db = await openDB();
+    appOpenedEventId = await getMaxEventId();
+
+    // Load any existing local data
+    var tables = await getAllTables();
+    var fields = await getAllFields();
+    var views = await getAllViews();
+
+    tables.forEach(t => META_TABLES[t.tableId] = t);
+    fields.forEach(f => {
+        if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+        META_FIELDS[f.tableId][f.fieldId] = f;
+    });
+    views.forEach(v => {
+        if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+        META_VIEWS[v.tableId][v.viewId] = v;
+    });
+
+    await loadTableSettings();
+    updateConnectApiButton();
+
+    // Trigger the .amo file upload
+    skipSetupAndUploadAmoFile();
 }
 
 // Show/hide the Connect API button based on API_KEY state
@@ -10972,6 +11021,179 @@ async function skipSetupAndUploadFile() {
         } catch (err) {
             console.error('Error importing file:', err);
             alert('Error importing file: ' + err.message);
+        }
+    };
+
+    input.click();
+}
+
+// ============ .amo Snapshot Import ============
+
+async function skipSetupAndUploadAmoFile() {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.amo';
+
+    input.onchange = async function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            updateLoadingOverlay('Importing .amo snapshot...', 'Reading file...', 5, 0, 0, 0, '');
+
+            var buffer = await file.arrayBuffer();
+
+            // Detect and validate format
+            var format;
+            try {
+                format = AmoFormat.detectFormat(buffer);
+            } catch (err) {
+                alert('Unrecognized file format. Please select a valid .amo snapshot file.');
+                return;
+            }
+
+            updateLoadingOverlay('Importing .amo snapshot...', 'Parsing snapshot data...', 15, 0, 0, 0, '');
+
+            var amoData;
+            if (format === 'amo') {
+                amoData = AmoFormat.read(buffer);
+            } else if (format === 'json-gz') {
+                var decompressed = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
+                var records = JSON.parse(decompressed);
+                amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
+                // Convert flat snapshot records to table-grouped format
+                for (var i = 0; i < records.length; i++) {
+                    var rec = records[i];
+                    var tbl = rec.source_table || 'unknown';
+                    if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
+                    var rowData = Object.assign({}, rec.data || {});
+                    if (rec.record_id) rowData.record_id = rec.record_id;
+                    amoData.tables[tbl].push(rowData);
+                    if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+                }
+            } else if (format === 'json') {
+                var text = new TextDecoder().decode(buffer);
+                var records = JSON.parse(text);
+                amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
+                for (var i = 0; i < records.length; i++) {
+                    var rec = records[i];
+                    var tbl = rec.source_table || 'unknown';
+                    if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
+                    var rowData = Object.assign({}, rec.data || {});
+                    if (rec.record_id) rowData.record_id = rec.record_id;
+                    amoData.tables[tbl].push(rowData);
+                    if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+                }
+            } else {
+                alert('Unsupported snapshot format.');
+                return;
+            }
+
+            var tableNames = Object.keys(amoData.tables);
+            if (tableNames.length === 0) {
+                alert('Snapshot file contains no data.');
+                return;
+            }
+
+            updateLoadingOverlay('Importing .amo snapshot...', 'Building tables and fields...', 40, tableNames.length, 0, 0, '');
+
+            // Build IN_MEMORY_DATA, META_TABLES, and META_FIELDS from snapshot
+            var tableDataMap = {};
+            var totalRecords = 0;
+            var totalFields = 0;
+
+            for (var t = 0; t < tableNames.length; t++) {
+                var fullTableName = tableNames[t];
+                var tableId = fullTableName.replace('airtable:', '');
+                var rows = amoData.tables[fullTableName];
+
+                // Create placeholder table metadata
+                if (!META_TABLES[tableId]) {
+                    META_TABLES[tableId] = {
+                        tableId: tableId,
+                        tableName: tableId,
+                        _placeholder: true
+                    };
+                }
+
+                if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+                if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
+
+                for (var r = 0; r < rows.length; r++) {
+                    var row = rows[r];
+                    var recordId = row.record_id;
+                    if (!recordId) continue;
+
+                    // Build data object excluding record_id
+                    var data = {};
+                    var keys = Object.keys(row);
+                    for (var k = 0; k < keys.length; k++) {
+                        if (keys[k] !== 'record_id') {
+                            data[keys[k]] = row[keys[k]];
+
+                            // Auto-create placeholder field metadata
+                            if (!META_FIELDS[tableId][keys[k]]) {
+                                META_FIELDS[tableId][keys[k]] = {
+                                    tableId: tableId,
+                                    fieldId: keys[k],
+                                    fieldName: keys[k],
+                                    fieldType: inferFieldType(row[keys[k]]),
+                                    _placeholder: true
+                                };
+                                totalFields++;
+                            }
+                        }
+                    }
+
+                    tableDataMap[tableId][recordId] = data;
+                    totalRecords++;
+
+                    if (totalRecords % 5000 === 0) {
+                        var pct = 40 + Math.round((t / tableNames.length) * 40);
+                        updateLoadingOverlay('Importing .amo snapshot...', 'Processed ' + totalRecords.toLocaleString() + ' records...', pct, tableNames.length, totalFields, totalRecords, '');
+                        await new Promise(function(resolve) { setTimeout(resolve, 0); });
+                    }
+                }
+            }
+
+            // Store in memory for immediate UI access
+            window.IN_MEMORY_DATA = tableDataMap;
+
+            updateLoadingOverlay('Import complete!', 'Rendering interface...', 90, tableNames.length, totalFields, totalRecords, '');
+
+            // Render the UI
+            await renderSidebar();
+
+            // Auto-select first table
+            var firstTable = Object.keys(META_TABLES)[0];
+            if (firstTable) {
+                await showTable(firstTable);
+            }
+
+            // Hide overlay
+            updateLoadingOverlay('Import complete!', totalRecords.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFields, totalRecords, '');
+            setTimeout(hideLoadingOverlay, 300);
+
+            updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
+
+            // Start the refresh indicator countdown
+            lastSyncTime = Date.now();
+            startRefreshCountdown();
+
+            // Start incremental sync polling if API key is set
+            if (API_KEY) {
+                if (pollInterval) clearInterval(pollInterval);
+                pollInterval = setInterval(incrementalSync, 180000);
+                SyncHistory.startPolling();
+            }
+
+            updateConnectApiButton();
+
+            console.log('AMO import complete: ' + totalRecords + ' records across ' + tableNames.length + ' tables');
+
+        } catch (err) {
+            console.error('Error importing .amo file:', err);
+            alert('Error importing .amo file: ' + err.message);
         }
     };
 
