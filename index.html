@@ -3818,13 +3818,32 @@ var AminoSync = {
         await setSyncMeta('lastSnapshotEventId', eventId);
     },
 
+    // Fetch with single retry for transient network errors
+    async fetchWithRetry(url, retries) {
+        retries = retries || 1;
+        for (var attempt = 0; attempt <= retries; attempt++) {
+            try {
+                var response = await fetch(url);
+                return response;
+            } catch (err) {
+                if (attempt < retries) {
+                    // Wait before retry: 2s for first retry
+                    await new Promise(function(r) { setTimeout(r, 2000 * (attempt + 1)); });
+                    console.warn('[AminoSync] Fetch retry ' + (attempt + 1) + '/' + retries + ' for snapshot pull');
+                } else {
+                    throw err;
+                }
+            }
+        }
+    },
+
     // Incremental sync from snapshot endpoint
     async syncFromSnapshot() {
         if (!API_KEY) return { updated: 0 };
         var lastEventId = await this.getLastSnapshotEventId();
 
         try {
-            var response = await fetch(
+            var response = await this.fetchWithRetry(
                 XANO_SNAPSHOT_API + '?last_amino_event_gt=' + lastEventId +
                 (API_KEY ? '&apiKey=' + encodeURIComponent(API_KEY) : '')
             );
@@ -4743,20 +4762,70 @@ var PassiveSnapshotSync = {
     VERIFY_INTERVAL: 30000,  // 30 seconds between verification cycles
     VERIFY_COUNT: 3,         // Records to verify per cycle
     PULL_INTERVAL: 10000,    // 10 seconds between snapshot pulls
+    MAX_PULL_INTERVAL: 120000, // 2 minutes - max backoff cap for pull failures
 
     // State
     isRunning: false,
-    pullInterval: null,
+    pullTimeout: null,
+    consecutiveFailures: 0,
     stats: {
         verified: 0,
         repaired: 0,
         pulled: 0
     },
 
+    // Calculate next pull interval with exponential backoff + jitter
+    getNextPullInterval() {
+        if (this.consecutiveFailures === 0) return this.PULL_INTERVAL;
+        var exponential = this.PULL_INTERVAL * Math.pow(2, this.consecutiveFailures);
+        var capped = Math.min(exponential, this.MAX_PULL_INTERVAL);
+        var jitter = capped * 0.2 * (Math.random() * 2 - 1);
+        return Math.round(capped + jitter);
+    },
+
+    // Schedule the next pull using setTimeout (allows dynamic interval)
+    schedulePull() {
+        if (!this.isRunning) return;
+        var self = this;
+        var interval = this.getNextPullInterval();
+        this.pullTimeout = setTimeout(async function() {
+            try {
+                SyncStatusFeed.info('Pulling snapshots from server...');
+                var result = await AminoSync.syncFromSnapshot();
+                if (result.updated > 0) {
+                    self.stats.pulled += result.updated;
+                    SyncStatusFeed.success('Pulled ' + result.updated + ' snapshot(s)');
+                    if (self.consecutiveFailures > 0) {
+                        self.consecutiveFailures = 0;
+                        SyncStatusFeed.info('Pull recovered, resuming normal ' + (self.PULL_INTERVAL / 1000) + 's interval');
+                    }
+                } else if (result.error) {
+                    self.consecutiveFailures++;
+                    var nextInterval = self.getNextPullInterval();
+                    SyncStatusFeed.error('Pull failed: ' + result.error + ' (retry in ' + Math.round(nextInterval / 1000) + 's)');
+                } else {
+                    SyncStatusFeed.info('No new snapshots');
+                    if (self.consecutiveFailures > 0) {
+                        self.consecutiveFailures = 0;
+                        SyncStatusFeed.info('Pull recovered, resuming normal ' + (self.PULL_INTERVAL / 1000) + 's interval');
+                    }
+                }
+                SyncStatusFeed.updateStats();
+            } catch (err) {
+                self.consecutiveFailures++;
+                var nextInterval = self.getNextPullInterval();
+                SyncStatusFeed.error('Pull error: ' + err.message + ' (retry in ' + Math.round(nextInterval / 1000) + 's)');
+            }
+            // Schedule next pull (with potentially adjusted interval)
+            self.schedulePull();
+        }, interval);
+    },
+
     // Start passive sync (both verification and pulling)
     start() {
         if (this.isRunning) return;
         this.isRunning = true;
+        this.consecutiveFailures = 0;
 
         console.log('[PassiveSync] Starting passive snapshot sync');
         SyncStatusFeed.info('Snapshot sync started');
@@ -4766,26 +4835,9 @@ var PassiveSnapshotSync = {
         AminoSync.startBackgroundVerify(this.VERIFY_INTERVAL, this.VERIFY_COUNT);
         SyncStatusFeed.info('Background verification enabled (every ' + (this.VERIFY_INTERVAL / 1000) + 's)');
 
-        // Start periodic snapshot pulls from server
-        var self = this;
+        // Start periodic snapshot pulls from server (with backoff on failure)
         SyncStatusFeed.info('Snapshot pull interval: ' + (this.PULL_INTERVAL / 1000) + 's');
-        this.pullInterval = setInterval(async function() {
-            try {
-                SyncStatusFeed.info('Pulling snapshots from server...');
-                var result = await AminoSync.syncFromSnapshot();
-                if (result.updated > 0) {
-                    self.stats.pulled += result.updated;
-                    SyncStatusFeed.success('Pulled ' + result.updated + ' snapshot(s)');
-                } else if (result.error) {
-                    SyncStatusFeed.error('Pull failed: ' + result.error);
-                } else {
-                    SyncStatusFeed.info('No new snapshots');
-                }
-                SyncStatusFeed.updateStats();
-            } catch (err) {
-                SyncStatusFeed.error('Pull error: ' + err.message);
-            }
-        }, this.PULL_INTERVAL);
+        this.schedulePull();
     },
 
     // Stop passive sync
@@ -4795,10 +4847,11 @@ var PassiveSnapshotSync = {
 
         AminoSync.stopBackgroundVerify();
 
-        if (this.pullInterval) {
-            clearInterval(this.pullInterval);
-            this.pullInterval = null;
+        if (this.pullTimeout) {
+            clearTimeout(this.pullTimeout);
+            this.pullTimeout = null;
         }
+        this.consecutiveFailures = 0;
 
         console.log('[PassiveSync] Stopped');
         SyncStatusFeed.warn('Snapshot sync stopped');
@@ -4809,6 +4862,7 @@ var PassiveSnapshotSync = {
     getStats() {
         return {
             isRunning: this.isRunning,
+            consecutiveFailures: this.consecutiveFailures,
             ...this.stats
         };
     }
