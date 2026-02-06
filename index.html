@@ -2498,6 +2498,13 @@
         </div>
     </div>
 
+    <!-- Column Context Menu -->
+    <div class="view-context-menu" id="column-context-menu">
+        <div class="view-context-menu-item" onclick="hideColumnFromContextMenu()">
+            <span>&#128065;</span> Hide column
+        </div>
+    </div>
+
     <!-- Field History Modal -->
     <div class="modal-overlay" id="history-modal-overlay" onclick="closeHistoryModal(event)">
         <div class="modal history-modal" onclick="event.stopPropagation()">
@@ -7675,6 +7682,37 @@ function closeTableContextMenu() {
     tableContextMenuTableId = null;
 }
 
+// Column context menu state
+var contextMenuFieldId = null;
+
+// Show column context menu
+function showColumnContextMenu(event, fieldId) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    contextMenuFieldId = fieldId;
+
+    var menu = document.getElementById('column-context-menu');
+    menu.style.left = event.clientX + 'px';
+    menu.style.top = event.clientY + 'px';
+    menu.classList.add('open');
+}
+
+// Close column context menu
+function closeColumnContextMenu() {
+    var menu = document.getElementById('column-context-menu');
+    menu.classList.remove('open');
+    contextMenuFieldId = null;
+}
+
+// Hide column from context menu
+function hideColumnFromContextMenu() {
+    if (!contextMenuFieldId) return;
+    var fieldId = contextMenuFieldId;
+    closeColumnContextMenu();
+    toggleFieldVisibility(fieldId);
+}
+
 // Create view folder from table context menu
 async function createViewFolderFromContextMenu() {
     if (!tableContextMenuTableId) return;
@@ -8026,6 +8064,7 @@ function openCreateViewModal(tableId) {
 document.addEventListener('click', function() {
     closeViewContextMenu();
     closeTableContextMenu();
+    closeColumnContextMenu();
 });
 
 // Clean up state from special views (Events, Sync Status) before switching
@@ -8525,6 +8564,7 @@ async function renderTable() {
         html += '<th draggable="true" data-field-id="' + esc(col) + '" data-field-index="' + idx + '" ' +
                 'ondragstart="handleColumnDragStart(event)" ondragover="handleColumnDragOver(event)" ' +
                 'ondrop="handleColumnDrop(event)" ondragend="handleColumnDragEnd(event)" ' +
+                'oncontextmenu="showColumnContextMenu(event, \'' + esc(col) + '\')" ' +
                 'title="' + esc(col) + '">' + esc(colNames[col]) + '</th>';
     });
     html += '</tr></thead><tbody>';
