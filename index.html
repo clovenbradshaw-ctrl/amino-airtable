@@ -4255,18 +4255,19 @@ var AmoFormat = {
         var maxCursor = 0;
 
         // First pass: collect all column names per table
+        // Always include record_id as the first column so it survives the round-trip
         for (var i = 0; i < snapshotRecords.length; i++) {
             var rec = snapshotRecords[i];
             var table = rec.source_table;
             if (rec.last_amino_event > maxCursor) maxCursor = rec.last_amino_event;
 
             if (!schema[table]) {
-                schema[table] = [];
+                schema[table] = ['record_id'];
                 records[table] = [];
             }
             var keys = Object.keys(rec.data || {});
             for (var k = 0; k < keys.length; k++) {
-                if (schema[table].indexOf(keys[k]) === -1) {
+                if (keys[k] !== 'record_id' && schema[table].indexOf(keys[k]) === -1) {
                     schema[table].push(keys[k]);
                 }
             }
@@ -4278,7 +4279,12 @@ var AmoFormat = {
             var cols = schema[r.source_table];
             var row = [];
             for (var c = 0; c < cols.length; c++) {
-                var val = r.data ? r.data[cols[c]] : null;
+                var val;
+                if (cols[c] === 'record_id') {
+                    val = r.record_id;
+                } else {
+                    val = r.data ? r.data[cols[c]] : null;
+                }
                 row.push(val !== undefined ? val : null);
             }
             records[r.source_table].push(row);
