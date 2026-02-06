@@ -2982,6 +2982,9 @@ function clearSessionKey() {
 
 // Show the unlock screen (setup or prompt mode)
 function showUnlockScreen(mode) {
+    // Cancel any pending hide timeout to prevent race condition
+    if (_hideUnlockTimeout) { clearTimeout(_hideUnlockTimeout); _hideUnlockTimeout = null; }
+
     var unlockScreen = document.getElementById('unlock-screen');
     var setupBox = document.getElementById('unlock-setup');
     var promptBox = document.getElementById('unlock-prompt');
@@ -3000,29 +3003,38 @@ function showUnlockScreen(mode) {
         setupBox.classList.add('hidden');
         promptBox.classList.remove('hidden');
 
-        // Check encryption config for passkey
+        // Check encryption config for passkey vs password
         var config = getEncryptionConfig();
         var passkeySection = document.getElementById('passkey-unlock-section');
+        var passwordInput = document.getElementById('unlock-password');
+        var passwordBtn = document.getElementById('unlock-password-btn');
         if (config && config.type === 'passkey' && isPasskeySupported()) {
             passkeySection.style.display = 'block';
             passkeyCredentialId = config.credentialId;
+            // Hide password fields for passkey-only users
+            passwordInput.style.display = 'none';
+            passwordBtn.style.display = 'none';
         } else {
             passkeySection.style.display = 'none';
+            passwordInput.style.display = '';
+            passwordBtn.style.display = '';
         }
     }
 }
 
 // Hide the unlock screen
+var _hideUnlockTimeout = null;
 function hideUnlockScreen() {
     var el = document.getElementById('unlock-screen');
     el.classList.add('fading-out');
     el.addEventListener('transitionend', function handler() {
         el.removeEventListener('transitionend', handler);
+        if (_hideUnlockTimeout) { clearTimeout(_hideUnlockTimeout); _hideUnlockTimeout = null; }
         el.classList.add('hidden');
         el.classList.remove('fading-out');
     }, { once: true });
     // Fallback in case transitionend doesn't fire
-    setTimeout(function() { el.classList.add('hidden'); el.classList.remove('fading-out'); }, 400);
+    _hideUnlockTimeout = setTimeout(function() { _hideUnlockTimeout = null; el.classList.add('hidden'); el.classList.remove('fading-out'); }, 400);
 }
 
 // Show error on unlock screen
@@ -6444,6 +6456,8 @@ async function initAuthScreen() {
     }
 
     // No saved credentials or auto-login failed - show auth screen
+    // Cancel any pending hide timeout to prevent race condition
+    if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
     var authEl = document.getElementById('auth-screen');
     authEl.classList.remove('hidden', 'fading-out');
 }
@@ -6458,6 +6472,10 @@ async function clearLocalAndReset() {
     } catch (e) {
         console.error('Clear error:', e);
     }
+    // Clear stale form state and errors
+    document.getElementById('api-key-input').value = '';
+    document.getElementById('set-filter-input').value = '';
+    document.getElementById('auth-error').style.display = 'none';
     initAuthScreen();
 }
 
@@ -6480,6 +6498,10 @@ async function tryAuth() {
         await init();
     } catch (err) {
         console.error('Init error:', err);
+        // Re-show auth screen in case init() already hid it before failing
+        if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
+        var authEl = document.getElementById('auth-screen');
+        authEl.classList.remove('hidden', 'fading-out');
         showAuthError('Connection failed: ' + err.message);
         btn.textContent = 'Connect';
         btn.disabled = false;
@@ -6501,19 +6523,24 @@ function showAuthError(msg) {
     el.style.display = 'block';
 }
 
+var _hideAuthTimeout = null;
 function hideAuthScreen() {
     var el = document.getElementById('auth-screen');
     el.classList.add('fading-out');
     el.addEventListener('transitionend', function handler() {
         el.removeEventListener('transitionend', handler);
+        if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
         el.classList.add('hidden');
         el.classList.remove('fading-out');
     }, { once: true });
     // Fallback in case transitionend doesn't fire
-    setTimeout(function() { el.classList.add('hidden'); el.classList.remove('fading-out'); }, 400);
+    _hideAuthTimeout = setTimeout(function() { _hideAuthTimeout = null; el.classList.add('hidden'); el.classList.remove('fading-out'); }, 400);
 }
 
 function showAuthScreen() {
+    // Cancel any pending hide timeout to prevent race condition
+    if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
+
     var el = document.getElementById('auth-screen');
     el.classList.remove('hidden', 'fading-out');
     if (pollInterval) clearInterval(pollInterval);
@@ -6523,9 +6550,15 @@ function showAuthScreen() {
 
 function logout() {
     if (pollInterval) clearInterval(pollInterval);
+    pollInterval = null;
     SyncHistory.stopPolling();
     API_KEY = null;
     SET_FILTER = null;
+    // Close stale IndexedDB connection
+    if (db) {
+        try { db.close(); } catch (e) { /* ignore */ }
+        db = null;
+    }
     // Clear saved credentials (both encrypted and plaintext)
     clearEncryptedCredentials();
     clearSessionKey();
@@ -6542,92 +6575,112 @@ async function manualSync() {
 
 // Skip auth and go directly to CSV upload
 async function skipAuthAndUploadCSV() {
-    // Hide auth screen and show the app without an API key
-    hideAuthScreen();
+    // Prompt for file FIRST - if user cancels, stay on auth screen
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
 
-    // Initialize the database and app state
-    META_TABLES = {};
-    META_FIELDS = {};
-    META_VIEWS = {};
-    TABLE_SETTINGS = { tables: {}, tableOrder: [], views: {} };
-    currentTable = null;
-    currentPage = 0;
-    currentRecordIds = [];
-    originalRecordIds = [];
-    totalRecords = 0;
-    lastEventTimestamp = null;
+    input.onchange = async function(e) {
+        var file = e.target.files[0];
+        if (!file) return; // User cancelled - stay on auth screen
 
-    loadSidebarState();
-    initSidebarSearch();
+        // Now hide auth screen and initialize the app
+        hideAuthScreen();
 
-    db = await openDB();
-    appOpenedEventId = await getMaxEventId();
+        META_TABLES = {};
+        META_FIELDS = {};
+        META_VIEWS = {};
+        TABLE_SETTINGS = { tables: {}, tableOrder: [], views: {} };
+        currentTable = null;
+        currentPage = 0;
+        currentRecordIds = [];
+        originalRecordIds = [];
+        totalRecords = 0;
+        lastEventTimestamp = null;
 
-    // Load any existing local data
-    var tables = await getAllTables();
-    var fields = await getAllFields();
-    var views = await getAllViews();
+        loadSidebarState();
+        initSidebarSearch();
 
-    tables.forEach(t => META_TABLES[t.tableId] = t);
-    fields.forEach(f => {
-        if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-        META_FIELDS[f.tableId][f.fieldId] = f;
-    });
-    views.forEach(v => {
-        if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-        META_VIEWS[v.tableId][v.viewId] = v;
-    });
+        db = await openDB();
+        appOpenedEventId = await getMaxEventId();
 
-    await loadTableSettings();
-    updateConnectApiButton();
+        var tables = await getAllTables();
+        var fields = await getAllFields();
+        var views = await getAllViews();
 
-    // Trigger the CSV file upload
-    skipSetupAndUploadFile();
+        tables.forEach(t => META_TABLES[t.tableId] = t);
+        fields.forEach(f => {
+            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+            META_FIELDS[f.tableId][f.fieldId] = f;
+        });
+        views.forEach(v => {
+            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+            META_VIEWS[v.tableId][v.viewId] = v;
+        });
+
+        await loadTableSettings();
+        updateConnectApiButton();
+
+        // Process the selected file directly instead of opening another picker
+        await processCSVFile(file);
+    };
+
+    input.click();
 }
 
 // Skip auth and go directly to .amo snapshot upload
 async function skipAuthAndUploadAmo() {
-    // Hide auth screen and show the app without an API key
-    hideAuthScreen();
+    // Prompt for file FIRST - if user cancels, stay on auth screen
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.amo';
 
-    // Initialize the database and app state
-    META_TABLES = {};
-    META_FIELDS = {};
-    META_VIEWS = {};
-    TABLE_SETTINGS = { tables: {}, tableOrder: [], views: {} };
-    currentTable = null;
-    currentPage = 0;
-    currentRecordIds = [];
-    originalRecordIds = [];
-    totalRecords = 0;
-    lastEventTimestamp = null;
+    input.onchange = async function(e) {
+        var file = e.target.files[0];
+        if (!file) return; // User cancelled - stay on auth screen
 
-    loadSidebarState();
-    initSidebarSearch();
+        // Now hide auth screen and initialize the app
+        hideAuthScreen();
 
-    db = await openDB();
-    appOpenedEventId = await getMaxEventId();
+        META_TABLES = {};
+        META_FIELDS = {};
+        META_VIEWS = {};
+        TABLE_SETTINGS = { tables: {}, tableOrder: [], views: {} };
+        currentTable = null;
+        currentPage = 0;
+        currentRecordIds = [];
+        originalRecordIds = [];
+        totalRecords = 0;
+        lastEventTimestamp = null;
 
-    // Load any existing local data
-    var tables = await getAllTables();
-    var fields = await getAllFields();
-    var views = await getAllViews();
+        loadSidebarState();
+        initSidebarSearch();
 
-    tables.forEach(t => META_TABLES[t.tableId] = t);
-    fields.forEach(f => {
-        if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-        META_FIELDS[f.tableId][f.fieldId] = f;
-    });
-    views.forEach(v => {
-        if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-        META_VIEWS[v.tableId][v.viewId] = v;
-    });
+        db = await openDB();
+        appOpenedEventId = await getMaxEventId();
 
-    await loadTableSettings();
-    updateConnectApiButton();
+        var tables = await getAllTables();
+        var fields = await getAllFields();
+        var views = await getAllViews();
 
-    // Trigger the .amo file upload
-    skipSetupAndUploadAmoFile();
+        tables.forEach(t => META_TABLES[t.tableId] = t);
+        fields.forEach(f => {
+            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+            META_FIELDS[f.tableId][f.fieldId] = f;
+        });
+        views.forEach(v => {
+            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+            META_VIEWS[v.tableId][v.viewId] = v;
+        });
+
+        await loadTableSettings();
+        updateConnectApiButton();
+
+        // Process the selected file directly instead of opening another picker
+        await processAmoFile(file);
+    };
+
+    input.click();
 }
 
 // Show/hide the Connect API button based on API_KEY state
@@ -10917,16 +10970,8 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
     }
 }
 
-async function skipSetupAndUploadFile() {
-    // Create file input
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv';
-
-    input.onchange = async function(e) {
-        var file = e.target.files[0];
-        if (!file) return;
-
+// Process a CSV file directly (called from skipAuthAndUploadCSV or loading overlay)
+async function processCSVFile(file) {
         try {
             // Update the loading overlay to show import progress
             updateLoadingOverlay('Importing from file...', 'Reading CSV...', 5, 0, 0, 0, 'Starting import...');
@@ -11072,21 +11117,25 @@ async function skipSetupAndUploadFile() {
             console.error('Error importing file:', err);
             alert('Error importing file: ' + err.message);
         }
-    };
+}
 
+// Also keep the original function for calls from the loading overlay (opens file picker)
+async function skipSetupAndUploadFile() {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = async function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        await processCSVFile(file);
+    };
     input.click();
 }
 
 // ============ .amo Snapshot Import ============
 
-async function skipSetupAndUploadAmoFile() {
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.amo';
-
-    input.onchange = async function(e) {
-        var file = e.target.files[0];
-        if (!file) return;
+// Process an .amo file directly (called from skipAuthAndUploadAmo or loading overlay)
+async function processAmoFile(file) {
 
         try {
             updateLoadingOverlay('Importing .amo snapshot...', 'Reading file...', 5, 0, 0, 0, '');
@@ -11266,8 +11315,18 @@ async function skipSetupAndUploadAmoFile() {
             console.error('Error importing .amo file:', err);
             alert('Error importing .amo file: ' + err.message);
         }
-    };
+}
 
+// Also keep the original function for calls from the loading overlay (opens file picker)
+async function skipSetupAndUploadAmoFile() {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.amo';
+    input.onchange = async function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        await processAmoFile(file);
+    };
     input.click();
 }
 
@@ -13818,9 +13877,16 @@ init = async function() {
     renderWorkspaceTabs();
 };
 
-// Keyboard handler for create view modal
+// Keyboard handler for modals (Escape to close)
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
+        // Close connect API modal if open
+        var connectModal = document.getElementById('connect-api-modal');
+        if (connectModal && connectModal.style.display !== 'none') {
+            hideConnectApiModal();
+            return;
+        }
+        // Close create view modal if open
         var modal = document.getElementById('create-view-modal');
         if (modal && modal.classList.contains('open')) {
             closeCreateViewModal();
