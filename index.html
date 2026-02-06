@@ -4281,7 +4281,7 @@ var AmoFormat = {
             for (var c = 0; c < cols.length; c++) {
                 var val;
                 if (cols[c] === 'record_id') {
-                    val = r.record_id;
+                    val = r.record_id || null;
                 } else {
                     val = r.data ? r.data[cols[c]] : null;
                 }
