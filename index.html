@@ -2451,6 +2451,12 @@
                     </div>
                     <button class="sync-feed-btn" id="sync-feed-btn" onclick="SyncStatusFeed.toggle()" title="View sync activity log">[log]</button>
                 </div>
+                <div class="sync-toggle-wrapper">
+                    <span class="sync-toggle-label">Sync to Box</span>
+                    <div class="sync-toggle" id="box-sync-toggle" onclick="toggleBoxSync()">
+                        <div class="sync-toggle-knob"></div>
+                    </div>
+                </div>
                 <span style="flex: 1;"></span>
                 <span class="refresh-indicator" id="refresh-indicator">
                     <span class="refresh-dot"></span>
@@ -3668,6 +3674,12 @@ var pendingViewAction = null; // { action: 'filter'|'sort'|'fields'|'group', dat
 // Snapshot sync toggle state (off by default)
 var snapshotSyncEnabled = false;
 
+// Box auto-sync state (off by default)
+var boxSyncEnabled = false;
+var BOX_SYNC_WEBHOOK = 'https://n8n.intelechia.com/webhook/box-upload';
+var BOX_SYNC_FOLDER_ID = '364363223627';
+var BOX_SYNC_FILENAME = 'amino-snapshot.amo';
+
 // ============ Events View State ============
 var eventsPageSize = 50;
 var eventsTypeFilter = ''; // 'INS', 'ALT', 'NUL', 'SYN', 'table', 'field', 'view', 'viewConfig', or '' for all
@@ -4823,6 +4835,150 @@ function initSyncToggle() {
     var toggle = document.getElementById('sync-toggle');
     if (toggle) {
         if (snapshotSyncEnabled) {
+            toggle.classList.add('active');
+        } else {
+            toggle.classList.remove('active');
+        }
+    }
+}
+
+// ============ Box Auto-Sync ============
+// Pushes .amo snapshot to Box via n8n webhook after each sync with new data
+
+var BoxSync = {
+    lastPushCursor: 0,
+    isPushing: false,
+
+    // Push current data as .amo to Box via n8n webhook
+    async push() {
+        if (this.isPushing) return;
+        this.isPushing = true;
+        try {
+            // Collect snapshot records from in-memory data
+            var snapshotRecords = [];
+            if (window.IN_MEMORY_DATA) {
+                var memTables = Object.keys(window.IN_MEMORY_DATA);
+                for (var t = 0; t < memTables.length; t++) {
+                    var tableId = memTables[t];
+                    var records = window.IN_MEMORY_DATA[tableId];
+                    var recordIds = Object.keys(records);
+                    for (var r = 0; r < recordIds.length; r++) {
+                        snapshotRecords.push({
+                            record_id: recordIds[r],
+                            source_table: 'airtable:' + tableId,
+                            data: records[recordIds[r]],
+                            last_amino_event: 0
+                        });
+                    }
+                }
+            }
+
+            // Also pull from IndexedDB if available
+            if (db && db.objectStoreNames.contains('data')) {
+                var allDbRecords = await new Promise(function(resolve, reject) {
+                    var tx = db.transaction('data', 'readonly');
+                    var store = tx.objectStore('data');
+                    var results = [];
+                    var req = store.openCursor();
+                    req.onsuccess = function(e) {
+                        var cursor = e.target.result;
+                        if (cursor) {
+                            results.push(cursor.value);
+                            cursor.continue();
+                        } else {
+                            resolve(results);
+                        }
+                    };
+                    req.onerror = function() { reject(req.error); };
+                });
+
+                if (encryptionEnabled && encryptionKey) {
+                    allDbRecords = await Promise.all(allDbRecords.map(function(r) { return decryptRecordFromStorage(r); }));
+                }
+
+                var existingIds = {};
+                for (var i = 0; i < snapshotRecords.length; i++) {
+                    existingIds[snapshotRecords[i].record_id] = true;
+                }
+                for (var j = 0; j < allDbRecords.length; j++) {
+                    var rec = allDbRecords[j];
+                    if (rec.recordId && !existingIds[rec.recordId]) {
+                        snapshotRecords.push({
+                            record_id: rec.recordId,
+                            source_table: 'airtable:' + rec.tableId,
+                            data: rec.fields || {},
+                            last_amino_event: 0
+                        });
+                    }
+                }
+            }
+
+            if (snapshotRecords.length === 0) {
+                console.log('[BoxSync] No records to push');
+                return;
+            }
+
+            // Produce .amo binary
+            var binary = AmoFormat.produce(snapshotRecords, { tables: META_TABLES, fields: META_FIELDS });
+            var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
+
+            // Build FormData and POST to n8n webhook
+            var form = new FormData();
+            form.append('file', blob, BOX_SYNC_FILENAME);
+
+            var res = await fetch(BOX_SYNC_WEBHOOK, {
+                method: 'POST',
+                headers: {
+                    'x-file-name': BOX_SYNC_FILENAME,
+                    'x-folder-id': BOX_SYNC_FOLDER_ID
+                },
+                body: form
+            });
+
+            if (!res.ok) {
+                throw new Error('Box upload failed: ' + res.status + ' ' + res.statusText);
+            }
+
+            var sizeStr = binary.length < 1024
+                ? binary.length + ' B'
+                : binary.length < 1048576
+                    ? (binary.length / 1024).toFixed(1) + ' KB'
+                    : (binary.length / 1048576).toFixed(1) + ' MB';
+
+            console.log('[BoxSync] Pushed ' + snapshotRecords.length + ' records (' + sizeStr + ') to Box');
+            SyncStatusFeed.success('Box: pushed ' + snapshotRecords.length + ' records (' + sizeStr + ')');
+        } catch (err) {
+            console.error('[BoxSync] Push failed:', err);
+            SyncStatusFeed.error('Box push failed: ' + err.message);
+        } finally {
+            this.isPushing = false;
+        }
+    }
+};
+
+// Toggle Box sync on/off
+function toggleBoxSync() {
+    boxSyncEnabled = !boxSyncEnabled;
+    var toggle = document.getElementById('box-sync-toggle');
+
+    if (boxSyncEnabled) {
+        toggle.classList.add('active');
+        console.log('[BoxSync] Enabled');
+        SyncStatusFeed.info('Box auto-sync enabled');
+        // Push immediately on enable
+        BoxSync.push();
+    } else {
+        toggle.classList.remove('active');
+        console.log('[BoxSync] Disabled');
+        SyncStatusFeed.info('Box auto-sync disabled');
+    }
+}
+
+// Initialize Box sync toggle UI state
+function initBoxSyncToggle() {
+    var toggle = document.getElementById('box-sync-toggle');
+    if (toggle) {
+        if (boxSyncEnabled) {
             toggle.classList.add('active');
         } else {
             toggle.classList.remove('active');
@@ -9163,6 +9319,11 @@ async function fullSync() {
     hideLoadingOverlay();
 
     updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
+
+    // Push .amo to Box after full sync if auto-sync is enabled
+    if (boxSyncEnabled) {
+        BoxSync.push();
+    }
 }
 
 async function incrementalSync() {
@@ -9233,6 +9394,11 @@ async function incrementalSync() {
                 duration: Date.now() - syncStartTime,
                 detail: syncDetail
             });
+
+            // Push .amo to Box if auto-sync is enabled and new data arrived
+            if (boxSyncEnabled) {
+                BoxSync.push();
+            }
         } else {
             var statusDetail = snapshotResult.updated > 0 ? snapshotResult.updated + ' snapshots updated' : null;
             updateStatus('Up to date', true, null, statusDetail);
@@ -9613,6 +9779,9 @@ async function init() {
     if (snapshotSyncEnabled && API_KEY) {
         PassiveSnapshotSync.start();
     }
+
+    // Initialize Box sync toggle
+    initBoxSyncToggle();
 }
 
 // ============ Field History Modal ============
