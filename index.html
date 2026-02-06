@@ -4263,7 +4263,7 @@ var AmoFormat = {
         var encoded = MessagePack.encode(payload);
 
         // Compress with gzip
-        var compressed = pako.gzipSync(encoded);
+        var compressed = pako.gzip(encoded);
 
         // Prepend 8-byte header: "AMO1" + version(1) + flags(0) + reserved(0,0)
         var header = new Uint8Array([0x41, 0x4D, 0x4F, 0x31, 0x01, 0x00, 0x00, 0x00]);
