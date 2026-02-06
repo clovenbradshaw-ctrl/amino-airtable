@@ -2456,6 +2456,7 @@
                     <div class="sync-toggle" id="box-sync-toggle" onclick="toggleBoxSync()">
                         <div class="sync-toggle-knob"></div>
                     </div>
+                    <button class="sync-feed-btn" id="box-push-btn" onclick="manualBoxPush()" title="Manually push snapshot to Box">[push]</button>
                 </div>
                 <span style="flex: 1;"></span>
                 <span class="refresh-indicator" id="refresh-indicator">
@@ -4972,6 +4973,16 @@ function toggleBoxSync() {
         console.log('[BoxSync] Disabled');
         SyncStatusFeed.info('Box auto-sync disabled');
     }
+}
+
+// Manually push snapshot to Box (independent of auto-sync toggle)
+function manualBoxPush() {
+    var btn = document.getElementById('box-push-btn');
+    if (btn) btn.disabled = true;
+    SyncStatusFeed.info('Box: manual push started…');
+    BoxSync.push().then(function() {
+        if (btn) btn.disabled = false;
+    });
 }
 
 // Initialize Box sync toggle UI state
