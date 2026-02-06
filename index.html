@@ -4090,6 +4090,11 @@ var AminoSync = {
                     if (payload.context?.data) {
                         Object.assign(state, payload.context.data);
                     }
+                } else if (event.operator === 'SYN') {
+                    // Sync: apply synced field state
+                    if (pfields.SYN) {
+                        Object.assign(state, pfields.SYN);
+                    }
                 } else if (event.operator === 'NUL') {
                     // Nullify: handle field deletion or record deletion
                     if (pfields.NUL && Array.isArray(pfields.NUL)) {
@@ -5667,6 +5672,23 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
                 Object.assign(state, pfields.ALT);
             }
 
+            // Process SYN (sync/snapshot)
+            if (pfields.SYN) {
+                for (var fieldId in pfields.SYN) {
+                    fieldHistoryEntries.push({
+                        tableId: tableId,
+                        recordId: recordId,
+                        fieldId: fieldId,
+                        eventId: eventId,
+                        timestamp: timestamp,
+                        changeType: 'synced',
+                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        newValue: pfields.SYN[fieldId]
+                    });
+                }
+                Object.assign(state, pfields.SYN);
+            }
+
             // Process NUL (nullify/delete)
             if (pfields.NUL && Array.isArray(pfields.NUL)) {
                 pfields.NUL.forEach(fieldId => {
@@ -6730,11 +6752,12 @@ async function processEventsMemoryOnly(events, onProgress) {
             var allFieldIds = [
                 ...Object.keys(pfields.INS || {}),
                 ...Object.keys(pfields.ALT || {}),
+                ...Object.keys(pfields.SYN || {}),
                 ...(Array.isArray(pfields.NUL) ? pfields.NUL : [])
             ];
             for (var fid of allFieldIds) {
                 if (!META_FIELDS[tableId][fid]) {
-                    var sampleValue = (pfields.INS && pfields.INS[fid]) || (pfields.ALT && pfields.ALT[fid]);
+                    var sampleValue = (pfields.INS && pfields.INS[fid]) || (pfields.ALT && pfields.ALT[fid]) || (pfields.SYN && pfields.SYN[fid]);
                     META_FIELDS[tableId][fid] = {
                         tableId: tableId,
                         fieldId: fid,
@@ -6751,6 +6774,7 @@ async function processEventsMemoryOnly(events, onProgress) {
             var state = tableDataMap[tableId][recordId];
             if (pfields.INS) Object.assign(state, pfields.INS);
             if (pfields.ALT) Object.assign(state, pfields.ALT);
+            if (pfields.SYN) Object.assign(state, pfields.SYN);
             if (pfields.NUL && Array.isArray(pfields.NUL)) {
                 pfields.NUL.forEach(fieldId => delete state[fieldId]);
             }
@@ -6904,17 +6928,18 @@ async function processEvents(events) {
                 tables.push(placeholderTable);
             }
 
-            // Auto-create placeholder fields from INS/ALT/NUL keys
+            // Auto-create placeholder fields from INS/ALT/SYN/NUL keys
             if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
             var allFieldIds = [
                 ...Object.keys(pfields.INS || {}),
                 ...Object.keys(pfields.ALT || {}),
+                ...Object.keys(pfields.SYN || {}),
                 ...(Array.isArray(pfields.NUL) ? pfields.NUL : [])
             ];
             for (var fid of allFieldIds) {
                 if (!META_FIELDS[tableId][fid]) {
                     // Get a sample value to infer type
-                    var sampleValue = (pfields.INS && pfields.INS[fid]) || (pfields.ALT && pfields.ALT[fid]);
+                    var sampleValue = (pfields.INS && pfields.INS[fid]) || (pfields.ALT && pfields.ALT[fid]) || (pfields.SYN && pfields.SYN[fid]);
                     var placeholderField = {
                         tableId: tableId,
                         fieldId: fid,
@@ -6975,6 +7000,23 @@ async function processEvents(events) {
                 Object.assign(state, pfields.ALT);
             }
 
+            // Capture field history for SYN (sync/snapshot)
+            if (pfields.SYN) {
+                for (var fieldId in pfields.SYN) {
+                    fieldHistoryEntries.push({
+                        tableId: tableId,
+                        recordId: recordId,
+                        fieldId: fieldId,
+                        eventId: eventId,
+                        timestamp: timestamp,
+                        changeType: 'synced',
+                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                        newValue: pfields.SYN[fieldId]
+                    });
+                }
+                Object.assign(state, pfields.SYN);
+            }
+
             // Capture field history for NUL (nullify/delete)
             if (pfields.NUL && Array.isArray(pfields.NUL)) {
                 pfields.NUL.forEach(fieldId => {
@@ -7029,6 +7071,7 @@ function applyPayloadFields(target, payload) {
     var fields = payload.fields;
     if (fields.INS) Object.assign(target, fields.INS);
     if (fields.ALT) Object.assign(target, fields.ALT);
+    if (fields.SYN) Object.assign(target, fields.SYN);
     if (fields.NUL && Array.isArray(fields.NUL)) {
         fields.NUL.forEach(k => delete target[k]);
     }
@@ -10831,6 +10874,11 @@ async function viewRecordAtPointInTime(eventId, recordId, set) {
                 Object.assign(recordState, fields.ALT);
             }
 
+            // Apply SYN (sync)
+            if (fields.SYN) {
+                Object.assign(recordState, fields.SYN);
+            }
+
             // Apply NUL (nullify)
             if (fields.NUL && Array.isArray(fields.NUL)) {
                 fields.NUL.forEach(k => delete recordState[k]);
@@ -11473,6 +11521,23 @@ function buildFieldHistoryFromRawEvents(tableId, recordId, events) {
                 });
             }
             Object.assign(state, pfields.ALT);
+        }
+
+        // Process SYN (sync/snapshot)
+        if (pfields.SYN) {
+            for (var fieldId in pfields.SYN) {
+                fieldHistoryEntries.push({
+                    tableId: tableId,
+                    recordId: recordId,
+                    fieldId: fieldId,
+                    eventId: eventId,
+                    timestamp: timestamp,
+                    changeType: 'synced',
+                    oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                    newValue: pfields.SYN[fieldId]
+                });
+            }
+            Object.assign(state, pfields.SYN);
         }
 
         // Process NUL (nullify/delete)
