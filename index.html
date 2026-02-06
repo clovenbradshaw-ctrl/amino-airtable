@@ -3935,7 +3935,7 @@ var AminoSync = {
             return { blob: null, filename: null, stats: { tables: 0, records: 0, bytes: 0 } };
         }
 
-        var binary = AmoFormat.produce(snapshots);
+        var binary = AmoFormat.produce(snapshots, { tables: META_TABLES, fields: META_FIELDS });
         var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
 
         // Count unique tables
@@ -4248,8 +4248,9 @@ var AmoFormat = {
 
     // Produce a .amo binary snapshot from snapshot records
     // snapshotRecords: array of { record_id, source_table, data: { field: value }, last_amino_event }
+    // meta: optional { tables: META_TABLES, fields: META_FIELDS } to preserve table/field names
     // Returns: Uint8Array
-    produce: function(snapshotRecords) {
+    produce: function(snapshotRecords, meta) {
         var schema = {};
         var records = {};
         var maxCursor = 0;
@@ -4292,6 +4293,7 @@ var AmoFormat = {
 
         // Encode payload with MessagePack
         var payload = { v: 1, ts: Math.floor(Date.now() / 1000), cursor: maxCursor, schema: schema, records: records };
+        if (meta) payload.meta = meta;
         var encoded = MessagePack.encode(payload);
 
         // Compress with gzip
@@ -4348,7 +4350,9 @@ var AmoFormat = {
             }
         }
 
-        return { tables: tables, cursor: payload.cursor, ts: payload.ts };
+        var result = { tables: tables, cursor: payload.cursor, ts: payload.ts };
+        if (payload.meta) result.meta = payload.meta;
+        return result;
     },
 
     // Detect the format of a snapshot buffer
@@ -10711,7 +10715,7 @@ async function generateAndDownloadSnapshot() {
         showImportStatus('Generating Snapshot...', 'Building .amo file from ' + snapshotRecords.length.toLocaleString() + ' records...', 'progress', 70);
 
         // Generate .amo binary
-        var binary = AmoFormat.produce(snapshotRecords);
+        var binary = AmoFormat.produce(snapshotRecords, { tables: META_TABLES, fields: META_FIELDS });
         var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
 
         // Count unique tables
@@ -11143,6 +11147,27 @@ async function skipSetupAndUploadAmoFile() {
 
             updateLoadingOverlay('Importing .amo snapshot...', 'Building tables and fields...', 40, tableNames.length, 0, 0, '');
 
+            // Restore table/field metadata from snapshot if available
+            var savedMeta = amoData.meta || {};
+            if (savedMeta.tables) {
+                var savedTableIds = Object.keys(savedMeta.tables);
+                for (var m = 0; m < savedTableIds.length; m++) {
+                    var tid = savedTableIds[m];
+                    META_TABLES[tid] = savedMeta.tables[tid];
+                }
+            }
+            if (savedMeta.fields) {
+                var savedFieldTableIds = Object.keys(savedMeta.fields);
+                for (var m = 0; m < savedFieldTableIds.length; m++) {
+                    var tid = savedFieldTableIds[m];
+                    if (!META_FIELDS[tid]) META_FIELDS[tid] = {};
+                    var fieldIds = Object.keys(savedMeta.fields[tid]);
+                    for (var f = 0; f < fieldIds.length; f++) {
+                        META_FIELDS[tid][fieldIds[f]] = savedMeta.fields[tid][fieldIds[f]];
+                    }
+                }
+            }
+
             // Build IN_MEMORY_DATA, META_TABLES, and META_FIELDS from snapshot
             var tableDataMap = {};
             var totalRecords = 0;
@@ -11153,7 +11178,7 @@ async function skipSetupAndUploadAmoFile() {
                 var tableId = fullTableName.replace('airtable:', '');
                 var rows = amoData.tables[fullTableName];
 
-                // Create placeholder table metadata
+                // Create placeholder table metadata only if not already restored from snapshot meta
                 if (!META_TABLES[tableId]) {
                     META_TABLES[tableId] = {
                         tableId: tableId,
@@ -11177,7 +11202,7 @@ async function skipSetupAndUploadAmoFile() {
                         if (keys[k] !== 'record_id') {
                             data[keys[k]] = row[keys[k]];
 
-                            // Auto-create placeholder field metadata
+                            // Auto-create placeholder field metadata only if not already restored
                             if (!META_FIELDS[tableId][keys[k]]) {
                                 META_FIELDS[tableId][keys[k]] = {
                                     tableId: tableId,
