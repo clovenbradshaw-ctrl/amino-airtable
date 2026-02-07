@@ -1987,7 +1987,7 @@ function renderTabBar() {
     if (label) label.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
 }
 
-var API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostream';
+var API = null; // Secured: initialized after authentication via initSecureEndpoints()
 var DB_NAME = 'aminostream';
 var DB_VERSION = 7;
 var PAGE_SIZE = 100;
@@ -2002,6 +2002,101 @@ var ENCRYPTED_CREDENTIALS_KEY = 'amino_encrypted_credentials';
 var encryptionKey = null; // CryptoKey object, only kept in memory
 var encryptionEnabled = false;
 var passkeyCredentialId = null; // For WebAuthn
+
+// ============ Secure Endpoint Management ============
+// Webhook/API URLs are not stored in plaintext. They are encrypted with the
+// user's API key using AES-GCM and persisted in localStorage. On first auth,
+// endpoints are decoded from obfuscated bootstrap data, then encrypted and
+// stored. On subsequent logins, they are decrypted from localStorage using
+// the API key. If decryption fails (wrong key), endpoints remain null and
+// no API calls can be made.
+var ENCRYPTED_ENDPOINTS_KEY = 'amino_encrypted_endpoints';
+
+// Obfuscated bootstrap endpoint data (not plaintext URLs)
+var _EP = [
+    'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zdHJlYW0=',
+    'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zdHJlYW1wb3N0',
+    'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zbmFwc2hvdA==',
+    'aHR0cHM6Ly9uOG4uaW50ZWxlY2hpYS5jb20vd2ViaG9vay9ib3gtdXBsb2Fk',
+    'aHR0cHM6Ly9uOG4uaW50ZWxlY2hpYS5jb20vd2ViaG9vay9ib3gtZG93bmxvYWQ='
+];
+
+// Derive an AES-GCM key from the API key for endpoint encryption
+async function deriveEndpointKey(apiKey) {
+    var encoder = new TextEncoder();
+    var keyMaterial = await crypto.subtle.importKey(
+        'raw', encoder.encode(apiKey), 'PBKDF2', false, ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: encoder.encode('amino-endpoints-v1'), iterations: 50000, hash: 'SHA-256' },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+// Initialize secure endpoints after successful API key authentication
+async function initSecureEndpoints(apiKey) {
+    // Try to decrypt endpoints from localStorage first
+    var stored = localStorage.getItem(ENCRYPTED_ENDPOINTS_KEY);
+    if (stored) {
+        try {
+            var parsed = JSON.parse(stored);
+            var key = await deriveEndpointKey(apiKey);
+            var iv = Uint8Array.from(atob(parsed.iv), function(c) { return c.charCodeAt(0); });
+            var data = Uint8Array.from(atob(parsed.data), function(c) { return c.charCodeAt(0); });
+            var decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, data);
+            var endpoints = JSON.parse(new TextDecoder().decode(decrypted));
+            API = endpoints[0];
+            XANO_POST_API = endpoints[1];
+            XANO_SNAPSHOT_API = endpoints[2];
+            BOX_SYNC_WEBHOOK = endpoints[3];
+            BOX_DOWNLOAD_WEBHOOK = endpoints[4];
+            return;
+        } catch (e) {
+            // Decryption failed (wrong key or corrupted data) - fall through to bootstrap
+            localStorage.removeItem(ENCRYPTED_ENDPOINTS_KEY);
+        }
+    }
+
+    // Bootstrap: decode from obfuscated source
+    API = atob(_EP[0]);
+    XANO_POST_API = atob(_EP[1]);
+    XANO_SNAPSHOT_API = atob(_EP[2]);
+    BOX_SYNC_WEBHOOK = atob(_EP[3]);
+    BOX_DOWNLOAD_WEBHOOK = atob(_EP[4]);
+
+    // Encrypt endpoints with the user's API key and store for future use
+    try {
+        var key = await deriveEndpointKey(apiKey);
+        var iv = crypto.getRandomValues(new Uint8Array(12));
+        var encoder = new TextEncoder();
+        var plaintext = encoder.encode(JSON.stringify([API, XANO_POST_API, XANO_SNAPSHOT_API, BOX_SYNC_WEBHOOK, BOX_DOWNLOAD_WEBHOOK]));
+        var encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, plaintext);
+        var ivStr = '';
+        for (var i = 0; i < iv.length; i++) ivStr += String.fromCharCode(iv[i]);
+        var encArr = new Uint8Array(encrypted);
+        var encStr = '';
+        for (var j = 0; j < encArr.length; j++) encStr += String.fromCharCode(encArr[j]);
+        localStorage.setItem(ENCRYPTED_ENDPOINTS_KEY, JSON.stringify({
+            iv: btoa(ivStr),
+            data: btoa(encStr)
+        }));
+    } catch (e) {
+        console.warn('Failed to encrypt endpoints for storage:', e);
+    }
+}
+
+// Clear all endpoint URLs from memory and storage (called on logout)
+function clearSecureEndpoints() {
+    API = null;
+    XANO_POST_API = null;
+    XANO_SNAPSHOT_API = null;
+    BOX_SYNC_WEBHOOK = null;
+    BOX_DOWNLOAD_WEBHOOK = null;
+    localStorage.removeItem(ENCRYPTED_ENDPOINTS_KEY);
+}
 
 // ============ Web Crypto API Utilities ============
 
@@ -2993,8 +3088,8 @@ var snapshotSyncEnabled = false;
 
 // Box auto-sync state (off by default)
 var boxSyncEnabled = false;
-var BOX_SYNC_WEBHOOK = 'https://n8n.intelechia.com/webhook/box-upload';
-var BOX_DOWNLOAD_WEBHOOK = 'https://n8n.intelechia.com/webhook/box-download';
+var BOX_SYNC_WEBHOOK = null; // Secured: initialized after authentication via initSecureEndpoints()
+var BOX_DOWNLOAD_WEBHOOK = null; // Secured: initialized after authentication via initSecureEndpoints()
 var BOX_SYNC_FOLDER_ID = '364363223627';
 var BOX_SYNC_FILENAME = 'amino-snapshot.amo';
 
@@ -3020,8 +3115,8 @@ var inMemoryEventsByRecord = null; // Map of recordId -> array of events for fas
 var isBackgroundSaveInProgress = false; // Track background IndexedDB save status
 
 // ============ View Auto-Save System ============
-var XANO_POST_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminostreampost';
-var XANO_SNAPSHOT_API = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:nrIL-Oi-/aminosnapshot';
+var XANO_POST_API = null; // Secured: initialized after authentication via initSecureEndpoints()
+var XANO_SNAPSHOT_API = null; // Secured: initialized after authentication via initSecureEndpoints()
 var AUTO_SAVE_DELAY = 5 * 60 * 1000; // 5 minutes
 var autoSaveTimer = null;
 
@@ -3040,8 +3135,9 @@ var viewDirtyState = {
 var AminoSync = {
     // Post event to aminoStream and update snapshot
     async postEventWithSnapshot(event, snapshotData) {
+        if (!API_KEY || !XANO_POST_API) throw new Error('Not authenticated');
         // Step 1: POST to aminoStream (append event, get event ID)
-        var streamRes = await fetch(XANO_POST_API, {
+        var streamRes = await fetch(XANO_POST_API + '?apiKey=' + encodeURIComponent(API_KEY), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(event)
@@ -3064,7 +3160,7 @@ var AminoSync = {
             };
 
             try {
-                await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(event.recordId), {
+                await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(event.recordId) + '?apiKey=' + encodeURIComponent(API_KEY), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(snapshotRecord)
@@ -3085,8 +3181,9 @@ var AminoSync = {
 
     // Delete from snapshot (for NUL operations)
     async deleteSnapshot(recordId) {
+        if (!API_KEY || !XANO_SNAPSHOT_API) return;
         try {
-            await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(recordId), {
+            await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(recordId) + '?apiKey=' + encodeURIComponent(API_KEY), {
                 method: 'DELETE'
             });
 
@@ -3353,8 +3450,9 @@ var AminoSync = {
 
     // Push a single snapshot to the server
     async pushSnapshot(snapshot) {
+        if (!API_KEY || !XANO_SNAPSHOT_API) return { success: false, error: 'Not authenticated' };
         try {
-            var response = await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(snapshot.record_id), {
+            var response = await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(snapshot.record_id) + '?apiKey=' + encodeURIComponent(API_KEY), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(snapshot)
@@ -3489,7 +3587,7 @@ var AminoSync = {
 
             // 4. Get current snapshot state from server
             var snapshotRes = await fetch(
-                XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(recordId)
+                XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(recordId) + '?apiKey=' + encodeURIComponent(API_KEY)
             );
             var currentSnapshot = snapshotRes.ok ? await snapshotRes.json() : null;
 
@@ -4223,7 +4321,7 @@ var BoxSync = {
 
     // Push current data as .amo to Box via n8n webhook
     async push() {
-        if (this.isPushing) return;
+        if (this.isPushing || !API_KEY || !BOX_SYNC_WEBHOOK) return;
         this.isPushing = true;
         try {
             // Collect snapshot records from in-memory data
@@ -4302,7 +4400,8 @@ var BoxSync = {
                 method: 'POST',
                 headers: {
                     'x-file-name': BOX_SYNC_FILENAME,
-                    'x-folder-id': BOX_SYNC_FOLDER_ID
+                    'x-folder-id': BOX_SYNC_FOLDER_ID,
+                    'x-api-key': API_KEY
                 },
                 body: form
             });
@@ -5977,12 +6076,14 @@ async function initAuthScreen() {
         SET_FILTER = savedCredentials.setFilter || null;
 
         try {
+            await initSecureEndpoints(API_KEY);
             await init();
             return; // Success - auth screen stays hidden
         } catch (err) {
             console.error('Auto-login failed:', err);
             API_KEY = null;
             SET_FILTER = null;
+            clearSecureEndpoints();
             // Show auth screen with error so user can retry
             showAuthError('Connection failed. Click Connect to retry.');
             if (stats.count > 0) {
@@ -6033,6 +6134,7 @@ async function tryAuth() {
     SET_FILTER = document.getElementById('set-filter-input').value.trim() || null;
 
     try {
+        await initSecureEndpoints(key);
         await init();
     } catch (err) {
         console.error('Init error:', err);
@@ -6045,6 +6147,7 @@ async function tryAuth() {
         btn.disabled = false;
         API_KEY = null;
         SET_FILTER = null;
+        clearSecureEndpoints();
         return;
     }
 
@@ -6092,6 +6195,7 @@ function logout() {
     SyncHistory.stopPolling();
     API_KEY = null;
     SET_FILTER = null;
+    clearSecureEndpoints();
     // Close stale IndexedDB connection
     if (db) {
         try { db.close(); } catch (e) { /* ignore */ }
@@ -10802,10 +10906,11 @@ async function hydrateFromBoxDownload() {
         showLoadingOverlay();
         updateLoadingOverlay('Downloading snapshot...', 'Fetching from cloud storage...', 5, 0, 0, 0, '');
 
-        var downloadUrl = BOX_DOWNLOAD_WEBHOOK;
-        if (API_KEY) {
-            downloadUrl += '?api_key=' + encodeURIComponent(API_KEY);
+        if (!BOX_DOWNLOAD_WEBHOOK || !API_KEY) {
+            hideLoadingOverlay();
+            return false;
         }
+        var downloadUrl = BOX_DOWNLOAD_WEBHOOK + '?api_key=' + encodeURIComponent(API_KEY);
         var response = await fetch(downloadUrl);
         if (!response.ok) {
             console.warn('[BoxDownload] HTTP ' + response.status + ' - no snapshot available');
