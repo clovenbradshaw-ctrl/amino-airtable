@@ -1389,15 +1389,7 @@
                 <strong>One-time setup:</strong> This only happens once per device. After this, your data loads instantly from local storage.
             </div>
 
-            <div class="loading-skip-section">
-                <div class="loading-skip-text">Have a CSV export or .amo snapshot? Skip the download and import directly.</div>
-                <button class="loading-skip-btn" onclick="skipSetupAndUploadFile()">
-                    Skip &amp; Upload CSV File
-                </button>
-                <button class="loading-skip-btn" onclick="skipSetupAndUploadAmoFile()" style="margin-top: 8px;">
-                    Skip &amp; Upload .amo Snapshot
-                </button>
-            </div>
+            <!-- CSV/AMO manual import removed - hydration is automatic from cloud snapshot -->
         </div>
     </div>
 
@@ -1658,6 +1650,7 @@
                     <div class="sync-toggle" id="box-sync-toggle" onclick="toggleBoxSync()">
                         <div class="sync-toggle-knob"></div>
                     </div>
+                    <button class="sync-feed-btn" id="box-push-btn" onclick="manualBoxPush()" title="Manually push snapshot to Box">[push]</button>
                 </div>
                 <span style="flex: 1;"></span>
                 <span class="refresh-indicator" id="refresh-indicator">
@@ -3001,6 +2994,7 @@ var snapshotSyncEnabled = false;
 // Box auto-sync state (off by default)
 var boxSyncEnabled = false;
 var BOX_SYNC_WEBHOOK = 'https://n8n.intelechia.com/webhook/box-upload';
+var BOX_DOWNLOAD_WEBHOOK = 'https://n8n.intelechia.com/webhook/box-download';
 var BOX_SYNC_FOLDER_ID = '364363223627';
 var BOX_SYNC_FILENAME = 'amino-snapshot.amo';
 
@@ -3142,13 +3136,32 @@ var AminoSync = {
         await setSyncMeta('lastSnapshotEventId', eventId);
     },
 
+    // Fetch with single retry for transient network errors
+    async fetchWithRetry(url, retries) {
+        retries = retries || 1;
+        for (var attempt = 0; attempt <= retries; attempt++) {
+            try {
+                var response = await fetch(url);
+                return response;
+            } catch (err) {
+                if (attempt < retries) {
+                    // Wait before retry: 2s for first retry
+                    await new Promise(function(r) { setTimeout(r, 2000 * (attempt + 1)); });
+                    console.warn('[AminoSync] Fetch retry ' + (attempt + 1) + '/' + retries + ' for snapshot pull');
+                } else {
+                    throw err;
+                }
+            }
+        }
+    },
+
     // Incremental sync from snapshot endpoint
     async syncFromSnapshot() {
         if (!API_KEY) return { updated: 0 };
         var lastEventId = await this.getLastSnapshotEventId();
 
         try {
-            var response = await fetch(
+            var response = await this.fetchWithRetry(
                 XANO_SNAPSHOT_API + '?last_amino_event_gt=' + lastEventId +
                 (API_KEY ? '&apiKey=' + encodeURIComponent(API_KEY) : '')
             );
@@ -4067,20 +4080,70 @@ var PassiveSnapshotSync = {
     VERIFY_INTERVAL: 30000,  // 30 seconds between verification cycles
     VERIFY_COUNT: 3,         // Records to verify per cycle
     PULL_INTERVAL: 10000,    // 10 seconds between snapshot pulls
+    MAX_PULL_INTERVAL: 120000, // 2 minutes - max backoff cap for pull failures
 
     // State
     isRunning: false,
-    pullInterval: null,
+    pullTimeout: null,
+    consecutiveFailures: 0,
     stats: {
         verified: 0,
         repaired: 0,
         pulled: 0
     },
 
+    // Calculate next pull interval with exponential backoff + jitter
+    getNextPullInterval() {
+        if (this.consecutiveFailures === 0) return this.PULL_INTERVAL;
+        var exponential = this.PULL_INTERVAL * Math.pow(2, this.consecutiveFailures);
+        var capped = Math.min(exponential, this.MAX_PULL_INTERVAL);
+        var jitter = capped * 0.2 * (Math.random() * 2 - 1);
+        return Math.round(capped + jitter);
+    },
+
+    // Schedule the next pull using setTimeout (allows dynamic interval)
+    schedulePull() {
+        if (!this.isRunning) return;
+        var self = this;
+        var interval = this.getNextPullInterval();
+        this.pullTimeout = setTimeout(async function() {
+            try {
+                SyncStatusFeed.info('Pulling snapshots from server...');
+                var result = await AminoSync.syncFromSnapshot();
+                if (result.updated > 0) {
+                    self.stats.pulled += result.updated;
+                    SyncStatusFeed.success('Pulled ' + result.updated + ' snapshot(s)');
+                    if (self.consecutiveFailures > 0) {
+                        self.consecutiveFailures = 0;
+                        SyncStatusFeed.info('Pull recovered, resuming normal ' + (self.PULL_INTERVAL / 1000) + 's interval');
+                    }
+                } else if (result.error) {
+                    self.consecutiveFailures++;
+                    var nextInterval = self.getNextPullInterval();
+                    SyncStatusFeed.error('Pull failed: ' + result.error + ' (retry in ' + Math.round(nextInterval / 1000) + 's)');
+                } else {
+                    SyncStatusFeed.info('No new snapshots');
+                    if (self.consecutiveFailures > 0) {
+                        self.consecutiveFailures = 0;
+                        SyncStatusFeed.info('Pull recovered, resuming normal ' + (self.PULL_INTERVAL / 1000) + 's interval');
+                    }
+                }
+                SyncStatusFeed.updateStats();
+            } catch (err) {
+                self.consecutiveFailures++;
+                var nextInterval = self.getNextPullInterval();
+                SyncStatusFeed.error('Pull error: ' + err.message + ' (retry in ' + Math.round(nextInterval / 1000) + 's)');
+            }
+            // Schedule next pull (with potentially adjusted interval)
+            self.schedulePull();
+        }, interval);
+    },
+
     // Start passive sync (both verification and pulling)
     start() {
         if (this.isRunning) return;
         this.isRunning = true;
+        this.consecutiveFailures = 0;
 
         console.log('[PassiveSync] Starting passive snapshot sync');
         SyncStatusFeed.info('Snapshot sync started');
@@ -4090,26 +4153,9 @@ var PassiveSnapshotSync = {
         AminoSync.startBackgroundVerify(this.VERIFY_INTERVAL, this.VERIFY_COUNT);
         SyncStatusFeed.info('Background verification enabled (every ' + (this.VERIFY_INTERVAL / 1000) + 's)');
 
-        // Start periodic snapshot pulls from server
-        var self = this;
+        // Start periodic snapshot pulls from server (with backoff on failure)
         SyncStatusFeed.info('Snapshot pull interval: ' + (this.PULL_INTERVAL / 1000) + 's');
-        this.pullInterval = setInterval(async function() {
-            try {
-                SyncStatusFeed.info('Pulling snapshots from server...');
-                var result = await AminoSync.syncFromSnapshot();
-                if (result.updated > 0) {
-                    self.stats.pulled += result.updated;
-                    SyncStatusFeed.success('Pulled ' + result.updated + ' snapshot(s)');
-                } else if (result.error) {
-                    SyncStatusFeed.error('Pull failed: ' + result.error);
-                } else {
-                    SyncStatusFeed.info('No new snapshots');
-                }
-                SyncStatusFeed.updateStats();
-            } catch (err) {
-                SyncStatusFeed.error('Pull error: ' + err.message);
-            }
-        }, this.PULL_INTERVAL);
+        this.schedulePull();
     },
 
     // Stop passive sync
@@ -4119,10 +4165,11 @@ var PassiveSnapshotSync = {
 
         AminoSync.stopBackgroundVerify();
 
-        if (this.pullInterval) {
-            clearInterval(this.pullInterval);
-            this.pullInterval = null;
+        if (this.pullTimeout) {
+            clearTimeout(this.pullTimeout);
+            this.pullTimeout = null;
         }
+        this.consecutiveFailures = 0;
 
         console.log('[PassiveSync] Stopped');
         SyncStatusFeed.warn('Snapshot sync stopped');
@@ -4133,6 +4180,7 @@ var PassiveSnapshotSync = {
     getStats() {
         return {
             isRunning: this.isRunning,
+            consecutiveFailures: this.consecutiveFailures,
             ...this.stats
         };
     }
@@ -4296,6 +4344,16 @@ function toggleBoxSync() {
         console.log('[BoxSync] Disabled');
         SyncStatusFeed.info('Box auto-sync disabled');
     }
+}
+
+// Manually push snapshot to Box (independent of auto-sync toggle)
+function manualBoxPush() {
+    var btn = document.getElementById('box-push-btn');
+    if (btn) btn.disabled = true;
+    SyncStatusFeed.info('Box: manual push started…');
+    BoxSync.push().then(function() {
+        if (btn) btn.disabled = false;
+    });
 }
 
 // Initialize Box sync toggle UI state
@@ -8365,6 +8423,9 @@ async function fetchAllBySet(setType, onProgress) {
 // Supports aminoStream query parameters:
 //   page (int, min:1, default 1), per_page (int, min:1, max:10000, default 2500),
 //   created_after (timestamp), created_before (timestamp), last (bool - single most recent record)
+var FETCH_PAGE_TIMEOUT = 30000; // 30 second timeout per request
+var FETCH_PAGE_RETRIES = 3;    // retry up to 3 times on network errors
+
 async function fetchPage(page, createdAfter, options) {
     options = options || {};
     var params = [];
@@ -8377,7 +8438,31 @@ async function fetchPage(page, createdAfter, options) {
 
     var url = API + (params.length > 0 ? '?' + params.join('&') : '');
 
-    var res = await fetch(url);
+    var maxRetries = options.last ? 1 : FETCH_PAGE_RETRIES;
+    var lastErr = null;
+
+    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function() { controller.abort(); }, FETCH_PAGE_TIMEOUT);
+        try {
+            var res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            break; // success - exit retry loop
+        } catch (err) {
+            clearTimeout(timeoutId);
+            lastErr = err;
+            if (err.name === 'AbortError') {
+                lastErr = new Error('Request timed out after ' + (FETCH_PAGE_TIMEOUT / 1000) + 's');
+            }
+            if (attempt < maxRetries) {
+                var delay = 2000 * Math.pow(2, attempt); // 2s, 4s, 8s
+                console.warn('[fetchPage] Attempt ' + (attempt + 1) + '/' + (maxRetries + 1) + ' failed: ' + lastErr.message + ', retrying in ' + (delay / 1000) + 's...');
+                await new Promise(function(r) { setTimeout(r, delay); });
+                continue;
+            }
+            throw lastErr;
+        }
+    }
 
     if (res.status === 401 || res.status === 403) {
         throw new Error('Invalid API key');
@@ -8655,8 +8740,15 @@ async function fullSync() {
     }
 }
 
+var _incrementalSyncRunning = false;
+
 async function incrementalSync() {
     if (!API_KEY) return;
+    if (_incrementalSyncRunning) {
+        console.warn('[incrementalSync] Already running, skipping concurrent call');
+        return;
+    }
+    _incrementalSyncRunning = true;
     var syncStartTime = Date.now();
     try {
         // Show syncing indicator
@@ -8758,6 +8850,8 @@ async function incrementalSync() {
             error: err.message,
             detail: 'Sync error: ' + err.message
         });
+    } finally {
+        _incrementalSyncRunning = false;
     }
 }
 
@@ -8813,41 +8907,6 @@ async function showSyncStatusView() {
     syncStatusUnsubscribe = SyncHistory.onChange(() => {
         if (currentTable === '_sync_status') renderSyncStatusView();
     });
-}
-
-async function handleSnapshotExport() {
-    var btn = document.getElementById('snapshot-export-btn');
-    var resultEl = document.getElementById('snapshot-export-result');
-    if (!btn || !resultEl) return;
-
-    btn.disabled = true;
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exporting...';
-    resultEl.textContent = '';
-
-    try {
-        var result = await AminoSync.downloadSnapshotAsAmo();
-        if (!result.blob) {
-            resultEl.textContent = 'No snapshots available to export.';
-            resultEl.style.color = '#f59e0b';
-        } else {
-            var sizeStr = result.stats.bytes < 1024
-                ? result.stats.bytes + ' B'
-                : result.stats.bytes < 1048576
-                    ? (result.stats.bytes / 1024).toFixed(1) + ' KB'
-                    : (result.stats.bytes / 1048576).toFixed(1) + ' MB';
-            resultEl.innerHTML = '<span style="color: #10b981;">&#10003;</span> ' +
-                result.stats.records.toLocaleString() + ' records across ' +
-                result.stats.tables + ' table' + (result.stats.tables !== 1 ? 's' : '') +
-                ' &middot; ' + sizeStr;
-            resultEl.style.color = '#d1d5db';
-        }
-    } catch (err) {
-        resultEl.textContent = 'Export failed: ' + (err.message || err);
-        resultEl.style.color = '#ef4444';
-    }
-
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export .amo Snapshot';
 }
 
 async function renderSyncStatusView() {
@@ -8922,17 +8981,6 @@ async function renderSyncStatusView() {
         html += '<button class="btn-poll" onclick="SyncHistory.startPolling(); renderSyncStatusView();">Start Auto-Poll</button>';
         html += '<span style="font-size: 12px; color: #6b7280;">Auto-poll is off</span>';
     }
-    html += '</div>';
-    html += '</div>';
-
-    // Snapshot Export
-    html += '<div class="sync-status-section">';
-    html += '<h3><span class="section-dot green"></span>Snapshot Export</h3>';
-    html += '<div class="snapshot-export-controls">';
-    html += '<button class="btn-poll primary snapshot-export-btn" id="snapshot-export-btn" onclick="generateAndDownloadSnapshot()">';
-    html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
-    html += 'Download .amo Snapshot</button>';
-    html += '<span id="snapshot-export-result" style="font-size: 12px; color: #6b7280;">Generates from current data records</span>';
     html += '</div>';
     html += '</div>';
 
@@ -9078,15 +9126,48 @@ async function init() {
 
         lastEventTimestamp = storedLastTimestamp || null;
         if (API_KEY) await incrementalSync();
-    } else if (API_KEY) {
-        updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
-        await renderSidebar();
-        await fullSync();
-        await renderSidebar();
     } else {
-        // No API key and no local data - just show empty state
-        updateStatus('Offline mode - upload CSV or add API key', true, null, null);
-        await renderSidebar();
+        // No local data - always try to hydrate from Box snapshot first
+        updateStatus('Hydrating from cloud snapshot...', false, 0, 'Downloading snapshot...');
+        var hydrated = await hydrateFromBoxDownload();
+
+        if (hydrated) {
+            // Reload metadata after hydration
+            tables = await getAllTables();
+            fields = await getAllFields();
+            views = await getAllViews();
+            tables.forEach(t => META_TABLES[t.tableId] = t);
+            fields.forEach(f => {
+                if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+                META_FIELDS[f.tableId][f.fieldId] = f;
+            });
+            views.forEach(v => {
+                if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+                META_VIEWS[v.tableId][v.viewId] = v;
+            });
+
+            await renderSidebar();
+            var firstTable = Object.keys(META_TABLES)[0];
+            if (firstTable) {
+                await showTable(firstTable);
+            }
+
+            // Continue with incremental sync if API key is available
+            if (API_KEY) {
+                lastEventTimestamp = storedLastTimestamp || null;
+                await incrementalSync();
+            }
+        } else if (API_KEY) {
+            // Box download failed or empty - fall back to full event sync
+            updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
+            await renderSidebar();
+            await fullSync();
+            await renderSidebar();
+        } else {
+            // No snapshot, no API key - show empty state
+            updateStatus('No data available - add API key to sync', true, null, null);
+            await renderSidebar();
+        }
     }
 
     updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
@@ -9428,10 +9509,6 @@ async function renderEventsView() {
         html += '<button class="btn" onclick="importEventsFromCSV()" title="Import events from CSV (deduplicates by ID)">';
         html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>';
         html += ' Import CSV';
-        html += '</button>';
-        html += '<button class="btn" onclick="generateAndDownloadSnapshot()" title="Generate and download .amo snapshot from current data">';
-        html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
-        html += ' Download .amo';
         html += '</button>';
         html += '</div>';
 
@@ -10194,125 +10271,6 @@ async function getExistingEventIds() {
     });
 }
 
-// Generate snapshot from current data records and download as .amo file
-async function generateAndDownloadSnapshot() {
-    try {
-        showImportStatus('Generating Snapshot...', 'Reading records from database...', 'progress', 0);
-
-        var snapshotRecords = [];
-
-        // Collect from in-memory data first (CSV import cache)
-        if (window.IN_MEMORY_DATA) {
-            var memTables = Object.keys(window.IN_MEMORY_DATA);
-            for (var t = 0; t < memTables.length; t++) {
-                var tableId = memTables[t];
-                var records = window.IN_MEMORY_DATA[tableId];
-                var recordIds = Object.keys(records);
-                for (var r = 0; r < recordIds.length; r++) {
-                    snapshotRecords.push({
-                        record_id: recordIds[r],
-                        source_table: 'airtable:' + tableId,
-                        data: records[recordIds[r]],
-                        last_amino_event: 0
-                    });
-                }
-            }
-        }
-
-        // Read all records from IndexedDB data store
-        if (db && db.objectStoreNames.contains('data')) {
-            var allDbRecords = await new Promise(function(resolve, reject) {
-                var tx = db.transaction('data', 'readonly');
-                var store = tx.objectStore('data');
-                var results = [];
-                var req = store.openCursor();
-                req.onsuccess = function(e) {
-                    var cursor = e.target.result;
-                    if (cursor) {
-                        results.push(cursor.value);
-                        cursor.continue();
-                    } else {
-                        resolve(results);
-                    }
-                };
-                req.onerror = function() { reject(req.error); };
-            });
-
-            // Decrypt if encryption is active
-            if (encryptionEnabled && encryptionKey) {
-                allDbRecords = await Promise.all(allDbRecords.map(function(r) { return decryptRecordFromStorage(r); }));
-            }
-
-            showImportStatus('Generating Snapshot...', 'Processing ' + allDbRecords.length.toLocaleString() + ' records...', 'progress', 40);
-
-            // Deduplicate against in-memory records
-            var existingIds = {};
-            for (var i = 0; i < snapshotRecords.length; i++) {
-                existingIds[snapshotRecords[i].record_id] = true;
-            }
-
-            for (var j = 0; j < allDbRecords.length; j++) {
-                var rec = allDbRecords[j];
-                if (rec.recordId && !existingIds[rec.recordId]) {
-                    snapshotRecords.push({
-                        record_id: rec.recordId,
-                        source_table: 'airtable:' + rec.tableId,
-                        data: rec.fields || {},
-                        last_amino_event: 0
-                    });
-                }
-            }
-        }
-
-        if (snapshotRecords.length === 0) {
-            showImportStatus('No Data', 'No records available to export as snapshot.', 'error');
-            return;
-        }
-
-        showImportStatus('Generating Snapshot...', 'Building .amo file from ' + snapshotRecords.length.toLocaleString() + ' records...', 'progress', 70);
-
-        // Generate .amo binary
-        var binary = AmoFormat.produce(snapshotRecords, { tables: META_TABLES, fields: META_FIELDS });
-        var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
-
-        // Count unique tables
-        var tableSet = {};
-        for (var k = 0; k < snapshotRecords.length; k++) {
-            tableSet[snapshotRecords[k].source_table] = true;
-        }
-        var tableCount = Object.keys(tableSet).length;
-
-        showImportStatus('Generating Snapshot...', 'Starting download...', 'progress', 90);
-
-        // Trigger browser download
-        var timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        var filename = 'amino-snapshot-' + timestamp + '.amo';
-        var url = URL.createObjectURL(blob);
-        var link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-
-        var sizeStr = binary.length < 1024
-            ? binary.length + ' B'
-            : binary.length < 1048576
-                ? (binary.length / 1024).toFixed(1) + ' KB'
-                : (binary.length / 1048576).toFixed(1) + ' MB';
-
-        showImportStatus('Snapshot Exported',
-            snapshotRecords.length.toLocaleString() + ' records across ' +
-            tableCount + ' table' + (tableCount !== 1 ? 's' : '') +
-            ' \u00b7 ' + sizeStr, 'success');
-
-    } catch (err) {
-        console.error('Error generating snapshot:', err);
-        showImportStatus('Snapshot Export Failed', err.message, 'error');
-    }
-}
-
 function showImportStatus(title, details, type, progress) {
     var existing = document.querySelector('.import-status');
     if (existing) existing.remove();
@@ -10832,6 +10790,196 @@ async function skipSetupAndUploadAmoFile() {
         await processAmoFile(file);
     };
     input.click();
+}
+
+// ============ Hydrate from Box Download ============
+
+// Fetches .amo snapshot from Box via webhook and imports it locally.
+// Data is encrypted locally via the existing encryption system (user's password/passkey).
+// Returns true if hydration succeeded, false otherwise.
+async function hydrateFromBoxDownload() {
+    try {
+        showLoadingOverlay();
+        updateLoadingOverlay('Downloading snapshot...', 'Fetching from cloud storage...', 5, 0, 0, 0, '');
+
+        var downloadUrl = BOX_DOWNLOAD_WEBHOOK;
+        if (API_KEY) {
+            downloadUrl += '?api_key=' + encodeURIComponent(API_KEY);
+        }
+        var response = await fetch(downloadUrl);
+        if (!response.ok) {
+            console.warn('[BoxDownload] HTTP ' + response.status + ' - no snapshot available');
+            hideLoadingOverlay();
+            return false;
+        }
+
+        var buffer = await response.arrayBuffer();
+        if (!buffer || buffer.byteLength === 0) {
+            console.warn('[BoxDownload] Empty response');
+            hideLoadingOverlay();
+            return false;
+        }
+
+        updateLoadingOverlay('Downloading snapshot...', 'Parsing snapshot data...', 15, 0, 0, 0, '');
+
+        // Detect format
+        var format;
+        try {
+            format = AmoFormat.detectFormat(buffer);
+        } catch (err) {
+            console.warn('[BoxDownload] Unrecognized format:', err);
+            hideLoadingOverlay();
+            return false;
+        }
+
+        var amoData;
+        if (format === 'amo') {
+            amoData = AmoFormat.read(buffer);
+        } else if (format === 'json-gz') {
+            var decompressed = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
+            var records = JSON.parse(decompressed);
+            amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
+            for (var i = 0; i < records.length; i++) {
+                var rec = records[i];
+                var tbl = rec.source_table || 'unknown';
+                if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
+                var rowData = Object.assign({}, rec.data || {});
+                if (rec.record_id) rowData.record_id = rec.record_id;
+                amoData.tables[tbl].push(rowData);
+                if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+            }
+        } else if (format === 'json') {
+            var text = new TextDecoder().decode(buffer);
+            var records = JSON.parse(text);
+            amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
+            for (var i = 0; i < records.length; i++) {
+                var rec = records[i];
+                var tbl = rec.source_table || 'unknown';
+                if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
+                var rowData = Object.assign({}, rec.data || {});
+                if (rec.record_id) rowData.record_id = rec.record_id;
+                amoData.tables[tbl].push(rowData);
+                if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+            }
+        } else {
+            console.warn('[BoxDownload] Unsupported format:', format);
+            hideLoadingOverlay();
+            return false;
+        }
+
+        var tableNames = Object.keys(amoData.tables);
+        if (tableNames.length === 0) {
+            console.warn('[BoxDownload] Snapshot contains no data');
+            hideLoadingOverlay();
+            return false;
+        }
+
+        updateLoadingOverlay('Importing snapshot...', 'Building tables and fields...', 40, tableNames.length, 0, 0, '');
+
+        // Restore table/field metadata from snapshot if available
+        var savedMeta = amoData.meta || {};
+        if (savedMeta.tables) {
+            var savedTableIds = Object.keys(savedMeta.tables);
+            for (var m = 0; m < savedTableIds.length; m++) {
+                var tid = savedTableIds[m];
+                META_TABLES[tid] = savedMeta.tables[tid];
+            }
+        }
+        if (savedMeta.fields) {
+            var savedFieldTableIds = Object.keys(savedMeta.fields);
+            for (var m = 0; m < savedFieldTableIds.length; m++) {
+                var tid = savedFieldTableIds[m];
+                if (!META_FIELDS[tid]) META_FIELDS[tid] = {};
+                var fieldIds = Object.keys(savedMeta.fields[tid]);
+                for (var f = 0; f < fieldIds.length; f++) {
+                    META_FIELDS[tid][fieldIds[f]] = savedMeta.fields[tid][fieldIds[f]];
+                }
+            }
+        }
+
+        // Build data structures and persist to IndexedDB (encrypted via saveBatch)
+        var batchTables = [];
+        var batchFields = [];
+        var batchData = [];
+        var totalRecordCount = 0;
+        var totalFieldCount = 0;
+
+        for (var t = 0; t < tableNames.length; t++) {
+            var fullTableName = tableNames[t];
+            var tableId = fullTableName.replace('airtable:', '');
+            var rows = amoData.tables[fullTableName];
+
+            if (!META_TABLES[tableId]) {
+                META_TABLES[tableId] = {
+                    tableId: tableId,
+                    tableName: tableId,
+                    _placeholder: true
+                };
+            }
+            batchTables.push(META_TABLES[tableId]);
+
+            if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+
+            for (var r = 0; r < rows.length; r++) {
+                var row = rows[r];
+                var recordId = row.record_id;
+                if (!recordId) continue;
+
+                var data = {};
+                var keys = Object.keys(row);
+                for (var k = 0; k < keys.length; k++) {
+                    if (keys[k] !== 'record_id') {
+                        data[keys[k]] = row[keys[k]];
+
+                        if (!META_FIELDS[tableId][keys[k]]) {
+                            META_FIELDS[tableId][keys[k]] = {
+                                tableId: tableId,
+                                fieldId: keys[k],
+                                fieldName: keys[k],
+                                fieldType: inferFieldType(row[keys[k]]),
+                                _placeholder: true
+                            };
+                            totalFieldCount++;
+                        }
+                    }
+                }
+
+                batchData.push({ tableId: tableId, recordId: recordId, fields: data });
+                totalRecordCount++;
+
+                if (totalRecordCount % 5000 === 0) {
+                    var pct = 40 + Math.round((t / tableNames.length) * 40);
+                    updateLoadingOverlay('Importing snapshot...', 'Processed ' + totalRecordCount.toLocaleString() + ' records...', pct, tableNames.length, totalFieldCount, totalRecordCount, '');
+                    await new Promise(function(resolve) { setTimeout(resolve, 0); });
+                }
+            }
+        }
+
+        // Collect all field metadata for batch save
+        var fieldTableIds = Object.keys(META_FIELDS);
+        for (var ft = 0; ft < fieldTableIds.length; ft++) {
+            var fids = Object.keys(META_FIELDS[fieldTableIds[ft]]);
+            for (var fi = 0; fi < fids.length; fi++) {
+                batchFields.push(META_FIELDS[fieldTableIds[ft]][fids[fi]]);
+            }
+        }
+
+        updateLoadingOverlay('Saving to local storage...', 'Encrypting and persisting ' + totalRecordCount.toLocaleString() + ' records...', 85, tableNames.length, totalFieldCount, totalRecordCount, '');
+
+        // saveBatch handles encryption automatically when encryptionEnabled
+        await saveBatch(batchTables, batchFields, [], batchData);
+
+        updateLoadingOverlay('Hydration complete!', totalRecordCount.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFieldCount, totalRecordCount, '');
+        setTimeout(hideLoadingOverlay, 300);
+
+        console.log('[BoxDownload] Hydration complete: ' + totalRecordCount + ' records across ' + tableNames.length + ' tables');
+        return true;
+
+    } catch (err) {
+        console.error('[BoxDownload] Hydration failed:', err);
+        hideLoadingOverlay();
+        return false;
+    }
 }
 
 // ============ Point in Time View ============
