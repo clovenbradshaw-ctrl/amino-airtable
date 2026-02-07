@@ -6795,6 +6795,9 @@ async function submitConnectApi() {
     SET_FILTER = document.getElementById('connect-api-set-filter').value.trim() || null;
 
     try {
+        // Initialize endpoint URLs before making any API calls
+        await initSecureEndpoints(key);
+
         // Test the connection with a lightweight check
         var testResult = await fetchPage(1, null, { last: true });
 
@@ -6821,6 +6824,7 @@ async function submitConnectApi() {
         errEl.style.display = 'block';
         API_KEY = null;
         SET_FILTER = null;
+        clearSecureEndpoints();
     }
 
     btn.textContent = 'Connect';
@@ -9003,6 +9007,11 @@ async function fetchPage(page, createdAfter, options) {
 
     if (res.status === 401 || res.status === 403) {
         throw new Error('Invalid API key');
+    }
+
+    var contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        throw new Error('Server returned non-JSON response (HTTP ' + res.status + '). Check your connection and try again.');
     }
 
     var data = await res.json();
