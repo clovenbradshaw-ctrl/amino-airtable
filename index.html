@@ -6324,7 +6324,7 @@ function getAllFieldsInOrder(tableId, viewId) {
 }
 
 // Toggle field visibility for current view
-async function toggleFieldVisibility(fieldId) {
+function toggleFieldVisibility(fieldId) {
     if (!currentTable) return;
     var viewId = currentView || '_default';
     var config = getViewFieldConfig(currentTable, viewId);
@@ -6345,11 +6345,11 @@ async function toggleFieldVisibility(fieldId) {
         config.fieldOrder.push(fieldId);
     }
 
-    await saveViewFieldConfig(currentTable, viewId, config);
-    markViewDirty('hiddenFieldIds', config.hiddenFieldIds);
+    // Fast path: update in-memory immediately, defer IndexedDB save
+    updateFieldVisibilityFast(currentTable, viewId, config.hiddenFieldIds);
     renderFieldsDropdown();
     updateFieldsCount();
-    await renderTable();
+    renderTable();
 }
 
 // Move field up in order (optimized with DOM manipulation)
@@ -6397,7 +6397,7 @@ function moveFieldDown(fieldId) {
 }
 
 // Show all fields
-async function showAllFields() {
+function showAllFields() {
     if (!currentTable) return;
     var viewId = currentView || '_default';
     var fields = META_FIELDS[currentTable] || {};
@@ -6413,15 +6413,15 @@ async function showAllFields() {
         }
     }
 
-    await saveViewFieldConfig(currentTable, viewId, config);
-    markViewDirty('hiddenFieldIds', config.hiddenFieldIds);
+    // Fast path: update in-memory immediately, defer IndexedDB save
+    updateFieldVisibilityFast(currentTable, viewId, config.hiddenFieldIds);
     renderFieldsDropdown();
     updateFieldsCount();
-    await renderTable();
+    renderTable();
 }
 
 // Hide all fields (except keep at least one visible)
-async function hideAllFields() {
+function hideAllFields() {
     if (!currentTable) return;
     var viewId = currentView || '_default';
     var fields = META_FIELDS[currentTable] || {};
@@ -6436,11 +6436,11 @@ async function hideAllFields() {
     // Hide all fields except the first one
     config.hiddenFieldIds = allFieldIds.filter(fid => fid !== firstField);
 
-    await saveViewFieldConfig(currentTable, viewId, config);
-    markViewDirty('hiddenFieldIds', config.hiddenFieldIds);
+    // Fast path: update in-memory immediately, defer IndexedDB save
+    updateFieldVisibilityFast(currentTable, viewId, config.hiddenFieldIds);
     renderFieldsDropdown();
     updateFieldsCount();
-    await renderTable();
+    renderTable();
 }
 
 function getLocalStats() {
@@ -13501,6 +13501,24 @@ function moveColumnInDOM(fromIndex, toIndex) {
     });
 
     return true;
+}
+
+// Update field visibility in memory and trigger debounced save (no IndexedDB await)
+function updateFieldVisibilityFast(tableId, viewId, newHiddenFieldIds) {
+    // Update in-memory config
+    if (!VIEW_FIELD_CONFIG[tableId]) VIEW_FIELD_CONFIG[tableId] = {};
+    if (!VIEW_FIELD_CONFIG[tableId][viewId]) {
+        VIEW_FIELD_CONFIG[tableId][viewId] = { hiddenFieldIds: [], fieldOrder: [] };
+    }
+    VIEW_FIELD_CONFIG[tableId][viewId].hiddenFieldIds = newHiddenFieldIds;
+
+    // Update META_VIEWS as well for consistency
+    if (META_VIEWS[tableId] && META_VIEWS[tableId][viewId]) {
+        META_VIEWS[tableId][viewId].hiddenFieldIds = newHiddenFieldIds;
+    }
+
+    // Mark dirty for debounced auto-save (uses existing system)
+    markViewDirty('hiddenFieldIds', newHiddenFieldIds);
 }
 
 // Update field order in memory and trigger debounced save
