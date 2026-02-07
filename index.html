@@ -739,14 +739,20 @@
         .fields-btn:hover { border-color: var(--primary-500); color: var(--text-primary); }
         .fields-btn .fields-icon { font-size: 14px; }
         .fields-btn .fields-count { background: rgba(59, 130, 246, 0.15); color: var(--primary-400); padding: 2px 6px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-        .fields-dropdown { position: absolute; top: 100%; right: 0; margin-top: 4px; width: 280px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 100; display: none; }
+        .fields-dropdown { position: absolute; top: 100%; right: 0; margin-top: 4px; width: 340px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 100; display: none; }
         .fields-dropdown.open { display: block; }
         .fields-dropdown-header { padding: 12px 16px; border-bottom: 1px solid var(--border-primary); display: flex; align-items: center; justify-content: space-between; }
         .fields-dropdown-header h3 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0; }
         .fields-dropdown-actions { display: flex; gap: 8px; }
         .fields-dropdown-actions button { padding: 4px 8px; font-size: 11px; background: transparent; border: none; color: var(--primary-400); cursor: pointer; border-radius: var(--radius-sm); }
         .fields-dropdown-actions button:hover { background: rgba(59, 130, 246, 0.15); }
-        .fields-dropdown-list { max-height: 350px; overflow-y: auto; padding: 8px 0; }
+        .fields-search-container { padding: 8px 12px; border-bottom: 1px solid var(--border-primary); }
+        .fields-search-input { width: 100%; padding: 6px 10px; font-size: 13px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-primary); outline: none; box-sizing: border-box; }
+        .fields-search-input::placeholder { color: var(--text-muted); }
+        .fields-search-input:focus { border-color: var(--primary-500); }
+        .fields-dropdown-list { max-height: 450px; overflow-y: auto; padding: 8px 0; }
+        .fields-dropdown-item.drag-over-above { box-shadow: inset 0 2px 0 0 var(--primary-500); }
+        .fields-dropdown-item.drag-over-below { box-shadow: inset 0 -2px 0 0 var(--primary-500); }
         .fields-dropdown-item { padding: 8px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: background var(--transition-fast); user-select: none; }
         .fields-dropdown-item:hover { background: var(--bg-hover); }
         .fields-dropdown-item.dragging { background: rgba(59, 130, 246, 0.15); opacity: 0.8; }
@@ -1477,6 +1483,9 @@
                                 <button onclick="showAllFields()">Show All</button>
                                 <button onclick="hideAllFields()">Hide All</button>
                             </div>
+                        </div>
+                        <div class="fields-search-container">
+                            <input type="text" class="fields-search-input" id="fields-search-input" placeholder="Search fields..." oninput="filterFieldsDropdown(this.value)">
                         </div>
                         <div class="fields-dropdown-list" id="fields-dropdown-list">
                             <!-- Field items will be rendered here -->
@@ -11990,6 +11999,16 @@ function toggleFieldsDropdown() {
     viewDropdown.classList.remove('open');
 
     dropdown.classList.toggle('open');
+
+    // Focus search input and clear it when opening
+    if (dropdown.classList.contains('open')) {
+        var searchInput = document.getElementById('fields-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+            filterFieldsDropdown('');
+            setTimeout(function() { searchInput.focus(); }, 50);
+        }
+    }
 }
 
 // Close all dropdowns
@@ -12141,7 +12160,7 @@ function renderFieldsDropdown() {
         var fieldName = field.fieldName || fid;
         var fieldType = field.fieldType || 'unknown';
 
-        html += '<div class="fields-dropdown-item" data-field-id="' + esc(fid) + '">';
+        html += '<div class="fields-dropdown-item" data-field-id="' + esc(fid) + '" draggable="true">';
 
         // Drag handle
         html += '<span class="field-drag-handle" title="Drag to reorder">&#9776;</span>';
@@ -12175,6 +12194,13 @@ function renderFieldsDropdown() {
     }
 
     list.innerHTML = html;
+    initFieldsDropdownDrag();
+
+    // Preserve search filter if active
+    var searchInput = document.getElementById('fields-search-input');
+    if (searchInput && searchInput.value) {
+        filterFieldsDropdown(searchInput.value);
+    }
 }
 
 // Update visible fields count badge
@@ -12192,6 +12218,124 @@ function updateFieldsCount() {
     if (countEl) {
         countEl.textContent = visibleCount + '/' + totalFields;
     }
+}
+
+// Filter fields dropdown by search query
+function filterFieldsDropdown(query) {
+    var list = document.getElementById('fields-dropdown-list');
+    if (!list) return;
+    var items = list.querySelectorAll('.fields-dropdown-item');
+    var lowerQuery = (query || '').toLowerCase().trim();
+
+    for (var i = 0; i < items.length; i++) {
+        var nameEl = items[i].querySelector('.field-name');
+        var name = nameEl ? nameEl.textContent.toLowerCase() : '';
+        if (!lowerQuery || name.indexOf(lowerQuery) >= 0) {
+            items[i].style.display = '';
+        } else {
+            items[i].style.display = 'none';
+        }
+    }
+}
+
+// --- Drag-to-reorder for fields dropdown ---
+var draggedFieldItem = null;
+var draggedFieldId = null;
+
+function initFieldsDropdownDrag() {
+    var list = document.getElementById('fields-dropdown-list');
+    if (!list) return;
+
+    list.addEventListener('dragstart', function(e) {
+        var item = e.target.closest('.fields-dropdown-item');
+        if (!item) return;
+        draggedFieldItem = item;
+        draggedFieldId = item.dataset.fieldId;
+        item.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', draggedFieldId);
+    });
+
+    list.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+
+        var item = e.target.closest('.fields-dropdown-item');
+        if (!item || item === draggedFieldItem) return;
+
+        // Clear previous indicators
+        list.querySelectorAll('.drag-over-above, .drag-over-below').forEach(function(el) {
+            el.classList.remove('drag-over-above', 'drag-over-below');
+        });
+
+        // Determine if above or below midpoint
+        var rect = item.getBoundingClientRect();
+        var midY = rect.top + rect.height / 2;
+        if (e.clientY < midY) {
+            item.classList.add('drag-over-above');
+        } else {
+            item.classList.add('drag-over-below');
+        }
+    });
+
+    list.addEventListener('dragleave', function(e) {
+        var item = e.target.closest('.fields-dropdown-item');
+        if (item) {
+            item.classList.remove('drag-over-above', 'drag-over-below');
+        }
+    });
+
+    list.addEventListener('dragend', function() {
+        list.querySelectorAll('.dragging, .drag-over-above, .drag-over-below').forEach(function(el) {
+            el.classList.remove('dragging', 'drag-over-above', 'drag-over-below');
+        });
+        draggedFieldItem = null;
+        draggedFieldId = null;
+    });
+
+    list.addEventListener('drop', function(e) {
+        e.preventDefault();
+
+        var item = e.target.closest('.fields-dropdown-item');
+        if (!item || !draggedFieldId) return;
+
+        var targetFieldId = item.dataset.fieldId;
+        if (targetFieldId === draggedFieldId) return;
+
+        // Determine insert position based on drop location
+        var rect = item.getBoundingClientRect();
+        var midY = rect.top + rect.height / 2;
+        var insertAfter = e.clientY >= midY;
+
+        // Perform reorder
+        if (!currentTable) return;
+        var viewId = currentView || '_default';
+        var config = getViewFieldConfig(currentTable, viewId);
+
+        var fromIdx = config.fieldOrder.indexOf(draggedFieldId);
+        var toIdx = config.fieldOrder.indexOf(targetFieldId);
+        if (fromIdx < 0 || toIdx < 0) return;
+
+        // Remove from old position
+        config.fieldOrder.splice(fromIdx, 1);
+
+        // Recalculate target index after removal
+        var newToIdx = config.fieldOrder.indexOf(targetFieldId);
+        var insertIdx = insertAfter ? newToIdx + 1 : newToIdx;
+        config.fieldOrder.splice(insertIdx, 0, draggedFieldId);
+
+        // Move column in table DOM
+        moveColumnInDOM(fromIdx, insertIdx);
+
+        updateFieldOrderFast(currentTable, viewId, config.fieldOrder);
+        renderFieldsDropdown();
+
+        // Restore search filter if active
+        var searchInput = document.getElementById('fields-search-input');
+        if (searchInput && searchInput.value) {
+            filterFieldsDropdown(searchInput.value);
+        }
+    });
 }
 
 function esc(s) {
