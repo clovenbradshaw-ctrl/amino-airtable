@@ -3435,6 +3435,7 @@ var currentPage = 0;
 var currentRecordIds = [];
 var totalRecords = 0;
 var lastEventTimestamp = null; // ISO timestamp of last synced event
+var _hydrationInProgress = false; // Lock: prevents sync operations during file hydration/import
 var pollInterval = null;
 var navVersion = 0; // Navigation guard to prevent race conditions when rapidly switching views
 
@@ -3799,8 +3800,23 @@ var AminoSync = {
         return meta || 0;
     },
 
-    // Set last synced snapshot event ID
+    // Validate a snapshot cursor value — must be a finite positive integer
+    isValidCursor(value) {
+        return typeof value === 'number' && Number.isFinite(value) && value > 0 && value === Math.floor(value);
+    },
+
+    // Set last synced snapshot event ID (with validation)
     async setLastSnapshotEventId(eventId) {
+        if (!this.isValidCursor(eventId)) {
+            console.error('[AminoSync] Refusing to set invalid cursor:', eventId);
+            return;
+        }
+        // Guard against cursor going backwards — only advance forward
+        var current = await this.getLastSnapshotEventId();
+        if (current > 0 && eventId < current) {
+            console.warn('[AminoSync] Cursor would move backwards (' + current + ' → ' + eventId + ') — keeping current value');
+            return;
+        }
         await setSyncMeta('lastSnapshotEventId', eventId);
     },
 
@@ -3826,6 +3842,10 @@ var AminoSync = {
     // Incremental sync from snapshot endpoint
     async syncFromSnapshot() {
         if (!API_KEY) return { updated: 0 };
+        if (_hydrationInProgress) {
+            console.warn('[AminoSync] syncFromSnapshot skipped — hydration in progress');
+            return { updated: 0, error: 'hydration_in_progress' };
+        }
         var lastEventId = await this.getLastSnapshotEventId();
 
         if (lastEventId === 0) {
@@ -3873,8 +3893,10 @@ var AminoSync = {
                 await new Promise((resolve, reject) => {
                     tx.oncomplete = resolve;
                     tx.onerror = () => reject(tx.error);
+                    tx.onabort = () => reject(new Error('Snapshot transaction aborted: ' + (tx.error ? tx.error.message : 'unknown')));
                 });
 
+                // Only advance cursor after transaction commits successfully
                 await this.setLastSnapshotEventId(maxEventId);
             }
 
@@ -5788,6 +5810,7 @@ async function saveBatch(tables, fields, views, dataRecords) {
 
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(new Error('saveBatch transaction aborted: ' + (tx.error ? tx.error.message : 'unknown reason (possibly quota exceeded)')));
     });
 }
 
@@ -9411,6 +9434,10 @@ var _incrementalSyncRunning = false;
 
 async function incrementalSync() {
     if (!API_KEY) return;
+    if (_hydrationInProgress) {
+        console.warn('[incrementalSync] Skipped — hydration/import in progress');
+        return;
+    }
     if (_incrementalSyncRunning) {
         console.warn('[incrementalSync] Already running, skipping concurrent call');
         return;
@@ -9432,6 +9459,7 @@ async function incrementalSync() {
         var allEvents = [];
         var page = 1;
         var iterations = 0;
+        var paginationComplete = true;
         while (true) {
             var result = await fetchPage(page, lastEventTimestamp);
             if (!result.events || result.events.length === 0) break;
@@ -9439,7 +9467,11 @@ async function incrementalSync() {
             if (!result.hasMore) break;
             page = result.nextPage;
             iterations++;
-            if (iterations > 100) break; // Safety limit
+            if (iterations > 100) {
+                paginationComplete = false;
+                console.warn('[incrementalSync] Hit 100-page safety limit — some events may not have been fetched');
+                break;
+            }
         }
 
         // Wait for snapshot sync to complete
@@ -9453,8 +9485,21 @@ async function incrementalSync() {
                 var bTime = b.created_at ? (typeof b.created_at === 'number' ? b.created_at : new Date(b.created_at).getTime()) : 0;
                 return aTime - bTime;
             });
-            await processEvents(allEvents);
-            await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
+            // Save previous timestamp so we can roll back if processEvents fails
+            var prevTimestamp = lastEventTimestamp;
+            try {
+                await processEvents(allEvents);
+            } catch (procErr) {
+                // Roll back in-memory cursor so next sync re-fetches these events
+                lastEventTimestamp = prevTimestamp;
+                throw procErr;
+            }
+            // Only persist cursor if pagination was complete — partial fetches should re-try
+            if (!paginationComplete) {
+                console.warn('[incrementalSync] Skipping cursor persist — pagination was incomplete');
+            } else {
+                await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
+            }
 
             updateStatus('Updating views...', false, null, null);
             await renderSidebar();
@@ -11259,7 +11304,9 @@ async function skipSetupAndUploadFile() {
 
 // Process an .amo file directly (called from skipAuthAndUploadAmo or loading overlay)
 async function processAmoFile(file) {
-
+        _hydrationInProgress = true;
+        var wasPassiveSyncRunning = PassiveSnapshotSync.isRunning;
+        if (wasPassiveSyncRunning) PassiveSnapshotSync.stop();
         try {
             updateLoadingOverlay('Importing .amo snapshot...', 'Reading file...', 5, 0, 0, 0, '');
 
@@ -11291,7 +11338,8 @@ async function processAmoFile(file) {
                     var rowData = Object.assign({}, rec.data || {});
                     if (rec.record_id) rowData.record_id = rec.record_id;
                     amoData.tables[tbl].push(rowData);
-                    if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+                    var _evt = Number(rec.last_amino_event);
+                    if (Number.isFinite(_evt) && _evt > amoData.cursor) amoData.cursor = _evt;
                 }
             } else if (format === 'json') {
                 var text = new TextDecoder().decode(buffer);
@@ -11304,7 +11352,8 @@ async function processAmoFile(file) {
                     var rowData = Object.assign({}, rec.data || {});
                     if (rec.record_id) rowData.record_id = rec.record_id;
                     amoData.tables[tbl].push(rowData);
-                    if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+                    var _evt = Number(rec.last_amino_event);
+                    if (Number.isFinite(_evt) && _evt > amoData.cursor) amoData.cursor = _evt;
                 }
             } else {
                 alert('Unsupported snapshot format.');
@@ -11443,6 +11492,9 @@ async function processAmoFile(file) {
         } catch (err) {
             console.error('Error importing .amo file:', err);
             alert('Error importing .amo file: ' + err.message);
+        } finally {
+            _hydrationInProgress = false;
+            if (wasPassiveSyncRunning) PassiveSnapshotSync.start();
         }
 }
 
@@ -11465,6 +11517,9 @@ async function skipSetupAndUploadAmoFile() {
 // Data is encrypted locally via the existing encryption system (user's password/passkey).
 // Returns true if hydration succeeded, false otherwise.
 async function hydrateFromBoxDownload() {
+    _hydrationInProgress = true;
+    var wasPassiveSyncRunning = PassiveSnapshotSync.isRunning;
+    if (wasPassiveSyncRunning) PassiveSnapshotSync.stop();
     try {
         showLoadingOverlay();
         updateLoadingOverlay('Downloading snapshot...', 'Fetching from cloud storage...', 5, 0, 0, 0, '');
@@ -11513,7 +11568,8 @@ async function hydrateFromBoxDownload() {
                 var rowData = Object.assign({}, rec.data || {});
                 if (rec.record_id) rowData.record_id = rec.record_id;
                 amoData.tables[tbl].push(rowData);
-                if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+                var _evt = Number(rec.last_amino_event);
+                if (Number.isFinite(_evt) && _evt > amoData.cursor) amoData.cursor = _evt;
             }
         } else if (format === 'json') {
             var text = new TextDecoder().decode(buffer);
@@ -11526,7 +11582,8 @@ async function hydrateFromBoxDownload() {
                 var rowData = Object.assign({}, rec.data || {});
                 if (rec.record_id) rowData.record_id = rec.record_id;
                 amoData.tables[tbl].push(rowData);
-                if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+                var _evt = Number(rec.last_amino_event);
+                if (Number.isFinite(_evt) && _evt > amoData.cursor) amoData.cursor = _evt;
             }
         } else {
             console.warn('[BoxDownload] Unsupported format:', format);
@@ -11570,6 +11627,8 @@ async function hydrateFromBoxDownload() {
         var batchData = [];
         var totalRecordCount = 0;
         var totalFieldCount = 0;
+        var skippedRecords = 0;
+        var invalidCursorRecords = 0;
 
         for (var t = 0; t < tableNames.length; t++) {
             var fullTableName = tableNames[t];
@@ -11590,7 +11649,7 @@ async function hydrateFromBoxDownload() {
             for (var r = 0; r < rows.length; r++) {
                 var row = rows[r];
                 var recordId = row.record_id;
-                if (!recordId) continue;
+                if (!recordId) { skippedRecords++; continue; }
 
                 var data = {};
                 var keys = Object.keys(row);
@@ -11622,6 +11681,10 @@ async function hydrateFromBoxDownload() {
             }
         }
 
+        if (skippedRecords > 0) {
+            console.warn('[BoxDownload] Skipped ' + skippedRecords + ' records with missing record_id');
+        }
+
         // Collect all field metadata for batch save
         var fieldTableIds = Object.keys(META_FIELDS);
         for (var ft = 0; ft < fieldTableIds.length; ft++) {
@@ -11636,20 +11699,20 @@ async function hydrateFromBoxDownload() {
         // saveBatch handles encryption automatically when encryptionEnabled
         await saveBatch(batchTables, batchFields, [], batchData);
 
-        // Set the snapshot cursor so incremental sync only fetches records newer than the file
-        if (amoData.cursor > 0) {
-            await AminoSync.setLastSnapshotEventId(amoData.cursor);
-            console.log('[BoxDownload] Set lastSnapshotEventId to ' + amoData.cursor + ' from hydrated file');
-        } else {
-            console.warn('[BoxDownload] Hydrated file had no cursor (cursor=0) — incremental sync will fetch all records on first run');
-        }
-
-        // Verify persisted record count matches what we parsed
+        // Verify persisted record count matches what we parsed BEFORE advancing cursor.
+        // If data didn't persist fully, we don't advance — next sync will re-fetch everything.
         var verifyCount = await getCurrentRecordsCount();
         if (verifyCount < totalRecordCount) {
-            console.warn('[BoxDownload] Verification: only ' + verifyCount + ' of ' + totalRecordCount + ' records persisted — possible data loss');
+            console.warn('[BoxDownload] Verification FAILED: only ' + verifyCount + ' of ' + totalRecordCount + ' records persisted — NOT advancing cursor so next sync re-fetches');
         } else {
-            console.log('[BoxDownload] Verification: ' + verifyCount + ' records persisted (expected ' + totalRecordCount + ')');
+            console.log('[BoxDownload] Verification OK: ' + verifyCount + ' records persisted (expected ' + totalRecordCount + ')');
+            // Only set cursor after confirming data persisted successfully
+            if (amoData.cursor > 0) {
+                await AminoSync.setLastSnapshotEventId(amoData.cursor);
+                console.log('[BoxDownload] Set lastSnapshotEventId to ' + amoData.cursor + ' from hydrated file');
+            } else {
+                console.warn('[BoxDownload] Hydrated file had no cursor (cursor=0) — incremental sync will fetch all records on first run');
+            }
         }
 
         updateLoadingOverlay('Hydration complete!', totalRecordCount.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFieldCount, totalRecordCount, '');
@@ -11662,6 +11725,9 @@ async function hydrateFromBoxDownload() {
         console.error('[BoxDownload] Hydration failed:', err);
         hideLoadingOverlay();
         return false;
+    } finally {
+        _hydrationInProgress = false;
+        if (wasPassiveSyncRunning) PassiveSnapshotSync.start();
     }
 }
 
