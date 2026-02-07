@@ -7748,6 +7748,9 @@ function openCreateViewModal(tableId) {
 
     pendingViewAction = null;
 
+    // Close any open dropdowns so they don't overlap the modal
+    closeAllDropdowns();
+
     // Set the reason text
     var reasonEl = document.getElementById('create-view-reason');
     if (reasonEl) {
@@ -13203,6 +13206,9 @@ function generateDefaultViewName() {
 function promptCreateViewFromDefault(action, data, reason) {
     pendingViewAction = { action: action, data: data };
 
+    // Close any open dropdowns so they don't overlap the modal
+    closeAllDropdowns();
+
     // Set the reason text
     var reasonEl = document.getElementById('create-view-reason');
     if (reasonEl) {
@@ -13289,75 +13295,93 @@ async function submitCreateView() {
         return;
     }
 
-    var viewType = typeSelect.value;
-    var parentViewId = parentSelect.value || null;
-    var tags = tagsInput.value.split(',').map(t => t.trim()).filter(t => t);
-    var workspaceId = workspaceSelect.value;
+    // Disable button to prevent double-clicks
+    var submitBtn = document.getElementById('create-view-submit');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating...';
+    }
 
-    // Handle "create new workspace" option
-    if (workspaceId === '_new') {
-        var wsName = prompt('Enter workspace name:');
-        if (wsName) {
-            workspaceId = await createWorkspace(wsName);
-        } else {
-            workspaceId = null;
+    try {
+        var viewType = typeSelect.value;
+        var parentViewId = parentSelect.value || null;
+        var tags = tagsInput.value.split(',').map(t => t.trim()).filter(t => t);
+        var workspaceId = workspaceSelect.value;
+
+        // Handle "create new workspace" option
+        if (workspaceId === '_new') {
+            var wsName = prompt('Enter workspace name:');
+            if (wsName) {
+                workspaceId = await createWorkspace(wsName);
+            } else {
+                workspaceId = null;
+            }
+        }
+
+        // Create the new view
+        var newViewId = 'viw_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        var newView = {
+            tableId: currentTable,
+            viewId: newViewId,
+            viewName: viewName,
+            viewType: viewType,
+            parentViewId: parentViewId,
+            tags: tags,
+            hiddenFieldIds: [],
+            fieldOrder: [],
+            filters: [],
+            sorts: [],
+            groupBy: null,
+            folderId: null
+        };
+
+        // If there was a pending action (filter, sort, etc.), apply it to the new view
+        if (pendingViewAction) {
+            switch (pendingViewAction.action) {
+                case 'filter':
+                    newView.filters = [pendingViewAction.data];
+                    break;
+                case 'sort':
+                    newView.sorts = [pendingViewAction.data];
+                    break;
+                case 'group':
+                    newView.groupBy = pendingViewAction.data;
+                    break;
+                case 'hideField':
+                    newView.hiddenFieldIds = [pendingViewAction.data];
+                    break;
+            }
+        }
+
+        // Add to workspace if selected
+        if (workspaceId && WORKSPACES[workspaceId]) {
+            WORKSPACES[workspaceId].viewIds.push(newViewId);
+            await saveWorkspace(WORKSPACES[workspaceId]);
+        }
+
+        // Save the view
+        if (!META_VIEWS[currentTable]) META_VIEWS[currentTable] = {};
+        META_VIEWS[currentTable][newViewId] = newView;
+        await saveView(newView);
+
+        // Close modal
+        closeCreateViewModal();
+
+        // Refresh sidebar
+        await loadTableViewsAsync(currentTable);
+
+        // Switch to the new view
+        await selectTableView(currentTable, newViewId);
+    } catch (err) {
+        console.error('Failed to create view:', err);
+        alert('Failed to create view: ' + (err.message || 'Unknown error'));
+    } finally {
+        // Re-enable button
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create View';
         }
     }
-
-    // Create the new view
-    var newViewId = 'viw_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    var newView = {
-        tableId: currentTable,
-        viewId: newViewId,
-        viewName: viewName,
-        viewType: viewType,
-        parentViewId: parentViewId,
-        tags: tags,
-        hiddenFieldIds: [],
-        fieldOrder: [],
-        filters: [],
-        sorts: [],
-        groupBy: null,
-        folderId: null
-    };
-
-    // If there was a pending action (filter, sort, etc.), apply it to the new view
-    if (pendingViewAction) {
-        switch (pendingViewAction.action) {
-            case 'filter':
-                newView.filters = [pendingViewAction.data];
-                break;
-            case 'sort':
-                newView.sorts = [pendingViewAction.data];
-                break;
-            case 'group':
-                newView.groupBy = pendingViewAction.data;
-                break;
-            case 'hideField':
-                newView.hiddenFieldIds = [pendingViewAction.data];
-                break;
-        }
-    }
-
-    // Add to workspace if selected
-    if (workspaceId && WORKSPACES[workspaceId]) {
-        WORKSPACES[workspaceId].viewIds.push(newViewId);
-        await saveWorkspace(WORKSPACES[workspaceId]);
-    }
-
-    // Save the view
-    if (!META_VIEWS[currentTable]) META_VIEWS[currentTable] = {};
-    META_VIEWS[currentTable][newViewId] = newView;
-    await saveView(newView);
-
-    // Close modal
-    closeCreateViewModal();
-
-    // Refresh sidebar
-    await loadTableViewsAsync(currentTable);
-
-    // Switch to the new view
-    await selectTableView(currentTable, newViewId);
 }
 
 // ============ Workspace Management ============
