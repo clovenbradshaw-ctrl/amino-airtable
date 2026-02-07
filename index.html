@@ -11423,7 +11423,11 @@ async function hydrateFromBoxDownload() {
         showLoadingOverlay();
         updateLoadingOverlay('Downloading snapshot...', 'Fetching from cloud storage...', 5, 0, 0, 0, '');
 
-        var response = await fetch(BOX_DOWNLOAD_WEBHOOK);
+        var downloadUrl = BOX_DOWNLOAD_WEBHOOK;
+        if (API_KEY) {
+            downloadUrl += '?api_key=' + encodeURIComponent(API_KEY);
+        }
+        var response = await fetch(downloadUrl);
         if (!response.ok) {
             console.warn('[BoxDownload] HTTP ' + response.status + ' - no snapshot available');
             hideLoadingOverlay();
