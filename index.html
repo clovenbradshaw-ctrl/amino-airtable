@@ -2137,13 +2137,7 @@
             <input type="text" id="set-filter-input" placeholder="Filter by set (optional)" autocomplete="off">
             <button id="auth-submit">Connect</button>
             <button id="auth-clear" class="secondary hidden">Clear Local Data</button>
-            <div class="auth-divider" style="display: flex; align-items: center; gap: 12px; margin: 16px 0 12px;">
-                <div style="flex: 1; height: 1px; background: #e0e0e0;"></div>
-                <span style="font-size: 12px; color: #999;">or</span>
-                <div style="flex: 1; height: 1px; background: #e0e0e0;"></div>
-            </div>
-            <button id="auth-skip-upload" class="secondary" onclick="skipAuthAndUploadCSV()">Skip - Upload CSV Only</button>
-            <button id="auth-skip-upload-amo" class="secondary" onclick="skipAuthAndUploadAmo()" style="margin-top: 8px;">Skip - Upload .amo Snapshot</button>
+            <!-- CSV/AMO manual import removed - hydration is automatic from cloud snapshot -->
             <div id="auth-info" class="auth-info"></div>
         </div>
     </div>
@@ -2198,15 +2192,7 @@
                 <strong>One-time setup:</strong> This only happens once per device. After this, your data loads instantly from local storage.
             </div>
 
-            <div class="loading-skip-section">
-                <div class="loading-skip-text">Have a CSV export or .amo snapshot? Skip the download and import directly.</div>
-                <button class="loading-skip-btn" onclick="skipSetupAndUploadFile()">
-                    Skip &amp; Upload CSV File
-                </button>
-                <button class="loading-skip-btn" onclick="skipSetupAndUploadAmoFile()" style="margin-top: 8px;">
-                    Skip &amp; Upload .amo Snapshot
-                </button>
-            </div>
+            <!-- CSV/AMO manual import removed - hydration is automatic from cloud snapshot -->
         </div>
     </div>
 
@@ -3676,6 +3662,7 @@ var snapshotSyncEnabled = false;
 // Box auto-sync state (off by default)
 var boxSyncEnabled = false;
 var BOX_SYNC_WEBHOOK = 'https://n8n.intelechia.com/webhook/box-upload';
+var BOX_DOWNLOAD_WEBHOOK = 'https://n8n.intelechia.com/webhook/box-download';
 var BOX_SYNC_FOLDER_ID = '364363223627';
 var BOX_SYNC_FILENAME = 'amino-snapshot.amo';
 
@@ -9763,15 +9750,48 @@ async function init() {
 
         lastEventTimestamp = storedLastTimestamp || null;
         if (API_KEY) await incrementalSync();
-    } else if (API_KEY) {
-        updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
-        await renderSidebar();
-        await fullSync();
-        await renderSidebar();
     } else {
-        // No API key and no local data - just show empty state
-        updateStatus('Offline mode - upload CSV or add API key', true, null, null);
-        await renderSidebar();
+        // No local data - always try to hydrate from Box snapshot first
+        updateStatus('Hydrating from cloud snapshot...', false, 0, 'Downloading snapshot...');
+        var hydrated = await hydrateFromBoxDownload();
+
+        if (hydrated) {
+            // Reload metadata after hydration
+            tables = await getAllTables();
+            fields = await getAllFields();
+            views = await getAllViews();
+            tables.forEach(t => META_TABLES[t.tableId] = t);
+            fields.forEach(f => {
+                if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+                META_FIELDS[f.tableId][f.fieldId] = f;
+            });
+            views.forEach(v => {
+                if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+                META_VIEWS[v.tableId][v.viewId] = v;
+            });
+
+            await renderSidebar();
+            var firstTable = Object.keys(META_TABLES)[0];
+            if (firstTable) {
+                await showTable(firstTable);
+            }
+
+            // Continue with incremental sync if API key is available
+            if (API_KEY) {
+                lastEventTimestamp = storedLastTimestamp || null;
+                await incrementalSync();
+            }
+        } else if (API_KEY) {
+            // Box download failed or empty - fall back to full event sync
+            updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
+            await renderSidebar();
+            await fullSync();
+            await renderSidebar();
+        } else {
+            // No snapshot, no API key - show empty state
+            updateStatus('No data available - add API key to sync', true, null, null);
+            await renderSidebar();
+        }
     }
 
     updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
@@ -11391,6 +11411,192 @@ async function skipSetupAndUploadAmoFile() {
         await processAmoFile(file);
     };
     input.click();
+}
+
+// ============ Hydrate from Box Download ============
+
+// Fetches .amo snapshot from Box via webhook and imports it locally.
+// Data is encrypted locally via the existing encryption system (user's password/passkey).
+// Returns true if hydration succeeded, false otherwise.
+async function hydrateFromBoxDownload() {
+    try {
+        showLoadingOverlay();
+        updateLoadingOverlay('Downloading snapshot...', 'Fetching from cloud storage...', 5, 0, 0, 0, '');
+
+        var response = await fetch(BOX_DOWNLOAD_WEBHOOK);
+        if (!response.ok) {
+            console.warn('[BoxDownload] HTTP ' + response.status + ' - no snapshot available');
+            hideLoadingOverlay();
+            return false;
+        }
+
+        var buffer = await response.arrayBuffer();
+        if (!buffer || buffer.byteLength === 0) {
+            console.warn('[BoxDownload] Empty response');
+            hideLoadingOverlay();
+            return false;
+        }
+
+        updateLoadingOverlay('Downloading snapshot...', 'Parsing snapshot data...', 15, 0, 0, 0, '');
+
+        // Detect format
+        var format;
+        try {
+            format = AmoFormat.detectFormat(buffer);
+        } catch (err) {
+            console.warn('[BoxDownload] Unrecognized format:', err);
+            hideLoadingOverlay();
+            return false;
+        }
+
+        var amoData;
+        if (format === 'amo') {
+            amoData = AmoFormat.read(buffer);
+        } else if (format === 'json-gz') {
+            var decompressed = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
+            var records = JSON.parse(decompressed);
+            amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
+            for (var i = 0; i < records.length; i++) {
+                var rec = records[i];
+                var tbl = rec.source_table || 'unknown';
+                if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
+                var rowData = Object.assign({}, rec.data || {});
+                if (rec.record_id) rowData.record_id = rec.record_id;
+                amoData.tables[tbl].push(rowData);
+                if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+            }
+        } else if (format === 'json') {
+            var text = new TextDecoder().decode(buffer);
+            var records = JSON.parse(text);
+            amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
+            for (var i = 0; i < records.length; i++) {
+                var rec = records[i];
+                var tbl = rec.source_table || 'unknown';
+                if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
+                var rowData = Object.assign({}, rec.data || {});
+                if (rec.record_id) rowData.record_id = rec.record_id;
+                amoData.tables[tbl].push(rowData);
+                if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
+            }
+        } else {
+            console.warn('[BoxDownload] Unsupported format:', format);
+            hideLoadingOverlay();
+            return false;
+        }
+
+        var tableNames = Object.keys(amoData.tables);
+        if (tableNames.length === 0) {
+            console.warn('[BoxDownload] Snapshot contains no data');
+            hideLoadingOverlay();
+            return false;
+        }
+
+        updateLoadingOverlay('Importing snapshot...', 'Building tables and fields...', 40, tableNames.length, 0, 0, '');
+
+        // Restore table/field metadata from snapshot if available
+        var savedMeta = amoData.meta || {};
+        if (savedMeta.tables) {
+            var savedTableIds = Object.keys(savedMeta.tables);
+            for (var m = 0; m < savedTableIds.length; m++) {
+                var tid = savedTableIds[m];
+                META_TABLES[tid] = savedMeta.tables[tid];
+            }
+        }
+        if (savedMeta.fields) {
+            var savedFieldTableIds = Object.keys(savedMeta.fields);
+            for (var m = 0; m < savedFieldTableIds.length; m++) {
+                var tid = savedFieldTableIds[m];
+                if (!META_FIELDS[tid]) META_FIELDS[tid] = {};
+                var fieldIds = Object.keys(savedMeta.fields[tid]);
+                for (var f = 0; f < fieldIds.length; f++) {
+                    META_FIELDS[tid][fieldIds[f]] = savedMeta.fields[tid][fieldIds[f]];
+                }
+            }
+        }
+
+        // Build data structures and persist to IndexedDB (encrypted via saveBatch)
+        var batchTables = [];
+        var batchFields = [];
+        var batchData = [];
+        var totalRecordCount = 0;
+        var totalFieldCount = 0;
+
+        for (var t = 0; t < tableNames.length; t++) {
+            var fullTableName = tableNames[t];
+            var tableId = fullTableName.replace('airtable:', '');
+            var rows = amoData.tables[fullTableName];
+
+            if (!META_TABLES[tableId]) {
+                META_TABLES[tableId] = {
+                    tableId: tableId,
+                    tableName: tableId,
+                    _placeholder: true
+                };
+            }
+            batchTables.push(META_TABLES[tableId]);
+
+            if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+
+            for (var r = 0; r < rows.length; r++) {
+                var row = rows[r];
+                var recordId = row.record_id;
+                if (!recordId) continue;
+
+                var data = {};
+                var keys = Object.keys(row);
+                for (var k = 0; k < keys.length; k++) {
+                    if (keys[k] !== 'record_id') {
+                        data[keys[k]] = row[keys[k]];
+
+                        if (!META_FIELDS[tableId][keys[k]]) {
+                            META_FIELDS[tableId][keys[k]] = {
+                                tableId: tableId,
+                                fieldId: keys[k],
+                                fieldName: keys[k],
+                                fieldType: inferFieldType(row[keys[k]]),
+                                _placeholder: true
+                            };
+                            totalFieldCount++;
+                        }
+                    }
+                }
+
+                batchData.push({ tableId: tableId, recordId: recordId, fields: data });
+                totalRecordCount++;
+
+                if (totalRecordCount % 5000 === 0) {
+                    var pct = 40 + Math.round((t / tableNames.length) * 40);
+                    updateLoadingOverlay('Importing snapshot...', 'Processed ' + totalRecordCount.toLocaleString() + ' records...', pct, tableNames.length, totalFieldCount, totalRecordCount, '');
+                    await new Promise(function(resolve) { setTimeout(resolve, 0); });
+                }
+            }
+        }
+
+        // Collect all field metadata for batch save
+        var fieldTableIds = Object.keys(META_FIELDS);
+        for (var ft = 0; ft < fieldTableIds.length; ft++) {
+            var fids = Object.keys(META_FIELDS[fieldTableIds[ft]]);
+            for (var fi = 0; fi < fids.length; fi++) {
+                batchFields.push(META_FIELDS[fieldTableIds[ft]][fids[fi]]);
+            }
+        }
+
+        updateLoadingOverlay('Saving to local storage...', 'Encrypting and persisting ' + totalRecordCount.toLocaleString() + ' records...', 85, tableNames.length, totalFieldCount, totalRecordCount, '');
+
+        // saveBatch handles encryption automatically when encryptionEnabled
+        await saveBatch(batchTables, batchFields, [], batchData);
+
+        updateLoadingOverlay('Hydration complete!', totalRecordCount.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFieldCount, totalRecordCount, '');
+        setTimeout(hideLoadingOverlay, 300);
+
+        console.log('[BoxDownload] Hydration complete: ' + totalRecordCount + ' records across ' + tableNames.length + ' tables');
+        return true;
+
+    } catch (err) {
+        console.error('[BoxDownload] Hydration failed:', err);
+        hideLoadingOverlay();
+        return false;
+    }
 }
 
 // ============ Point in Time View ============
