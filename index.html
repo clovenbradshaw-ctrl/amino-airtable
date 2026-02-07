@@ -3160,6 +3160,10 @@ var AminoSync = {
         if (!API_KEY) return { updated: 0 };
         var lastEventId = await this.getLastSnapshotEventId();
 
+        if (lastEventId === 0) {
+            console.warn('[AminoSync] syncFromSnapshot called with cursor=0 — this will fetch ALL records. Was the cursor set after hydration?');
+        }
+
         try {
             var response = await this.fetchWithRetry(
                 XANO_SNAPSHOT_API + '?last_amino_event_gt=' + lastEventId +
@@ -10741,6 +10745,12 @@ async function processAmoFile(file) {
             // Store in memory for immediate UI access
             window.IN_MEMORY_DATA = tableDataMap;
 
+            // Set the snapshot cursor so incremental sync only fetches records newer than the file
+            if (amoData.cursor > 0) {
+                await AminoSync.setLastSnapshotEventId(amoData.cursor);
+                console.log('[AmoImport] Set lastSnapshotEventId to ' + amoData.cursor + ' from imported file');
+            }
+
             updateLoadingOverlay('Import complete!', 'Rendering interface...', 90, tableNames.length, totalFields, totalRecords, '');
 
             // Render the UI
@@ -10968,6 +10978,22 @@ async function hydrateFromBoxDownload() {
 
         // saveBatch handles encryption automatically when encryptionEnabled
         await saveBatch(batchTables, batchFields, [], batchData);
+
+        // Set the snapshot cursor so incremental sync only fetches records newer than the file
+        if (amoData.cursor > 0) {
+            await AminoSync.setLastSnapshotEventId(amoData.cursor);
+            console.log('[BoxDownload] Set lastSnapshotEventId to ' + amoData.cursor + ' from hydrated file');
+        } else {
+            console.warn('[BoxDownload] Hydrated file had no cursor (cursor=0) — incremental sync will fetch all records on first run');
+        }
+
+        // Verify persisted record count matches what we parsed
+        var verifyCount = await getCurrentRecordsCount();
+        if (verifyCount < totalRecordCount) {
+            console.warn('[BoxDownload] Verification: only ' + verifyCount + ' of ' + totalRecordCount + ' records persisted — possible data loss');
+        } else {
+            console.log('[BoxDownload] Verification: ' + verifyCount + ' records persisted (expected ' + totalRecordCount + ')');
+        }
 
         updateLoadingOverlay('Hydration complete!', totalRecordCount.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFieldCount, totalRecordCount, '');
         setTimeout(hideLoadingOverlay, 300);
