@@ -9099,6 +9099,9 @@ async function fetchAllBySet(setType, onProgress) {
 // Supports aminoStream query parameters:
 //   page (int, min:1, default 1), per_page (int, min:1, max:10000, default 2500),
 //   created_after (timestamp), created_before (timestamp), last (bool - single most recent record)
+var FETCH_PAGE_TIMEOUT = 30000; // 30 second timeout per request
+var FETCH_PAGE_RETRIES = 3;    // retry up to 3 times on network errors
+
 async function fetchPage(page, createdAfter, options) {
     options = options || {};
     var params = [];
@@ -9111,7 +9114,31 @@ async function fetchPage(page, createdAfter, options) {
 
     var url = API + (params.length > 0 ? '?' + params.join('&') : '');
 
-    var res = await fetch(url);
+    var maxRetries = options.last ? 1 : FETCH_PAGE_RETRIES;
+    var lastErr = null;
+
+    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function() { controller.abort(); }, FETCH_PAGE_TIMEOUT);
+        try {
+            var res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            break; // success - exit retry loop
+        } catch (err) {
+            clearTimeout(timeoutId);
+            lastErr = err;
+            if (err.name === 'AbortError') {
+                lastErr = new Error('Request timed out after ' + (FETCH_PAGE_TIMEOUT / 1000) + 's');
+            }
+            if (attempt < maxRetries) {
+                var delay = 2000 * Math.pow(2, attempt); // 2s, 4s, 8s
+                console.warn('[fetchPage] Attempt ' + (attempt + 1) + '/' + (maxRetries + 1) + ' failed: ' + lastErr.message + ', retrying in ' + (delay / 1000) + 's...');
+                await new Promise(function(r) { setTimeout(r, delay); });
+                continue;
+            }
+            throw lastErr;
+        }
+    }
 
     if (res.status === 401 || res.status === 403) {
         throw new Error('Invalid API key');
@@ -9389,8 +9416,15 @@ async function fullSync() {
     }
 }
 
+var _incrementalSyncRunning = false;
+
 async function incrementalSync() {
     if (!API_KEY) return;
+    if (_incrementalSyncRunning) {
+        console.warn('[incrementalSync] Already running, skipping concurrent call');
+        return;
+    }
+    _incrementalSyncRunning = true;
     var syncStartTime = Date.now();
     try {
         // Show syncing indicator
@@ -9492,6 +9526,8 @@ async function incrementalSync() {
             error: err.message,
             detail: 'Sync error: ' + err.message
         });
+    } finally {
+        _incrementalSyncRunning = false;
     }
 }
 
