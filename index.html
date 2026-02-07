@@ -5737,6 +5737,429 @@ async function loadTableSettings() {
     }
 }
 
+// ============ Column Definition Registry & Smart Ordering ============
+//
+// Inspired by the EO/Noema definition concept: every column has semantic meaning
+// beyond its label. A field named "name" is an identity field that belongs leftmost.
+// A field named "created_at" is temporal metadata that belongs further right.
+//
+// This system:
+// 1. Recognizes common field names via fuzzy matching (CommonDefinitionsRegistry)
+// 2. Assigns semantic roles (identifier, property, temporal, quantity, etc.)
+// 3. Scores each field's "relevance" for left-to-right column priority
+// 4. Produces an intelligent default column order when a view is first created
+
+// Definition roles - the semantic purpose of a field
+var FieldRole = Object.freeze({
+    PRIMARY_IDENTITY: 'primary_identity',   // Name, title - the "what is this?" column
+    IDENTIFIER: 'identifier',               // IDs, codes, keys, references
+    DESCRIPTIVE: 'descriptive',             // Description, notes, summary
+    CONTACT: 'contact',                     // Email, phone, address
+    STATUS: 'status',                       // Status, state, type, category
+    QUANTITY: 'quantity',                    // Amounts, prices, counts
+    TEMPORAL: 'temporal',                   // Dates, timestamps
+    RELATIONAL: 'relational',              // Foreign keys, linked records
+    ORGANIZATIONAL: 'organizational',       // Department, role, company
+    SPATIAL: 'spatial',                     // Address, coordinates
+    TECHNICAL: 'technical',                 // UUIDs, hashes, internal IDs
+    UNKNOWN: 'unknown'
+});
+
+// Role display priority - lower number = further left (more relevant)
+var ROLE_PRIORITY = {
+    primary_identity: 0,    // "Name" column is almost always the most important
+    identifier: 1,          // IDs that help identify the record
+    descriptive: 2,         // Descriptions give context
+    status: 3,              // Status/type helps at a glance
+    contact: 4,             // Contact info is often actionable
+    organizational: 5,      // Org context
+    quantity: 6,            // Numeric values
+    spatial: 7,             // Location data
+    relational: 8,          // Links to other records
+    temporal: 9,            // Dates tend to be reference, not primary
+    technical: 10,          // Internal IDs, hashes - least human-relevant
+    unknown: 11
+};
+
+/**
+ * CommonDefinitionsRegistry - Recognizes common field names and assigns semantic meaning
+ *
+ * Borrowed from the Noema epistemic data workbench concept: definitions are not just
+ * labels but carry meaning, authority, and role. Here we use a lightweight version
+ * focused on field name recognition and semantic role assignment for column ordering.
+ */
+var COMMON_DEFINITIONS = [
+    // ── Primary Identity (the "what is this record?" fields) ──
+    { keys: ['name', 'full name', 'fullname', 'display name', 'displayname', 'record name', 'title', 'subject', 'headline', 'label'], role: FieldRole.PRIMARY_IDENTITY, meaning: 'Primary display name', sensitivity: 'low', stability: 'stable' },
+    { keys: ['first name', 'firstname', 'fname', 'given name', 'givenname', 'first'], role: FieldRole.PRIMARY_IDENTITY, meaning: 'First/given name', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['last name', 'lastname', 'lname', 'surname', 'family name', 'familyname', 'last'], role: FieldRole.PRIMARY_IDENTITY, meaning: 'Last/family name', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['middle name', 'middlename', 'mname', 'middle'], role: FieldRole.PRIMARY_IDENTITY, meaning: 'Middle name', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['prefix', 'salutation', 'honorific'], role: FieldRole.PRIMARY_IDENTITY, meaning: 'Name prefix', sensitivity: 'low', stability: 'stable' },
+    { keys: ['suffix', 'name suffix', 'generational'], role: FieldRole.PRIMARY_IDENTITY, meaning: 'Name suffix', sensitivity: 'low', stability: 'stable' },
+    { keys: ['company name', 'companyname', 'company', 'org name', 'orgname', 'organization name', 'organization', 'org', 'business name', 'firm'], role: FieldRole.PRIMARY_IDENTITY, meaning: 'Organization name', sensitivity: 'low', stability: 'stable' },
+    { keys: ['product name', 'productname', 'product', 'item name', 'itemname', 'item'], role: FieldRole.PRIMARY_IDENTITY, meaning: 'Product/item name', sensitivity: 'low', stability: 'stable' },
+
+    // ── Identifiers (unique keys and codes) ──
+    { keys: ['id', 'identifier', 'uid', 'guid', 'key', 'pk', 'primary key', 'unique identifier', 'record id', 'recordid'], role: FieldRole.IDENTIFIER, meaning: 'Unique identifier', sensitivity: 'low', stability: 'stable' },
+    { keys: ['code', 'sku', 'barcode', 'upc', 'ean', 'gtin', 'item number', 'itemnumber', 'stock keeping unit', 'part number', 'partnumber'], role: FieldRole.IDENTIFIER, meaning: 'Item code', sensitivity: 'low', stability: 'stable' },
+    { keys: ['account number', 'accountnumber', 'acct', 'account no'], role: FieldRole.IDENTIFIER, meaning: 'Account number', sensitivity: 'high', stability: 'stable' },
+    { keys: ['invoice number', 'invoicenumber', 'invoice', 'inv number', 'invnumber', 'invoice no'], role: FieldRole.IDENTIFIER, meaning: 'Invoice number', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['order number', 'ordernumber', 'order no', 'order'], role: FieldRole.IDENTIFIER, meaning: 'Order number', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['transaction id', 'transactionid', 'trans id', 'transid', 'txn id', 'txnid', 'transaction'], role: FieldRole.IDENTIFIER, meaning: 'Transaction ID', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['employee number', 'employeenumber', 'employee no', 'emp number', 'empnumber', 'emp no', 'badge', 'badge number'], role: FieldRole.IDENTIFIER, meaning: 'Employee number', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['social security number', 'ssn', 'social security', 'ss number', 'sin', 'national id'], role: FieldRole.IDENTIFIER, meaning: 'Social Security Number', sensitivity: 'high', stability: 'stable' },
+    { keys: ['drivers license number', 'dl', 'drivers license', 'license number', 'dl number'], role: FieldRole.IDENTIFIER, meaning: 'Drivers license', sensitivity: 'high', stability: 'stable' },
+    { keys: ['passport number', 'passport', 'passport no'], role: FieldRole.IDENTIFIER, meaning: 'Passport number', sensitivity: 'high', stability: 'stable' },
+
+    // ── Descriptive (text that describes/explains) ──
+    { keys: ['description', 'desc', 'details', 'summary', 'about', 'overview', 'bio', 'biography'], role: FieldRole.DESCRIPTIVE, meaning: 'Description text', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['notes', 'note', 'comments', 'comment', 'remarks', 'remark', 'memo', 'observation', 'observations'], role: FieldRole.DESCRIPTIVE, meaning: 'Notes/comments', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['body', 'content', 'text', 'message', 'body text'], role: FieldRole.DESCRIPTIVE, meaning: 'Body content', sensitivity: 'low', stability: 'contextual' },
+
+    // ── Status/Categorical (classification and state) ──
+    { keys: ['status', 'state', 'condition', 'stage', 'phase', 'workflow status'], role: FieldRole.STATUS, meaning: 'Current status', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['type', 'kind', 'classification', 'record type', 'recordtype', 'entity type'], role: FieldRole.STATUS, meaning: 'Type classification', sensitivity: 'low', stability: 'stable' },
+    { keys: ['category', 'cat', 'group', 'class', 'segment', 'division'], role: FieldRole.STATUS, meaning: 'Category', sensitivity: 'low', stability: 'stable' },
+    { keys: ['subcategory', 'sub category', 'subcat', 'subgroup', 'sub group'], role: FieldRole.STATUS, meaning: 'Subcategory', sensitivity: 'low', stability: 'stable' },
+    { keys: ['priority', 'pri', 'importance', 'urgency', 'severity', 'level'], role: FieldRole.STATUS, meaning: 'Priority level', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['tags', 'tag', 'labels', 'keywords'], role: FieldRole.STATUS, meaning: 'Tags/labels', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['active', 'isactive', 'is active', 'enabled', 'isenabled', 'is enabled', 'live'], role: FieldRole.STATUS, meaning: 'Active flag', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['approved', 'isapproved', 'is approved', 'approval', 'approval status'], role: FieldRole.STATUS, meaning: 'Approval status', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['verified', 'isverified', 'is verified', 'confirmed', 'isconfirmed', 'is confirmed', 'validation'], role: FieldRole.STATUS, meaning: 'Verification status', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['source', 'origin', 'referral source', 'lead source', 'channel'], role: FieldRole.STATUS, meaning: 'Source/origin', sensitivity: 'low', stability: 'stable' },
+    { keys: ['gender', 'sex'], role: FieldRole.STATUS, meaning: 'Gender', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['race', 'ethnicity', 'race ethnicity', 'raceethnicity', 'race/ethnicity'], role: FieldRole.STATUS, meaning: 'Race/Ethnicity', sensitivity: 'high', stability: 'stable' },
+
+    // ── Contact (communication channels) ──
+    { keys: ['email', 'email address', 'emailaddress', 'e-mail', 'e mail', 'mail', 'primary email'], role: FieldRole.CONTACT, meaning: 'Email address', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['phone', 'telephone', 'phone number', 'phonenumber', 'tel', 'primary phone', 'contact number'], role: FieldRole.CONTACT, meaning: 'Phone number', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['mobile phone', 'mobile', 'cell', 'cellphone', 'cell phone', 'mobilephone', 'mobile number'], role: FieldRole.CONTACT, meaning: 'Mobile phone', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['work phone', 'workphone', 'office phone', 'officephone', 'business phone'], role: FieldRole.CONTACT, meaning: 'Work phone', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['fax', 'fax number', 'faxnumber'], role: FieldRole.CONTACT, meaning: 'Fax number', sensitivity: 'low', stability: 'stable' },
+    { keys: ['url', 'link', 'href', 'web address', 'webaddress', 'uri', 'website', 'web', 'homepage', 'webpage'], role: FieldRole.CONTACT, meaning: 'URL/website', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['image url', 'imageurl', 'image', 'img', 'photo', 'picture', 'pic', 'avatar', 'thumbnail', 'icon'], role: FieldRole.CONTACT, meaning: 'Image', sensitivity: 'low', stability: 'contextual' },
+
+    // ── Organizational (workplace structure) ──
+    { keys: ['department', 'dept', 'division', 'team', 'unit', 'group'], role: FieldRole.ORGANIZATIONAL, meaning: 'Department', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['job title', 'jobtitle', 'title', 'position', 'role', 'designation'], role: FieldRole.ORGANIZATIONAL, meaning: 'Job title', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['manager', 'supervisor', 'reports to', 'reportsto', 'boss', 'lead'], role: FieldRole.ORGANIZATIONAL, meaning: 'Manager', sensitivity: 'low', stability: 'contextual' },
+
+    // ── Quantity (numeric/measurable values) ──
+    { keys: ['amount', 'amt', 'value', 'total', 'sum', 'grand total'], role: FieldRole.QUANTITY, meaning: 'Amount', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['price', 'cost', 'unit price', 'unitprice', 'rate', 'charge', 'fee'], role: FieldRole.QUANTITY, meaning: 'Price/cost', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['revenue', 'income', 'earnings', 'sales', 'proceeds', 'gross'], role: FieldRole.QUANTITY, meaning: 'Revenue', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['balance', 'outstanding', 'remaining', 'due', 'owed'], role: FieldRole.QUANTITY, meaning: 'Balance', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['payment amount', 'paymentamount', 'payment', 'pay', 'payout'], role: FieldRole.QUANTITY, meaning: 'Payment amount', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['currency', 'curr', 'currency code', 'currencycode'], role: FieldRole.QUANTITY, meaning: 'Currency', sensitivity: 'low', stability: 'stable' },
+    { keys: ['tax amount', 'taxamount', 'tax', 'taxes', 'vat', 'gst'], role: FieldRole.QUANTITY, meaning: 'Tax amount', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['discount', 'disc', 'discount amount', 'discountamount', 'rebate'], role: FieldRole.QUANTITY, meaning: 'Discount', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['quantity', 'qty', 'count', 'number', 'num', 'units', 'pieces', 'lot size'], role: FieldRole.QUANTITY, meaning: 'Quantity/count', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['age', 'years old', 'yearsold'], role: FieldRole.QUANTITY, meaning: 'Age', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['weight', 'mass', 'wt'], role: FieldRole.QUANTITY, meaning: 'Weight', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['height', 'length', 'width', 'depth', 'size', 'dimension'], role: FieldRole.QUANTITY, meaning: 'Dimension', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['percentage', 'percent', 'pct', 'ratio', 'rate'], role: FieldRole.QUANTITY, meaning: 'Percentage/ratio', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['score', 'rating', 'rank', 'grade', 'points'], role: FieldRole.QUANTITY, meaning: 'Score/rating', sensitivity: 'low', stability: 'contextual' },
+
+    // ── Spatial (location and geography) ──
+    { keys: ['street address', 'address', 'address1', 'address line 1', 'street', 'street1', 'mailing address', 'physical address'], role: FieldRole.SPATIAL, meaning: 'Street address', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['address line 2', 'address2', 'address line2', 'apt', 'suite', 'unit', 'street2'], role: FieldRole.SPATIAL, meaning: 'Address line 2', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['city', 'town', 'municipality', 'locality'], role: FieldRole.SPATIAL, meaning: 'City', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['state', 'province', 'region', 'state province', 'stateprovince'], role: FieldRole.SPATIAL, meaning: 'State/province', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['postal code', 'zip', 'zipcode', 'zip code', 'postcode', 'post code'], role: FieldRole.SPATIAL, meaning: 'Postal code', sensitivity: 'low', stability: 'stable' },
+    { keys: ['county', 'parish', 'district', 'borough'], role: FieldRole.SPATIAL, meaning: 'County/district', sensitivity: 'low', stability: 'stable' },
+    { keys: ['country', 'nation', 'country code', 'countrycode'], role: FieldRole.SPATIAL, meaning: 'Country', sensitivity: 'low', stability: 'stable' },
+    { keys: ['latitude', 'lat'], role: FieldRole.SPATIAL, meaning: 'Latitude', sensitivity: 'low', stability: 'stable' },
+    { keys: ['longitude', 'lng', 'lon', 'long'], role: FieldRole.SPATIAL, meaning: 'Longitude', sensitivity: 'low', stability: 'stable' },
+    { keys: ['full address', 'fulladdress', 'complete address', 'location', 'site'], role: FieldRole.SPATIAL, meaning: 'Full address', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['po box', 'pobox', 'p.o. box'], role: FieldRole.SPATIAL, meaning: 'PO Box', sensitivity: 'low', stability: 'stable' },
+
+    // ── Relational (foreign keys, linked records) ──
+    { keys: ['parent id', 'parentid', 'parent'], role: FieldRole.RELATIONAL, meaning: 'Parent record', sensitivity: 'low', stability: 'stable' },
+    { keys: ['customer id', 'customerid', 'customer', 'cust id', 'custid', 'client id', 'clientid', 'client'], role: FieldRole.RELATIONAL, meaning: 'Customer reference', sensitivity: 'low', stability: 'stable' },
+    { keys: ['user id', 'userid', 'user', 'member id', 'memberid'], role: FieldRole.RELATIONAL, meaning: 'User reference', sensitivity: 'low', stability: 'stable' },
+    { keys: ['account id', 'accountid', 'account', 'acct id', 'acctid'], role: FieldRole.RELATIONAL, meaning: 'Account reference', sensitivity: 'low', stability: 'stable' },
+    { keys: ['organization id', 'organizationid', 'orgid', 'org id', 'company id', 'companyid'], role: FieldRole.RELATIONAL, meaning: 'Organization reference', sensitivity: 'low', stability: 'stable' },
+    { keys: ['case id', 'caseid', 'case', 'case number', 'casenumber', 'ticket', 'ticket id', 'ticketid'], role: FieldRole.RELATIONAL, meaning: 'Case/ticket reference', sensitivity: 'low', stability: 'stable' },
+    { keys: ['order id', 'orderid'], role: FieldRole.RELATIONAL, meaning: 'Order reference', sensitivity: 'low', stability: 'stable' },
+    { keys: ['product id', 'productid', 'prod id', 'prodid', 'item id', 'itemid'], role: FieldRole.RELATIONAL, meaning: 'Product reference', sensitivity: 'low', stability: 'stable' },
+    { keys: ['vendor id', 'vendorid', 'supplier id', 'supplierid', 'vendor', 'supplier'], role: FieldRole.RELATIONAL, meaning: 'Vendor reference', sensitivity: 'low', stability: 'stable' },
+    { keys: ['employee id', 'employeeid', 'employee', 'emp id', 'empid', 'worker id'], role: FieldRole.RELATIONAL, meaning: 'Employee reference', sensitivity: 'low', stability: 'stable' },
+    { keys: ['owner', 'assigned to', 'assignedto', 'assignee', 'responsible', 'created by', 'createdby', 'modified by', 'modifiedby', 'author'], role: FieldRole.RELATIONAL, meaning: 'Person reference', sensitivity: 'low', stability: 'contextual' },
+
+    // ── Temporal (dates and times) ──
+    { keys: ['date', 'dt'], role: FieldRole.TEMPORAL, meaning: 'Date', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['created date', 'createdat', 'created at', 'created', 'creation date', 'datecreated', 'date created', 'created on', 'createdon'], role: FieldRole.TEMPORAL, meaning: 'Creation date', sensitivity: 'low', stability: 'stable' },
+    { keys: ['modified date', 'updatedat', 'updated at', 'updated', 'modifiedat', 'modified at', 'last modified', 'datemodified', 'date modified', 'modified on', 'modifiedon', 'last updated', 'lastupdated'], role: FieldRole.TEMPORAL, meaning: 'Last modified date', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['deleted date', 'deletedat', 'deleted at', 'deleted', 'deletion date', 'removed date'], role: FieldRole.TEMPORAL, meaning: 'Deletion date', sensitivity: 'low', stability: 'stable' },
+    { keys: ['start date', 'startdate', 'begin date', 'begindate', 'from date', 'fromdate', 'effective date', 'effectivedate', 'start'], role: FieldRole.TEMPORAL, meaning: 'Start date', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['end date', 'enddate', 'finish date', 'finishdate', 'to date', 'todate', 'expiry date', 'expirydate', 'expiration date', 'expires', 'due date', 'duedate', 'deadline', 'end'], role: FieldRole.TEMPORAL, meaning: 'End date', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['timestamp', 'ts', 'datetime', 'date time'], role: FieldRole.TEMPORAL, meaning: 'Timestamp', sensitivity: 'low', stability: 'stable' },
+    { keys: ['year', 'yr', 'fiscal year', 'fiscalyear', 'fy'], role: FieldRole.TEMPORAL, meaning: 'Year', sensitivity: 'low', stability: 'stable' },
+    { keys: ['month', 'mo', 'period'], role: FieldRole.TEMPORAL, meaning: 'Month', sensitivity: 'low', stability: 'stable' },
+    { keys: ['quarter', 'qtr', 'q'], role: FieldRole.TEMPORAL, meaning: 'Quarter', sensitivity: 'low', stability: 'stable' },
+    { keys: ['date of birth', 'dob', 'birthdate', 'birth date', 'birthday'], role: FieldRole.TEMPORAL, meaning: 'Date of birth', sensitivity: 'high', stability: 'stable' },
+    { keys: ['hire date', 'hiredate', 'hired date', 'date hired', 'employment date', 'start date'], role: FieldRole.TEMPORAL, meaning: 'Hire date', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['termination date', 'terminationdate', 'term date', 'termdate', 'separation date', 'end of employment'], role: FieldRole.TEMPORAL, meaning: 'Termination date', sensitivity: 'moderate', stability: 'stable' },
+    { keys: ['duration', 'elapsed', 'time spent', 'timespent', 'hours', 'minutes'], role: FieldRole.TEMPORAL, meaning: 'Duration', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['time', 'clock time'], role: FieldRole.TEMPORAL, meaning: 'Time', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['day', 'day of week', 'weekday'], role: FieldRole.TEMPORAL, meaning: 'Day', sensitivity: 'low', stability: 'stable' },
+
+    // ── Technical (system/internal fields) ──
+    { keys: ['uuid', 'guid', 'unique id', 'uniqueid'], role: FieldRole.TECHNICAL, meaning: 'UUID', sensitivity: 'low', stability: 'stable' },
+    { keys: ['hash', 'checksum', 'md5', 'sha256', 'sha1', 'digest'], role: FieldRole.TECHNICAL, meaning: 'Hash/checksum', sensitivity: 'low', stability: 'stable' },
+    { keys: ['version', 'ver', 'revision', 'rev'], role: FieldRole.TECHNICAL, meaning: 'Version', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['sequence number', 'sequencenumber', 'seq', 'sequence', 'sort order', 'sortorder', 'display order', 'ordinal'], role: FieldRole.TECHNICAL, meaning: 'Sequence number', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['batch id', 'batchid', 'batch', 'run id', 'runid'], role: FieldRole.TECHNICAL, meaning: 'Batch ID', sensitivity: 'low', stability: 'stable' },
+    { keys: ['api key', 'apikey', 'token', 'access token', 'secret', 'secret key'], role: FieldRole.TECHNICAL, meaning: 'API key', sensitivity: 'high', stability: 'stable' },
+    { keys: ['ip address', 'ipaddress', 'ip', 'ipv4', 'ipv6'], role: FieldRole.TECHNICAL, meaning: 'IP address', sensitivity: 'moderate', stability: 'contextual' },
+    { keys: ['external identifier', 'externalidentifier', 'external id', 'externalid', 'ext id', 'extid', 'ref', 'reference', 'reference number'], role: FieldRole.TECHNICAL, meaning: 'External identifier', sensitivity: 'low', stability: 'stable' },
+    { keys: ['file path', 'filepath', 'path', 'filename', 'file name'], role: FieldRole.TECHNICAL, meaning: 'File path', sensitivity: 'low', stability: 'contextual' },
+    { keys: ['created by', 'createdby', 'author', 'creator'], role: FieldRole.TECHNICAL, meaning: 'Creator', sensitivity: 'low', stability: 'stable' },
+    { keys: ['modified by', 'modifiedby', 'updated by', 'updatedby', 'last modified by', 'editor'], role: FieldRole.TECHNICAL, meaning: 'Last modifier', sensitivity: 'low', stability: 'stable' }
+];
+
+/**
+ * Normalize a field name for comparison against definition keys.
+ * Handles camelCase, snake_case, kebab-case, prefixes, suffixes.
+ */
+function normalizeFieldKey(fieldName) {
+    return (fieldName || '')
+        .toLowerCase()
+        .replace(/([a-z])([A-Z])/g, '$1 $2')   // camelCase -> spaces
+        .replace(/[-_]+/g, ' ')                  // separators -> spaces
+        .replace(/\s+/g, ' ')                    // collapse whitespace
+        .trim();
+}
+
+/**
+ * Find the best matching definition for a field name.
+ * Returns { definition, score, matchType } or null.
+ */
+function matchFieldToDefinition(fieldName) {
+    if (!fieldName) return null;
+
+    var normalized = normalizeFieldKey(fieldName);
+    if (!normalized) return null;
+
+    // Strip common prefixes (fld_, col_, field_, column_) and suffixes (_id, _key, _code, _num)
+    var stripped = normalized
+        .replace(/^(fld |col |field |column )/, '')
+        .replace(/( id| key| code| num| no| number)$/, '');
+
+    var bestMatch = null;
+    var bestScore = 0;
+
+    for (var i = 0; i < COMMON_DEFINITIONS.length; i++) {
+        var def = COMMON_DEFINITIONS[i];
+        var score = 0;
+        var matchType = null;
+
+        for (var k = 0; k < def.keys.length; k++) {
+            var key = def.keys[k];
+
+            // Exact match on normalized name
+            if (normalized === key) {
+                score = 1.0;
+                matchType = 'exact';
+                break;
+            }
+
+            // Exact match on stripped name
+            if (stripped && stripped !== normalized && stripped === key) {
+                score = 0.9;
+                matchType = 'stripped';
+                // Don't break, might find exact
+            }
+
+            // Contains match (field name contains the key or vice versa)
+            if (score < 0.7) {
+                if (normalized.includes(key) || key.includes(normalized)) {
+                    var longer = normalized.length > key.length ? normalized : key;
+                    var shorter = normalized.length > key.length ? key : normalized;
+                    var containsScore = (shorter.length / longer.length) * 0.75;
+                    if (containsScore > score) {
+                        score = containsScore;
+                        matchType = 'contains';
+                    }
+                }
+            }
+        }
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestMatch = { definition: def, score: score, matchType: matchType };
+            if (score === 1.0) break; // Can't do better than exact
+        }
+    }
+
+    // Minimum threshold
+    return bestScore >= 0.4 ? bestMatch : null;
+}
+
+/**
+ * Infer a field's semantic role from its name AND its data type.
+ * Falls back to heuristics when no definition match is found.
+ */
+function inferFieldRole(fieldId, fieldMeta) {
+    var fieldName = (fieldMeta && fieldMeta.fieldName) || fieldId;
+    var fieldType = fieldMeta && fieldMeta.fieldType;
+
+    // Try matching against known definitions first
+    var match = matchFieldToDefinition(fieldName);
+    if (match && match.score >= 0.4) {
+        return {
+            role: match.definition.role,
+            confidence: match.score,
+            meaning: match.definition.meaning,
+            source: 'definition_match',
+            matchType: match.matchType
+        };
+    }
+
+    // Fallback: infer from field type
+    if (fieldType === 'date' || fieldType === 'dateTime') {
+        return { role: FieldRole.TEMPORAL, confidence: 0.6, meaning: 'Date field', source: 'type_inference' };
+    }
+    if (fieldType === 'number' || fieldType === 'currency' || fieldType === 'percent') {
+        return { role: FieldRole.QUANTITY, confidence: 0.5, meaning: 'Numeric field', source: 'type_inference' };
+    }
+    if (fieldType === 'email') {
+        return { role: FieldRole.CONTACT, confidence: 0.8, meaning: 'Email field', source: 'type_inference' };
+    }
+    if (fieldType === 'url') {
+        return { role: FieldRole.CONTACT, confidence: 0.5, meaning: 'URL field', source: 'type_inference' };
+    }
+    if (fieldType === 'checkbox') {
+        return { role: FieldRole.STATUS, confidence: 0.4, meaning: 'Boolean field', source: 'type_inference' };
+    }
+    if (fieldType === 'multipleRecordLinks') {
+        return { role: FieldRole.RELATIONAL, confidence: 0.7, meaning: 'Linked records', source: 'type_inference' };
+    }
+    if (fieldType === 'multipleAttachments') {
+        return { role: FieldRole.TECHNICAL, confidence: 0.5, meaning: 'Attachments', source: 'type_inference' };
+    }
+
+    // Fallback: heuristic patterns on the field name
+    var norm = normalizeFieldKey(fieldName);
+    if (/\b(id|key|pk|guid|uuid)\b/.test(norm)) {
+        return { role: FieldRole.IDENTIFIER, confidence: 0.5, meaning: 'ID-like field', source: 'name_heuristic' };
+    }
+    if (/\b(date|time|created|updated|modified|timestamp)\b/.test(norm)) {
+        return { role: FieldRole.TEMPORAL, confidence: 0.5, meaning: 'Time-like field', source: 'name_heuristic' };
+    }
+    if (/\b(name|title|label|subject|headline)\b/.test(norm)) {
+        return { role: FieldRole.PRIMARY_IDENTITY, confidence: 0.5, meaning: 'Name-like field', source: 'name_heuristic' };
+    }
+    if (/\b(status|state|type|kind|category|active|enabled|flag)\b/.test(norm)) {
+        return { role: FieldRole.STATUS, confidence: 0.4, meaning: 'Status-like field', source: 'name_heuristic' };
+    }
+    if (/\b(amount|price|cost|total|sum|count|qty|quantity|rate|fee|balance|revenue|payment|tax|discount|score|rating|percent|ratio)\b/.test(norm)) {
+        return { role: FieldRole.QUANTITY, confidence: 0.4, meaning: 'Quantity-like field', source: 'name_heuristic' };
+    }
+    if (/\b(email|phone|mobile|cell|tel|fax|url|website|link)\b/.test(norm)) {
+        return { role: FieldRole.CONTACT, confidence: 0.4, meaning: 'Contact-like field', source: 'name_heuristic' };
+    }
+    if (/\b(address|city|state|zip|postal|country|county|lat|lon|location)\b/.test(norm)) {
+        return { role: FieldRole.SPATIAL, confidence: 0.4, meaning: 'Location-like field', source: 'name_heuristic' };
+    }
+    if (/\b(description|desc|notes|note|comment|remarks|memo|body|content|text|summary)\b/.test(norm)) {
+        return { role: FieldRole.DESCRIPTIVE, confidence: 0.4, meaning: 'Descriptive field', source: 'name_heuristic' };
+    }
+    if (/\b(department|dept|team|role|position|manager|supervisor|job)\b/.test(norm)) {
+        return { role: FieldRole.ORGANIZATIONAL, confidence: 0.4, meaning: 'Org field', source: 'name_heuristic' };
+    }
+
+    return { role: FieldRole.UNKNOWN, confidence: 0, meaning: 'Unknown', source: 'none' };
+}
+
+/**
+ * Score a single field for left-to-right relevance.
+ * Lower score = more relevant = further left.
+ *
+ * Scoring formula:
+ *   base = ROLE_PRIORITY[role] * 100     (role is the primary sort factor)
+ *   penalty adjustments:
+ *     - High confidence match gets a bonus (moved left within role group)
+ *     - Fields with "name" in them get extra left-push
+ *     - Fields with only-ID suffixes get pushed right within their role group
+ *     - Alphabetical tiebreaker within same score
+ */
+function scoreFieldRelevance(fieldId, fieldMeta) {
+    var inference = inferFieldRole(fieldId, fieldMeta);
+    var rolePriority = ROLE_PRIORITY[inference.role] !== undefined ? ROLE_PRIORITY[inference.role] : 11;
+
+    // Base score from role (0-1100 range, in steps of 100)
+    var score = rolePriority * 100;
+
+    // Confidence adjustment: higher confidence = slightly more left (-0 to -40)
+    score -= Math.round(inference.confidence * 40);
+
+    // Name-like fields within identity get extra boost
+    var norm = normalizeFieldKey((fieldMeta && fieldMeta.fieldName) || fieldId);
+    if (inference.role === FieldRole.PRIMARY_IDENTITY) {
+        // "name" or "full name" is the king column
+        if (norm === 'name' || norm === 'full name' || norm === 'fullname' || norm === 'display name') {
+            score -= 50;
+        }
+        // first name before last name
+        if (norm.includes('first')) score -= 20;
+        if (norm.includes('last')) score -= 10;
+    }
+
+    // Penalize pure ID fields (they look like "fldXyz123")
+    if (/^fld[a-z0-9]+$/i.test(fieldId) && (!fieldMeta || !fieldMeta.fieldName || fieldMeta.fieldName === fieldId)) {
+        score += 50; // Push raw field IDs to the right
+    }
+
+    return {
+        fieldId: fieldId,
+        score: score,
+        role: inference.role,
+        confidence: inference.confidence,
+        meaning: inference.meaning,
+        source: inference.source
+    };
+}
+
+/**
+ * Compute the intelligent default field order for a table.
+ * This replaces the old alphabetical sort with semantic ordering.
+ *
+ * Returns an array of field IDs sorted by relevance (most relevant leftmost).
+ */
+function computeSmartFieldOrder(tableId) {
+    var fields = META_FIELDS[tableId] || {};
+    var fieldIds = Object.keys(fields);
+
+    if (fieldIds.length === 0) return [];
+
+    // Score every field
+    var scored = fieldIds.map(function(fid) {
+        return scoreFieldRelevance(fid, fields[fid]);
+    });
+
+    // Sort by score ascending (lower = more relevant = further left)
+    // Tiebreaker: alphabetical by field name
+    scored.sort(function(a, b) {
+        if (a.score !== b.score) return a.score - b.score;
+        var nameA = (fields[a.fieldId] && fields[a.fieldId].fieldName || a.fieldId).toLowerCase();
+        var nameB = (fields[b.fieldId] && fields[b.fieldId].fieldName || b.fieldId).toLowerCase();
+        return nameA.localeCompare(nameB);
+    });
+
+    // Log the smart ordering decision for debugging
+    if (scored.length > 0) {
+        console.log('Smart column order for table ' + tableId + ':',
+            scored.slice(0, 8).map(function(s) {
+                return (fields[s.fieldId] && fields[s.fieldId].fieldName || s.fieldId) +
+                    ' [' + s.role + ', score=' + s.score + ']';
+            }).join(' | ')
+        );
+    }
+
+    return scored.map(function(s) { return s.fieldId; });
+}
+
 // ============ View Field Configuration ============
 
 // Get the field configuration for a view (from cache or initialize default)
@@ -5764,19 +6187,14 @@ function getViewFieldConfig(tableId, viewId) {
 
 // Initialize default view field config (all fields visible)
 function initViewFieldConfig(tableId, viewId) {
-    var fields = META_FIELDS[tableId] || {};
-    var fieldIds = Object.keys(fields);
-
-    // Sort fields by name for consistent initial order
-    fieldIds.sort((a, b) => {
-        var nameA = (fields[a].fieldName || a).toLowerCase();
-        var nameB = (fields[b].fieldName || b).toLowerCase();
-        return nameA.localeCompare(nameB);
-    });
+    // Use intelligent column ordering instead of alphabetical sort.
+    // This puts the most relevant fields (names, identifiers) leftmost
+    // and pushes metadata/technical fields to the right.
+    var smartOrder = computeSmartFieldOrder(tableId);
 
     var config = {
-        hiddenFieldIds: [],          // No fields hidden initially (all visible)
-        fieldOrder: fieldIds.slice() // Order for display
+        hiddenFieldIds: [],            // No fields hidden initially (all visible)
+        fieldOrder: smartOrder.slice()  // Intelligent semantic order
     };
 
     if (!VIEW_FIELD_CONFIG[tableId]) VIEW_FIELD_CONFIG[tableId] = {};
