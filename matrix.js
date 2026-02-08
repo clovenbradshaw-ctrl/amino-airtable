@@ -211,6 +211,15 @@ var MatrixClient = (function() {
         return false;
     }
 
+    function setSession(homeserverUrl, accessToken, userId, deviceId) {
+        _homeserverUrl = homeserverUrl.replace(/\/$/, '');
+        _accessToken = accessToken;
+        _userId = userId;
+        _deviceId = deviceId;
+        _syncToken = null;
+        _saveSession();
+    }
+
     // ============ Persistent Config (survives tab close) ============
 
     function saveConfig(config) {
@@ -776,6 +785,7 @@ var MatrixClient = (function() {
         getUserId: getUserId,
         getHomeserverUrl: getHomeserverUrl,
         restoreSession: restoreSession,
+        setSession: setSession,
 
         // Config
         saveConfig: saveConfig,
