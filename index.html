@@ -520,6 +520,22 @@
         .auth-box button.secondary:hover { background: var(--bg-hover); }
         .auth-error { color: #f87171; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); display: none; }
         .auth-info { color: var(--text-muted); font-size: 12px; margin-top: 16px; text-align: center; }
+
+        /* Synapse Login Screen */
+        #synapse-login-screen { position: fixed; inset: 0; background: var(--bg-primary); display: flex; align-items: center; justify-content: center; z-index: 105; }
+        #synapse-login-screen.hidden { display: none !important; }
+        #synapse-login-screen.fading-out { opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
+        .synapse-login-box { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); padding: 32px; width: 360px; box-shadow: var(--shadow-xl); }
+        .synapse-login-box h2 { font-size: 20px; margin-bottom: 8px; color: var(--text-primary); }
+        .synapse-login-box p { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
+        .synapse-login-box input { width: 100%; padding: 10px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; margin-bottom: 12px; }
+        .synapse-login-box input:focus { outline: none; border-color: var(--primary-500); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+        .synapse-login-box button { width: 100%; padding: 10px; background: var(--primary-500); border: none; border-radius: var(--radius-md); color: #fff; font-size: 14px; cursor: pointer; font-weight: 500; transition: background var(--transition-fast); }
+        .synapse-login-box button:hover { background: var(--primary-600); }
+        .synapse-login-box button:disabled { background: var(--gray-600); cursor: not-allowed; }
+        .synapse-login-box .synapse-error { color: #f87171; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); display: none; }
+        .synapse-login-box label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+
         .hidden { display: none !important; }
 
         /* Unlock Screen */
@@ -1437,6 +1453,19 @@
             <div class="unlock-info">
                 Forgot your password? You'll need to clear all local data and start fresh. Your data on the server is not affected.
             </div>
+        </div>
+    </div>
+
+    <div id="synapse-login-screen" class="hidden">
+        <div class="synapse-login-box">
+            <h2>Sign In</h2>
+            <p>Log in with your Amino account to continue</p>
+            <div id="synapse-login-error" class="synapse-error"></div>
+            <label for="synapse-username">Username</label>
+            <input type="text" id="synapse-username" placeholder="Username" autocomplete="username">
+            <label for="synapse-password">Password</label>
+            <input type="password" id="synapse-password" placeholder="Password" autocomplete="current-password">
+            <button id="synapse-login-btn">Sign In</button>
         </div>
     </div>
 
@@ -6609,6 +6638,164 @@ function getLocalStats() {
     });
 }
 
+// ============ Synapse Login ============
+
+var SYNAPSE_HOMESERVER_URL = 'https://app.aminoimmigration.com';
+var SYNAPSE_SESSION_KEY = 'amino_synapse_session';
+
+function _saveSynapseSession(session) {
+    try {
+        localStorage.setItem(SYNAPSE_SESSION_KEY, JSON.stringify(session));
+    } catch (e) {
+        console.warn('[Synapse] Could not save session:', e);
+    }
+}
+
+function _loadSynapseSession() {
+    try {
+        var stored = localStorage.getItem(SYNAPSE_SESSION_KEY);
+        return stored ? JSON.parse(stored) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function _clearSynapseSession() {
+    localStorage.removeItem(SYNAPSE_SESSION_KEY);
+}
+
+async function verifySynapseSession() {
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken) return false;
+
+    try {
+        var response = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/account/whoami', {
+            headers: { 'Authorization': 'Bearer ' + session.accessToken }
+        });
+        if (response.ok) return true;
+        // Token expired or invalid
+        _clearSynapseSession();
+        return false;
+    } catch (e) {
+        // Network error — allow offline access if session exists
+        console.warn('[Synapse] Could not verify session, allowing cached session:', e);
+        return true;
+    }
+}
+
+async function trySynapseLogin() {
+    var username = document.getElementById('synapse-username').value.trim();
+    var password = document.getElementById('synapse-password').value.trim();
+
+    if (!username || !password) {
+        showSynapseError('Please enter your username and password.');
+        return;
+    }
+
+    var btn = document.getElementById('synapse-login-btn');
+    btn.textContent = 'Signing in...';
+    btn.disabled = true;
+    hideSynapseError();
+
+    try {
+        var body = {
+            type: 'm.login.password',
+            identifier: { type: 'm.id.user', user: username },
+            password: password,
+            initial_device_display_name: 'Amino Viewer'
+        };
+
+        var response = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        var data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Login failed');
+        }
+
+        _saveSynapseSession({
+            accessToken: data.access_token,
+            userId: data.user_id,
+            deviceId: data.device_id
+        });
+
+        hideSynapseLoginScreen();
+        // Continue initialization: encryption check, then auth
+        var encryptionReady = await initEncryption();
+        if (encryptionReady) {
+            initAuthScreen();
+        }
+    } catch (err) {
+        console.error('[Synapse] Login failed:', err);
+        showSynapseError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
+        btn.textContent = 'Sign In';
+        btn.disabled = false;
+    }
+}
+
+function showSynapseError(msg) {
+    var el = document.getElementById('synapse-login-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+
+function hideSynapseError() {
+    var el = document.getElementById('synapse-login-error');
+    el.style.display = 'none';
+}
+
+function showSynapseLoginScreen() {
+    var el = document.getElementById('synapse-login-screen');
+    el.classList.remove('hidden', 'fading-out');
+}
+
+function hideSynapseLoginScreen() {
+    var el = document.getElementById('synapse-login-screen');
+    el.classList.add('fading-out');
+    el.addEventListener('transitionend', function handler() {
+        el.removeEventListener('transitionend', handler);
+        el.classList.add('hidden');
+        el.classList.remove('fading-out');
+    }, { once: true });
+    setTimeout(function() { el.classList.add('hidden'); el.classList.remove('fading-out'); }, 400);
+}
+
+async function initSynapseLogin() {
+    var valid = await verifySynapseSession();
+    if (valid) {
+        // Session is valid, proceed to app auth
+        return true;
+    }
+    // No valid session — show Synapse login screen
+    showSynapseLoginScreen();
+    return false;
+}
+
+function synapseLogout() {
+    var session = _loadSynapseSession();
+    if (session && session.accessToken) {
+        // Fire and forget logout request
+        fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/logout', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + session.accessToken,
+                'Content-Type': 'application/json'
+            }
+        }).catch(function() {});
+    }
+    _clearSynapseSession();
+}
+
+// Wire up Synapse login UI
+document.getElementById('synapse-login-btn').onclick = trySynapseLogin;
+document.getElementById('synapse-username').onkeydown = function(e) { if (e.key === 'Enter') document.getElementById('synapse-password').focus(); };
+document.getElementById('synapse-password').onkeydown = function(e) { if (e.key === 'Enter') trySynapseLogin(); };
+
 // ============ Auth ============
 
 document.getElementById('auth-submit').onclick = tryAuth;
@@ -6787,7 +6974,9 @@ function logout() {
     // Clear saved credentials (both encrypted and plaintext)
     clearEncryptedCredentials();
     clearSessionKey();
-    showAuthScreen();
+    // Clear Synapse session and show Synapse login
+    synapseLogout();
+    showSynapseLoginScreen();
 }
 
 async function manualSync() {
@@ -15127,8 +15316,13 @@ document.getElementById('unlock-password').onkeydown = (e) => { if (e.key === 'E
 document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('setup-password-confirm').focus(); };
 document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
 
-// Initialize: check encryption first, then auth
+// Initialize: check Synapse login first, then encryption, then auth
 (async function() {
+    var synapseValid = await initSynapseLogin();
+    if (!synapseValid) {
+        // Synapse login screen is showing — wait for login before continuing
+        return;
+    }
     var encryptionReady = await initEncryption();
     if (encryptionReady) {
         initAuthScreen();
