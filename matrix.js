@@ -76,6 +76,9 @@ var MatrixClient = (function() {
             var err = new Error(data.error || 'Matrix API error');
             err.errcode = data.errcode;
             err.httpStatus = response.status;
+            if (data.retry_after_ms !== undefined) {
+                err.retryAfterMs = data.retry_after_ms;
+            }
             throw err;
         }
 
@@ -83,13 +86,15 @@ var MatrixClient = (function() {
     }
 
     async function _requestWithRetry(method, path, body, queryParams, retries) {
-        retries = retries || 3;
+        retries = retries || 5;
         for (var attempt = 0; attempt <= retries; attempt++) {
             try {
                 return await _request(method, path, body, queryParams);
             } catch (err) {
-                if (attempt < retries && (err.httpStatus >= 500 || !err.httpStatus)) {
-                    await new Promise(function(r) { setTimeout(r, Math.pow(2, attempt) * 1000); });
+                var isRetryable = err.httpStatus >= 500 || !err.httpStatus || err.httpStatus === 429;
+                if (attempt < retries && isRetryable) {
+                    var delay = err.retryAfterMs || Math.pow(2, attempt) * 1000;
+                    await new Promise(function(r) { setTimeout(r, delay); });
                 } else {
                     throw err;
                 }

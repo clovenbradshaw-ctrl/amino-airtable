@@ -15036,6 +15036,7 @@ async function runHydration() {
             for (var u = 0; u < grouped.unassigned.length; u++) {
                 var urec = grouped.unassigned[u];
                 await MatrixClient.writeRecord(firmRoomId, urec.tableId, urec.recordId, urec.fields);
+                if (u % 10 === 9) await new Promise(function(r) { setTimeout(r, 100); });
             }
         }
 
@@ -15068,6 +15069,7 @@ async function runHydration() {
                 var fids = Object.keys(tblFields);
                 for (var f = 0; f < fids.length; f++) {
                     await MatrixClient.writeFieldSchema(matterRoomId, fids[f], tblFields[fids[f]]);
+                    if (f % 10 === 9) await new Promise(function(r) { setTimeout(r, 100); });
                 }
             }
 
@@ -15076,6 +15078,7 @@ async function runHydration() {
                 var recs = clientGroup.records[clientTableIds[rt]];
                 for (var ri = 0; ri < recs.length; ri++) {
                     await MatrixClient.writeRecord(matterRoomId, recs[ri].tableId, recs[ri].recordId, recs[ri].fields);
+                    if (ri % 10 === 9) await new Promise(function(r) { setTimeout(r, 100); });
                 }
             }
 
