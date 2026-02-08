@@ -1259,6 +1259,122 @@
         .profile-field-picker-item:hover { background: var(--bg-hover); }
         .profile-field-picker-item .field-type-badge { font-size: 10px; color: var(--text-muted); background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px; }
 
+        /* ===== Matrix Setup Wizard ===== */
+        #matrix-wizard {
+            position: fixed; inset: 0; background: var(--bg-primary);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 150;
+        }
+        #matrix-wizard.hidden { display: none; }
+        .wizard-container {
+            background: var(--bg-secondary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl); padding: 0; width: 540px; max-width: 95vw;
+            max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-xl);
+        }
+        .wizard-header {
+            padding: 28px 32px 0; text-align: center;
+        }
+        .wizard-header h2 { font-size: 22px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+        .wizard-header p { font-size: 13px; color: var(--text-muted); margin-bottom: 0; }
+        .wizard-steps {
+            display: flex; justify-content: center; gap: 8px;
+            padding: 20px 32px 0; margin-bottom: 0;
+        }
+        .wizard-step-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: var(--border-secondary); transition: all 0.2s;
+        }
+        .wizard-step-dot.active { background: var(--primary-500); transform: scale(1.2); }
+        .wizard-step-dot.completed { background: var(--success-500); }
+        .wizard-body { padding: 24px 32px; }
+        .wizard-body .form-group { margin-bottom: 18px; }
+        .wizard-body .form-group label {
+            display: block; font-size: 13px; font-weight: 500;
+            color: var(--text-secondary); margin-bottom: 6px;
+        }
+        .wizard-body .form-group label .label-hint {
+            font-weight: 400; color: var(--text-muted); font-size: 12px;
+        }
+        .wizard-body input[type="text"],
+        .wizard-body input[type="password"],
+        .wizard-body select {
+            width: 100%; padding: 10px 12px; background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-md);
+            color: var(--text-primary); font-size: 14px; box-sizing: border-box;
+        }
+        .wizard-body input:focus, .wizard-body select:focus {
+            outline: none; border-color: var(--primary-500);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        .wizard-body .checkbox-group {
+            display: flex; flex-direction: column; gap: 8px;
+            max-height: 200px; overflow-y: auto;
+            padding: 8px; background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-md);
+        }
+        .wizard-body .checkbox-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 6px 8px; border-radius: var(--radius-sm);
+            cursor: pointer; font-size: 13px; color: var(--text-secondary);
+        }
+        .wizard-body .checkbox-item:hover { background: var(--bg-hover); }
+        .wizard-body .checkbox-item input[type="checkbox"] {
+            width: 16px; height: 16px; accent-color: var(--primary-500);
+        }
+        .wizard-body .linked-record-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 0; border-bottom: 1px solid var(--border-primary);
+        }
+        .wizard-body .linked-record-row:last-child { border-bottom: none; }
+        .wizard-body .linked-record-row .table-name {
+            min-width: 120px; font-size: 13px; font-weight: 500; color: var(--text-primary);
+        }
+        .wizard-body .linked-record-row select { flex: 1; }
+        .wizard-footer {
+            padding: 16px 32px 28px; display: flex; justify-content: space-between; gap: 12px;
+        }
+        .wizard-footer button {
+            padding: 10px 24px; border-radius: var(--radius-md); font-size: 14px;
+            font-weight: 500; cursor: pointer; transition: all var(--transition-fast);
+        }
+        .wizard-footer .btn-back {
+            background: var(--bg-tertiary); border: 1px solid var(--border-primary);
+            color: var(--text-muted);
+        }
+        .wizard-footer .btn-back:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .wizard-footer .btn-next {
+            background: var(--primary-500); border: 1px solid var(--primary-500);
+            color: #fff; margin-left: auto;
+        }
+        .wizard-footer .btn-next:hover { background: var(--primary-600); }
+        .wizard-footer .btn-next:disabled { background: var(--gray-600); border-color: var(--gray-600); cursor: not-allowed; }
+        .wizard-error {
+            color: #f87171; font-size: 13px; padding: 10px 12px;
+            background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: var(--radius-md); margin-bottom: 16px; display: none;
+        }
+        .wizard-success {
+            color: #4ade80; font-size: 13px; padding: 10px 12px;
+            background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: var(--radius-md); margin-bottom: 16px;
+        }
+        .wizard-progress-section { margin-top: 16px; }
+        .wizard-progress-bar {
+            height: 6px; background: var(--bg-tertiary); border-radius: 3px;
+            overflow: hidden; margin-bottom: 10px;
+        }
+        .wizard-progress-fill {
+            height: 100%; background: linear-gradient(90deg, var(--primary-500), #7c3aed);
+            transition: width 0.3s ease; border-radius: 3px;
+        }
+        .wizard-progress-status { font-size: 13px; color: var(--text-secondary); }
+        .wizard-progress-detail { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        .wizard-info-box {
+            background: var(--bg-tertiary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-md); padding: 12px 16px; font-size: 12px;
+            color: var(--text-secondary); line-height: 1.5; margin-bottom: 16px;
+        }
+        .wizard-info-box strong { color: var(--text-primary); }
     </style>
 </head>
 <body>
@@ -1408,6 +1524,31 @@
             <input type="text" id="connect-api-set-filter" placeholder="Filter by set (optional)" autocomplete="off" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; box-sizing: border-box;">
             <button id="connect-api-submit" onclick="submitConnectApi()" style="width: 100%; padding: 10px; background: #2d6cdf; border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; margin-bottom: 8px; font-weight: 500;">Connect</button>
             <button onclick="hideConnectApiModal()" style="width: 100%; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; color: #333; font-size: 14px; cursor: pointer; font-weight: 500;">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Matrix Setup Wizard -->
+    <div id="matrix-wizard" class="hidden">
+        <div class="wizard-container">
+            <div class="wizard-header">
+                <h2 id="wizard-title">Connect to Matrix</h2>
+                <p id="wizard-subtitle">Set up your organization's secure data infrastructure</p>
+            </div>
+            <div class="wizard-steps" id="wizard-steps">
+                <div class="wizard-step-dot active"></div>
+                <div class="wizard-step-dot"></div>
+                <div class="wizard-step-dot"></div>
+                <div class="wizard-step-dot"></div>
+                <div class="wizard-step-dot"></div>
+                <div class="wizard-step-dot"></div>
+            </div>
+            <div class="wizard-body" id="wizard-body">
+                <!-- Wizard content rendered dynamically per step -->
+            </div>
+            <div class="wizard-footer" id="wizard-footer">
+                <button class="btn-back" id="wizard-back" onclick="wizardBack()">Back</button>
+                <button class="btn-next" id="wizard-next" onclick="wizardNext()">Next</button>
+            </div>
         </div>
     </div>
 
@@ -1871,6 +2012,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@msgpack/msgpack@3.1.2/dist.umd/msgpack.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    <script src="matrix.js"></script>
 
     <script>
 // ============ Theme Management ============
@@ -6529,6 +6671,17 @@ async function initAuthScreen() {
     if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
     var authEl = document.getElementById('auth-screen');
     authEl.classList.remove('hidden', 'fading-out');
+
+    // Check Matrix mode and add setup option
+    var matrixMode = checkMatrixMode();
+    if (matrixMode === 'active') {
+        // Matrix session exists — try to restore and proceed
+        authEl.classList.add('hidden');
+        await init();
+        return;
+    }
+    // Add Matrix setup button to auth screen
+    addMatrixOptionToAuth();
 }
 
 async function clearLocalAndReset() {
@@ -14209,6 +14362,686 @@ renderViewItem = function(tableId, view, inFolder) {
 
     return html;
 };
+
+// ============ Matrix Setup Wizard ============
+
+var wizardStep = 0;
+var wizardData = {
+    homeserverDomain: '',
+    homeserverUrl: '',
+    username: '',
+    password: '',
+    orgName: '',
+    orgSpaceId: null,
+    // Legacy data source
+    aminoApiKey: '',
+    aminoEndpoints: null,
+    // Schema from legacy system
+    legacyTables: {},
+    legacyFields: {},
+    legacyAmoData: null,
+    // Client configuration
+    clientTable: '',
+    clientIdentifierField: '',
+    clientVisibleTables: [],
+    clientVisibleLinkedTables: [], // "which linked record types can a client see?"
+    linkedRecordTables: {} // tableId -> fieldId that links to client table
+};
+
+var WIZARD_STEPS = [
+    { id: 'homeserver', title: 'Connect to Matrix', subtitle: 'Enter your homeserver details' },
+    { id: 'org', title: 'Organization', subtitle: 'Set up or join your organization' },
+    { id: 'legacy', title: 'Import Data', subtitle: 'Connect your existing data source' },
+    { id: 'client-table', title: 'Client Records', subtitle: 'Which record type creates clients?' },
+    { id: 'visibility', title: 'Client Visibility', subtitle: 'What can clients see?' },
+    { id: 'hydrate', title: 'Hydrating', subtitle: 'Building your Matrix rooms' }
+];
+
+function showMatrixWizard() {
+    document.getElementById('matrix-wizard').classList.remove('hidden');
+    wizardStep = 0;
+    renderWizardStep();
+}
+
+function hideMatrixWizard() {
+    document.getElementById('matrix-wizard').classList.add('hidden');
+}
+
+function renderWizardStep() {
+    var step = WIZARD_STEPS[wizardStep];
+
+    // Update header
+    document.getElementById('wizard-title').textContent = step.title;
+    document.getElementById('wizard-subtitle').textContent = step.subtitle;
+
+    // Update step dots
+    var dots = document.querySelectorAll('.wizard-step-dot');
+    dots.forEach(function(dot, i) {
+        dot.className = 'wizard-step-dot';
+        if (i < wizardStep) dot.classList.add('completed');
+        if (i === wizardStep) dot.classList.add('active');
+    });
+
+    // Update footer buttons
+    var backBtn = document.getElementById('wizard-back');
+    var nextBtn = document.getElementById('wizard-next');
+    backBtn.style.display = wizardStep > 0 ? '' : 'none';
+    nextBtn.disabled = false;
+
+    if (wizardStep === WIZARD_STEPS.length - 1) {
+        nextBtn.style.display = 'none';
+    } else {
+        nextBtn.style.display = '';
+        nextBtn.textContent = wizardStep === WIZARD_STEPS.length - 2 ? 'Begin Hydration' : 'Next';
+    }
+
+    // Render step body
+    var body = document.getElementById('wizard-body');
+    switch (step.id) {
+        case 'homeserver': renderWizardHomeserver(body); break;
+        case 'org': renderWizardOrg(body); break;
+        case 'legacy': renderWizardLegacy(body); break;
+        case 'client-table': renderWizardClientTable(body); break;
+        case 'visibility': renderWizardVisibility(body); break;
+        case 'hydrate': renderWizardHydrate(body); break;
+    }
+}
+
+// ---- Step 1: Homeserver Connection ----
+function renderWizardHomeserver(container) {
+    container.innerHTML =
+        '<div class="wizard-error" id="wizard-error"></div>' +
+        '<div class="form-group">' +
+            '<label>Homeserver domain</label>' +
+            '<input type="text" id="wiz-homeserver" placeholder="e.g. matrix.example.com" value="' + esc(wizardData.homeserverDomain) + '">' +
+        '</div>' +
+        '<div class="form-group">' +
+            '<label>Username</label>' +
+            '<input type="text" id="wiz-username" placeholder="@admin:example.com or just admin" value="' + esc(wizardData.username) + '">' +
+        '</div>' +
+        '<div class="form-group">' +
+            '<label>Password</label>' +
+            '<input type="password" id="wiz-password" placeholder="Your Matrix password" value="">' +
+        '</div>' +
+        '<div class="wizard-info-box">' +
+            '<strong>Admin account recommended.</strong> The first login should be your organization\'s admin account, which will own all rooms and manage permissions.' +
+        '</div>';
+}
+
+// ---- Step 2: Org Setup ----
+function renderWizardOrg(container) {
+    if (wizardData.orgSpaceId) {
+        container.innerHTML =
+            '<div class="wizard-success">Connected to existing organization.</div>' +
+            '<div class="wizard-info-box">' +
+                '<strong>Organization space found.</strong> Your rooms and configuration are already set up.' +
+            '</div>';
+    } else {
+        container.innerHTML =
+            '<div class="wizard-error" id="wizard-error"></div>' +
+            '<div class="form-group">' +
+                '<label>Organization Name</label>' +
+                '<input type="text" id="wiz-org-name" placeholder="e.g. Ramirez & Associates" value="' + esc(wizardData.orgName) + '">' +
+            '</div>' +
+            '<div class="wizard-info-box">' +
+                '<strong>This creates a Matrix Space</strong> that will contain all your client rooms and firm data. ' +
+                'Staff and clients will be invited to specific rooms within this space.' +
+            '</div>';
+    }
+}
+
+// ---- Step 3: Legacy Data Source ----
+function renderWizardLegacy(container) {
+    container.innerHTML =
+        '<div class="wizard-error" id="wizard-error"></div>' +
+        '<div class="form-group">' +
+            '<label>Amino API Key <span class="label-hint">(your existing key)</span></label>' +
+            '<input type="password" id="wiz-amino-key" placeholder="API Key" value="' + esc(wizardData.aminoApiKey) + '">' +
+        '</div>' +
+        '<div class="wizard-info-box">' +
+            '<strong>How this works:</strong> We\'ll download your current snapshot from Box, ' +
+            'then build Matrix rooms from it. Your Airtable data stays untouched until you decide to sever the connection.' +
+        '</div>';
+}
+
+// ---- Step 4: Client Table Selection ----
+function renderWizardClientTable(container) {
+    var tableOptions = '<option value="">-- Select a table --</option>';
+    var tableIds = Object.keys(wizardData.legacyTables);
+    tableIds.forEach(function(tid) {
+        var t = wizardData.legacyTables[tid];
+        var selected = wizardData.clientTable === tid ? ' selected' : '';
+        tableOptions += '<option value="' + esc(tid) + '"' + selected + '>' + esc(t.tableName || tid) + '</option>';
+    });
+
+    // Field selector (populated when table changes)
+    var fieldOptions = '<option value="">-- Select a field --</option>';
+    if (wizardData.clientTable && wizardData.legacyFields[wizardData.clientTable]) {
+        var fields = wizardData.legacyFields[wizardData.clientTable];
+        Object.keys(fields).forEach(function(fid) {
+            var f = fields[fid];
+            var selected = wizardData.clientIdentifierField === fid ? ' selected' : '';
+            fieldOptions += '<option value="' + esc(fid) + '"' + selected + '>' + esc(f.fieldName || fid) + '</option>';
+        });
+    }
+
+    // Linked record field detection per table
+    var linkedHtml = '';
+    tableIds.forEach(function(tid) {
+        if (tid === wizardData.clientTable) return;
+        var t = wizardData.legacyTables[tid];
+        var fields = wizardData.legacyFields[tid] || {};
+        var fids = Object.keys(fields);
+        // Find fields that could be linked records (arrays or IDs referencing client table)
+        var linkFieldOptions = '<option value="">-- No link --</option>';
+        fids.forEach(function(fid) {
+            var f = fields[fid];
+            var selected = wizardData.linkedRecordTables[tid] === fid ? ' selected' : '';
+            linkFieldOptions += '<option value="' + esc(fid) + '"' + selected + '>' + esc(f.fieldName || fid) + '</option>';
+        });
+        linkedHtml +=
+            '<div class="linked-record-row">' +
+                '<span class="table-name">' + esc(t.tableName || tid) + '</span>' +
+                '<select onchange="wizardSetLinkedField(\'' + esc(tid) + '\', this.value)">' + linkFieldOptions + '</select>' +
+            '</div>';
+    });
+
+    container.innerHTML =
+        '<div class="wizard-error" id="wizard-error"></div>' +
+        '<div class="form-group">' +
+            '<label>Which table represents your clients?</label>' +
+            '<select id="wiz-client-table" onchange="wizardClientTableChanged(this.value)">' + tableOptions + '</select>' +
+        '</div>' +
+        '<div class="form-group">' +
+            '<label>Which field identifies each client?</label>' +
+            '<select id="wiz-client-field" onchange="wizardData.clientIdentifierField=this.value">' + fieldOptions + '</select>' +
+        '</div>' +
+        (linkedHtml ?
+        '<div class="form-group">' +
+            '<label>Which field on each table links to a client record? <span class="label-hint">(the linked record field)</span></label>' +
+            '<div class="checkbox-group">' + linkedHtml + '</div>' +
+        '</div>' : '') +
+        '<div class="wizard-info-box">' +
+            '<strong>This is how rooms get created.</strong> Each unique client gets their own Matrix Space with a Matter Room. ' +
+            'Other records are assigned to clients via the linked record field you select.' +
+        '</div>';
+}
+
+function wizardClientTableChanged(tableId) {
+    wizardData.clientTable = tableId;
+    wizardData.clientIdentifierField = '';
+    renderWizardStep(); // re-render to update field dropdown
+}
+
+function wizardSetLinkedField(tableId, fieldId) {
+    if (fieldId) {
+        wizardData.linkedRecordTables[tableId] = fieldId;
+    } else {
+        delete wizardData.linkedRecordTables[tableId];
+    }
+}
+
+// ---- Step 5: Client Visibility ----
+function renderWizardVisibility(container) {
+    var tableIds = Object.keys(wizardData.legacyTables);
+
+    // Table visibility checkboxes
+    var tableCheckboxes = '';
+    tableIds.forEach(function(tid) {
+        var t = wizardData.legacyTables[tid];
+        var checked = wizardData.clientVisibleTables.indexOf(tid) !== -1 ? ' checked' : '';
+        tableCheckboxes +=
+            '<label class="checkbox-item">' +
+                '<input type="checkbox" value="' + esc(tid) + '"' + checked +
+                    ' onchange="wizardToggleClientVisibleTable(\'' + esc(tid) + '\', this.checked)">' +
+                '<span>' + esc(t.tableName || tid) + '</span>' +
+            '</label>';
+    });
+
+    // Linked record type visibility (which linked record types can a client see?)
+    var linkedTableCheckboxes = '';
+    var linkedTableIds = Object.keys(wizardData.linkedRecordTables);
+    linkedTableIds.forEach(function(tid) {
+        var t = wizardData.legacyTables[tid];
+        var checked = wizardData.clientVisibleLinkedTables.indexOf(tid) !== -1 ? ' checked' : '';
+        linkedTableCheckboxes +=
+            '<label class="checkbox-item">' +
+                '<input type="checkbox" value="' + esc(tid) + '"' + checked +
+                    ' onchange="wizardToggleClientVisibleLinkedTable(\'' + esc(tid) + '\', this.checked)">' +
+                '<span>' + esc(t.tableName || tid) + '</span>' +
+            '</label>';
+    });
+
+    container.innerHTML =
+        '<div class="wizard-error" id="wizard-error"></div>' +
+        '<div class="form-group">' +
+            '<label>Which tables can clients see in their portal?</label>' +
+            '<div class="checkbox-group">' + tableCheckboxes + '</div>' +
+        '</div>' +
+        (linkedTableCheckboxes ?
+        '<div class="form-group">' +
+            '<label>Which linked record types can a client see? <span class="label-hint">(records linked to their client record)</span></label>' +
+            '<div class="checkbox-group">' + linkedTableCheckboxes + '</div>' +
+        '</div>' : '') +
+        '<div class="wizard-info-box">' +
+            '<strong>Clients only see their own data.</strong> Tables you check here will be visible in the client portal. ' +
+            'Internal notes, billing, and strategy data should remain unchecked.' +
+        '</div>';
+}
+
+function wizardToggleClientVisibleTable(tableId, checked) {
+    var idx = wizardData.clientVisibleTables.indexOf(tableId);
+    if (checked && idx === -1) wizardData.clientVisibleTables.push(tableId);
+    if (!checked && idx !== -1) wizardData.clientVisibleTables.splice(idx, 1);
+}
+
+function wizardToggleClientVisibleLinkedTable(tableId, checked) {
+    var idx = wizardData.clientVisibleLinkedTables.indexOf(tableId);
+    if (checked && idx === -1) wizardData.clientVisibleLinkedTables.push(tableId);
+    if (!checked && idx !== -1) wizardData.clientVisibleLinkedTables.splice(idx, 1);
+}
+
+// ---- Step 6: Hydration ----
+function renderWizardHydrate(container) {
+    container.innerHTML =
+        '<div class="wizard-error" id="wizard-error"></div>' +
+        '<div class="wizard-progress-section">' +
+            '<div class="wizard-progress-bar">' +
+                '<div class="wizard-progress-fill" id="wiz-hydrate-progress" style="width: 0%"></div>' +
+            '</div>' +
+            '<div class="wizard-progress-status" id="wiz-hydrate-status">Preparing...</div>' +
+            '<div class="wizard-progress-detail" id="wiz-hydrate-detail"></div>' +
+        '</div>';
+
+    // Start hydration automatically
+    setTimeout(runHydration, 300);
+}
+
+// ============ Wizard Navigation ============
+
+function wizardBack() {
+    if (wizardStep > 0) {
+        wizardStep--;
+        renderWizardStep();
+    }
+}
+
+async function wizardNext() {
+    var nextBtn = document.getElementById('wizard-next');
+    nextBtn.disabled = true;
+
+    try {
+        switch (WIZARD_STEPS[wizardStep].id) {
+            case 'homeserver':
+                await wizardValidateHomeserver();
+                break;
+            case 'org':
+                await wizardValidateOrg();
+                break;
+            case 'legacy':
+                await wizardValidateLegacy();
+                break;
+            case 'client-table':
+                wizardValidateClientTable();
+                break;
+            case 'visibility':
+                // No validation needed, proceed to hydration
+                break;
+        }
+        wizardStep++;
+        renderWizardStep();
+    } catch (err) {
+        showWizardError(err.message);
+        nextBtn.disabled = false;
+    }
+}
+
+function showWizardError(msg) {
+    var el = document.getElementById('wizard-error');
+    if (el) { el.style.display = 'block'; el.textContent = msg; }
+}
+
+function hideWizardError() {
+    var el = document.getElementById('wizard-error');
+    if (el) el.style.display = 'none';
+}
+
+// ============ Wizard Validation ============
+
+async function wizardValidateHomeserver() {
+    var domain = document.getElementById('wiz-homeserver').value.trim();
+    var username = document.getElementById('wiz-username').value.trim();
+    var password = document.getElementById('wiz-password').value;
+
+    if (!domain) throw new Error('Please enter a homeserver domain');
+    if (!username) throw new Error('Please enter a username');
+    if (!password) throw new Error('Please enter a password');
+
+    wizardData.homeserverDomain = domain;
+    wizardData.username = username;
+    wizardData.password = password;
+
+    // Discover homeserver
+    wizardData.homeserverUrl = await MatrixClient.discoverHomeserver(domain);
+
+    // Login
+    await MatrixClient.login(wizardData.homeserverUrl, username, password);
+
+    // Initial sync to discover rooms
+    await MatrixClient.initialSync();
+
+    // Check for existing org space
+    wizardData.orgSpaceId = await MatrixClient.findOrgSpace();
+}
+
+async function wizardValidateOrg() {
+    if (!wizardData.orgSpaceId) {
+        var orgName = document.getElementById('wiz-org-name');
+        if (!orgName) throw new Error('Organization already configured');
+        var name = orgName.value.trim();
+        if (!name) throw new Error('Please enter an organization name');
+        wizardData.orgName = name;
+        wizardData.orgSpaceId = await MatrixClient.createOrgSpace(name);
+    }
+}
+
+async function wizardValidateLegacy() {
+    var apiKey = document.getElementById('wiz-amino-key').value.trim();
+    if (!apiKey) throw new Error('Please enter your Amino API Key');
+
+    wizardData.aminoApiKey = apiKey;
+
+    // Initialize legacy endpoints using existing mechanism
+    await initSecureEndpoints(apiKey);
+    wizardData.aminoEndpoints = {
+        stream: API,
+        post: XANO_POST_API,
+        snapshot: XANO_SNAPSHOT_API,
+        boxUpload: BOX_SYNC_WEBHOOK,
+        boxDownload: BOX_DOWNLOAD_WEBHOOK
+    };
+
+    // Set the global API_KEY so existing functions work
+    API_KEY = apiKey;
+
+    // Open IndexedDB
+    if (!db) db = await openDB();
+
+    // Try to hydrate from Box to get data locally
+    var hydrated = await hydrateFromBoxDownload();
+
+    if (!hydrated) {
+        // Fall back to full sync from stream
+        await fullSync();
+    }
+
+    // Reload metadata
+    var tables = await getAllTables();
+    var fields = await getAllFields();
+    tables.forEach(function(t) { wizardData.legacyTables[t.tableId] = t; });
+    fields.forEach(function(f) {
+        if (!wizardData.legacyFields[f.tableId]) wizardData.legacyFields[f.tableId] = {};
+        wizardData.legacyFields[f.tableId][f.fieldId] = f;
+    });
+
+    if (Object.keys(wizardData.legacyTables).length === 0) {
+        throw new Error('No tables found. Check your API key and try again.');
+    }
+}
+
+function wizardValidateClientTable() {
+    if (!wizardData.clientTable) throw new Error('Please select which table represents your clients');
+    if (!wizardData.clientIdentifierField) throw new Error('Please select which field identifies each client');
+}
+
+// ============ Hydration Execution ============
+
+async function runHydration() {
+    var progressEl = document.getElementById('wiz-hydrate-progress');
+    var statusEl = document.getElementById('wiz-hydrate-status');
+    var detailEl = document.getElementById('wiz-hydrate-detail');
+
+    function updateProgress(pct, status, detail) {
+        if (progressEl) progressEl.style.width = pct + '%';
+        if (statusEl) statusEl.textContent = status;
+        if (detailEl) detailEl.textContent = detail || '';
+    }
+
+    try {
+        updateProgress(5, 'Preparing data...');
+
+        // Build amo-style data structure from IndexedDB for the bridge
+        var allRecords = [];
+        var tableIds = Object.keys(wizardData.legacyTables);
+        for (var i = 0; i < tableIds.length; i++) {
+            var tid = tableIds[i];
+            var recordIds = await new Promise(function(resolve, reject) {
+                var tx = db.transaction('records', 'readonly');
+                var store = tx.objectStore('records');
+                var index = store.index('by_table');
+                var req = index.getAllKeys(tid);
+                req.onsuccess = function() { resolve(req.result || []); };
+                req.onerror = function() { reject(req.error); };
+            });
+
+            for (var r = 0; r < recordIds.length; r++) {
+                var rec = await new Promise(function(resolve, reject) {
+                    var tx2 = db.transaction('records', 'readonly');
+                    var req2 = tx2.objectStore('records').get(recordIds[r]);
+                    req2.onsuccess = function() { resolve(req2.result); };
+                    req2.onerror = function() { reject(req2.error); };
+                });
+                if (rec) {
+                    // Decrypt if needed
+                    if (encryptionEnabled && rec._encrypted) {
+                        rec = await decryptRecordFromStorage(rec);
+                    }
+                    allRecords.push({
+                        tableId: rec.tableId,
+                        recordId: rec.recordId,
+                        fields: rec.fields || {}
+                    });
+                }
+            }
+        }
+
+        updateProgress(15, 'Grouping records by client...', allRecords.length + ' records found');
+
+        // Configure bridge
+        MatrixBridge.setConfig({
+            mode: 'bridge',
+            orgSpaceId: wizardData.orgSpaceId,
+            clientTable: wizardData.clientTable,
+            clientIdentifierField: wizardData.clientIdentifierField,
+            clientVisibleTables: wizardData.clientVisibleTables,
+            clientHiddenTables: tableIds.filter(function(t) {
+                return wizardData.clientVisibleTables.indexOf(t) === -1;
+            }),
+            linkedRecordTables: wizardData.linkedRecordTables,
+            clientRoomMap: {},
+            lastSyncCursor: 0
+        });
+
+        // Group records
+        var grouped = MatrixBridge.groupRecordsByClient(
+            allRecords,
+            wizardData.legacyFields,
+            wizardData.clientTable,
+            wizardData.clientIdentifierField,
+            wizardData.linkedRecordTables
+        );
+
+        var clientNames = Object.keys(grouped.groups);
+        var totalClients = clientNames.length;
+
+        updateProgress(20, 'Creating Matrix rooms...', totalClients + ' clients detected');
+
+        // Create firm reference room for unassigned data
+        var config = MatrixBridge.getConfig();
+        if (grouped.unassigned.length > 0) {
+            updateProgress(22, 'Creating firm reference room...', grouped.unassigned.length + ' unassigned records');
+            var firmRoomId = await MatrixClient.createRoom({
+                name: 'Firm Reference Data',
+                preset: 'private_chat'
+            });
+            await MatrixClient.addChildToSpace(wizardData.orgSpaceId, firmRoomId);
+            config.firmRoomId = firmRoomId;
+
+            // Write unassigned records to firm room
+            for (var u = 0; u < grouped.unassigned.length; u++) {
+                var urec = grouped.unassigned[u];
+                await MatrixClient.writeRecord(firmRoomId, urec.tableId, urec.recordId, urec.fields);
+            }
+        }
+
+        // For each client, create space + matter room + write data
+        for (var c = 0; c < clientNames.length; c++) {
+            var clientName = clientNames[c];
+            var clientGroup = grouped.groups[clientName];
+            var pct = 25 + Math.round((c / totalClients) * 70);
+            var recordCount = 0;
+            Object.values(clientGroup.records).forEach(function(arr) { recordCount += arr.length; });
+
+            updateProgress(pct, 'Creating room for ' + clientName + '...',
+                (c + 1) + ' of ' + totalClients + ' clients (' + recordCount + ' records)');
+
+            // Create client space
+            var clientSpaceId = await MatrixClient.createClientSpace(wizardData.orgSpaceId, clientName);
+
+            // Create matter room
+            var matterRoomId = await MatrixClient.createMatterRoom(clientSpaceId, clientName);
+
+            // Write schemas
+            var clientTableIds = Object.keys(clientGroup.records);
+            for (var t = 0; t < clientTableIds.length; t++) {
+                var tblId = clientTableIds[t];
+                var tblMeta = wizardData.legacyTables[tblId] || { tableName: tblId };
+                var isVisible = wizardData.clientVisibleTables.indexOf(tblId) !== -1;
+                await MatrixClient.writeTableSchema(matterRoomId, tblId, tblMeta.tableName, tblMeta.icon, isVisible);
+
+                var tblFields = wizardData.legacyFields[tblId] || {};
+                var fids = Object.keys(tblFields);
+                for (var f = 0; f < fids.length; f++) {
+                    await MatrixClient.writeFieldSchema(matterRoomId, fids[f], tblFields[fids[f]]);
+                }
+            }
+
+            // Write records
+            for (var rt = 0; rt < clientTableIds.length; rt++) {
+                var recs = clientGroup.records[clientTableIds[rt]];
+                for (var ri = 0; ri < recs.length; ri++) {
+                    await MatrixClient.writeRecord(matterRoomId, recs[ri].tableId, recs[ri].recordId, recs[ri].fields);
+                }
+            }
+
+            // Store room mapping
+            config.clientRoomMap[clientName] = {
+                spaceId: clientSpaceId,
+                matterRoomId: matterRoomId,
+                portalRoomId: null
+            };
+        }
+
+        // Save bridge config
+        MatrixBridge.setConfig(config);
+
+        // Save config to org space
+        await MatrixClient.sendStateEvent(
+            wizardData.orgSpaceId,
+            MatrixClient.EVENT_TYPES.BRIDGE_CONFIG,
+            '',
+            config
+        );
+
+        // Save locally
+        MatrixClient.saveConfig({
+            bridge: config,
+            homeserverUrl: wizardData.homeserverUrl,
+            orgSpaceId: wizardData.orgSpaceId,
+            userId: MatrixClient.getUserId()
+        });
+
+        updateProgress(100, 'Hydration complete!',
+            totalClients + ' client rooms created, ' + allRecords.length + ' records written');
+
+        // Show completion UI
+        var body = document.getElementById('wizard-body');
+        body.innerHTML =
+            '<div class="wizard-success">' +
+                'Successfully created ' + totalClients + ' client rooms with ' + allRecords.length + ' records.' +
+            '</div>' +
+            '<div class="wizard-info-box">' +
+                '<strong>Bridge mode is active.</strong> The app will continue syncing from your existing Airtable data and routing updates to the appropriate Matrix rooms. ' +
+                'When you\'re ready, you can sever the legacy connection from the admin panel.' +
+            '</div>' +
+            '<div style="text-align: center; padding-top: 12px;">' +
+                '<button class="btn-next" onclick="wizardComplete()" style="background: var(--success-500); border-color: var(--success-500);">Open App</button>' +
+            '</div>';
+
+        // Hide footer buttons
+        document.getElementById('wizard-footer').style.display = 'none';
+
+    } catch (err) {
+        console.error('[Wizard] Hydration failed:', err);
+        updateProgress(0, 'Hydration failed');
+        showWizardError('Hydration failed: ' + err.message);
+        // Show back button
+        document.getElementById('wizard-footer').style.display = 'flex';
+        document.getElementById('wizard-back').style.display = '';
+    }
+}
+
+function wizardComplete() {
+    hideMatrixWizard();
+
+    // Start bridge mode
+    if (API_KEY && wizardData.aminoEndpoints) {
+        MatrixBridge.startBridge(API_KEY, wizardData.aminoEndpoints);
+    }
+
+    // Continue to normal app initialization
+    initAuthScreen();
+}
+
+// ============ Matrix Mode Detection ============
+
+// Check if Matrix mode should be offered or if we're already in Matrix mode
+function checkMatrixMode() {
+    var config = MatrixClient.loadConfig();
+    if (config && config.orgSpaceId) {
+        // Returning Matrix user — try to restore session
+        if (MatrixClient.restoreSession()) {
+            return 'active'; // Matrix session active, bridge may be running
+        }
+        return 'login'; // Config exists but session expired
+    }
+    return 'available'; // Matrix not configured, show option to set up
+}
+
+// Add Matrix setup button to auth screen
+function addMatrixOptionToAuth() {
+    var authBox = document.querySelector('.auth-box');
+    if (!authBox || document.getElementById('matrix-setup-btn')) return;
+
+    var divider = document.createElement('div');
+    divider.style.cssText = 'display: flex; align-items: center; gap: 12px; margin: 16px 0;';
+    divider.innerHTML = '<div style="flex: 1; height: 1px; background: var(--border-primary);"></div>' +
+        '<span style="font-size: 12px; color: var(--text-muted);">or</span>' +
+        '<div style="flex: 1; height: 1px; background: var(--border-primary);"></div>';
+
+    var btn = document.createElement('button');
+    btn.id = 'matrix-setup-btn';
+    btn.className = 'secondary';
+    btn.style.cssText = 'margin-top: 0; background: linear-gradient(135deg, var(--primary-500), #7c3aed); color: #fff; border: none;';
+    btn.textContent = 'Set Up with Matrix';
+    btn.onclick = function() {
+        document.getElementById('auth-screen').classList.add('hidden');
+        showMatrixWizard();
+    };
+
+    authBox.appendChild(divider);
+    authBox.appendChild(btn);
+}
 
 // ============ Workspace UI in Sidebar ============
 
