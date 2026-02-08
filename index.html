@@ -15005,8 +15005,8 @@ async function runHydration() {
         for (var i = 0; i < tableIds.length; i++) {
             var tid = tableIds[i];
             var recordIds = await new Promise(function(resolve, reject) {
-                var tx = db.transaction('records', 'readonly');
-                var store = tx.objectStore('records');
+                var tx = db.transaction('data', 'readonly');
+                var store = tx.objectStore('data');
                 var index = store.index('by_table');
                 var req = index.getAllKeys(tid);
                 req.onsuccess = function() { resolve(req.result || []); };
@@ -15015,8 +15015,8 @@ async function runHydration() {
 
             for (var r = 0; r < recordIds.length; r++) {
                 var rec = await new Promise(function(resolve, reject) {
-                    var tx2 = db.transaction('records', 'readonly');
-                    var req2 = tx2.objectStore('records').get(recordIds[r]);
+                    var tx2 = db.transaction('data', 'readonly');
+                    var req2 = tx2.objectStore('data').get(recordIds[r]);
                     req2.onsuccess = function() { resolve(req2.result); };
                     req2.onerror = function() { reject(req2.error); };
                 });
