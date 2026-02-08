@@ -1569,7 +1569,6 @@
                 <div class="wizard-step-dot"></div>
                 <div class="wizard-step-dot"></div>
                 <div class="wizard-step-dot"></div>
-                <div class="wizard-step-dot"></div>
             </div>
             <div class="wizard-body" id="wizard-body">
                 <!-- Wizard content rendered dynamically per step -->
@@ -14556,10 +14555,6 @@ renderViewItem = function(tableId, view, inFolder) {
 
 var wizardStep = 0;
 var wizardData = {
-    homeserverDomain: '',
-    homeserverUrl: '',
-    username: '',
-    password: '',
     orgName: '',
     orgSpaceId: null,
     // Legacy data source
@@ -14578,7 +14573,6 @@ var wizardData = {
 };
 
 var WIZARD_STEPS = [
-    { id: 'homeserver', title: 'Connect to Matrix', subtitle: 'Enter your homeserver details' },
     { id: 'org', title: 'Organization', subtitle: 'Set up or join your organization' },
     { id: 'legacy', title: 'Import Data', subtitle: 'Connect your existing data source' },
     { id: 'client-table', title: 'Client Records', subtitle: 'Which record type creates clients?' },
@@ -14586,9 +14580,22 @@ var WIZARD_STEPS = [
     { id: 'hydrate', title: 'Hydrating', subtitle: 'Building your Matrix rooms' }
 ];
 
-function showMatrixWizard() {
+async function showMatrixWizard() {
     document.getElementById('matrix-wizard').classList.remove('hidden');
     wizardStep = 0;
+
+    // Reuse existing Synapse session for MatrixClient (no second login needed)
+    var session = _loadSynapseSession();
+    if (session && session.accessToken) {
+        MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+        try {
+            await MatrixClient.initialSync();
+            wizardData.orgSpaceId = await MatrixClient.findOrgSpace();
+        } catch (e) {
+            console.error('[Wizard] Failed to initialize Matrix session:', e);
+        }
+    }
+
     renderWizardStep();
 }
 
@@ -14627,7 +14634,6 @@ function renderWizardStep() {
     // Render step body
     var body = document.getElementById('wizard-body');
     switch (step.id) {
-        case 'homeserver': renderWizardHomeserver(body); break;
         case 'org': renderWizardOrg(body); break;
         case 'legacy': renderWizardLegacy(body); break;
         case 'client-table': renderWizardClientTable(body); break;
@@ -14636,28 +14642,7 @@ function renderWizardStep() {
     }
 }
 
-// ---- Step 1: Homeserver Connection ----
-function renderWizardHomeserver(container) {
-    container.innerHTML =
-        '<div class="wizard-error" id="wizard-error"></div>' +
-        '<div class="form-group">' +
-            '<label>Homeserver domain</label>' +
-            '<input type="text" id="wiz-homeserver" placeholder="e.g. matrix.example.com" value="' + esc(wizardData.homeserverDomain) + '">' +
-        '</div>' +
-        '<div class="form-group">' +
-            '<label>Username</label>' +
-            '<input type="text" id="wiz-username" placeholder="@admin:example.com or just admin" value="' + esc(wizardData.username) + '">' +
-        '</div>' +
-        '<div class="form-group">' +
-            '<label>Password</label>' +
-            '<input type="password" id="wiz-password" placeholder="Your Matrix password" value="">' +
-        '</div>' +
-        '<div class="wizard-info-box">' +
-            '<strong>Admin account recommended.</strong> The first login should be your organization\'s admin account, which will own all rooms and manage permissions.' +
-        '</div>';
-}
-
-// ---- Step 2: Org Setup ----
+// ---- Step 1: Org Setup ----
 function renderWizardOrg(container) {
     if (wizardData.orgSpaceId) {
         container.innerHTML =
@@ -14861,9 +14846,6 @@ async function wizardNext() {
 
     try {
         switch (WIZARD_STEPS[wizardStep].id) {
-            case 'homeserver':
-                await wizardValidateHomeserver();
-                break;
             case 'org':
                 await wizardValidateOrg();
                 break;
@@ -14896,32 +14878,6 @@ function hideWizardError() {
 }
 
 // ============ Wizard Validation ============
-
-async function wizardValidateHomeserver() {
-    var domain = document.getElementById('wiz-homeserver').value.trim();
-    var username = document.getElementById('wiz-username').value.trim();
-    var password = document.getElementById('wiz-password').value;
-
-    if (!domain) throw new Error('Please enter a homeserver domain');
-    if (!username) throw new Error('Please enter a username');
-    if (!password) throw new Error('Please enter a password');
-
-    wizardData.homeserverDomain = domain;
-    wizardData.username = username;
-    wizardData.password = password;
-
-    // Discover homeserver
-    wizardData.homeserverUrl = await MatrixClient.discoverHomeserver(domain);
-
-    // Login
-    await MatrixClient.login(wizardData.homeserverUrl, username, password);
-
-    // Initial sync to discover rooms
-    await MatrixClient.initialSync();
-
-    // Check for existing org space
-    wizardData.orgSpaceId = await MatrixClient.findOrgSpace();
-}
 
 async function wizardValidateOrg() {
     if (!wizardData.orgSpaceId) {
@@ -15145,7 +15101,7 @@ async function runHydration() {
         // Save locally
         MatrixClient.saveConfig({
             bridge: config,
-            homeserverUrl: wizardData.homeserverUrl,
+            homeserverUrl: MatrixClient.getHomeserverUrl(),
             orgSpaceId: wizardData.orgSpaceId,
             userId: MatrixClient.getUserId()
         });
