@@ -311,6 +311,19 @@ var MatrixClient = (function() {
         await _requestWithRetry('POST', '/join/' + encodeURIComponent(roomId));
     }
 
+    async function leaveRoom(roomId) {
+        await _requestWithRetry('POST', '/rooms/' + encodeURIComponent(roomId) + '/leave', {});
+    }
+
+    async function forgetRoom(roomId) {
+        await _requestWithRetry('POST', '/rooms/' + encodeURIComponent(roomId) + '/forget', {});
+    }
+
+    async function removeSpaceChild(spaceId, childRoomId) {
+        // Setting empty content effectively removes the child relationship
+        await sendStateEvent(spaceId, 'm.space.child', childRoomId, {});
+    }
+
     // ============ Power Levels ============
 
     async function getRoomPowerLevels(roomId) {
@@ -801,10 +814,13 @@ var MatrixClient = (function() {
         createRoom: createRoom,
         createSpace: createSpace,
         addChildToSpace: addChildToSpace,
+        removeSpaceChild: removeSpaceChild,
         setRoomParentSpace: setRoomParentSpace,
         inviteUser: inviteUser,
         kickUser: kickUser,
         joinRoom: joinRoom,
+        leaveRoom: leaveRoom,
+        forgetRoom: forgetRoom,
 
         // Power levels
         getRoomPowerLevels: getRoomPowerLevels,
@@ -1217,6 +1233,95 @@ var MatrixBridge = (function() {
         return null;
     }
 
+    // ============ Bulk Room Deletion ============
+
+    async function deleteClientRooms(clientNames, onProgress) {
+        onProgress = onProgress || function() {};
+        var total = clientNames.length;
+        var completed = 0;
+        var failed = [];
+
+        for (var i = 0; i < clientNames.length; i++) {
+            var clientName = clientNames[i];
+            var mapping = _config.clientRoomMap[clientName];
+
+            onProgress({
+                phase: 'deleting',
+                clientName: clientName,
+                total: total,
+                completed: completed
+            });
+
+            if (!mapping) {
+                failed.push({ clientName: clientName, error: 'No room mapping found' });
+                completed++;
+                continue;
+            }
+
+            try {
+                // 1. Leave + forget portal room if it exists
+                if (mapping.portalRoomId) {
+                    try {
+                        await MatrixClient.leaveRoom(mapping.portalRoomId);
+                        await MatrixClient.forgetRoom(mapping.portalRoomId);
+                    } catch (e) {
+                        console.warn('[MatrixBridge] Could not leave portal room for ' + clientName + ':', e.message);
+                    }
+                }
+
+                // 2. Leave + forget matter room
+                if (mapping.matterRoomId) {
+                    try {
+                        await MatrixClient.leaveRoom(mapping.matterRoomId);
+                        await MatrixClient.forgetRoom(mapping.matterRoomId);
+                    } catch (e) {
+                        console.warn('[MatrixBridge] Could not leave matter room for ' + clientName + ':', e.message);
+                    }
+                }
+
+                // 3. Remove client space from org space and leave it
+                if (mapping.spaceId) {
+                    try {
+                        if (_config.orgSpaceId) {
+                            await MatrixClient.removeSpaceChild(_config.orgSpaceId, mapping.spaceId);
+                        }
+                        await MatrixClient.leaveRoom(mapping.spaceId);
+                        await MatrixClient.forgetRoom(mapping.spaceId);
+                    } catch (e) {
+                        console.warn('[MatrixBridge] Could not leave client space for ' + clientName + ':', e.message);
+                    }
+                }
+
+                // 4. Remove from clientRoomMap
+                delete _config.clientRoomMap[clientName];
+
+            } catch (e) {
+                console.error('[MatrixBridge] Failed to delete rooms for ' + clientName + ':', e);
+                failed.push({ clientName: clientName, error: e.message });
+            }
+
+            completed++;
+            onProgress({
+                phase: 'deleting',
+                clientName: clientName,
+                total: total,
+                completed: completed
+            });
+        }
+
+        // Save updated bridge config
+        await _saveBridgeConfig();
+
+        onProgress({
+            phase: 'complete',
+            total: total,
+            completed: completed,
+            failed: failed
+        });
+
+        return { deleted: completed - failed.length, failed: failed };
+    }
+
     // ============ Sever Connection ============
 
     async function severLegacyConnection() {
@@ -1333,6 +1438,7 @@ var MatrixBridge = (function() {
         setConfig: setConfig,
         groupRecordsByClient: groupRecordsByClient,
         hydrateToMatrix: hydrateToMatrix,
+        deleteClientRooms: deleteClientRooms,
         startBridge: startBridge,
         stopBridge: stopBridge,
         severLegacyConnection: severLegacyConnection,
