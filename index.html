@@ -1391,6 +1391,21 @@
             color: var(--text-secondary); line-height: 1.5; margin-bottom: 16px;
         }
         .wizard-info-box strong { color: var(--text-primary); }
+        #room-manager {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 160;
+        }
+        #room-manager.hidden { display: none; }
+        #room-manager .rm-client-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 10px; border-radius: var(--radius-sm);
+            cursor: pointer; font-size: 13px; color: var(--text-secondary);
+        }
+        #room-manager .rm-client-row:hover { background: var(--bg-hover); }
+        #room-manager .rm-client-row .rm-room-info {
+            font-size: 11px; color: var(--text-muted); margin-left: auto;
+        }
     </style>
 </head>
 <body>
@@ -1581,6 +1596,43 @@
         </div>
     </div>
 
+    <!-- Room Manager Panel (Admin) -->
+    <div id="room-manager" class="hidden">
+        <div class="wizard-container" style="width: 620px;">
+            <div class="wizard-header">
+                <h2 id="rm-title">Manage Rooms</h2>
+                <p id="rm-subtitle">Select client rooms to delete</p>
+            </div>
+            <div class="wizard-body" id="rm-body">
+                <div class="wizard-error" id="rm-error"></div>
+                <div id="rm-list-section">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                        <label class="checkbox-item" style="padding: 0; margin: 0;">
+                            <input type="checkbox" id="rm-select-all" onchange="rmToggleSelectAll(this.checked)">
+                            <span style="font-weight: 500;">Select all</span>
+                        </label>
+                        <span id="rm-selected-count" style="font-size: 12px; color: var(--text-muted);">0 selected</span>
+                    </div>
+                    <div class="checkbox-group" id="rm-client-list" style="max-height: 320px;"></div>
+                </div>
+                <div id="rm-progress-section" style="display: none;">
+                    <div class="wizard-progress-section">
+                        <div class="wizard-progress-bar">
+                            <div class="wizard-progress-fill" id="rm-progress" style="width: 0%"></div>
+                        </div>
+                        <div class="wizard-progress-status" id="rm-status">Preparing...</div>
+                        <div class="wizard-progress-detail" id="rm-detail"></div>
+                    </div>
+                </div>
+                <div id="rm-result-section" style="display: none;"></div>
+            </div>
+            <div class="wizard-footer" id="rm-footer">
+                <button class="btn-back" onclick="hideRoomManager()">Cancel</button>
+                <button class="btn-next" id="rm-delete-btn" onclick="rmConfirmDelete()" style="background: var(--error-500, #ef4444); border-color: var(--error-500, #ef4444);" disabled>Delete Selected</button>
+            </div>
+        </div>
+    </div>
+
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-header-top">
@@ -1606,6 +1658,10 @@
         </div>
         <div id="table-list"></div>
         <div class="sidebar-footer">
+            <button class="theme-toggle-btn" id="manage-rooms-btn" onclick="showRoomManager()" title="Manage Matrix rooms" style="display: none;">
+                <span>&#9881;</span>
+                <span>Manage Rooms</span>
+            </button>
             <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle light/dark theme">
                 <span id="theme-icon">&#9788;</span>
                 <span id="theme-label">Light Mode</span>
@@ -6865,6 +6921,12 @@ async function initAuthScreen() {
         // Matrix session exists — try to restore and proceed
         authEl.classList.add('hidden');
         await init();
+        // Show manage rooms button if bridge config has rooms
+        var mConfig = MatrixBridge.getConfig();
+        if (mConfig && mConfig.clientRoomMap && Object.keys(mConfig.clientRoomMap).length > 0) {
+            var rmBtn = document.getElementById('manage-rooms-btn');
+            if (rmBtn) rmBtn.style.display = '';
+        }
         return;
     }
     // Add Matrix setup button to auth screen
@@ -15163,7 +15225,8 @@ async function runHydration() {
                 '<strong>Bridge mode is active.</strong> The app will continue syncing from your existing Airtable data and routing updates to the appropriate Matrix rooms. ' +
                 'When you\'re ready, you can sever the legacy connection from the admin panel.' +
             '</div>' +
-            '<div style="text-align: center; padding-top: 12px;">' +
+            '<div style="text-align: center; padding-top: 12px; display: flex; gap: 12px; justify-content: center;">' +
+                '<button class="btn-next" onclick="hideMatrixWizard(); showRoomManager();" style="background: var(--bg-tertiary); border: 1px solid var(--border-primary); color: var(--text-secondary);">Manage Rooms</button>' +
                 '<button class="btn-next" onclick="wizardComplete()" style="background: var(--success-500); border-color: var(--success-500);">Open App</button>' +
             '</div>';
 
@@ -15180,6 +15243,170 @@ async function runHydration() {
     }
 }
 
+// ============ Room Manager (Bulk Delete) ============
+
+function showRoomManager() {
+    var config = MatrixBridge.getConfig();
+    var clientNames = Object.keys(config.clientRoomMap || {}).sort();
+
+    if (clientNames.length === 0) {
+        alert('No client rooms found.');
+        return;
+    }
+
+    // Reset UI
+    document.getElementById('rm-list-section').style.display = '';
+    document.getElementById('rm-progress-section').style.display = 'none';
+    document.getElementById('rm-result-section').style.display = 'none';
+    document.getElementById('rm-footer').style.display = 'flex';
+    document.getElementById('rm-delete-btn').disabled = true;
+    document.getElementById('rm-delete-btn').textContent = 'Delete Selected';
+    document.getElementById('rm-select-all').checked = false;
+    document.getElementById('rm-selected-count').textContent = '0 selected';
+    document.getElementById('rm-error').style.display = 'none';
+    document.getElementById('rm-title').textContent = 'Manage Rooms';
+    document.getElementById('rm-subtitle').textContent = 'Select client rooms to delete';
+
+    // Populate client list
+    var listEl = document.getElementById('rm-client-list');
+    var html = '';
+    clientNames.forEach(function(name) {
+        var mapping = config.clientRoomMap[name];
+        var roomCount = 1; // space
+        if (mapping.matterRoomId) roomCount++;
+        if (mapping.portalRoomId) roomCount++;
+        html +=
+            '<label class="rm-client-row">' +
+                '<input type="checkbox" class="rm-client-cb" value="' + esc(name) + '" onchange="rmUpdateCount()">' +
+                '<span>' + esc(name) + '</span>' +
+                '<span class="rm-room-info">' + roomCount + ' room' + (roomCount !== 1 ? 's' : '') + '</span>' +
+            '</label>';
+    });
+    listEl.innerHTML = html;
+
+    document.getElementById('room-manager').classList.remove('hidden');
+}
+
+function hideRoomManager() {
+    document.getElementById('room-manager').classList.add('hidden');
+}
+
+function rmToggleSelectAll(checked) {
+    var cbs = document.querySelectorAll('.rm-client-cb');
+    cbs.forEach(function(cb) { cb.checked = checked; });
+    rmUpdateCount();
+}
+
+function rmUpdateCount() {
+    var cbs = document.querySelectorAll('.rm-client-cb:checked');
+    var count = cbs.length;
+    document.getElementById('rm-selected-count').textContent = count + ' selected';
+    document.getElementById('rm-delete-btn').disabled = count === 0;
+
+    // Update select-all state
+    var allCbs = document.querySelectorAll('.rm-client-cb');
+    document.getElementById('rm-select-all').checked = allCbs.length > 0 && count === allCbs.length;
+}
+
+function rmGetSelectedClients() {
+    var cbs = document.querySelectorAll('.rm-client-cb:checked');
+    var names = [];
+    cbs.forEach(function(cb) { names.push(cb.value); });
+    return names;
+}
+
+function rmConfirmDelete() {
+    var selected = rmGetSelectedClients();
+    if (selected.length === 0) return;
+
+    var msg = 'Are you sure you want to delete ' + selected.length + ' client room' +
+        (selected.length !== 1 ? 's' : '') + '?\n\nThis will leave and forget:\n';
+
+    var config = MatrixBridge.getConfig();
+    var totalRooms = 0;
+    selected.forEach(function(name) {
+        var mapping = config.clientRoomMap[name];
+        if (mapping) {
+            var count = 1;
+            if (mapping.matterRoomId) count++;
+            if (mapping.portalRoomId) count++;
+            totalRooms += count;
+        }
+    });
+
+    msg += '- ' + totalRooms + ' total rooms (spaces, matter rooms, portal rooms)\n\nThis cannot be undone.';
+
+    if (!confirm(msg)) return;
+
+    rmExecuteDelete(selected);
+}
+
+async function rmExecuteDelete(clientNames) {
+    // Switch to progress view
+    document.getElementById('rm-list-section').style.display = 'none';
+    document.getElementById('rm-progress-section').style.display = '';
+    document.getElementById('rm-delete-btn').style.display = 'none';
+
+    var progressEl = document.getElementById('rm-progress');
+    var statusEl = document.getElementById('rm-status');
+    var detailEl = document.getElementById('rm-detail');
+
+    try {
+        var result = await MatrixBridge.deleteClientRooms(clientNames, function(info) {
+            if (info.phase === 'deleting') {
+                var pct = info.total > 0 ? Math.round((info.completed / info.total) * 100) : 0;
+                progressEl.style.width = pct + '%';
+                statusEl.textContent = 'Deleting ' + info.clientName + '...';
+                detailEl.textContent = info.completed + ' of ' + info.total + ' clients processed';
+            } else if (info.phase === 'complete') {
+                progressEl.style.width = '100%';
+                statusEl.textContent = 'Deletion complete';
+            }
+        });
+
+        // Show results
+        document.getElementById('rm-progress-section').style.display = 'none';
+        var resultEl = document.getElementById('rm-result-section');
+        resultEl.style.display = '';
+
+        var html = '<div class="wizard-success">' +
+            'Successfully deleted ' + result.deleted + ' client room' + (result.deleted !== 1 ? 's' : '') + '.' +
+            '</div>';
+
+        if (result.failed.length > 0) {
+            html += '<div class="wizard-error" style="display: block;">' +
+                '<strong>' + result.failed.length + ' failed:</strong><br>';
+            result.failed.forEach(function(f) {
+                html += esc(f.clientName) + ': ' + esc(f.error) + '<br>';
+            });
+            html += '</div>';
+        }
+
+        var remaining = Object.keys(MatrixBridge.getConfig().clientRoomMap || {}).length;
+        html += '<div class="wizard-info-box">' +
+            '<strong>' + remaining + ' client room' + (remaining !== 1 ? 's' : '') + ' remaining.</strong> ' +
+            'Bridge configuration has been updated.' +
+            '</div>';
+
+        resultEl.innerHTML = html;
+
+        // Update footer
+        document.getElementById('rm-footer').innerHTML =
+            '<button class="btn-back" onclick="hideRoomManager()">Close</button>' +
+            (remaining > 0 ?
+                '<button class="btn-next" onclick="showRoomManager()" style="background: var(--primary-500); border-color: var(--primary-500);">Delete More</button>' :
+                '');
+
+    } catch (err) {
+        document.getElementById('rm-progress-section').style.display = 'none';
+        document.getElementById('rm-list-section').style.display = '';
+        document.getElementById('rm-delete-btn').style.display = '';
+        var errEl = document.getElementById('rm-error');
+        errEl.style.display = 'block';
+        errEl.textContent = 'Deletion failed: ' + err.message;
+    }
+}
+
 function wizardComplete() {
     hideMatrixWizard();
 
@@ -15187,6 +15414,10 @@ function wizardComplete() {
     if (API_KEY && wizardData.aminoEndpoints) {
         MatrixBridge.startBridge(API_KEY, wizardData.aminoEndpoints);
     }
+
+    // Show manage rooms button
+    var rmBtn = document.getElementById('manage-rooms-btn');
+    if (rmBtn) rmBtn.style.display = '';
 
     // Continue to normal app initialization
     initAuthScreen();
@@ -15297,6 +15528,12 @@ init = async function() {
 // Keyboard handler for modals (Escape to close)
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
+        // Close room manager if open
+        var rmPanel = document.getElementById('room-manager');
+        if (rmPanel && !rmPanel.classList.contains('hidden')) {
+            hideRoomManager();
+            return;
+        }
         // Close connect API modal if open
         var connectModal = document.getElementById('connect-api-modal');
         if (connectModal && connectModal.style.display !== 'none') {
