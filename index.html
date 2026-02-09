@@ -3796,7 +3796,13 @@ var SyncHistory = {
             var hasNewEvents = false;
             if (lastEventTimestamp) {
                 var peek = await fetchPage(1, lastEventTimestamp, { last: true });
-                hasNewEvents = peek.events && peek.events.length > 0;
+                // Check if the returned event is actually newer than our last synced timestamp
+                // The API returns events with created_at >= created_after (inclusive),
+                // so we must compare timestamps to avoid re-syncing the same boundary event
+                if (peek.events && peek.events.length > 0) {
+                    var latestEvent = peek.events[peek.events.length - 1];
+                    hasNewEvents = latestEvent.created_at && latestEvent.created_at > lastEventTimestamp;
+                }
             } else {
                 // No lastEventTimestamp means we haven't synced yet - check for any events
                 var peek = await fetchPage(1, null, { last: true });
@@ -9071,6 +9077,13 @@ async function incrementalSync() {
             page = result.nextPage;
             iterations++;
             if (iterations > 100) break; // Safety limit
+        }
+
+        // Filter out events we've already synced (API uses inclusive created_after)
+        if (lastEventTimestamp && allEvents.length > 0) {
+            allEvents = allEvents.filter(function(e) {
+                return e.created_at && e.created_at > lastEventTimestamp;
+            });
         }
 
         if (allEvents.length > 0) {
