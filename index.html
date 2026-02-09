@@ -1093,6 +1093,29 @@
         .create-view-modal-footer .btn-create { background: var(--primary-500); border: 1px solid var(--primary-500); color: #fff; }
         .create-view-modal-footer .btn-create:hover { background: var(--primary-600); }
 
+        /* Share View Modal */
+        .share-options { display: flex; flex-direction: column; gap: 8px; }
+        .share-option { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--border-primary); border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast); }
+        .share-option:hover { background: var(--bg-hover); }
+        .share-option input[type="radio"] { margin-top: 4px; accent-color: var(--primary-500); }
+        .share-option-icon { font-size: 20px; line-height: 1; flex-shrink: 0; }
+        .share-option-text { display: flex; flex-direction: column; gap: 2px; }
+        .share-option-text strong { font-size: 14px; color: var(--text-primary); font-weight: 500; }
+        .share-option-text span { font-size: 12px; color: var(--text-muted); }
+        .share-option:has(input:checked) { border-color: var(--primary-500); background: rgba(59, 130, 246, 0.05); }
+        .share-users-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--border-primary); border-radius: var(--radius-md); }
+        .share-users-loading { padding: 12px; text-align: center; font-size: 13px; color: var(--text-muted); }
+        .share-user-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; transition: background var(--transition-fast); }
+        .share-user-item:hover { background: var(--bg-hover); }
+        .share-user-item input[type="checkbox"] { accent-color: var(--primary-500); }
+        .share-user-item .user-name { font-size: 13px; color: var(--text-primary); }
+        .share-user-item .user-id { font-size: 11px; color: var(--text-muted); }
+        .share-view-owner { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: var(--radius-md); }
+
+        /* View Sharing Badge in Sidebar */
+        .view-sharing-badge { font-size: 11px; margin-left: auto; flex-shrink: 0; opacity: 0.6; }
+        .view-sharing-badge.shared { opacity: 0.8; color: var(--primary-400); }
+
         /* View Tags */
         .view-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
         .view-tag { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: rgba(59, 130, 246, 0.15); color: var(--primary-400); }
@@ -2079,6 +2102,10 @@
             <span>&#128279;</span> Set parent view...
         </div>
         <div class="view-context-menu-separator"></div>
+        <div class="view-context-menu-item" onclick="openShareViewMenu()">
+            <span id="ctx-share-icon">&#128274;</span> <span id="ctx-share-label">Share view...</span>
+        </div>
+        <div class="view-context-menu-separator"></div>
         <div class="view-context-menu-item danger" onclick="deleteView()">
             <span>&#128465;</span> Delete
         </div>
@@ -2160,10 +2187,69 @@
                         <option value="">(None)</option>
                     </select>
                 </div>
+                <div class="create-view-field">
+                    <label for="create-view-sharing">Visibility</label>
+                    <select id="create-view-sharing">
+                        <option value="private">Private (only you)</option>
+                        <option value="everyone">Shared with everyone</option>
+                    </select>
+                </div>
             </div>
             <div class="create-view-modal-footer">
                 <button class="btn-cancel" onclick="closeCreateViewModal()">Cancel</button>
                 <button class="btn-create" id="create-view-submit" onclick="submitCreateView()">Create View</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share View Modal -->
+    <div class="create-view-modal" id="share-view-modal" onclick="closeShareViewModal(event)">
+        <div class="create-view-modal-content" onclick="event.stopPropagation()">
+            <div class="create-view-modal-header">
+                <h2>Share View</h2>
+                <p id="share-view-name">Configure who can see this view</p>
+            </div>
+            <div class="create-view-modal-body">
+                <div class="share-view-owner" id="share-view-owner"></div>
+                <div class="create-view-field">
+                    <label>Sharing</label>
+                    <div class="share-options">
+                        <label class="share-option">
+                            <input type="radio" name="share-level" value="private" checked onchange="onShareLevelChange()">
+                            <span class="share-option-icon">&#128274;</span>
+                            <div class="share-option-text">
+                                <strong>Private</strong>
+                                <span>Only you can see this view</span>
+                            </div>
+                        </label>
+                        <label class="share-option">
+                            <input type="radio" name="share-level" value="specific" onchange="onShareLevelChange()">
+                            <span class="share-option-icon">&#128101;</span>
+                            <div class="share-option-text">
+                                <strong>Specific people</strong>
+                                <span>Share with selected team members</span>
+                            </div>
+                        </label>
+                        <label class="share-option">
+                            <input type="radio" name="share-level" value="everyone" onchange="onShareLevelChange()">
+                            <span class="share-option-icon">&#127760;</span>
+                            <div class="share-option-text">
+                                <strong>Everyone</strong>
+                                <span>All org members can see this view</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                <div class="create-view-field" id="share-users-section" style="display: none;">
+                    <label>Share with</label>
+                    <div class="share-users-list" id="share-users-list">
+                        <div class="share-users-loading">Loading org members...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="create-view-modal-footer">
+                <button class="btn-cancel" onclick="closeShareViewModal()">Cancel</button>
+                <button class="btn-create" id="share-view-submit" onclick="submitShareView()">Save Sharing</button>
             </div>
         </div>
     </div>
@@ -2321,6 +2407,8 @@ function toggleTheme() {
     var html = document.documentElement;
     var isLight = html.classList.toggle('light-theme');
     localStorage.setItem('amino_theme', isLight ? 'light' : 'dark');
+    // Sync theme to user preferences (Synapse account data)
+    UserPreferences.set('theme', isLight ? 'light' : 'dark');
     var icon = document.getElementById('theme-icon');
     var label = document.getElementById('theme-label');
     if (icon) icon.textContent = isLight ? '\u263E' : '\u2606';
@@ -2435,7 +2523,7 @@ function renderTabBar() {
 
 var API = null; // Secured: initialized after authentication via initSecureEndpoints()
 var DB_NAME = 'aminostream';
-var DB_VERSION = 7;
+var DB_VERSION = 8;
 var PAGE_SIZE = 100;
 
 var API_KEY = null;
@@ -4409,6 +4497,19 @@ function openDB() {
                 snapshotStore.createIndex('by_source_table', 'source_table');
                 snapshotStore.createIndex('by_last_amino_event', 'last_amino_event');
             }
+
+            // User preferences: per-user settings keyed by preference key
+            if (!db.objectStoreNames.contains('userPreferences')) {
+                db.createObjectStore('userPreferences', { keyPath: 'key' });
+            }
+
+            // Shared views: views shared with/by users, keyed by [tableId, viewId]
+            if (!db.objectStoreNames.contains('sharedViews')) {
+                var sharedViewStore = db.createObjectStore('sharedViews', { keyPath: ['tableId', 'viewId'] });
+                sharedViewStore.createIndex('by_table', 'tableId');
+                sharedViewStore.createIndex('by_owner', 'ownerId');
+                sharedViewStore.createIndex('by_sharing', 'sharing');
+            }
         };
     });
 }
@@ -5559,6 +5660,13 @@ async function saveTableSettings() {
         tableSettingsDirty = false;
         clearTimeout(tableSettingsAutoSaveTimer);
 
+        // Also sync table settings to user preferences (Synapse account data)
+        UserPreferences.set('tableSettings', {
+            tables: TABLE_SETTINGS.tables,
+            tableOrder: TABLE_SETTINGS.tableOrder,
+            views: TABLE_SETTINGS.views
+        });
+
         console.log('Table settings saved to backend');
     } catch (error) {
         console.error('Failed to save table settings to backend:', error);
@@ -5581,6 +5689,559 @@ async function loadTableSettings() {
         console.error('Failed to load table settings:', error);
     }
 }
+
+// ============ User Preferences (Per-User Synapse Account Storage) ============
+//
+// User preferences are stored in two layers:
+// 1. Local: IndexedDB 'userPreferences' store (for fast access, offline support)
+// 2. Remote: Matrix account data (synced across devices, private to user)
+//
+// Preferences include: theme, sidebar collapsed state, default table/view,
+// table visibility/order, and any other user-specific settings.
+//
+// When the user is logged into Synapse, preferences sync bidirectionally.
+// Local storage acts as cache; Matrix account data is the source of truth.
+
+var UserPreferences = (function() {
+    'use strict';
+
+    var ACCOUNT_DATA_TYPE = 'law.firm.user.preferences';
+
+    // Default preferences
+    var _defaults = {
+        theme: 'dark',
+        sidebarCollapsed: false,
+        defaultTableId: null,
+        defaultViewId: null,
+        tableSettings: { tables: {}, tableOrder: [], views: {} },
+        recentTables: [],
+        pinnedViews: [],
+        gridDensity: 'comfortable',  // 'compact', 'comfortable', 'spacious'
+        pageSize: 100,
+        dateFormat: 'relative',      // 'relative', 'absolute', 'iso'
+        timezone: null               // null = browser default
+    };
+
+    var _prefs = Object.assign({}, _defaults);
+    var _dirty = false;
+    var _saveTimer = null;
+    var _userId = null;
+
+    // ---- Local Storage (IndexedDB) ----
+
+    async function _loadLocal() {
+        try {
+            if (!db) return;
+            var tx = db.transaction('userPreferences', 'readonly');
+            var req = tx.objectStore('userPreferences').get('prefs');
+            var result = await new Promise(function(resolve, reject) {
+                req.onsuccess = function() { resolve(req.result); };
+                req.onerror = function() { reject(req.error); };
+            });
+            if (result && result.value) {
+                _prefs = Object.assign({}, _defaults, result.value);
+            }
+        } catch (e) {
+            console.warn('[UserPreferences] Failed to load local prefs:', e);
+        }
+    }
+
+    async function _saveLocal() {
+        try {
+            if (!db) return;
+            var tx = db.transaction('userPreferences', 'readwrite');
+            tx.objectStore('userPreferences').put({ key: 'prefs', value: _prefs });
+            await new Promise(function(resolve, reject) {
+                tx.oncomplete = resolve;
+                tx.onerror = function() { reject(tx.error); };
+            });
+        } catch (e) {
+            console.warn('[UserPreferences] Failed to save local prefs:', e);
+        }
+    }
+
+    // ---- Remote Storage (Matrix Account Data) ----
+
+    async function _loadRemote() {
+        if (!MatrixClient.isLoggedIn()) return false;
+        try {
+            var data = await MatrixClient.getAccountData(ACCOUNT_DATA_TYPE);
+            if (data) {
+                // Merge remote into local, remote wins for conflicts
+                _prefs = Object.assign({}, _defaults, _prefs, data);
+                await _saveLocal();
+                return true;
+            }
+        } catch (e) {
+            console.warn('[UserPreferences] Failed to load remote prefs:', e);
+        }
+        return false;
+    }
+
+    async function _saveRemote() {
+        if (!MatrixClient.isLoggedIn()) return;
+        try {
+            await MatrixClient.setAccountData(ACCOUNT_DATA_TYPE, _prefs);
+        } catch (e) {
+            console.warn('[UserPreferences] Failed to save remote prefs:', e);
+        }
+    }
+
+    // ---- Public API ----
+
+    async function load() {
+        _userId = MatrixClient.getUserId();
+        await _loadLocal();
+        if (MatrixClient.isLoggedIn()) {
+            await _loadRemote();
+        }
+        console.log('[UserPreferences] Loaded for', _userId || 'anonymous');
+    }
+
+    async function save() {
+        await _saveLocal();
+        await _saveRemote();
+        _dirty = false;
+    }
+
+    function get(key) {
+        return _prefs[key] !== undefined ? _prefs[key] : _defaults[key];
+    }
+
+    function set(key, value) {
+        _prefs[key] = value;
+        _dirty = true;
+        _scheduleSave();
+    }
+
+    function getAll() {
+        return Object.assign({}, _prefs);
+    }
+
+    function setMultiple(obj) {
+        Object.keys(obj).forEach(function(k) {
+            _prefs[k] = obj[k];
+        });
+        _dirty = true;
+        _scheduleSave();
+    }
+
+    function _scheduleSave() {
+        if (_saveTimer) clearTimeout(_saveTimer);
+        _saveTimer = setTimeout(function() {
+            save();
+        }, 2000);
+    }
+
+    function reset() {
+        _prefs = Object.assign({}, _defaults);
+        _dirty = true;
+        _scheduleSave();
+    }
+
+    return {
+        load: load,
+        save: save,
+        get: get,
+        set: set,
+        getAll: getAll,
+        setMultiple: setMultiple,
+        reset: reset
+    };
+})();
+
+// ============ Shared Views (Views with Ownership & Sharing) ============
+//
+// Views start as personal (private to the creator). They can then be shared:
+//   - 'private': Only the creator can see/use this view (default)
+//   - 'specific': Shared with specific users (by Matrix userId)
+//   - 'everyone': Shared with everyone in the org
+//
+// Storage architecture:
+//   - Private views: stored in IndexedDB + Matrix account data (law.firm.user.views)
+//   - Shared views: stored in IndexedDB + Matrix room state events (law.firm.view.share)
+//     in the org space, with the view config as the content and sharing metadata
+//
+// Each view has ownership metadata:
+//   ownerId:     Matrix userId of the creator
+//   sharing:     'private' | 'specific' | 'everyone'
+//   sharedWith:  string[]  (Matrix userIds, only used when sharing === 'specific')
+//   createdAt:   timestamp
+//   updatedAt:   timestamp
+
+var SharedViews = (function() {
+    'use strict';
+
+    var ACCOUNT_DATA_TYPE = 'law.firm.user.views';
+    var _orgSpaceId = null;
+
+    // ---- Local Storage ----
+
+    async function _getLocalSharedView(tableId, viewId) {
+        if (!db) return null;
+        return new Promise(function(resolve, reject) {
+            var tx = db.transaction('sharedViews', 'readonly');
+            var req = tx.objectStore('sharedViews').get([tableId, viewId]);
+            req.onsuccess = function() { resolve(req.result || null); };
+            req.onerror = function() { reject(req.error); };
+        });
+    }
+
+    async function _saveLocalSharedView(viewData) {
+        if (!db) return;
+        return new Promise(function(resolve, reject) {
+            var tx = db.transaction('sharedViews', 'readwrite');
+            tx.objectStore('sharedViews').put(viewData);
+            tx.oncomplete = resolve;
+            tx.onerror = function() { reject(tx.error); };
+        });
+    }
+
+    async function _deleteLocalSharedView(tableId, viewId) {
+        if (!db) return;
+        return new Promise(function(resolve, reject) {
+            var tx = db.transaction('sharedViews', 'readwrite');
+            tx.objectStore('sharedViews').delete([tableId, viewId]);
+            tx.oncomplete = resolve;
+            tx.onerror = function() { reject(tx.error); };
+        });
+    }
+
+    async function _getAllLocalSharedViews() {
+        if (!db) return [];
+        return new Promise(function(resolve, reject) {
+            var tx = db.transaction('sharedViews', 'readonly');
+            var req = tx.objectStore('sharedViews').getAll();
+            req.onsuccess = function() { resolve(req.result || []); };
+            req.onerror = function() { reject(req.error); };
+        });
+    }
+
+    async function _getLocalSharedViewsForTable(tableId) {
+        if (!db) return [];
+        return new Promise(function(resolve, reject) {
+            var tx = db.transaction('sharedViews', 'readonly');
+            var index = tx.objectStore('sharedViews').index('by_table');
+            var req = index.getAll(tableId);
+            req.onsuccess = function() { resolve(req.result || []); };
+            req.onerror = function() { reject(req.error); };
+        });
+    }
+
+    // ---- Remote Storage ----
+
+    // Save private view list to Matrix account data
+    async function _syncPrivateViewsToRemote(privateViews) {
+        if (!MatrixClient.isLoggedIn()) return;
+        try {
+            await MatrixClient.setAccountData(ACCOUNT_DATA_TYPE, {
+                views: privateViews,
+                updatedAt: Date.now()
+            });
+        } catch (e) {
+            console.warn('[SharedViews] Failed to sync private views to remote:', e);
+        }
+    }
+
+    // Load private views from Matrix account data
+    async function _loadPrivateViewsFromRemote() {
+        if (!MatrixClient.isLoggedIn()) return null;
+        try {
+            var data = await MatrixClient.getAccountData(ACCOUNT_DATA_TYPE);
+            return data && data.views ? data.views : null;
+        } catch (e) {
+            console.warn('[SharedViews] Failed to load private views from remote:', e);
+            return null;
+        }
+    }
+
+    // Share a view to the org space as a room state event
+    async function _publishSharedView(viewData) {
+        if (!MatrixClient.isLoggedIn() || !_orgSpaceId) return;
+        var stateKey = viewData.tableId + '|' + viewData.viewId;
+        try {
+            await MatrixClient.sendStateEvent(
+                _orgSpaceId,
+                MatrixClient.EVENT_TYPES.VIEW_SHARE,
+                stateKey,
+                viewData
+            );
+        } catch (e) {
+            console.warn('[SharedViews] Failed to publish shared view:', e);
+            throw e;
+        }
+    }
+
+    // Remove a shared view from the org space
+    async function _unpublishSharedView(tableId, viewId) {
+        if (!MatrixClient.isLoggedIn() || !_orgSpaceId) return;
+        var stateKey = tableId + '|' + viewId;
+        try {
+            // Set empty content to effectively remove the state event
+            await MatrixClient.sendStateEvent(
+                _orgSpaceId,
+                MatrixClient.EVENT_TYPES.VIEW_SHARE,
+                stateKey,
+                { deleted: true, deletedAt: Date.now() }
+            );
+        } catch (e) {
+            console.warn('[SharedViews] Failed to unpublish shared view:', e);
+        }
+    }
+
+    // Load all shared views from the org space
+    async function _loadSharedViewsFromOrgSpace() {
+        if (!MatrixClient.isLoggedIn() || !_orgSpaceId) return [];
+        try {
+            var events = MatrixClient.getStateEventsOfType(_orgSpaceId, MatrixClient.EVENT_TYPES.VIEW_SHARE);
+            var views = [];
+            for (var i = 0; i < events.length; i++) {
+                var content = events[i].content;
+                if (content && !content.deleted && content.viewId) {
+                    views.push(content);
+                }
+            }
+            return views;
+        } catch (e) {
+            console.warn('[SharedViews] Failed to load shared views from org space:', e);
+            return [];
+        }
+    }
+
+    // ---- Public API ----
+
+    function setOrgSpaceId(orgSpaceId) {
+        _orgSpaceId = orgSpaceId;
+    }
+
+    // Initialize: load from local + merge with remote
+    async function load() {
+        // Load all local shared view metadata
+        var localViews = await _getAllLocalSharedViews();
+
+        // Load from remote sources
+        if (MatrixClient.isLoggedIn()) {
+            // Load private views from account data
+            var remotePrivate = await _loadPrivateViewsFromRemote();
+            if (remotePrivate) {
+                for (var i = 0; i < remotePrivate.length; i++) {
+                    var rv = remotePrivate[i];
+                    if (rv.tableId && rv.viewId) {
+                        await _saveLocalSharedView(rv);
+                    }
+                }
+            }
+
+            // Load shared views from org space state events
+            if (_orgSpaceId) {
+                var remoteShared = await _loadSharedViewsFromOrgSpace();
+                for (var j = 0; j < remoteShared.length; j++) {
+                    var sv = remoteShared[j];
+                    if (sv.tableId && sv.viewId) {
+                        await _saveLocalSharedView(sv);
+                    }
+                }
+            }
+        }
+
+        console.log('[SharedViews] Loaded views');
+    }
+
+    // Get sharing metadata for a view
+    async function getViewSharing(tableId, viewId) {
+        var viewData = await _getLocalSharedView(tableId, viewId);
+        if (!viewData) {
+            return {
+                ownerId: null,
+                sharing: 'private',
+                sharedWith: [],
+                createdAt: null,
+                updatedAt: null
+            };
+        }
+        return {
+            ownerId: viewData.ownerId || null,
+            sharing: viewData.sharing || 'private',
+            sharedWith: viewData.sharedWith || [],
+            createdAt: viewData.createdAt || null,
+            updatedAt: viewData.updatedAt || null
+        };
+    }
+
+    // Set ownership on a new view
+    async function setViewOwnership(tableId, viewId, ownerId) {
+        var existing = await _getLocalSharedView(tableId, viewId);
+        var viewData = existing || {
+            tableId: tableId,
+            viewId: viewId,
+            sharing: 'private',
+            sharedWith: [],
+            createdAt: Date.now()
+        };
+        viewData.ownerId = ownerId;
+        viewData.updatedAt = Date.now();
+        await _saveLocalSharedView(viewData);
+    }
+
+    // Share a view: update sharing level and persist to appropriate storage
+    async function shareView(tableId, viewId, sharing, sharedWith) {
+        var existing = await _getLocalSharedView(tableId, viewId);
+        if (!existing) {
+            console.warn('[SharedViews] Cannot share non-existent view:', viewId);
+            return;
+        }
+
+        var oldSharing = existing.sharing;
+        existing.sharing = sharing;
+        existing.sharedWith = sharedWith || [];
+        existing.updatedAt = Date.now();
+
+        // Include the full view config from META_VIEWS for the shared copy
+        var viewMeta = META_VIEWS[tableId] && META_VIEWS[tableId][viewId];
+        if (viewMeta) {
+            existing.viewName = viewMeta.viewName;
+            existing.viewType = viewMeta.viewType;
+            existing.filters = viewMeta.filters || [];
+            existing.sorts = viewMeta.sorts || [];
+            existing.groupBy = viewMeta.groupBy || null;
+            existing.hiddenFieldIds = viewMeta.hiddenFieldIds || [];
+            existing.fieldOrder = viewMeta.fieldOrder || [];
+            existing.tags = viewMeta.tags || [];
+            existing.folderId = viewMeta.folderId || null;
+        }
+
+        // Save locally
+        await _saveLocalSharedView(existing);
+
+        // Handle remote persistence based on sharing level
+        if (sharing === 'private') {
+            // Remove from org space if it was previously shared
+            if (oldSharing !== 'private') {
+                await _unpublishSharedView(tableId, viewId);
+            }
+            // Sync to private account data
+            await _syncAllPrivateViews();
+        } else {
+            // Publish to org space (for 'specific' and 'everyone')
+            await _publishSharedView(existing);
+            // Also sync private view list (remove from it if needed)
+            await _syncAllPrivateViews();
+        }
+
+        console.log('[SharedViews] View', viewId, 'sharing set to:', sharing);
+    }
+
+    // Unshare a view: revert to private
+    async function unshareView(tableId, viewId) {
+        await shareView(tableId, viewId, 'private', []);
+    }
+
+    // Delete a shared view's metadata
+    async function deleteViewSharing(tableId, viewId) {
+        var existing = await _getLocalSharedView(tableId, viewId);
+        if (existing && existing.sharing !== 'private') {
+            await _unpublishSharedView(tableId, viewId);
+        }
+        await _deleteLocalSharedView(tableId, viewId);
+        await _syncAllPrivateViews();
+    }
+
+    // Get all shared views visible to the current user for a given table
+    async function getVisibleViewsForTable(tableId) {
+        var allViews = await _getLocalSharedViewsForTable(tableId);
+        var currentUserId = MatrixClient.getUserId();
+        var visible = [];
+
+        for (var i = 0; i < allViews.length; i++) {
+            var v = allViews[i];
+            if (_isViewVisibleToUser(v, currentUserId)) {
+                visible.push(v);
+            }
+        }
+
+        return visible;
+    }
+
+    // Check if a view is visible to a specific user
+    function _isViewVisibleToUser(viewData, userId) {
+        if (!viewData) return false;
+        // Owner always sees their own views
+        if (viewData.ownerId === userId) return true;
+        // Everyone can see 'everyone' views
+        if (viewData.sharing === 'everyone') return true;
+        // Check specific sharing list
+        if (viewData.sharing === 'specific' && viewData.sharedWith) {
+            return viewData.sharedWith.indexOf(userId) >= 0;
+        }
+        return false;
+    }
+
+    // Check if the current user owns a view
+    function isOwnedByCurrentUser(viewData) {
+        var currentUserId = MatrixClient.getUserId();
+        return viewData && viewData.ownerId === currentUserId;
+    }
+
+    // Sync all private views to account data
+    async function _syncAllPrivateViews() {
+        var allViews = await _getAllLocalSharedViews();
+        var currentUserId = MatrixClient.getUserId();
+        var privateViews = allViews.filter(function(v) {
+            return v.ownerId === currentUserId && v.sharing === 'private';
+        });
+        await _syncPrivateViewsToRemote(privateViews);
+    }
+
+    // Get org members for the sharing picker
+    async function getOrgMembers() {
+        if (!_orgSpaceId || !MatrixClient.isLoggedIn()) return [];
+        try {
+            return await MatrixClient.getRoomMembers(_orgSpaceId);
+        } catch (e) {
+            console.warn('[SharedViews] Failed to get org members:', e);
+            return [];
+        }
+    }
+
+    // Get a human-readable sharing label for display
+    function getSharingLabel(viewData) {
+        if (!viewData || !viewData.sharing) return 'Private';
+        switch (viewData.sharing) {
+            case 'private': return 'Private';
+            case 'specific':
+                var count = (viewData.sharedWith || []).length;
+                return 'Shared with ' + count + ' user' + (count !== 1 ? 's' : '');
+            case 'everyone': return 'Shared with everyone';
+            default: return 'Private';
+        }
+    }
+
+    // Get sharing icon for display
+    function getSharingIcon(viewData) {
+        if (!viewData || !viewData.sharing || viewData.sharing === 'private') {
+            return '&#128274;'; // lock icon
+        }
+        if (viewData.sharing === 'everyone') {
+            return '&#127760;'; // globe icon
+        }
+        return '&#128101;'; // people icon (specific sharing)
+    }
+
+    return {
+        setOrgSpaceId: setOrgSpaceId,
+        load: load,
+        getViewSharing: getViewSharing,
+        setViewOwnership: setViewOwnership,
+        shareView: shareView,
+        unshareView: unshareView,
+        deleteViewSharing: deleteViewSharing,
+        getVisibleViewsForTable: getVisibleViewsForTable,
+        isOwnedByCurrentUser: isOwnedByCurrentUser,
+        getOrgMembers: getOrgMembers,
+        getSharingLabel: getSharingLabel,
+        getSharingIcon: getSharingIcon
+    };
+})();
 
 // ============ Column Definition Registry & Smart Ordering ============
 //
@@ -7699,6 +8360,40 @@ async function loadTableViewsAsync(tableId) {
     if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
     views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
 
+    // Load sharing metadata for views and attach as _sharing
+    try {
+        var sharedViews = await SharedViews.getVisibleViewsForTable(tableId);
+        var sharingMap = {};
+        sharedViews.forEach(function(sv) { sharingMap[sv.viewId] = sv; });
+
+        // Merge shared views that aren't in local DB yet (from other users)
+        sharedViews.forEach(function(sv) {
+            if (sv.viewId && !META_VIEWS[tableId][sv.viewId] && sv.viewName) {
+                // This is a view shared with us by someone else — add it
+                META_VIEWS[tableId][sv.viewId] = {
+                    tableId: sv.tableId,
+                    viewId: sv.viewId,
+                    viewName: sv.viewName,
+                    viewType: sv.viewType || 'grid',
+                    filters: sv.filters || [],
+                    sorts: sv.sorts || [],
+                    groupBy: sv.groupBy || null,
+                    hiddenFieldIds: sv.hiddenFieldIds || [],
+                    fieldOrder: sv.fieldOrder || [],
+                    tags: sv.tags || [],
+                    folderId: sv.folderId || null
+                };
+            }
+        });
+
+        // Attach sharing metadata to cached views for rendering
+        Object.keys(META_VIEWS[tableId]).forEach(function(vid) {
+            META_VIEWS[tableId][vid]._sharing = sharingMap[vid] || null;
+        });
+    } catch (e) {
+        console.warn('[loadTableViewsAsync] Failed to load sharing metadata:', e);
+    }
+
     // Cache folders in VIEW_FOLDERS
     if (!VIEW_FOLDERS[tableId]) VIEW_FOLDERS[tableId] = {};
     folders.forEach(f => VIEW_FOLDERS[tableId][f.folderId] = f);
@@ -7773,6 +8468,16 @@ function renderViewItem(tableId, view, inFolder) {
     var viewIcon = getViewTypeIcon(view.viewType);
     var paddingClass = inFolder ? ' style="padding-left: 52px;"' : '';
 
+    // Check sharing status (from in-memory cache if available)
+    var sharingBadge = '';
+    var viewSharing = view._sharing;
+    if (viewSharing && viewSharing.sharing && viewSharing.sharing !== 'private') {
+        var badgeIcon = SharedViews.getSharingIcon(viewSharing);
+        var isShared = viewSharing.sharing !== 'private';
+        sharingBadge = '<span class="view-sharing-badge' + (isShared ? ' shared' : '') + '" title="' +
+            esc(SharedViews.getSharingLabel(viewSharing)) + '">' + badgeIcon + '</span>';
+    }
+
     return '<div class="table-view-item' + (isActive ? ' active' : '') + '"' + paddingClass + ' ' +
            'data-table-id="' + esc(tableId) + '" data-view-id="' + esc(view.viewId) + '" ' +
            'onclick="selectTableView(\'' + esc(tableId) + '\', \'' + esc(view.viewId) + '\')" ' +
@@ -7780,6 +8485,7 @@ function renderViewItem(tableId, view, inFolder) {
            'oncontextmenu="showViewContextMenu(event, \'' + esc(tableId) + '\', \'' + esc(view.viewId) + '\')">' +
            '<span class="view-icon">' + viewIcon + '</span>' +
            '<span class="view-name">' + esc(viewName) + '</span>' +
+           sharingBadge +
            '</div>';
 }
 
@@ -7912,6 +8618,18 @@ function showViewContextMenu(event, tableId, viewId) {
 
     contextMenuTableId = tableId;
     contextMenuViewId = viewId;
+
+    // Update sharing label/icon in context menu
+    var view = META_VIEWS[tableId] && META_VIEWS[tableId][viewId];
+    var sharing = view && view._sharing;
+    var shareIcon = document.getElementById('ctx-share-icon');
+    var shareLabel = document.getElementById('ctx-share-label');
+    if (shareIcon && shareLabel) {
+        shareIcon.innerHTML = SharedViews.getSharingIcon(sharing);
+        shareLabel.textContent = sharing && sharing.sharing !== 'private'
+            ? SharedViews.getSharingLabel(sharing)
+            : 'Share view...';
+    }
 
     var menu = document.getElementById('view-context-menu');
     menu.style.left = event.clientX + 'px';
@@ -8160,6 +8878,13 @@ async function deleteView() {
         return;
     }
 
+    // Remove sharing metadata (unpublishes from org space if shared)
+    try {
+        await SharedViews.deleteViewSharing(contextMenuTableId, contextMenuViewId);
+    } catch (e) {
+        console.warn('[deleteView] Failed to clean up sharing metadata:', e);
+    }
+
     // Remove from META_VIEWS
     delete META_VIEWS[contextMenuTableId][contextMenuViewId];
 
@@ -8288,6 +9013,144 @@ async function setViewParent() {
     }
 
     closeViewContextMenu();
+}
+
+// ============ Share View Functions ============
+
+var _shareViewTableId = null;
+var _shareViewId = null;
+
+async function openShareViewMenu() {
+    if (!contextMenuTableId || !contextMenuViewId) return;
+
+    _shareViewTableId = contextMenuTableId;
+    _shareViewId = contextMenuViewId;
+    closeViewContextMenu();
+
+    var view = META_VIEWS[_shareViewTableId] && META_VIEWS[_shareViewTableId][_shareViewId];
+    var viewName = (view && view.viewName) ? view.viewName : _shareViewId;
+
+    // Get current sharing status
+    var sharing = await SharedViews.getViewSharing(_shareViewTableId, _shareViewId);
+
+    // Update modal header
+    var nameEl = document.getElementById('share-view-name');
+    if (nameEl) nameEl.textContent = 'Sharing settings for "' + viewName + '"';
+
+    // Show owner info
+    var ownerEl = document.getElementById('share-view-owner');
+    if (ownerEl) {
+        if (sharing.ownerId) {
+            ownerEl.textContent = 'Created by ' + sharing.ownerId;
+            ownerEl.style.display = '';
+        } else {
+            ownerEl.style.display = 'none';
+        }
+    }
+
+    // Set current sharing level
+    var radios = document.querySelectorAll('input[name="share-level"]');
+    radios.forEach(function(radio) {
+        radio.checked = radio.value === (sharing.sharing || 'private');
+    });
+
+    // Show/hide users section
+    onShareLevelChange();
+
+    // If sharing is 'specific', load and check the shared users
+    if (sharing.sharing === 'specific') {
+        await _loadShareUsersList(sharing.sharedWith || []);
+    }
+
+    // Show modal
+    document.getElementById('share-view-modal').classList.add('open');
+}
+
+function onShareLevelChange() {
+    var selected = document.querySelector('input[name="share-level"]:checked');
+    var usersSection = document.getElementById('share-users-section');
+    if (selected && selected.value === 'specific') {
+        usersSection.style.display = '';
+        _loadShareUsersList([]);
+    } else {
+        usersSection.style.display = 'none';
+    }
+}
+
+async function _loadShareUsersList(preselectedUserIds) {
+    var listEl = document.getElementById('share-users-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<div class="share-users-loading">Loading org members...</div>';
+
+    var members = await SharedViews.getOrgMembers();
+    var currentUserId = MatrixClient.getUserId();
+
+    if (members.length === 0) {
+        listEl.innerHTML = '<div class="share-users-loading">No org members found. Make sure you are logged into Synapse.</div>';
+        return;
+    }
+
+    var html = '';
+    for (var i = 0; i < members.length; i++) {
+        var m = members[i];
+        if (m.userId === currentUserId) continue; // skip self
+        var isChecked = preselectedUserIds.indexOf(m.userId) >= 0;
+        html += '<label class="share-user-item">' +
+            '<input type="checkbox" value="' + esc(m.userId) + '"' + (isChecked ? ' checked' : '') + '>' +
+            '<div>' +
+            '<div class="user-name">' + esc(m.displayName) + '</div>' +
+            '<div class="user-id">' + esc(m.userId) + '</div>' +
+            '</div>' +
+            '</label>';
+    }
+
+    listEl.innerHTML = html;
+}
+
+async function submitShareView() {
+    if (!_shareViewTableId || !_shareViewId) return;
+
+    var selected = document.querySelector('input[name="share-level"]:checked');
+    if (!selected) return;
+
+    var sharing = selected.value;
+    var sharedWith = [];
+
+    if (sharing === 'specific') {
+        var checkboxes = document.querySelectorAll('#share-users-list input[type="checkbox"]:checked');
+        checkboxes.forEach(function(cb) {
+            sharedWith.push(cb.value);
+        });
+    }
+
+    var submitBtn = document.getElementById('share-view-submit');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Saving...';
+    }
+
+    try {
+        await SharedViews.shareView(_shareViewTableId, _shareViewId, sharing, sharedWith);
+        closeShareViewModal();
+
+        // Refresh sidebar to update sharing badges
+        await loadTableViewsAsync(_shareViewTableId);
+    } catch (e) {
+        console.error('[ShareView] Failed to share view:', e);
+        alert('Failed to update sharing: ' + e.message);
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save Sharing';
+        }
+    }
+}
+
+function closeShareViewModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('share-view-modal').classList.remove('open');
+    _shareViewTableId = null;
+    _shareViewId = null;
 }
 
 // Open create view modal directly (not from default view protection)
@@ -9797,6 +10660,33 @@ async function init() {
 
     // Load user-specific table settings
     await loadTableSettings();
+
+    // Load user preferences from local + Synapse account data
+    try {
+        await UserPreferences.load();
+        // Apply stored table settings from user preferences if they exist
+        var storedTableSettings = UserPreferences.get('tableSettings');
+        if (storedTableSettings && storedTableSettings.tables && Object.keys(storedTableSettings.tables).length > 0) {
+            if (storedTableSettings.tables) TABLE_SETTINGS.tables = Object.assign(TABLE_SETTINGS.tables, storedTableSettings.tables);
+            if (storedTableSettings.tableOrder && storedTableSettings.tableOrder.length > 0) TABLE_SETTINGS.tableOrder = storedTableSettings.tableOrder;
+            if (storedTableSettings.views) TABLE_SETTINGS.views = Object.assign(TABLE_SETTINGS.views, storedTableSettings.views);
+        }
+    } catch (e) {
+        console.warn('[init] Failed to load user preferences:', e);
+    }
+
+    // Initialize shared views module
+    try {
+        if (MatrixClient.isLoggedIn()) {
+            var orgSpaceId = await MatrixClient.findOrgSpace();
+            if (orgSpaceId) {
+                SharedViews.setOrgSpaceId(orgSpaceId);
+            }
+        }
+        await SharedViews.load();
+    } catch (e) {
+        console.warn('[init] Failed to load shared views:', e);
+    }
 
     hideAuthScreen();
 
@@ -12953,9 +13843,17 @@ function renderViewSelector() {
         if (vid === '_default') continue;
         var view = views[vid];
         var isActive = currentView === vid;
+        var viewSharing = view._sharing;
+        var sharingBadge = '';
+        if (viewSharing && viewSharing.sharing && viewSharing.sharing !== 'private') {
+            sharingBadge = '<span class="view-sharing-badge shared" title="' +
+                esc(SharedViews.getSharingLabel(viewSharing)) + '">' +
+                SharedViews.getSharingIcon(viewSharing) + '</span>';
+        }
         html += '<div class="view-selector-option' + (isActive ? ' active' : '') + '" onclick="selectView(\'' + esc(vid) + '\')">';
         html += '<span class="view-type-icon">' + getViewTypeIcon(view.viewType) + '</span>';
         html += '<span class="view-option-name">' + esc(view.viewName || vid) + '</span>';
+        html += sharingBadge;
         if (isActive) html += '<span class="view-check">&#10003;</span>';
         html += '</div>';
     }
@@ -14265,6 +15163,19 @@ async function submitCreateView() {
         if (!META_VIEWS[currentTable]) META_VIEWS[currentTable] = {};
         META_VIEWS[currentTable][newViewId] = newView;
         await saveView(newView);
+
+        // Set ownership and sharing on the new view
+        var currentUserId = MatrixClient.getUserId();
+        if (currentUserId) {
+            await SharedViews.setViewOwnership(currentTable, newViewId, currentUserId);
+        }
+
+        // Apply sharing preference from modal
+        var sharingSelect = document.getElementById('create-view-sharing');
+        var sharingLevel = sharingSelect ? sharingSelect.value : 'private';
+        if (sharingLevel !== 'private' && currentUserId) {
+            await SharedViews.shareView(currentTable, newViewId, sharingLevel, []);
+        }
 
         // Close modal
         closeCreateViewModal();
