@@ -291,7 +291,7 @@
         .sidebar-footer {
             margin-top: auto; padding: 12px 16px;
             border-top: 1px solid var(--border-primary);
-            display: flex; align-items: center; gap: 8px;
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
         }
         .theme-toggle-btn {
             display: flex; align-items: center; gap: 6px;
@@ -301,6 +301,39 @@
             transition: all var(--transition-fast); flex: 1;
         }
         .theme-toggle-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border-secondary); }
+
+        /* Matrix connection status */
+        .theme-toggle-btn.matrix-connected { border-color: var(--success-500); color: var(--success-500); }
+        .theme-toggle-btn.matrix-connected:hover { background: rgba(34,197,94,0.1); }
+
+        /* ===== Room Publishing Modal ===== */
+        .room-publish-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; }
+        .room-publish-modal.hidden { display: none !important; }
+        .room-publish-box { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); padding: 24px; width: 480px; max-height: 80vh; overflow-y: auto; box-shadow: var(--shadow-xl); }
+        .room-publish-box h2 { font-size: 18px; margin-bottom: 4px; color: var(--text-primary); }
+        .room-publish-box .pub-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+        .room-publish-section { margin-bottom: 16px; }
+        .room-publish-section h3 { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .room-table-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); margin-bottom: 6px; cursor: pointer; transition: all var(--transition-fast); }
+        .room-table-item:hover { border-color: var(--primary-500); background: var(--bg-hover); }
+        .room-table-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary-500); flex-shrink: 0; }
+        .room-table-item .table-info { flex: 1; }
+        .room-table-item .table-info .table-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+        .room-table-item .table-info .table-meta { font-size: 11px; color: var(--text-muted); }
+        .room-table-item .pub-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+        .room-table-item .pub-status.local { background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-primary); }
+        .room-table-item .pub-status.published { background: rgba(34,197,94,0.15); color: var(--success-500); }
+        .pub-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+        .pub-actions button { padding: 8px 16px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; cursor: pointer; transition: all var(--transition-fast); }
+        .pub-btn-cancel { background: var(--bg-tertiary); border: 1px solid var(--border-primary); color: var(--text-secondary); }
+        .pub-btn-cancel:hover { background: var(--bg-hover); }
+        .pub-btn-publish { background: var(--primary-500); border: none; color: #fff; }
+        .pub-btn-publish:hover { background: var(--primary-600); }
+        .pub-btn-publish:disabled { background: var(--gray-600); cursor: not-allowed; }
+        .pub-progress { margin-top: 12px; }
+        .pub-progress-bar { height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; }
+        .pub-progress-fill { height: 100%; background: var(--primary-500); transition: width 0.3s ease; }
+        .pub-progress-text { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
         /* ===== Main Content Area ===== */
         .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-primary); }
 
@@ -1473,14 +1506,15 @@
 
     <div id="synapse-login-screen" class="hidden">
         <div class="synapse-login-box">
-            <h2>Sign In</h2>
-            <p>Log in with your Amino account to continue</p>
+            <h2>Connect to Matrix</h2>
+            <p>Sign in to enable room sync and collaboration. Your data works locally without this.</p>
             <div id="synapse-login-error" class="synapse-error"></div>
             <label for="synapse-username">Username</label>
             <input type="text" id="synapse-username" placeholder="Username" autocomplete="username">
             <label for="synapse-password">Password</label>
             <input type="password" id="synapse-password" placeholder="Password" autocomplete="current-password">
             <button id="synapse-login-btn">Sign In</button>
+            <button id="synapse-skip-btn" onclick="hideSynapseLoginScreen()" style="width: 100%; padding: 10px; background: transparent; border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-muted); font-size: 13px; cursor: pointer; margin-top: 8px;">Skip - Stay Local Only</button>
         </div>
     </div>
 
@@ -1493,13 +1527,6 @@
             <input type="text" id="set-filter-input" placeholder="Filter by set (optional)" autocomplete="off">
             <button id="auth-submit">Connect</button>
             <button id="auth-clear" class="secondary hidden">Clear Local Data</button>
-            <div class="auth-divider" style="display: flex; align-items: center; gap: 12px; margin: 16px 0 12px;">
-                <div style="flex: 1; height: 1px; background: var(--border-primary);"></div>
-                <span style="font-size: 12px; color: var(--text-muted);">or</span>
-                <div style="flex: 1; height: 1px; background: var(--border-primary);"></div>
-            </div>
-            <button id="auth-skip-upload" class="secondary" onclick="skipAuthAndUploadCSV()">Skip - Upload CSV Only</button>
-            <button id="auth-skip-upload-amo" class="secondary" onclick="skipAuthAndUploadAmo()" style="margin-top: 8px;">Skip - Upload .amo Snapshot</button>
             <div id="auth-info" class="auth-info"></div>
         </div>
     </div>
@@ -1657,6 +1684,10 @@
         </div>
         <div id="table-list"></div>
         <div class="sidebar-footer">
+            <button class="theme-toggle-btn" id="matrix-connect-btn" onclick="showSynapseLoginScreen()" title="Connect to Matrix for room sync">
+                <span id="matrix-status-icon">&#9675;</span>
+                <span id="matrix-status-label">Connect Matrix</span>
+            </button>
             <button class="theme-toggle-btn" id="manage-rooms-btn" onclick="showRoomManager()" title="Manage Matrix rooms" style="display: none;">
                 <span>&#9881;</span>
                 <span>Manage Rooms</span>
@@ -2068,6 +2099,59 @@
                     Next
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Room Publishing Modal -->
+    <div class="room-publish-modal hidden" id="room-publish-modal" onclick="closeRoomPublishModal(event)">
+        <div class="room-publish-box" onclick="event.stopPropagation()">
+            <h2>Publish to Matrix Rooms</h2>
+            <p class="pub-subtitle">Select tables to publish as Matrix rooms. Each table becomes a room with its schema and records stored as state events.</p>
+            <div id="room-publish-not-connected" style="display: none;">
+                <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+                    <p style="margin-bottom: 12px;">Not connected to Matrix. Sign in first to publish rooms.</p>
+                    <button class="pub-btn-publish" onclick="closeRoomPublishModal(); showSynapseLoginScreen();">Sign in to Matrix</button>
+                </div>
+            </div>
+            <div id="room-publish-content">
+                <div class="room-publish-section">
+                    <h3>Organization</h3>
+                    <div id="pub-org-section">
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="text" id="pub-org-name" placeholder="Organization name" style="flex:1; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-primary); font-size: 13px;">
+                            <span id="pub-org-status" style="font-size: 12px; color: var(--text-muted);"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="room-publish-section">
+                    <h3>Tables to Publish</h3>
+                    <div id="pub-table-list">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                <div class="room-publish-section">
+                    <h3>Client Grouping (Optional)</h3>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">If you want per-client rooms, select the table and field that identifies clients.</p>
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <select id="pub-client-table" style="flex:1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-primary); font-size: 13px;" onchange="pubClientTableChanged()">
+                            <option value="">No client grouping</option>
+                        </select>
+                        <select id="pub-client-field" style="flex:1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-primary); font-size: 13px;" disabled>
+                            <option value="">Select identifier field</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="pub-progress-section" style="display: none;">
+                    <div class="pub-progress">
+                        <div class="pub-progress-bar"><div class="pub-progress-fill" id="pub-progress-fill" style="width: 0%"></div></div>
+                        <div class="pub-progress-text" id="pub-progress-text">Preparing...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="pub-actions">
+                <button class="pub-btn-cancel" onclick="closeRoomPublishModal()">Cancel</button>
+                <button class="pub-btn-publish" id="pub-publish-btn" onclick="executeRoomPublish()">Publish Selected</button>
             </div>
         </div>
     </div>
@@ -3828,6 +3912,105 @@ var SyncHistory = {
     }
 };
 
+// ============ Post-Hydration Auto-Poll ============
+// After hydrating from Box, aggressively polls Xano to fill in
+// any events that occurred between the snapshot creation time and now.
+// Uses rapid polling (3s intervals) until fully caught up, then stops.
+
+var PostHydrationSync = {
+    POLL_INTERVAL: 3000,     // 3 seconds between catch-up rounds
+    MAX_ROUNDS: 50,          // Safety limit on catch-up rounds
+    isRunning: false,
+    totalEventsCaughtUp: 0,
+    rounds: 0,
+
+    // Start the catch-up process (non-blocking, runs in background)
+    start() {
+        if (this.isRunning) return;
+        this.isRunning = true;
+        this.totalEventsCaughtUp = 0;
+        this.rounds = 0;
+
+        console.log('[PostHydrationSync] Starting auto-poll to fill gaps since hydration');
+        SyncStatusFeed.info('Post-hydration catch-up: polling Xano for missed updates...');
+
+        this.scheduleNext();
+    },
+
+    scheduleNext() {
+        if (!this.isRunning) return;
+        var self = this;
+        setTimeout(function() { self.runCatchUpRound(); }, this.POLL_INTERVAL);
+    },
+
+    async runCatchUpRound() {
+        if (!this.isRunning || !API_KEY) {
+            this.stop('no API key');
+            return;
+        }
+
+        this.rounds++;
+        if (this.rounds > this.MAX_ROUNDS) {
+            this.stop('reached max rounds (' + this.MAX_ROUNDS + ')');
+            return;
+        }
+
+        try {
+            // Lightweight check: peek at the latest event to see if there's anything newer
+            var peek = await fetchPage(1, lastEventTimestamp, { last: true });
+            var hasNewEvents = peek.events && peek.events.length > 0;
+
+            if (!hasNewEvents) {
+                // Fully caught up — no more gap events
+                this.stop('caught up');
+                return;
+            }
+
+            // There are new events — run a full incremental sync to fetch them all
+            SyncStatusFeed.info('Catch-up round ' + this.rounds + ': fetching new events...');
+            await incrementalSync();
+
+            // Check how many events were found in the last sync
+            var lastEntry = SyncHistory.entries[0];
+            var eventsThisRound = (lastEntry && lastEntry.eventsFound) || 0;
+            this.totalEventsCaughtUp += eventsThisRound;
+
+            if (eventsThisRound > 0) {
+                SyncStatusFeed.info('Catch-up round ' + this.rounds + ': ' + eventsThisRound + ' events synced (' + this.totalEventsCaughtUp + ' total)');
+            }
+
+            // If incremental sync found events, there might be more — keep polling
+            this.scheduleNext();
+
+        } catch (err) {
+            console.error('[PostHydrationSync] Catch-up error:', err);
+            SyncStatusFeed.error('Catch-up error: ' + err.message);
+            // Don't stop on error — retry on next round
+            this.scheduleNext();
+        }
+    },
+
+    stop(reason) {
+        if (!this.isRunning) return;
+        this.isRunning = false;
+        var msg = 'Post-hydration catch-up complete';
+        if (this.totalEventsCaughtUp > 0) {
+            msg += ': ' + this.totalEventsCaughtUp + ' events synced across ' + this.rounds + ' round(s)';
+        } else {
+            msg += ': already up to date';
+        }
+        if (reason) msg += ' (' + reason + ')';
+        console.log('[PostHydrationSync] ' + msg);
+        SyncStatusFeed.success(msg);
+
+        SyncHistory.record({
+            type: 'incremental',
+            result: 'success',
+            eventsFound: this.totalEventsCaughtUp,
+            detail: msg
+        });
+    }
+};
 
 // ============ Box Auto-Sync ============
 // Pushes full event stream as .amo to Box via n8n webhook after each sync with new data
@@ -6016,12 +6199,13 @@ async function trySynapseLogin() {
             deviceId: data.device_id
         });
 
+        // Set up MatrixClient session for room operations
+        MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, data.access_token, data.user_id, data.device_id);
+
         hideSynapseLoginScreen();
-        // Continue initialization: encryption check, then auth
-        var encryptionReady = await initEncryption();
-        if (encryptionReady) {
-            initAuthScreen();
-        }
+        // Update sidebar to show Matrix-connected state
+        updateMatrixStatus();
+        renderSidebar();
     } catch (err) {
         console.error('[Synapse] Login failed:', err);
         showSynapseError(err.message || 'Login failed. Please check your credentials.');
@@ -6130,6 +6314,8 @@ async function initAuthScreen() {
         try {
             await initSecureEndpoints(API_KEY);
             await init();
+            // Silently restore Matrix session if one exists (non-blocking)
+            restoreMatrixSessionQuietly();
             return; // Success - auth screen stays hidden
         } catch (err) {
             console.error('Auto-login failed:', err);
@@ -6151,23 +6337,15 @@ async function initAuthScreen() {
     if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
     var authEl = document.getElementById('auth-screen');
     authEl.classList.remove('hidden', 'fading-out');
+}
 
-    // Check Matrix mode and add setup option
-    var matrixMode = checkMatrixMode();
-    if (matrixMode === 'active') {
-        // Matrix session exists — try to restore and proceed
-        authEl.classList.add('hidden');
-        await init();
-        // Show manage rooms button if bridge config has rooms
-        var mConfig = MatrixBridge.getConfig();
-        if (mConfig && mConfig.clientRoomMap && Object.keys(mConfig.clientRoomMap).length > 0) {
-            var rmBtn = document.getElementById('manage-rooms-btn');
-            if (rmBtn) rmBtn.style.display = '';
-        }
-        return;
+// Silently restore Matrix session without blocking app startup
+function restoreMatrixSessionQuietly() {
+    var session = _loadSynapseSession();
+    if (session && session.accessToken) {
+        MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+        updateMatrixStatus();
     }
-    // Add Matrix setup button to auth screen
-    addMatrixOptionToAuth();
 }
 
 async function clearLocalAndReset() {
@@ -6223,6 +6401,9 @@ async function tryAuth() {
     // Save credentials (encrypted if encryption is enabled)
     await saveEncryptedCredentials(API_KEY, SET_FILTER);
 
+    // Silently restore Matrix session if one exists (non-blocking)
+    restoreMatrixSessionQuietly();
+
     btn.textContent = 'Connect';
     btn.disabled = false;
 }
@@ -6273,9 +6454,8 @@ function logout() {
     // Clear saved credentials (both encrypted and plaintext)
     clearEncryptedCredentials();
     clearSessionKey();
-    // Clear Synapse session and show Synapse login
-    synapseLogout();
-    showSynapseLoginScreen();
+    // Show auth screen (Matrix session is independent — user disconnects Matrix separately)
+    showAuthScreen();
 }
 
 async function manualSync() {
@@ -6286,115 +6466,6 @@ async function manualSync() {
     await incrementalSync();
 }
 
-// Skip auth and go directly to CSV upload
-async function skipAuthAndUploadCSV() {
-    // Prompt for file FIRST - if user cancels, stay on auth screen
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv';
-
-    input.onchange = async function(e) {
-        var file = e.target.files[0];
-        if (!file) return; // User cancelled - stay on auth screen
-
-        // Now hide auth screen and initialize the app
-        hideAuthScreen();
-
-        META_TABLES = {};
-        META_FIELDS = {};
-        META_VIEWS = {};
-        TABLE_SETTINGS = { tables: {}, tableOrder: [], views: {} };
-        currentTable = null;
-        currentPage = 0;
-        currentRecordIds = [];
-        originalRecordIds = [];
-        totalRecords = 0;
-        lastEventTimestamp = null;
-
-        loadSidebarState();
-        initSidebarSearch();
-
-        db = await openDB();
-        appOpenedEventId = await getMaxEventId();
-
-        var tables = await getAllTables();
-        var fields = await getAllFields();
-        var views = await getAllViews();
-
-        tables.forEach(t => META_TABLES[t.tableId] = t);
-        fields.forEach(f => {
-            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-            META_FIELDS[f.tableId][f.fieldId] = f;
-        });
-        views.forEach(v => {
-            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-            META_VIEWS[v.tableId][v.viewId] = v;
-        });
-
-        await loadTableSettings();
-        updateConnectApiButton();
-
-        // Process the selected file directly instead of opening another picker
-        await processCSVFile(file);
-    };
-
-    input.click();
-}
-
-// Skip auth and go directly to .amo snapshot upload
-async function skipAuthAndUploadAmo() {
-    // Prompt for file FIRST - if user cancels, stay on auth screen
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.amo';
-
-    input.onchange = async function(e) {
-        var file = e.target.files[0];
-        if (!file) return; // User cancelled - stay on auth screen
-
-        // Now hide auth screen and initialize the app
-        hideAuthScreen();
-
-        META_TABLES = {};
-        META_FIELDS = {};
-        META_VIEWS = {};
-        TABLE_SETTINGS = { tables: {}, tableOrder: [], views: {} };
-        currentTable = null;
-        currentPage = 0;
-        currentRecordIds = [];
-        originalRecordIds = [];
-        totalRecords = 0;
-        lastEventTimestamp = null;
-
-        loadSidebarState();
-        initSidebarSearch();
-
-        db = await openDB();
-        appOpenedEventId = await getMaxEventId();
-
-        var tables = await getAllTables();
-        var fields = await getAllFields();
-        var views = await getAllViews();
-
-        tables.forEach(t => META_TABLES[t.tableId] = t);
-        fields.forEach(f => {
-            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-            META_FIELDS[f.tableId][f.fieldId] = f;
-        });
-        views.forEach(v => {
-            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-            META_VIEWS[v.tableId][v.viewId] = v;
-        });
-
-        await loadTableSettings();
-        updateConnectApiButton();
-
-        // Process the selected file directly instead of opening another picker
-        await processAmoFile(file);
-    };
-
-    input.click();
-}
 
 // Show/hide the Connect API button based on API_KEY state
 function updateConnectApiButton() {
@@ -9316,8 +9387,16 @@ async function init() {
 
             // Continue with incremental sync if API key is available
             if (API_KEY) {
-                lastEventTimestamp = storedLastTimestamp || null;
+                // Re-read lastEventTimestamp that was set during hydration
+                // (storedLastTimestamp was read before hydration, so it would be null)
+                var postHydrationTimestamp = await getSyncMeta('lastEventTimestamp');
+                lastEventTimestamp = postHydrationTimestamp || null;
+
+                // Run one immediate sync to fill the most critical gap
                 await incrementalSync();
+
+                // Start aggressive background polling to catch up any remaining events
+                PostHydrationSync.start();
             }
         } else if (API_KEY) {
             // Box download failed or empty - fall back to full event sync
@@ -10588,395 +10667,6 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
     }
 }
 
-// Process a CSV file directly (called from skipAuthAndUploadCSV or loading overlay)
-async function processCSVFile(file) {
-        try {
-            // Update the loading overlay to show import progress
-            updateLoadingOverlay('Importing from file...', 'Reading CSV...', 5, 0, 0, 0, 'Starting import...');
-
-            var text = await file.text();
-            var lines = text.split(/\r?\n/);
-
-            if (lines.length < 2) {
-                alert('CSV file is empty or has no data rows.');
-                return;
-            }
-
-            // Parse header
-            var header = parseCSVLine(lines[0]);
-            var idIndex = header.indexOf('id');
-            var setIndex = header.indexOf('set');
-            var recordIdIndex = header.indexOf('recordId');
-            var createdAtIndex = header.indexOf('created_at');
-            var payloadIndex = header.indexOf('payload');
-
-            if (idIndex === -1) {
-                alert('CSV must have an "id" column.');
-                return;
-            }
-
-            updateLoadingOverlay('Importing from file...', 'Parsing CSV data...', 10, 0, 0, 0, '');
-
-            // Parse all event rows
-            var events = [];
-            var tablesCount = 0;
-            var fieldsCount = 0;
-            var recordsCount = 0;
-
-            for (var i = 1; i < lines.length; i++) {
-                if (!lines[i].trim()) continue;
-
-                var fields = parseCSVLine(lines[i]);
-                var event = {
-                    id: parseInt(fields[idIndex], 10)
-                };
-
-                if (isNaN(event.id)) continue;
-
-                if (setIndex !== -1) event.set = fields[setIndex] || '';
-                if (recordIdIndex !== -1) event.recordId = fields[recordIdIndex] || '';
-                if (createdAtIndex !== -1) event.created_at = fields[createdAtIndex] || '';
-                if (payloadIndex !== -1) {
-                    var payloadStr = fields[payloadIndex] || '{}';
-                    try {
-                        event.payload = JSON.parse(payloadStr);
-                    } catch (err) {
-                        event.payload = payloadStr;
-                    }
-                }
-
-                events.push(event);
-
-                // Count types for progress display
-                if (event.payload && event.payload._set) {
-                    if (event.payload._set === 'table') tablesCount++;
-                    else if (event.payload._set === 'field') fieldsCount++;
-                    else recordsCount++;
-                } else {
-                    recordsCount++;
-                }
-
-                if (i % 5000 === 0) {
-                    var progress = 10 + Math.round((i / lines.length) * 40);
-                    updateLoadingOverlay('Importing from file...', 'Parsed ' + events.length.toLocaleString() + ' events...', progress, tablesCount, fieldsCount, recordsCount, '');
-                }
-            }
-
-            if (events.length === 0) {
-                alert('No valid events found in CSV.');
-                return;
-            }
-
-            // Sort events by ID to ensure proper order
-            events.sort(function(a, b) { return a.id - b.id; });
-
-            updateLoadingOverlay('Importing from file...', 'Processing ' + events.length.toLocaleString() + ' events...', 55, tablesCount, fieldsCount, recordsCount, '');
-
-            // Store events in memory for instant access (before IndexedDB save)
-            inMemoryEvents = events;
-            inMemoryEventsByRecord = buildInMemoryEventsByRecord(events);
-
-            // Process events using fast memory-only approach (no IndexedDB)
-            await processEventsMemoryOnly(events, function(processed, total, tableCount) {
-                var pct = 55 + Math.round((processed / total) * 30);
-                updateLoadingOverlay('Importing from file...', 'Processing events: ' + processed.toLocaleString() + ' / ' + total.toLocaleString(), pct, tableCount, fieldsCount, recordsCount, '');
-            });
-
-            // Update the last event timestamp in memory
-            var maxId = events.reduce(function(max, e) { return Math.max(max, e.id); }, 0);
-            var lastEvent = events.find(function(e) { return e.id === maxId; });
-            if (lastEvent && lastEvent.created_at) {
-                lastEventTimestamp = lastEvent.created_at;
-            }
-
-            updateLoadingOverlay('Import complete!', 'Rendering interface...', 90, tablesCount, fieldsCount, recordsCount, '');
-
-            // Render the UI immediately - data is in memory
-            await renderSidebar();
-
-            // Auto-select first table
-            var firstTable = Object.keys(META_TABLES)[0];
-            if (firstTable) {
-                await showTable(firstTable);
-            }
-
-            // Hide overlay - app is ready to use!
-            updateLoadingOverlay('Import complete!', events.length.toLocaleString() + ' events loaded', 100, tablesCount, fieldsCount, recordsCount, '');
-            setTimeout(hideLoadingOverlay, 300);
-
-            updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
-
-            // Start the refresh indicator countdown
-            lastSyncTime = Date.now();
-            startRefreshCountdown();
-
-            // Start incremental sync polling (but don't block on it)
-            if (API_KEY) {
-                if (pollInterval) clearInterval(pollInterval);
-                pollInterval = setInterval(incrementalSync, 180000);
-
-                // Start background polling for new events (lightweight 15s checks)
-                SyncHistory.startPolling();
-            }
-
-            updateConnectApiButton();
-
-            // Background: Save to IndexedDB for next visit (non-blocking)
-            // This happens after the UI is ready, so user can start working immediately
-            updateStatus('Caching locally...', true, null, null);
-            backgroundSaveToIndexedDB(events, function(saved, total) {
-                var pct = Math.round((saved / total) * 100);
-                updateStatus('Caching: ' + pct + '%', true, null, null);
-            }).then(function() {
-                updateStatus('Up to date', true, null, null);
-            });
-
-        } catch (err) {
-            console.error('Error importing file:', err);
-            alert('Error importing file: ' + err.message);
-        }
-}
-
-// Also keep the original function for calls from the loading overlay (opens file picker)
-async function skipSetupAndUploadFile() {
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv';
-    input.onchange = async function(e) {
-        var file = e.target.files[0];
-        if (!file) return;
-        await processCSVFile(file);
-    };
-    input.click();
-}
-
-// ============ .amo Snapshot Import ============
-
-// Process an .amo file directly (called from skipAuthAndUploadAmo or loading overlay)
-async function processAmoFile(file) {
-
-        try {
-            updateLoadingOverlay('Importing .amo snapshot...', 'Reading file...', 5, 0, 0, 0, '');
-
-            var buffer = await file.arrayBuffer();
-
-            // Detect and validate format
-            var format;
-            try {
-                format = AmoFormat.detectFormat(buffer);
-            } catch (err) {
-                alert('Unrecognized file format. Please select a valid .amo snapshot file.');
-                return;
-            }
-
-            updateLoadingOverlay('Importing .amo snapshot...', 'Parsing snapshot data...', 15, 0, 0, 0, '');
-
-            var amoData;
-            if (format === 'amo') {
-                amoData = AmoFormat.read(buffer);
-                // Handle events-type .amo files: replay events to rebuild state
-                if (amoData.type === 'events' && amoData.events) {
-                    var events = amoData.events;
-                    events.sort(function(a, b) { return (a.id || 0) - (b.id || 0); });
-                    updateLoadingOverlay('Replaying events...', 'Processing ' + events.length.toLocaleString() + ' events...', 40, 0, 0, events.length, '');
-                    await saveRawEvents(events);
-                    await processEvents(events);
-                    if (events.length > 0) {
-                        var lastEv = events[events.length - 1];
-                        if (lastEv.created_at) {
-                            lastEventTimestamp = lastEv.created_at;
-                            await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
-                        }
-                    }
-                    // Restore metadata
-                    var savedMeta = amoData.meta || {};
-                    if (savedMeta.tables) { for (var mt in savedMeta.tables) META_TABLES[mt] = savedMeta.tables[mt]; }
-                    if (savedMeta.fields) { for (var mf in savedMeta.fields) { if (!META_FIELDS[mf]) META_FIELDS[mf] = {}; for (var ff in savedMeta.fields[mf]) META_FIELDS[mf][ff] = savedMeta.fields[mf][ff]; } }
-                    updateLoadingOverlay('Import complete!', events.length.toLocaleString() + ' events replayed', 100, 0, 0, 0, '');
-                    await renderSidebar();
-                    if (currentTable) await renderTable();
-                    setTimeout(hideLoadingOverlay, 300);
-                    return;
-                }
-            } else if (format === 'json-gz') {
-                var decompressed = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
-                var records = JSON.parse(decompressed);
-                amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
-                // Convert flat snapshot records to table-grouped format
-                for (var i = 0; i < records.length; i++) {
-                    var rec = records[i];
-                    var tbl = rec.source_table || 'unknown';
-                    if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
-                    var rowData = Object.assign({}, rec.data || {});
-                    if (rec.record_id) rowData.record_id = rec.record_id;
-                    amoData.tables[tbl].push(rowData);
-                    if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
-                }
-            } else if (format === 'json') {
-                var text = new TextDecoder().decode(buffer);
-                var records = JSON.parse(text);
-                amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
-                for (var i = 0; i < records.length; i++) {
-                    var rec = records[i];
-                    var tbl = rec.source_table || 'unknown';
-                    if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
-                    var rowData = Object.assign({}, rec.data || {});
-                    if (rec.record_id) rowData.record_id = rec.record_id;
-                    amoData.tables[tbl].push(rowData);
-                    if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
-                }
-            } else {
-                alert('Unsupported snapshot format.');
-                return;
-            }
-
-            var tableNames = Object.keys(amoData.tables);
-            if (tableNames.length === 0) {
-                alert('Snapshot file contains no data.');
-                return;
-            }
-
-            updateLoadingOverlay('Importing .amo snapshot...', 'Building tables and fields...', 40, tableNames.length, 0, 0, '');
-
-            // Restore table/field metadata from snapshot if available
-            var savedMeta = amoData.meta || {};
-            if (savedMeta.tables) {
-                var savedTableIds = Object.keys(savedMeta.tables);
-                for (var m = 0; m < savedTableIds.length; m++) {
-                    var tid = savedTableIds[m];
-                    META_TABLES[tid] = savedMeta.tables[tid];
-                }
-            }
-            if (savedMeta.fields) {
-                var savedFieldTableIds = Object.keys(savedMeta.fields);
-                for (var m = 0; m < savedFieldTableIds.length; m++) {
-                    var tid = savedFieldTableIds[m];
-                    if (!META_FIELDS[tid]) META_FIELDS[tid] = {};
-                    var fieldIds = Object.keys(savedMeta.fields[tid]);
-                    for (var f = 0; f < fieldIds.length; f++) {
-                        META_FIELDS[tid][fieldIds[f]] = savedMeta.fields[tid][fieldIds[f]];
-                    }
-                }
-            }
-
-            // Build IN_MEMORY_DATA, META_TABLES, and META_FIELDS from snapshot
-            var tableDataMap = {};
-            var totalRecords = 0;
-            var totalFields = 0;
-
-            for (var t = 0; t < tableNames.length; t++) {
-                var fullTableName = tableNames[t];
-                var tableId = fullTableName.replace('airtable:', '');
-                var rows = amoData.tables[fullTableName];
-
-                // Create placeholder table metadata only if not already restored from snapshot meta
-                if (!META_TABLES[tableId]) {
-                    META_TABLES[tableId] = {
-                        tableId: tableId,
-                        tableName: tableId,
-                        _placeholder: true
-                    };
-                }
-
-                if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
-                if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
-
-                for (var r = 0; r < rows.length; r++) {
-                    var row = rows[r];
-                    var recordId = row.record_id;
-                    if (!recordId) continue;
-
-                    // Build data object excluding record_id
-                    var data = {};
-                    var keys = Object.keys(row);
-                    for (var k = 0; k < keys.length; k++) {
-                        if (keys[k] !== 'record_id') {
-                            data[keys[k]] = row[keys[k]];
-
-                            // Auto-create placeholder field metadata only if not already restored
-                            if (!META_FIELDS[tableId][keys[k]]) {
-                                META_FIELDS[tableId][keys[k]] = {
-                                    tableId: tableId,
-                                    fieldId: keys[k],
-                                    fieldName: keys[k],
-                                    fieldType: inferFieldType(row[keys[k]]),
-                                    _placeholder: true
-                                };
-                                totalFields++;
-                            }
-                        }
-                    }
-
-                    tableDataMap[tableId][recordId] = data;
-                    totalRecords++;
-
-                    if (totalRecords % 5000 === 0) {
-                        var pct = 40 + Math.round((t / tableNames.length) * 40);
-                        updateLoadingOverlay('Importing .amo snapshot...', 'Processed ' + totalRecords.toLocaleString() + ' records...', pct, tableNames.length, totalFields, totalRecords, '');
-                        await new Promise(function(resolve) { setTimeout(resolve, 0); });
-                    }
-                }
-            }
-
-            // Store in memory for immediate UI access
-            window.IN_MEMORY_DATA = tableDataMap;
-
-            // Set the last event timestamp from the imported file cursor
-            if (amoData.cursor > 0) {
-                await setSyncMeta('lastImportCursor', amoData.cursor);
-                console.log('[AmoImport] Set import cursor to ' + amoData.cursor + ' from imported file');
-            }
-
-            updateLoadingOverlay('Import complete!', 'Rendering interface...', 90, tableNames.length, totalFields, totalRecords, '');
-
-            // Render the UI
-            await renderSidebar();
-
-            // Auto-select first table
-            var firstTable = Object.keys(META_TABLES)[0];
-            if (firstTable) {
-                await showTable(firstTable);
-            }
-
-            // Hide overlay
-            updateLoadingOverlay('Import complete!', totalRecords.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFields, totalRecords, '');
-            setTimeout(hideLoadingOverlay, 300);
-
-            updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
-
-            // Start the refresh indicator countdown
-            lastSyncTime = Date.now();
-            startRefreshCountdown();
-
-            // Start incremental sync polling if API key is set
-            if (API_KEY) {
-                if (pollInterval) clearInterval(pollInterval);
-                pollInterval = setInterval(incrementalSync, 180000);
-                SyncHistory.startPolling();
-            }
-
-            updateConnectApiButton();
-
-            console.log('AMO import complete: ' + totalRecords + ' records across ' + tableNames.length + ' tables');
-
-        } catch (err) {
-            console.error('Error importing .amo file:', err);
-            alert('Error importing .amo file: ' + err.message);
-        }
-}
-
-// Also keep the original function for calls from the loading overlay (opens file picker)
-async function skipSetupAndUploadAmoFile() {
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.amo';
-    input.onchange = async function(e) {
-        var file = e.target.files[0];
-        if (!file) return;
-        await processAmoFile(file);
-    };
-    input.click();
-}
 
 // ============ Hydrate from Box Download ============
 
@@ -11152,6 +10842,13 @@ async function hydrateFromBoxDownload() {
 
             updateLoadingOverlay('Saving to local storage...', 'Persisting ' + totalRecordCount.toLocaleString() + ' records...', 85, tableNames.length, totalFieldCount, totalRecordCount, '');
             await saveBatch(batchTables, batchFields, [], batchData);
+
+            // Set lastEventTimestamp from snapshot so post-hydration sync only fetches the gap
+            if (amoData.ts > 0) {
+                var hydratedTimestamp = new Date(amoData.ts * 1000).toISOString();
+                await setSyncMeta('lastEventTimestamp', hydratedTimestamp);
+                console.log('[BoxDownload] Set lastEventTimestamp to ' + hydratedTimestamp + ' from hydrated file (ts=' + amoData.ts + ')');
+            }
 
             updateLoadingOverlay('Hydration complete!', totalRecordCount.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFieldCount, totalRecordCount, '');
             setTimeout(hideLoadingOverlay, 300);
@@ -14588,6 +14285,337 @@ function wizardComplete() {
     initAuthScreen();
 }
 
+// ============ Matrix Status & Manual Room Publishing ============
+
+// Track Matrix connection state in sidebar
+function updateMatrixStatus() {
+    var btn = document.getElementById('matrix-connect-btn');
+    var icon = document.getElementById('matrix-status-icon');
+    var label = document.getElementById('matrix-status-label');
+    if (!btn) return;
+
+    var session = _loadSynapseSession();
+    if (session && session.accessToken) {
+        btn.classList.add('matrix-connected');
+        icon.textContent = '\u25CF'; // filled circle
+        label.textContent = session.userId ? session.userId.split(':')[0].replace('@', '') : 'Connected';
+        btn.onclick = showMatrixMenu;
+        btn.title = 'Matrix: Connected as ' + (session.userId || 'unknown');
+
+        // Show manage rooms button if bridge config has rooms
+        var mConfig = MatrixBridge.getConfig();
+        if (mConfig && mConfig.clientRoomMap && Object.keys(mConfig.clientRoomMap).length > 0) {
+            var rmBtn = document.getElementById('manage-rooms-btn');
+            if (rmBtn) rmBtn.style.display = '';
+        }
+    } else {
+        btn.classList.remove('matrix-connected');
+        icon.textContent = '\u25CB'; // empty circle
+        label.textContent = 'Connect Matrix';
+        btn.onclick = function() { showSynapseLoginScreen(); };
+        btn.title = 'Connect to Matrix for room sync';
+    }
+}
+
+// Context menu for connected Matrix user
+function showMatrixMenu() {
+    var session = _loadSynapseSession();
+    if (!session) return;
+
+    // Simple menu via prompt-style - publish rooms or disconnect
+    var choice = confirm(
+        'Matrix: ' + (session.userId || 'Connected') + '\n\n' +
+        'OK = Open Room Publisher\n' +
+        'Cancel = Disconnect Matrix'
+    );
+
+    if (choice) {
+        showRoomPublishModal();
+    } else {
+        if (confirm('Disconnect from Matrix? Your local data is not affected.')) {
+            synapseLogout();
+            updateMatrixStatus();
+        }
+    }
+}
+
+// ============ Room Publishing Modal ============
+
+function showRoomPublishModal() {
+    var modal = document.getElementById('room-publish-modal');
+    modal.classList.remove('hidden');
+
+    var session = _loadSynapseSession();
+    var isConnected = session && session.accessToken;
+
+    document.getElementById('room-publish-not-connected').style.display = isConnected ? 'none' : '';
+    document.getElementById('room-publish-content').style.display = isConnected ? '' : 'none';
+    document.getElementById('pub-publish-btn').style.display = isConnected ? '' : 'none';
+
+    if (!isConnected) return;
+
+    // Make sure MatrixClient has the session
+    if (!MatrixClient.isLoggedIn()) {
+        MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+    }
+
+    // Check for existing org space
+    var config = MatrixClient.loadConfig();
+    if (config && config.orgSpaceId) {
+        document.getElementById('pub-org-name').value = config.bridge ? config.bridge.name || '' : '';
+        document.getElementById('pub-org-status').textContent = 'Existing org found';
+        document.getElementById('pub-org-status').style.color = 'var(--success-500)';
+    }
+
+    // Populate table list
+    var tableIds = Object.keys(META_TABLES);
+    var listEl = document.getElementById('pub-table-list');
+    var clientSelect = document.getElementById('pub-client-table');
+
+    var html = '';
+    var clientOpts = '<option value="">No client grouping</option>';
+
+    tableIds.forEach(function(tid) {
+        var t = META_TABLES[tid];
+        var fieldCount = META_FIELDS[tid] ? Object.keys(META_FIELDS[tid]).length : 0;
+        // Count records for this table from in-memory data
+        var recordCount = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tid]) ? Object.keys(window.IN_MEMORY_DATA[tid]).length : 0;
+
+        html +=
+            '<label class="room-table-item" for="pub-tbl-' + esc(tid) + '">' +
+                '<input type="checkbox" id="pub-tbl-' + esc(tid) + '" value="' + esc(tid) + '" checked>' +
+                '<div class="table-info">' +
+                    '<div class="table-name">' + esc(t.tableName || tid) + '</div>' +
+                    '<div class="table-meta">' + fieldCount + ' fields, ' + recordCount + ' records</div>' +
+                '</div>' +
+                '<span class="pub-status local">Local</span>' +
+            '</label>';
+
+        clientOpts += '<option value="' + esc(tid) + '">' + esc(t.tableName || tid) + '</option>';
+    });
+
+    listEl.innerHTML = html;
+    clientSelect.innerHTML = clientOpts;
+
+    // Reset progress
+    document.getElementById('pub-progress-section').style.display = 'none';
+    document.getElementById('pub-publish-btn').disabled = false;
+    document.getElementById('pub-publish-btn').textContent = 'Publish Selected';
+}
+
+function closeRoomPublishModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('room-publish-modal').classList.add('hidden');
+}
+
+function pubClientTableChanged() {
+    var tableId = document.getElementById('pub-client-table').value;
+    var fieldSelect = document.getElementById('pub-client-field');
+
+    if (!tableId) {
+        fieldSelect.disabled = true;
+        fieldSelect.innerHTML = '<option value="">Select identifier field</option>';
+        return;
+    }
+
+    fieldSelect.disabled = false;
+    var fields = META_FIELDS[tableId] || {};
+    var html = '<option value="">Select identifier field</option>';
+    Object.keys(fields).forEach(function(fid) {
+        var f = fields[fid];
+        html += '<option value="' + esc(fid) + '">' + esc(f.fieldName || fid) + '</option>';
+    });
+    fieldSelect.innerHTML = html;
+}
+
+async function executeRoomPublish() {
+    var btn = document.getElementById('pub-publish-btn');
+    btn.disabled = true;
+    btn.textContent = 'Publishing...';
+
+    var progressSection = document.getElementById('pub-progress-section');
+    var progressFill = document.getElementById('pub-progress-fill');
+    var progressText = document.getElementById('pub-progress-text');
+    progressSection.style.display = '';
+
+    function updatePub(pct, text) {
+        progressFill.style.width = pct + '%';
+        progressText.textContent = text;
+    }
+
+    try {
+        // Collect selected tables
+        var selectedTables = [];
+        document.querySelectorAll('#pub-table-list input[type="checkbox"]:checked').forEach(function(cb) {
+            selectedTables.push(cb.value);
+        });
+
+        if (selectedTables.length === 0) {
+            alert('Please select at least one table to publish.');
+            btn.disabled = false;
+            btn.textContent = 'Publish Selected';
+            progressSection.style.display = 'none';
+            return;
+        }
+
+        var orgName = document.getElementById('pub-org-name').value.trim() || 'My Organization';
+        var clientTable = document.getElementById('pub-client-table').value;
+        var clientField = document.getElementById('pub-client-field').value;
+
+        updatePub(5, 'Syncing with Matrix...');
+
+        // Ensure we have a Matrix sync
+        await MatrixClient.initialSync();
+
+        // Find or create org space
+        updatePub(10, 'Setting up organization space...');
+        var orgSpaceId = await MatrixClient.findOrgSpace();
+        if (!orgSpaceId) {
+            orgSpaceId = await MatrixClient.createOrgSpace(orgName);
+        }
+
+        // If no client grouping, publish tables as individual rooms under the org space
+        if (!clientTable || !clientField) {
+            updatePub(15, 'Publishing ' + selectedTables.length + ' tables as rooms...');
+
+            for (var i = 0; i < selectedTables.length; i++) {
+                var tid = selectedTables[i];
+                var tMeta = META_TABLES[tid] || { tableName: tid };
+                var pct = 15 + Math.round((i / selectedTables.length) * 80);
+                updatePub(pct, 'Publishing ' + (tMeta.tableName || tid) + '...');
+
+                // Create a room for this table
+                var roomId = await MatrixClient.createRoom({
+                    name: tMeta.tableName || tid,
+                    preset: 'private_chat',
+                    initialState: [{
+                        type: 'm.room.history_visibility',
+                        state_key: '',
+                        content: { history_visibility: 'shared' }
+                    }]
+                });
+
+                await MatrixClient.addChildToSpace(orgSpaceId, roomId);
+                await MatrixClient.setRoomParentSpace(roomId, orgSpaceId);
+
+                // Write table schema
+                await MatrixClient.writeTableSchema(roomId, tid, tMeta.tableName, tMeta.icon, true);
+
+                // Write field schemas
+                var fields = META_FIELDS[tid] || {};
+                var fids = Object.keys(fields);
+                for (var f = 0; f < fids.length; f++) {
+                    await MatrixClient.writeFieldSchema(roomId, fids[f], fields[fids[f]]);
+                    if (f % 5 === 4) await new Promise(function(r) { setTimeout(r, 200); });
+                }
+
+                // Write records from IndexedDB
+                var records = await getRecordsForTableFromDB(tid);
+                for (var r = 0; r < records.length; r++) {
+                    await MatrixClient.writeRecord(roomId, tid, records[r].recordId, records[r].fields);
+                    if (r % 5 === 4) await new Promise(function(r2) { setTimeout(r2, 200); });
+                }
+            }
+        } else {
+            // Client-grouped publishing: use the bridge mechanism
+            updatePub(15, 'Loading records for grouping...');
+
+            var allRecords = [];
+            for (var i = 0; i < selectedTables.length; i++) {
+                var records = await getRecordsForTableFromDB(selectedTables[i]);
+                records.forEach(function(rec) {
+                    allRecords.push({ tableId: selectedTables[i], recordId: rec.recordId, fields: rec.fields });
+                });
+            }
+
+            updatePub(25, 'Grouping ' + allRecords.length + ' records by client...');
+
+            MatrixBridge.setConfig({
+                mode: 'bridge',
+                orgSpaceId: orgSpaceId,
+                clientTable: clientTable,
+                clientIdentifierField: clientField,
+                clientVisibleTables: selectedTables,
+                linkedRecordTables: {},
+                clientRoomMap: {},
+                lastSyncCursor: 0
+            });
+
+            var result = await MatrixBridge.hydrateToMatrix(
+                { tables: buildAmoTablesFromRecords(allRecords) },
+                { tables: META_TABLES, fields: META_FIELDS },
+                function(info) {
+                    if (info.phase === 'hydrating_client') {
+                        var pct = 25 + Math.round((info.completed / Math.max(info.total, 1)) * 70);
+                        updatePub(pct, 'Creating room for ' + (info.clientName || '...') + ' (' + info.completed + '/' + info.total + ')');
+                    }
+                }
+            );
+        }
+
+        // Save config locally
+        MatrixClient.saveConfig({
+            bridge: MatrixBridge.getConfig(),
+            homeserverUrl: MatrixClient.getHomeserverUrl(),
+            orgSpaceId: orgSpaceId,
+            userId: MatrixClient.getUserId()
+        });
+
+        updatePub(100, 'Published successfully!');
+        btn.textContent = 'Done';
+        updateMatrixStatus();
+
+        // Show manage rooms button
+        var rmBtn = document.getElementById('manage-rooms-btn');
+        if (rmBtn) rmBtn.style.display = '';
+
+        // Close modal after a short delay
+        setTimeout(function() { closeRoomPublishModal(); }, 1500);
+
+    } catch (err) {
+        console.error('[RoomPublish] Failed:', err);
+        updatePub(0, 'Failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+    }
+}
+
+// Helper: get all records for a table from IndexedDB data store
+async function getRecordsForTableFromDB(tableId) {
+    return new Promise(function(resolve, reject) {
+        var tx = db.transaction('data', 'readonly');
+        var store = tx.objectStore('data');
+        var index = store.index('by_table');
+        var req = index.getAll(tableId);
+        req.onsuccess = async function() {
+            var records = req.result || [];
+            // Decrypt if needed
+            var result = [];
+            for (var i = 0; i < records.length; i++) {
+                var rec = records[i];
+                if (encryptionEnabled && rec._encrypted) {
+                    try { rec = await decryptRecordFromStorage(rec); } catch (e) { continue; }
+                }
+                result.push({ recordId: rec.recordId, fields: rec.fields || {} });
+            }
+            resolve(result);
+        };
+        req.onerror = function() { reject(req.error); };
+    });
+}
+
+// Helper: convert flat record list to amo-style tables object
+function buildAmoTablesFromRecords(records) {
+    var tables = {};
+    records.forEach(function(rec) {
+        var key = 'airtable:' + rec.tableId;
+        if (!tables[key]) tables[key] = [];
+        var row = Object.assign({ record_id: rec.recordId }, rec.fields);
+        tables[key].push(row);
+    });
+    return tables;
+}
+
 // ============ Matrix Mode Detection ============
 
 // Check if Matrix mode should be offered or if we're already in Matrix mode
@@ -14601,31 +14629,6 @@ function checkMatrixMode() {
         return 'login'; // Config exists but session expired
     }
     return 'available'; // Matrix not configured, show option to set up
-}
-
-// Add Matrix setup button to auth screen
-function addMatrixOptionToAuth() {
-    var authBox = document.querySelector('.auth-box');
-    if (!authBox || document.getElementById('matrix-setup-btn')) return;
-
-    var divider = document.createElement('div');
-    divider.style.cssText = 'display: flex; align-items: center; gap: 12px; margin: 16px 0;';
-    divider.innerHTML = '<div style="flex: 1; height: 1px; background: var(--border-primary);"></div>' +
-        '<span style="font-size: 12px; color: var(--text-muted);">or</span>' +
-        '<div style="flex: 1; height: 1px; background: var(--border-primary);"></div>';
-
-    var btn = document.createElement('button');
-    btn.id = 'matrix-setup-btn';
-    btn.className = 'secondary';
-    btn.style.cssText = 'margin-top: 0; background: linear-gradient(135deg, var(--primary-500), #7c3aed); color: #fff; border: none;';
-    btn.textContent = 'Set Up with Matrix';
-    btn.onclick = function() {
-        document.getElementById('auth-screen').classList.add('hidden');
-        showMatrixWizard();
-    };
-
-    authBox.appendChild(divider);
-    authBox.appendChild(btn);
 }
 
 // ============ Workspace UI in Sidebar ============
@@ -14682,17 +14685,30 @@ async function promptCreateWorkspace() {
 
 // ============ Initialize Workspaces on Load ============
 
-// Extend init to load workspaces
+// Extend init to load workspaces and update Matrix status
 var originalInit = init;
 init = async function() {
     await originalInit();
     await loadWorkspaces();
     renderWorkspaceTabs();
+    updateMatrixStatus();
 };
 
 // Keyboard handler for modals (Escape to close)
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
+        // Close room publish modal if open
+        var pubModal = document.getElementById('room-publish-modal');
+        if (pubModal && !pubModal.classList.contains('hidden')) {
+            closeRoomPublishModal();
+            return;
+        }
+        // Close Synapse login if open (non-blocking, just hides)
+        var synapseScreen = document.getElementById('synapse-login-screen');
+        if (synapseScreen && !synapseScreen.classList.contains('hidden')) {
+            hideSynapseLoginScreen();
+            return;
+        }
         // Close room manager if open
         var rmPanel = document.getElementById('room-manager');
         if (rmPanel && !rmPanel.classList.contains('hidden')) {
@@ -14718,13 +14734,9 @@ document.getElementById('unlock-password').onkeydown = (e) => { if (e.key === 'E
 document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('setup-password-confirm').focus(); };
 document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
 
-// Initialize: check Synapse login first, then encryption, then auth
+// Initialize: skip Synapse gate — boot directly to encryption/auth
+// Matrix login is now optional and accessible from the sidebar
 (async function() {
-    var synapseValid = await initSynapseLogin();
-    if (!synapseValid) {
-        // Synapse login screen is showing — wait for login before continuing
-        return;
-    }
     var encryptionReady = await initEncryption();
     if (encryptionReady) {
         initAuthScreen();
