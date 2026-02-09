@@ -7074,23 +7074,43 @@ async function initAuthScreen() {
         API_KEY = savedCredentials.apiKey;
         SET_FILTER = savedCredentials.setFilter || null;
 
+        // Step 1: Validate the saved API key still works
         try {
             await initSecureEndpoints(API_KEY);
-            await init();
-            // Silently restore Matrix session if one exists (non-blocking)
-            restoreMatrixSessionQuietly();
-            return; // Success - auth screen stays hidden
+            await fetchPage(1, null, { last: true });
         } catch (err) {
-            console.error('Auto-login failed:', err);
+            console.error('Saved API key validation failed:', err);
             API_KEY = null;
             SET_FILTER = null;
             clearSecureEndpoints();
-            // Show auth screen with error so user can retry
-            showAuthError('Connection failed. Click Connect to retry.');
+            // Key is invalid or revoked — clear it so user isn't stuck in a loop
+            clearEncryptedCredentials();
+            showAuthError('Saved API key is no longer valid. Please re-enter your API key.');
             if (stats.count > 0) {
                 infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
             } else {
                 infoEl.textContent = 'No local data';
+            }
+            // Fall through to show auth screen below
+        }
+
+        // Step 2: Key is valid, proceed with init
+        if (API_KEY) {
+            try {
+                await init();
+                // Silently restore Matrix session if one exists (non-blocking)
+                restoreMatrixSessionQuietly();
+                return; // Success - auth screen stays hidden
+            } catch (err) {
+                console.error('Auto-login init failed:', err);
+                // Key was valid but init failed (transient error) — keep credentials
+                // so auto-login can retry on next page load
+                showAuthError('Initialization failed: ' + err.message + '. Click Connect to retry.');
+                if (stats.count > 0) {
+                    infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
+                } else {
+                    infoEl.textContent = 'No local data';
+                }
             }
         }
     }
@@ -7145,13 +7165,11 @@ async function tryAuth() {
 
     try {
         await initSecureEndpoints(key);
-        await init();
+
+        // Validate the API key with a lightweight test call before committing
+        await fetchPage(1, null, { last: true });
     } catch (err) {
-        console.error('Init error:', err);
-        // Re-show auth screen in case init() already hid it before failing
-        if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
-        var authEl = document.getElementById('auth-screen');
-        authEl.classList.remove('hidden', 'fading-out');
+        console.error('Auth validation error:', err);
         showAuthError('Connection failed: ' + err.message);
         btn.textContent = 'Connect';
         btn.disabled = false;
@@ -7161,8 +7179,25 @@ async function tryAuth() {
         return;
     }
 
-    // Save credentials (encrypted if encryption is enabled)
+    // API key is valid — save credentials immediately so they persist
+    // even if hydration/init is interrupted (e.g. user closes tab)
     await saveEncryptedCredentials(API_KEY, SET_FILTER);
+
+    try {
+        await init();
+    } catch (err) {
+        console.error('Init error:', err);
+        // Re-show auth screen in case init() already hid it before failing
+        if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
+        var authEl = document.getElementById('auth-screen');
+        authEl.classList.remove('hidden', 'fading-out');
+        showAuthError('Initialization failed: ' + err.message);
+        btn.textContent = 'Connect';
+        btn.disabled = false;
+        // Don't clear credentials — the key is valid, init just had a transient error.
+        // On next page load, auto-login will retry init.
+        return;
+    }
 
     // Silently restore Matrix session if one exists (non-blocking)
     restoreMatrixSessionQuietly();
