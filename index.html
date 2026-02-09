@@ -4522,6 +4522,106 @@ var PassiveSnapshotSync = {
     }
 };
 
+// ============ Post-Hydration Auto-Poll ============
+// After hydrating from a Box snapshot, aggressively polls Xano to fill in
+// any events that occurred between the snapshot creation time and now.
+// Uses rapid polling (3s intervals) until fully caught up, then stops.
+
+var PostHydrationSync = {
+    POLL_INTERVAL: 3000,     // 3 seconds between catch-up rounds
+    MAX_ROUNDS: 50,          // Safety limit on catch-up rounds
+    isRunning: false,
+    totalEventsCaughtUp: 0,
+    rounds: 0,
+
+    // Start the catch-up process (non-blocking, runs in background)
+    start() {
+        if (this.isRunning) return;
+        this.isRunning = true;
+        this.totalEventsCaughtUp = 0;
+        this.rounds = 0;
+
+        console.log('[PostHydrationSync] Starting auto-poll to fill gaps since hydration');
+        SyncStatusFeed.info('Post-hydration catch-up: polling Xano for missed updates...');
+
+        this.scheduleNext();
+    },
+
+    scheduleNext() {
+        if (!this.isRunning) return;
+        var self = this;
+        setTimeout(function() { self.runCatchUpRound(); }, this.POLL_INTERVAL);
+    },
+
+    async runCatchUpRound() {
+        if (!this.isRunning || !API_KEY) {
+            this.stop('no API key');
+            return;
+        }
+
+        this.rounds++;
+        if (this.rounds > this.MAX_ROUNDS) {
+            this.stop('reached max rounds (' + this.MAX_ROUNDS + ')');
+            return;
+        }
+
+        try {
+            // Lightweight check: peek at the latest event to see if there's anything newer
+            var peek = await fetchPage(1, lastEventTimestamp, { last: true });
+            var hasNewEvents = peek.events && peek.events.length > 0;
+
+            if (!hasNewEvents) {
+                // Fully caught up — no more gap events
+                this.stop('caught up');
+                return;
+            }
+
+            // There are new events — run a full incremental sync to fetch them all
+            SyncStatusFeed.info('Catch-up round ' + this.rounds + ': fetching new events...');
+            await incrementalSync();
+
+            // Check how many events were found in the last sync
+            var lastEntry = SyncHistory.entries[0];
+            var eventsThisRound = (lastEntry && lastEntry.eventsFound) || 0;
+            this.totalEventsCaughtUp += eventsThisRound;
+
+            if (eventsThisRound > 0) {
+                SyncStatusFeed.info('Catch-up round ' + this.rounds + ': ' + eventsThisRound + ' events synced (' + this.totalEventsCaughtUp + ' total)');
+            }
+
+            // If incremental sync found events, there might be more — keep polling
+            this.scheduleNext();
+
+        } catch (err) {
+            console.error('[PostHydrationSync] Catch-up error:', err);
+            SyncStatusFeed.error('Catch-up error: ' + err.message);
+            // Don't stop on error — retry on next round
+            this.scheduleNext();
+        }
+    },
+
+    stop(reason) {
+        if (!this.isRunning) return;
+        this.isRunning = false;
+        var msg = 'Post-hydration catch-up complete';
+        if (this.totalEventsCaughtUp > 0) {
+            msg += ': ' + this.totalEventsCaughtUp + ' events synced across ' + this.rounds + ' round(s)';
+        } else {
+            msg += ': already up to date';
+        }
+        if (reason) msg += ' (' + reason + ')';
+        console.log('[PostHydrationSync] ' + msg);
+        SyncStatusFeed.success(msg);
+
+        SyncHistory.record({
+            type: 'incremental',
+            result: 'success',
+            eventsFound: this.totalEventsCaughtUp,
+            detail: msg
+        });
+    }
+};
+
 // Toggle snapshot sync on/off
 function toggleSnapshotSync() {
     snapshotSyncEnabled = !snapshotSyncEnabled;
@@ -10103,8 +10203,16 @@ async function init() {
 
             // Continue with incremental sync if API key is available
             if (API_KEY) {
-                lastEventTimestamp = storedLastTimestamp || null;
+                // Re-read lastEventTimestamp that was set during hydration
+                // (storedLastTimestamp was read before hydration, so it would be null)
+                var postHydrationTimestamp = await getSyncMeta('lastEventTimestamp');
+                lastEventTimestamp = postHydrationTimestamp || null;
+
+                // Run one immediate sync to fill the most critical gap
                 await incrementalSync();
+
+                // Start aggressive background polling to catch up any remaining events
+                PostHydrationSync.start();
             }
         } else if (API_KEY) {
             // Box download failed or empty - fall back to full event sync
@@ -11931,6 +12039,13 @@ async function hydrateFromBoxDownload() {
             console.log('[BoxDownload] Set lastSnapshotEventId to ' + amoData.cursor + ' from hydrated file');
         } else {
             console.warn('[BoxDownload] Hydrated file had no cursor (cursor=0) — incremental sync will fetch all records on first run');
+        }
+
+        // Set lastEventTimestamp from snapshot so post-hydration sync only fetches the gap
+        if (amoData.ts > 0) {
+            var hydratedTimestamp = new Date(amoData.ts * 1000).toISOString();
+            await setSyncMeta('lastEventTimestamp', hydratedTimestamp);
+            console.log('[BoxDownload] Set lastEventTimestamp to ' + hydratedTimestamp + ' from hydrated file (ts=' + amoData.ts + ')');
         }
 
         // Verify persisted record count matches what we parsed
