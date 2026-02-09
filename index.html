@@ -2531,13 +2531,10 @@ function renderTabBar() {
     if (label) label.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
 }
 
-var API = null; // Secured: initialized after authentication via initSecureEndpoints()
 var DB_NAME = 'aminostream';
 var DB_VERSION = 8;
 var PAGE_SIZE = 100;
 
-var API_KEY = null;
-var SET_FILTER = null;
 var db = null;
 
 // ============ Encryption Configuration ============
@@ -2552,91 +2549,8 @@ var passkeyCredentialId = null; // For WebAuthn
 // user's API key using AES-GCM and persisted in localStorage. On first auth,
 // endpoints are decoded from obfuscated bootstrap data, then encrypted and
 // stored. On subsequent logins, they are decrypted from localStorage using
-// the API key. If decryption fails (wrong key), endpoints remain null and
-// no API calls can be made.
-var ENCRYPTED_ENDPOINTS_KEY = 'amino_encrypted_endpoints';
+// Box webhooks are optional — configured via Synapse room state if needed
 
-// Obfuscated bootstrap endpoint data (not plaintext URLs)
-var _EP = [
-    'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zdHJlYW0=',
-    'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zdHJlYW1wb3N0',
-    'aHR0cHM6Ly9uOG4uaW50ZWxlY2hpYS5jb20vd2ViaG9vay9ib3gtdXBsb2Fk',
-    'aHR0cHM6Ly9uOG4uaW50ZWxlY2hpYS5jb20vd2ViaG9vay9ib3gtZG93bmxvYWQ='
-];
-
-// Derive an AES-GCM key from the API key for endpoint encryption
-async function deriveEndpointKey(apiKey) {
-    var encoder = new TextEncoder();
-    var keyMaterial = await crypto.subtle.importKey(
-        'raw', encoder.encode(apiKey), 'PBKDF2', false, ['deriveKey']
-    );
-    return crypto.subtle.deriveKey(
-        { name: 'PBKDF2', salt: encoder.encode('amino-endpoints-v1'), iterations: 50000, hash: 'SHA-256' },
-        keyMaterial,
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt']
-    );
-}
-
-// Initialize secure endpoints after successful API key authentication
-async function initSecureEndpoints(apiKey) {
-    // Try to decrypt endpoints from localStorage first
-    var stored = localStorage.getItem(ENCRYPTED_ENDPOINTS_KEY);
-    if (stored) {
-        try {
-            var parsed = JSON.parse(stored);
-            var key = await deriveEndpointKey(apiKey);
-            var iv = Uint8Array.from(atob(parsed.iv), function(c) { return c.charCodeAt(0); });
-            var data = Uint8Array.from(atob(parsed.data), function(c) { return c.charCodeAt(0); });
-            var decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, data);
-            var endpoints = JSON.parse(new TextDecoder().decode(decrypted));
-            API = endpoints[0];
-            XANO_POST_API = endpoints[1];
-            BOX_SYNC_WEBHOOK = endpoints[2];
-            BOX_DOWNLOAD_WEBHOOK = endpoints[3];
-            return;
-        } catch (e) {
-            // Decryption failed (wrong key or corrupted data) - fall through to bootstrap
-            localStorage.removeItem(ENCRYPTED_ENDPOINTS_KEY);
-        }
-    }
-
-    // Bootstrap: decode from obfuscated source
-    API = atob(_EP[0]);
-    XANO_POST_API = atob(_EP[1]);
-    BOX_SYNC_WEBHOOK = atob(_EP[2]);
-    BOX_DOWNLOAD_WEBHOOK = atob(_EP[3]);
-
-    // Encrypt endpoints with the user's API key and store for future use
-    try {
-        var key = await deriveEndpointKey(apiKey);
-        var iv = crypto.getRandomValues(new Uint8Array(12));
-        var encoder = new TextEncoder();
-        var plaintext = encoder.encode(JSON.stringify([API, XANO_POST_API, BOX_SYNC_WEBHOOK, BOX_DOWNLOAD_WEBHOOK]));
-        var encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, plaintext);
-        var ivStr = '';
-        for (var i = 0; i < iv.length; i++) ivStr += String.fromCharCode(iv[i]);
-        var encArr = new Uint8Array(encrypted);
-        var encStr = '';
-        for (var j = 0; j < encArr.length; j++) encStr += String.fromCharCode(encArr[j]);
-        localStorage.setItem(ENCRYPTED_ENDPOINTS_KEY, JSON.stringify({
-            iv: btoa(ivStr),
-            data: btoa(encStr)
-        }));
-    } catch (e) {
-        console.warn('Failed to encrypt endpoints for storage:', e);
-    }
-}
-
-// Clear all endpoint URLs from memory and storage (called on logout)
-function clearSecureEndpoints() {
-    API = null;
-    XANO_POST_API = null;
-    BOX_SYNC_WEBHOOK = null;
-    BOX_DOWNLOAD_WEBHOOK = null;
-    localStorage.removeItem(ENCRYPTED_ENDPOINTS_KEY);
-}
 
 // ============ Web Crypto API Utilities ============
 
@@ -3264,58 +3178,6 @@ async function clearEncryptedData() {
 
 // ============ Encrypted Credentials Storage ============
 
-// Save API credentials (encrypted if encryption is enabled)
-async function saveEncryptedCredentials(apiKey, setFilter) {
-    var credentials = { apiKey: apiKey, setFilter: setFilter };
-
-    if (encryptionEnabled && encryptionKey) {
-        var encrypted = await encryptData(credentials, encryptionKey);
-        localStorage.setItem(ENCRYPTED_CREDENTIALS_KEY, encrypted);
-        // Remove plaintext credentials
-        localStorage.removeItem('amino_api_key');
-        localStorage.removeItem('amino_set_filter');
-    } else {
-        // Store as plaintext (no encryption)
-        localStorage.setItem('amino_api_key', apiKey);
-        if (setFilter) {
-            localStorage.setItem('amino_set_filter', setFilter);
-        } else {
-            localStorage.removeItem('amino_set_filter');
-        }
-    }
-}
-
-// Load API credentials (decrypt if necessary)
-async function loadEncryptedCredentials() {
-    if (encryptionEnabled && encryptionKey) {
-        var encrypted = localStorage.getItem(ENCRYPTED_CREDENTIALS_KEY);
-        if (encrypted) {
-            try {
-                return await decryptData(encrypted, encryptionKey);
-            } catch (e) {
-                console.error('Failed to decrypt credentials:', e);
-                return null;
-            }
-        }
-    } else {
-        var apiKey = localStorage.getItem('amino_api_key');
-        if (apiKey) {
-            return {
-                apiKey: apiKey,
-                setFilter: localStorage.getItem('amino_set_filter')
-            };
-        }
-    }
-    return null;
-}
-
-// Clear saved credentials
-function clearEncryptedCredentials() {
-    localStorage.removeItem(ENCRYPTED_CREDENTIALS_KEY);
-    localStorage.removeItem('amino_api_key');
-    localStorage.removeItem('amino_set_filter');
-}
-
 // ============ Encrypted IndexedDB Wrapper ============
 
 // Encrypt data before storing in IndexedDB
@@ -3693,7 +3555,6 @@ var inMemoryEventsByRecord = null; // Map of recordId -> array of events for fas
 var isBackgroundSaveInProgress = false; // Track background IndexedDB save status
 
 // ============ View Auto-Save System ============
-var XANO_POST_API = null; // Secured: initialized after authentication via initSecureEndpoints()
 var AUTO_SAVE_DELAY = 5 * 60 * 1000; // 5 minutes
 var autoSaveTimer = null;
 
@@ -3704,27 +3565,6 @@ var viewDirtyState = {
         tableId: null,
         viewId: null,
         changes: {}
-    }
-};
-
-// ============ AminoSync - Event Stream Client ============
-
-var AminoSync = {
-    // Post event to aminoStream
-    async postEvent(event) {
-        if (!API_KEY || !XANO_POST_API) throw new Error('Not authenticated');
-        var streamRes = await fetch(XANO_POST_API + '?apiKey=' + encodeURIComponent(API_KEY), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(event)
-        });
-
-        if (!streamRes.ok) {
-            throw new Error('Failed to post event: HTTP ' + streamRes.status);
-        }
-
-        var streamResult = await streamRes.json();
-        return { eventId: streamResult.id, streamResult };
     }
 };
 
@@ -4012,10 +3852,21 @@ var SyncStatusFeed = {
     }
 };
 
-// ============ Sync History Tracker ============
-// Tracks all sync operations for the Sync Status view
-
+// ============ Sync History Tracker (legacy stub) ============
+// Retained as a stub — sync status view may reference SyncHistory.entries
 var SyncHistory = {
+    entries: [],
+    record: function() {},
+    startPolling: function() {},
+    stopPolling: function() {},
+    getStats: function() { return { totalSyncs: 0, totalEvents: 0, avgDuration: 0 }; },
+    onChange: function() {},
+    listeners: [],
+    notify: function() {}
+};
+
+/* --- Removed: full SyncHistory polling implementation (Xano-dependent) ---
+var SyncHistory_REMOVED = {
     maxEntries: 200,
     entries: [],
     pollInterval: null,
@@ -4200,11 +4051,9 @@ var SyncHistory = {
         this.listeners.forEach(fn => { try { fn(); } catch(e) {} });
     }
 };
+--- end removed SyncHistory --- */
 
-// ============ Post-Hydration Auto-Poll ============
-// After hydrating from Box, aggressively polls Xano to fill in
-// any events that occurred between the snapshot creation time and now.
-// Uses rapid polling (3s intervals) until fully caught up, then stops.
+/* --- Removed: PostHydrationSync (Xano-dependent) ---
 
 var PostHydrationSync = {
     POLL_INTERVAL: 3000,     // 3 seconds between catch-up rounds
@@ -4300,6 +4149,7 @@ var PostHydrationSync = {
         });
     }
 };
+--- end removed PostHydrationSync --- */
 
 // ============ Box Auto-Sync ============
 // Pushes full event stream as .amo to Box via n8n webhook after each sync with new data
@@ -5261,8 +5111,11 @@ function getFieldHistoryForRecord(tableId, recordId, limit) {
     });
 }
 
-// Fetch and process any new history events for a specific record from API
+// Fetch new history for a record — now handled by SynapseSync event stream
 async function fetchAndProcessHistoryForRecord(tableId, recordId) {
+    // History is populated as events arrive via SynapseSync — no on-demand fetch needed
+    return;
+    /* --- Removed: Xano-dependent history fetch ---
     if (!API_KEY) return;
 
     // Get the highest eventId we have for this record to fetch only newer events
@@ -5383,6 +5236,7 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
     } catch (err) {
         console.error('Error fetching history for record:', err);
     }
+    --- end removed history fetch --- */
 }
 
 // ============ View Folders ============
@@ -5482,9 +5336,9 @@ function updateSaveIndicator(state) {
     }
 }
 
-// Save view changes to backend
+// Save view changes to backend (via Synapse room events — TODO: implement write path)
 async function saveViewToBackend() {
-    if (!viewDirtyState.isDirty || !API_KEY) return;
+    if (!viewDirtyState.isDirty) return;
 
     var { tableId, viewId, changes } = viewDirtyState.pendingChanges;
     if (!tableId || !viewId) return;
@@ -5509,31 +5363,15 @@ async function saveViewToBackend() {
         ...changes
     };
 
-    var payload = {
-        uuid: crypto.randomUUID(),
-        recordId: viewId,
-        set: 'airtable:' + tableId,
-        operator: 'ALT',
-        created_at: new Date().toISOString(),
-        apiKey: API_KEY,
-        payload: JSON.stringify(viewConfigData)
-    };
+    // TODO: Write view config to Synapse table room as state event
 
-    try {
-        await AminoSync.postEvent(payload);
+    // Clear dirty state (saved locally, Synapse write path TBD)
+    viewDirtyState.isDirty = false;
+    viewDirtyState.pendingChanges = { tableId: null, viewId: null, changes: {} };
+    clearTimeout(autoSaveTimer);
 
-        // Clear dirty state
-        viewDirtyState.isDirty = false;
-        viewDirtyState.pendingChanges = { tableId: null, viewId: null, changes: {} };
-        clearTimeout(autoSaveTimer);
-
-        updateSaveIndicator('saved');
-        console.log('View saved to backend:', viewId);
-    } catch (error) {
-        console.error('Failed to save view to backend:', error);
-        // Keep dirty state, will retry on next trigger
-        updateSaveIndicator('dirty');
-    }
+    updateSaveIndicator('saved');
+    console.log('View saved locally:', viewId);
 }
 
 // Manual save button handler
@@ -5654,46 +5492,24 @@ function markTableSettingsDirty() {
     }, 2000);
 }
 
-// Save table settings to backend
+// Save table settings to backend (via Synapse room events — TODO: implement write path)
 async function saveTableSettings() {
-    if (!tableSettingsDirty || !API_KEY) return;
+    if (!tableSettingsDirty) return;
 
-    var tableSettingsData = {
-        _set: 'tableSettings',
+    // TODO: Write table settings to Synapse as account data or room state
+
+    // Clear dirty state
+    tableSettingsDirty = false;
+    clearTimeout(tableSettingsAutoSaveTimer);
+
+    // Sync table settings to user preferences (Synapse account data)
+    UserPreferences.set('tableSettings', {
         tables: TABLE_SETTINGS.tables,
         tableOrder: TABLE_SETTINGS.tableOrder,
         views: TABLE_SETTINGS.views
-    };
+    });
 
-    var payload = {
-        uuid: crypto.randomUUID(),
-        recordId: 'tableSettings:' + (API_KEY || 'default'),
-        set: 'userSettings',
-        operator: 'ALT',
-        created_at: new Date().toISOString(),
-        apiKey: API_KEY,
-        payload: JSON.stringify(tableSettingsData)
-    };
-
-    try {
-        await AminoSync.postEvent(payload);
-
-        // Clear dirty state
-        tableSettingsDirty = false;
-        clearTimeout(tableSettingsAutoSaveTimer);
-
-        // Also sync table settings to user preferences (Synapse account data)
-        UserPreferences.set('tableSettings', {
-            tables: TABLE_SETTINGS.tables,
-            tableOrder: TABLE_SETTINGS.tableOrder,
-            views: TABLE_SETTINGS.views
-        });
-
-        console.log('Table settings saved to backend');
-    } catch (error) {
-        console.error('Failed to save table settings to backend:', error);
-        // Keep dirty state, will retry on next trigger
-    }
+    console.log('Table settings saved locally');
 }
 
 // Load table settings from sync metadata
@@ -7229,16 +7045,14 @@ document.getElementById('synapse-password').onkeydown = function(e) { if (e.key 
 document.getElementById('view-as-database-btn').onclick = selectDatabaseView;
 document.getElementById('view-as-interface-btn').onclick = selectInterfaceView;
 
-// ============ Auth ============
+// ============ Auth (legacy stubs — auth screen removed, Synapse is the gate) ============
+function initAuthScreen() {} // no-op stub
+function hideAuthScreen() { var el = document.getElementById('auth-screen'); if (el) el.classList.add('hidden'); }
+function showAuthScreen() {} // no-op stub
+function showAuthError() {} // no-op stub
 
-document.getElementById('auth-submit').onclick = tryAuth;
-document.getElementById('api-key-input').onkeydown = (e) => { if (e.key === 'Enter') tryAuth(); };
-document.getElementById('set-filter-input').onkeydown = (e) => { if (e.key === 'Enter') tryAuth(); };
-document.getElementById('auth-clear').onclick = clearLocalAndReset;
-document.getElementById('connect-api-key-input').onkeydown = (e) => { if (e.key === 'Enter') submitConnectApi(); };
-document.getElementById('connect-api-set-filter').onkeydown = (e) => { if (e.key === 'Enter') submitConnectApi(); };
-
-async function initAuthScreen() {
+/* --- Removed: initAuthScreen, tryAuth, showAuthError, hideAuthScreen, showAuthScreen (Xano-dependent) ---
+async function initAuthScreen_REMOVED() {
     var stats = await getLocalStats();
     var infoEl = document.getElementById('auth-info');
     var clearBtn = document.getElementById('auth-clear');
@@ -7429,6 +7243,7 @@ function showAuthScreen() {
     SyncHistory.stopPolling();
     initAuthScreen();
 }
+--- end removed auth functions --- */
 
 function logout() {
     if (pollInterval) clearInterval(pollInterval);
@@ -8683,9 +8498,9 @@ async function deleteViewFolder(tableId, folderId, event) {
     await loadTableViewsAsync(tableId);
 }
 
-// Save folder to backend
+// Save folder to backend (TODO: implement Synapse write path)
 async function saveFolderToBackend(folder, operator) {
-    if (!API_KEY) return;
+    return; // Write path not yet connected to Synapse
     var payload = {
         uuid: crypto.randomUUID(),
         recordId: folder.folderId,
@@ -10066,15 +9881,11 @@ async function fetchAllBySet(setType, onProgress) {
     return allEvents;
 }
 
-// Fetch events using page-based pagination
-// API returns 2500 records per page with nextPage indicator
-// Supports aminoStream query parameters:
-//   page (int, min:1, default 1), per_page (int, min:1, max:10000, default 2500),
-//   created_after (timestamp), created_before (timestamp), last (bool - single most recent record)
-var FETCH_PAGE_TIMEOUT = 30000; // 30 second timeout per request
-var FETCH_PAGE_RETRIES = 3;    // retry up to 3 times on network errors
+/* --- Removed: Xano fetchPage, fullSync, incrementalSync ---
+var FETCH_PAGE_TIMEOUT = 30000;
+var FETCH_PAGE_RETRIES = 3;
 
-async function fetchPage(page, createdAfter, options) {
+async function fetchPage_REMOVED(page, createdAfter, options) {
     options = options || {};
     var params = [];
     if (API_KEY) params.push('apiKey=' + encodeURIComponent(API_KEY));
@@ -10499,6 +10310,7 @@ async function incrementalSync() {
         _incrementalSyncRunning = false;
     }
 }
+--- end removed Xano sync functions --- */
 
 // ============ Sync Status View ============
 
@@ -12636,22 +12448,14 @@ async function processCSVFile(file) {
             updateLoadingOverlay('Import complete!', events.length.toLocaleString() + ' events loaded', 100, tablesCount, fieldsCount, recordsCount, '');
             setTimeout(hideLoadingOverlay, 300);
 
-            updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
+            updateStatus('Up to date', true, null, null);
 
             // Start the refresh indicator countdown
             lastSyncTime = Date.now();
             startRefreshCountdown();
 
-            // Start incremental sync polling (but don't block on it)
-            if (API_KEY) {
-                if (pollInterval) clearInterval(pollInterval);
-                pollInterval = setInterval(incrementalSync, 180000);
-
-                // Start background polling for new events (lightweight 15s checks)
-                SyncHistory.startPolling();
-            }
-
-            updateConnectApiButton();
+            // Start Synapse sync for real-time updates
+            SynapseSync.start();
 
             // Background: Save to IndexedDB for next visit (non-blocking)
             // This happens after the UI is ready, so user can start working immediately
@@ -12850,20 +12654,14 @@ async function processAmoFile(file) {
             updateLoadingOverlay('Import complete!', totalRecords.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFields, totalRecords, '');
             setTimeout(hideLoadingOverlay, 300);
 
-            updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
+            updateStatus('Up to date', true, null, null);
 
             // Start the refresh indicator countdown
             lastSyncTime = Date.now();
             startRefreshCountdown();
 
-            // Start incremental sync polling if API key is set
-            if (API_KEY) {
-                if (pollInterval) clearInterval(pollInterval);
-                pollInterval = setInterval(incrementalSync, 180000);
-                SyncHistory.startPolling();
-            }
-
-            updateConnectApiButton();
+            // Start Synapse sync for real-time updates
+            SynapseSync.start();
 
             console.log('AMO import complete: ' + totalRecords + ' records across ' + tableNames.length + ' tables');
 
@@ -12886,8 +12684,7 @@ async function skipSetupAndUploadAmoFile() {
     input.click();
 }
 
-// ============ Hydrate from Box Download ============
-
+/* --- Removed: hydrateFromBoxDownload (Xano/Box-dependent, replaced by hydrateFromSynapse) ---
 // Fetches the latest snapshot file from Box via webhook and replays it locally.
 // Supports .amo binary, CSV event exports, and other formats.
 // On the next Box sync push, the data will be saved as .amo regardless of source format.
@@ -13171,6 +12968,7 @@ async function hydrateFromBoxDownload() {
         return false;
     }
 }
+--- end removed hydrateFromBoxDownload --- */
 
 // ============ Point in Time View ============
 
@@ -13901,30 +13699,7 @@ async function commitProfileFieldEdit(fieldId, newValue) {
         newValue: newValue
     }]);
 
-    // Post event to sync backend
-    if (API_KEY && XANO_POST_API) {
-        var altFields = {};
-        altFields[fieldId] = newValue;
-
-        var payload = {
-            uuid: crypto.randomUUID(),
-            recordId: recordId,
-            set: 'airtable:' + tableId,
-            operator: 'ALT',
-            created_at: new Date().toISOString(),
-            apiKey: API_KEY,
-            payload: JSON.stringify({
-                fields: { ALT: altFields }
-            })
-        };
-
-        try {
-            await AminoSync.postEvent(payload);
-            console.log('Field edit saved to backend:', fieldId);
-        } catch (error) {
-            console.error('Failed to save field edit to backend:', error);
-        }
-    }
+    // TODO: Post field edit to Synapse table room as law.firm.record.mutate event
 
     // Re-render profile
     renderRecordProfile();
@@ -15771,9 +15546,9 @@ async function deleteWorkspace(workspaceId) {
     renderSidebar();
 }
 
-// Save workspace to backend
+// Save workspace to backend (TODO: implement Synapse write path)
 async function saveWorkspaceToBackend(workspace, operator) {
-    if (!API_KEY) return;
+    return; // Write path not yet connected to Synapse
     var payload = {
         uuid: crypto.randomUUID(),
         recordId: workspace.workspaceId,
@@ -16407,9 +16182,6 @@ async function wizardValidateLegacy() {
         boxDownload: BOX_DOWNLOAD_WEBHOOK
     };
 
-    // Set the global API_KEY so existing functions work
-    API_KEY = apiKey;
-
     // Open IndexedDB
     if (!db) db = await openDB();
 
@@ -16809,16 +16581,9 @@ function wizardComplete() {
     hideMatrixWizard();
 
     // Start bridge mode
-    if (API_KEY && wizardData.aminoEndpoints) {
-        MatrixBridge.startBridge(API_KEY, wizardData.aminoEndpoints);
-    }
-
     // Show manage rooms button
     var rmBtn = document.getElementById('manage-rooms-btn');
     if (rmBtn) rmBtn.style.display = '';
-
-    // Continue to normal app initialization
-    initAuthScreen();
 }
 
 // ============ Matrix Status & Manual Room Publishing ============
