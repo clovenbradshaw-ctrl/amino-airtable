@@ -3855,12 +3855,24 @@ var AmoFormat = {
     },
 
     // Detect the format of a buffer
-    // Returns: 'amo' | 'json-gz' | 'json'
+    // Returns: 'amo' | 'json-gz' | 'json' | 'csv'
     detectFormat: function(buffer) {
         var b = new Uint8Array(buffer.slice(0, 4));
         if (b[0] === 0x41 && b[1] === 0x4D && b[2] === 0x4F && b[3] === 0x31) return 'amo';
         if (b[0] === 0x1F && b[1] === 0x8B) return 'json-gz';
         if (b[0] === 0x7B || b[0] === 0x5B) return 'json';
+        // Check for CSV: first line should be printable ASCII text with commas
+        try {
+            var preview = new TextDecoder().decode(new Uint8Array(buffer.slice(0, 2048)));
+            var firstLine = preview.split(/\r?\n/)[0];
+            if (firstLine && firstLine.indexOf(',') !== -1) {
+                // Look for the required 'id' column in the CSV header
+                var cols = firstLine.split(',');
+                for (var ci = 0; ci < cols.length; ci++) {
+                    if (cols[ci].replace(/"/g, '').trim() === 'id') return 'csv';
+                }
+            }
+        } catch (e) {}
         throw new Error('Unknown format');
     }
 };
@@ -12572,8 +12584,9 @@ async function skipSetupAndUploadAmoFile() {
 
 // ============ Hydrate from Box Download ============
 
-// Fetches .amo event stream from Box via webhook and replays it locally.
-// Data is encrypted locally via the existing encryption system (user's password/passkey).
+// Fetches the latest snapshot file from Box via webhook and replays it locally.
+// Supports .amo binary, CSV event exports, and other formats.
+// On the next Box sync push, the data will be saved as .amo regardless of source format.
 // Returns true if hydration succeeded, false otherwise.
 async function hydrateFromBoxDownload() {
     try {
@@ -12585,10 +12598,12 @@ async function hydrateFromBoxDownload() {
             return false;
         }
 
-        // n8n download webhook lists all .amo files in the Box folder,
+        // n8n download webhook lists files in the Box folder,
         // picks the latest by timestamp-sorted name, and returns the binary directly.
+        // any_format=1 tells n8n to return the latest file regardless of extension
+        // (not just .amo — could be .csv or other formats uploaded directly).
         // X-Amo-Available response header lists all available snapshots.
-        var downloadUrl = BOX_DOWNLOAD_WEBHOOK + '?api_key=' + encodeURIComponent(API_KEY);
+        var downloadUrl = BOX_DOWNLOAD_WEBHOOK + '?api_key=' + encodeURIComponent(API_KEY) + '&any_format=1';
         var response = await fetch(downloadUrl);
         if (!response.ok) {
             console.warn('[BoxDownload] HTTP ' + response.status + ' - no data available');
@@ -12625,6 +12640,78 @@ async function hydrateFromBoxDownload() {
         var amoData;
         if (format === 'amo') {
             amoData = AmoFormat.read(buffer);
+        } else if (format === 'csv') {
+            // Parse CSV events format — same structure as processCSVFile but from a buffer
+            updateLoadingOverlay('Downloading data...', 'Parsing CSV data...', 20, 0, 0, 0, '');
+            var csvText = new TextDecoder().decode(buffer);
+            buffer = null; // Free the ArrayBuffer
+            var csvLines = csvText.split(/\r?\n/);
+            csvText = null; // Free the text
+
+            if (csvLines.length < 2) {
+                console.warn('[BoxDownload] CSV file is empty');
+                hideLoadingOverlay();
+                return false;
+            }
+
+            var csvHeader = parseCSVLine(csvLines[0]);
+            var csvIdIndex = csvHeader.indexOf('id');
+            var csvSetIndex = csvHeader.indexOf('set');
+            var csvRecordIdIndex = csvHeader.indexOf('recordId');
+            var csvCreatedAtIndex = csvHeader.indexOf('created_at');
+            var csvPayloadIndex = csvHeader.indexOf('payload');
+
+            if (csvIdIndex === -1) {
+                console.warn('[BoxDownload] CSV missing required "id" column');
+                hideLoadingOverlay();
+                return false;
+            }
+
+            var csvEvents = [];
+            var csvMaxId = 0;
+            for (var ci = 1; ci < csvLines.length; ci++) {
+                if (!csvLines[ci].trim()) continue;
+
+                var csvFields = parseCSVLine(csvLines[ci]);
+                var csvEvent = { id: parseInt(csvFields[csvIdIndex], 10) };
+                if (isNaN(csvEvent.id)) continue;
+
+                if (csvSetIndex !== -1) csvEvent.set = csvFields[csvSetIndex] || '';
+                if (csvRecordIdIndex !== -1) csvEvent.recordId = csvFields[csvRecordIdIndex] || '';
+                if (csvCreatedAtIndex !== -1) csvEvent.created_at = csvFields[csvCreatedAtIndex] || '';
+                if (csvPayloadIndex !== -1) {
+                    var csvPayloadStr = csvFields[csvPayloadIndex] || '{}';
+                    try { csvEvent.payload = JSON.parse(csvPayloadStr); } catch (pe) { csvEvent.payload = csvPayloadStr; }
+                }
+
+                // Include any extra columns not in the core set
+                for (var cx = 0; cx < csvHeader.length; cx++) {
+                    if (cx !== csvIdIndex && cx !== csvSetIndex && cx !== csvRecordIdIndex && cx !== csvCreatedAtIndex && cx !== csvPayloadIndex) {
+                        var colName = csvHeader[cx].replace(/"/g, '').trim();
+                        if (colName && csvFields[cx] !== undefined && csvFields[cx] !== '') {
+                            csvEvent[colName] = csvFields[cx];
+                        }
+                    }
+                }
+
+                csvEvents.push(csvEvent);
+                if (csvEvent.id > csvMaxId) csvMaxId = csvEvent.id;
+
+                if (ci % 10000 === 0) {
+                    var csvPct = 20 + Math.round((ci / csvLines.length) * 10);
+                    updateLoadingOverlay('Downloading data...', 'Parsed ' + csvEvents.length.toLocaleString() + ' events from CSV...', csvPct, 0, 0, 0, '');
+                }
+            }
+            csvLines = null; // Free line array
+
+            if (csvEvents.length === 0) {
+                console.warn('[BoxDownload] No valid events in CSV');
+                hideLoadingOverlay();
+                return false;
+            }
+
+            console.log('[BoxDownload] Parsed ' + csvEvents.length + ' events from CSV (will convert to .amo on next Box sync)');
+            amoData = { type: 'events', events: csvEvents, cursor: csvMaxId, ts: Math.floor(Date.now() / 1000) };
         } else {
             console.warn('[BoxDownload] Unsupported format:', format);
             hideLoadingOverlay();
