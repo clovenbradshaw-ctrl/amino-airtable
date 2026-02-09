@@ -18,6 +18,10 @@ var MatrixClient = (function() {
     var _rooms = {}; // roomId -> { state: {}, timeline: [] }
     var _listeners = {}; // eventType -> [callback]
 
+    // ============ Rate Limiting ============
+    var _rateLimitUntil = 0; // Timestamp: no requests before this time
+    var _requestQueue = Promise.resolve(); // Serializes requests to avoid bursts
+
     // ============ Configuration ============
     var CONFIG_KEY = 'matrix_config';
     var SESSION_KEY = 'matrix_session';
@@ -87,19 +91,38 @@ var MatrixClient = (function() {
 
     async function _requestWithRetry(method, path, body, queryParams, retries) {
         retries = retries || 5;
-        for (var attempt = 0; attempt <= retries; attempt++) {
-            try {
-                return await _request(method, path, body, queryParams);
-            } catch (err) {
-                var isRetryable = err.httpStatus >= 500 || !err.httpStatus || err.httpStatus === 429;
-                if (attempt < retries && isRetryable) {
-                    var delay = err.retryAfterMs || Math.pow(2, attempt) * 1000;
-                    await new Promise(function(r) { setTimeout(r, delay); });
-                } else {
-                    throw err;
+        // Queue requests so only one is in-flight at a time during bursts
+        var result;
+        var error;
+        _requestQueue = _requestQueue.then(async function() {
+            for (var attempt = 0; attempt <= retries; attempt++) {
+                // Wait for any global rate-limit cooldown before sending
+                var waitUntil = _rateLimitUntil - Date.now();
+                if (waitUntil > 0) {
+                    await new Promise(function(r) { setTimeout(r, waitUntil); });
+                }
+                try {
+                    result = await _request(method, path, body, queryParams);
+                    return;
+                } catch (err) {
+                    var isRetryable = err.httpStatus >= 500 || !err.httpStatus || err.httpStatus === 429;
+                    if (attempt < retries && isRetryable) {
+                        var delay = err.retryAfterMs || Math.pow(2, attempt) * 1000;
+                        // On 429, set global cooldown so queued requests also wait
+                        if (err.httpStatus === 429) {
+                            _rateLimitUntil = Date.now() + delay;
+                        }
+                        await new Promise(function(r) { setTimeout(r, delay); });
+                    } else {
+                        error = err;
+                        return;
+                    }
                 }
             }
-        }
+        });
+        await _requestQueue;
+        if (error) throw error;
+        return result;
     }
 
     // ============ Well-Known Discovery ============
@@ -1035,6 +1058,7 @@ var MatrixBridge = (function() {
             for (var u = 0; u < grouped.unassigned.length; u++) {
                 var rec = grouped.unassigned[u];
                 await MatrixClient.writeRecord(firmRoomId, rec.tableId, rec.recordId, rec.fields);
+                if (u % 5 === 4) await new Promise(function(r) { setTimeout(r, 200); });
             }
         }
 
@@ -1072,6 +1096,7 @@ var MatrixBridge = (function() {
                 var fieldIds = Object.keys(tableFields);
                 for (var f = 0; f < fieldIds.length; f++) {
                     await MatrixClient.writeFieldSchema(matterRoomId, fieldIds[f], tableFields[fieldIds[f]]);
+                    if (f % 5 === 4) await new Promise(function(r) { setTimeout(r, 200); });
                 }
             }
 
@@ -1086,6 +1111,7 @@ var MatrixBridge = (function() {
                         recs[r].recordId,
                         recs[r].fields
                     );
+                    if (r % 5 === 4) await new Promise(function(r2) { setTimeout(r2, 200); });
                 }
             }
 
