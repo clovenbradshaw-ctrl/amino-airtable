@@ -3212,6 +3212,11 @@ var TABLE_SETTINGS = {
 // ============ Sidebar Configuration ============
 // Table type definitions with colors and icons
 var TABLE_TYPE_CONFIG = {
+    primary: {
+        color: '#ef4444',
+        label: 'Primary',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>'
+    },
     events: {
         color: '#f59e0b',
         label: 'Events',
@@ -3249,6 +3254,7 @@ var SIDEBAR_STATE = {
     pinnedTables: [],
     recentTables: [],
     expandedSections: {
+        primary: true,
         pinned: true,
         recent: true,
         operational: true,
@@ -3264,9 +3270,13 @@ var SIDEBAR_STATE = {
 function getTableType(tableName) {
     var name = (tableName || '').toLowerCase();
 
+    // Primary tables (always at top for everyone)
+    if (name === 'client info') return 'primary';
+    if (name === 'case master view') return 'primary';
+    if (name === 'events') return 'primary';
+
     // Events
     if (name.includes('event') && name.includes('stream')) return 'events';
-    if (name === 'events') return 'events';
 
     // Collections (date patterns)
     if (name.includes('collection')) return 'collection';
@@ -7080,6 +7090,7 @@ async function renderSidebar() {
 
     // Group tables by type
     var groupedTables = {
+        primary: [],
         operational: [],
         collection: [],
         reference: [],
@@ -7098,9 +7109,18 @@ async function renderSidebar() {
         }
     });
 
-    // Sort each group alphabetically
+    // Sort each group alphabetically (except primary which has a fixed order)
+    var primaryOrder = ['client info', 'case master view', 'events'];
     Object.keys(groupedTables).forEach(type => {
-        groupedTables[type].sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
+        if (type === 'primary') {
+            groupedTables[type].sort((a, b) => {
+                var aIdx = primaryOrder.indexOf((a.tableName || a.tableId).toLowerCase());
+                var bIdx = primaryOrder.indexOf((b.tableName || b.tableId).toLowerCase());
+                return aIdx - bIdx;
+            });
+        } else {
+            groupedTables[type].sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
+        }
     });
 
     // Helper to render a table item
@@ -7247,6 +7267,7 @@ async function renderSidebar() {
 
     // Grouped Sections
     var sectionConfig = [
+        { id: 'primary', key: 'primary', label: 'Primary', color: '#ef4444' },
         { id: 'operational', key: 'operational', label: 'Operational', color: '#3b82f6' },
         { id: 'collections', key: 'collection', label: 'Collections', color: '#8b5cf6' },
         { id: 'reference', key: 'reference', label: 'Reference', color: '#10b981' },
