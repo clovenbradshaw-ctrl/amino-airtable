@@ -3266,6 +3266,22 @@ var SIDEBAR_STATE = {
     maxRecentTables: 5
 };
 
+// Cache for sidebar data to avoid redundant DB queries on search/pin/section toggle
+var _sidebarCache = {
+    tables: null,
+    tableCounts: null,
+    maxCount: 0,
+    eventsCount: 0,
+    timestamp: 0
+};
+var SIDEBAR_CACHE_TTL = 5000; // 5 seconds
+
+function invalidateSidebarCache() {
+    _sidebarCache.tables = null;
+    _sidebarCache.tableCounts = null;
+    _sidebarCache.timestamp = 0;
+}
+
 // Determine table type based on name patterns
 function getTableType(tableName) {
     var name = (tableName || '').toLowerCase();
@@ -3363,13 +3379,20 @@ function initSidebarSearch() {
 
     var debounceTimer = null;
 
-    // Search input handler with debounce
+    // Search input handler with debounce - uses fast DOM filtering when possible
     searchInput.addEventListener('input', function(e) {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(function() {
-            SIDEBAR_STATE.searchQuery = e.target.value;
-            renderSidebar();
-        }, 200);
+            var newQuery = e.target.value;
+            var oldQuery = SIDEBAR_STATE.searchQuery;
+            SIDEBAR_STATE.searchQuery = newQuery;
+            // Use fast DOM filter if sidebar is already rendered (no need for full rebuild)
+            if (_sidebarCache.tables) {
+                filterSidebarDOM(newQuery);
+            } else {
+                renderSidebar();
+            }
+        }, 150);
     });
 
     // Clear search on Escape
@@ -3378,7 +3401,12 @@ function initSidebarSearch() {
             searchInput.value = '';
             SIDEBAR_STATE.searchQuery = '';
             searchInput.blur();
-            renderSidebar();
+            // Use fast DOM filter to restore all items
+            if (_sidebarCache.tables) {
+                filterSidebarDOM('');
+            } else {
+                renderSidebar();
+            }
         }
     });
 
@@ -6215,7 +6243,7 @@ async function trySynapseLogin() {
         hideSynapseLoginScreen();
         // Update sidebar to show Matrix-connected state
         updateMatrixStatus();
-        renderSidebar();
+        renderSidebar(true);
     } catch (err) {
         console.error('[Synapse] Login failed:', err);
         showSynapseError(err.message || 'Login failed. Please check your credentials.');
@@ -7051,32 +7079,96 @@ function applyPayloadFields(target, payload) {
 
 // ============ UI ============
 
-async function renderSidebar() {
+// Fast DOM-only search filter — hides/shows existing table items without rebuilding
+function filterSidebarDOM(query) {
+    var searchQuery = (query || '').toLowerCase().trim();
+    var tableList = document.getElementById('table-list');
+    if (!tableList) return;
+
+    var wrappers = tableList.querySelectorAll('.table-wrapper[data-table-id]');
+    var sectionHeaders = tableList.querySelectorAll('.sidebar-section-header');
+
+    // When searching, show all matching items and hide non-matching
+    wrappers.forEach(function(wrapper) {
+        var tableId = wrapper.getAttribute('data-table-id');
+        if (tableId === '_events' || tableId === '_sync_status') {
+            // Hide special items during search, show when not searching
+            wrapper.style.display = searchQuery ? 'none' : '';
+            return;
+        }
+        var nameEl = wrapper.querySelector('.table-name');
+        var name = nameEl ? nameEl.textContent.toLowerCase() : tableId.toLowerCase();
+        if (!searchQuery || name.includes(searchQuery)) {
+            wrapper.style.display = '';
+        } else {
+            wrapper.style.display = 'none';
+        }
+    });
+
+    // Hide section headers and dividers during search, show when not searching
+    sectionHeaders.forEach(function(header) {
+        header.style.display = searchQuery ? 'none' : '';
+    });
+    var dividers = tableList.querySelectorAll('.sidebar-divider');
+    dividers.forEach(function(d) {
+        d.style.display = searchQuery ? 'none' : '';
+    });
+}
+
+async function renderSidebar(forceRefresh) {
     var tableList = document.getElementById('table-list');
     tableList.innerHTML = '';
 
-    // Get all tables
-    var tables = await getAllTables();
+    var now = Date.now();
+    var cacheValid = !forceRefresh && _sidebarCache.tables && (now - _sidebarCache.timestamp < SIDEBAR_CACHE_TTL);
 
-    // Also get tables from META_TABLES (in-memory from current session)
-    for (var tid in META_TABLES) {
-        if (!tables.find(t => t.tableId === tid)) {
-            tables.push(META_TABLES[tid]);
+    var tables, tableCounts, maxCount, eventsCount;
+
+    if (cacheValid) {
+        // Use cached data for fast re-renders (search, pin toggle, section toggle)
+        tables = _sidebarCache.tables;
+        tableCounts = _sidebarCache.tableCounts;
+        maxCount = _sidebarCache.maxCount;
+        eventsCount = _sidebarCache.eventsCount;
+    } else {
+        // Fetch fresh data from DB
+        tables = await getAllTables();
+
+        // Also get tables from META_TABLES (in-memory from current session)
+        var metaTableIds = Object.keys(META_TABLES);
+        for (var i = 0; i < metaTableIds.length; i++) {
+            var tid = metaTableIds[i];
+            if (!tables.find(t => t.tableId === tid)) {
+                tables.push(META_TABLES[tid]);
+            }
         }
-    }
 
-    // Get record counts for all tables (for count bar visualization)
-    var tableCounts = {};
-    var maxCount = 0;
-    for (var table of tables) {
-        var ids = await getRecordIdsForTable(table.tableId);
-        tableCounts[table.tableId] = ids.length;
-        if (ids.length > maxCount) maxCount = ids.length;
-    }
+        // Get record counts for all tables in parallel (for count bar visualization)
+        tableCounts = {};
+        maxCount = 0;
+        var countAndEvents = await Promise.all([
+            Promise.all(tables.map(function(table) {
+                return getRecordIdsForTable(table.tableId).then(function(ids) {
+                    return { tableId: table.tableId, count: ids.length };
+                });
+            })),
+            getRawEventsCount()
+        ]);
+        var countResults = countAndEvents[0];
+        eventsCount = countAndEvents[1];
+        countResults.forEach(function(r) {
+            tableCounts[r.tableId] = r.count;
+            if (r.count > maxCount) maxCount = r.count;
+        });
+        if (eventsCount > maxCount) maxCount = eventsCount;
 
-    // Get events count
-    var eventsCount = await getRawEventsCount();
-    if (eventsCount > maxCount) maxCount = eventsCount;
+        // Update cache
+        _sidebarCache.tables = tables;
+        _sidebarCache.tableCounts = tableCounts;
+        _sidebarCache.maxCount = maxCount;
+        _sidebarCache.eventsCount = eventsCount;
+        _sidebarCache.timestamp = now;
+    }
 
     // Filter tables by search query
     var searchQuery = SIDEBAR_STATE.searchQuery.toLowerCase().trim();
@@ -7294,7 +7386,8 @@ async function renderSidebar() {
         }
     });
 
-    // Update active indicator color via CSS variable
+    // Update active indicator color using a single reusable style element
+    var activeStyles = [];
     document.querySelectorAll('.sidebar .table-item.active').forEach(el => {
         var tableId = el.closest('.table-wrapper')?.getAttribute('data-table-id');
         if (tableId && tableId !== '_events') {
@@ -7303,17 +7396,18 @@ async function renderSidebar() {
                 var type = getTableType(table.tableName || table.tableId);
                 var config = TABLE_TYPE_CONFIG[type] || TABLE_TYPE_CONFIG.operational;
                 el.style.setProperty('--before-bg', config.color);
-                // Also update the ::before pseudo element
-                var styleId = 'active-indicator-' + tableId.replace(/[^a-z0-9]/gi, '');
-                var existingStyle = document.getElementById(styleId);
-                if (existingStyle) existingStyle.remove();
-                var style = document.createElement('style');
-                style.id = styleId;
-                style.textContent = '.table-wrapper[data-table-id="' + tableId + '"] .table-item.active::before { background: ' + config.color + ' !important; }';
-                document.head.appendChild(style);
+                activeStyles.push('.table-wrapper[data-table-id="' + tableId + '"] .table-item.active::before { background: ' + config.color + ' !important; }');
             }
         }
     });
+    // Use a single style element instead of creating one per table per render
+    var activeStyleEl = document.getElementById('sidebar-active-indicators');
+    if (!activeStyleEl) {
+        activeStyleEl = document.createElement('style');
+        activeStyleEl.id = 'sidebar-active-indicators';
+        document.head.appendChild(activeStyleEl);
+    }
+    activeStyleEl.textContent = activeStyles.join('\n');
 }
 
 // Load views for a table and populate the views list
@@ -8889,7 +8983,7 @@ async function fullSync() {
             schemaLoaded = true;
 
             // Re-render UI with proper names
-            await renderSidebar();
+            await renderSidebar(true);
             if (currentTable && currentTable !== '_events') {
                 await renderTable();
             }
@@ -8978,7 +9072,7 @@ async function fullSync() {
             await processEvents(allEvents);
 
             // Stream data to UI - render after every page for immediate feedback
-            await renderSidebar();
+            await renderSidebar(true);
 
             // Auto-select first table after first batch of data
             if (!currentTable && Object.keys(META_TABLES).length > 0) {
@@ -9014,7 +9108,7 @@ async function fullSync() {
     await schemaPromise;
 
     // Final render after sync completes
-    await renderSidebar();
+    await renderSidebar(true);
     if (currentTable && currentTable !== '_events') {
         originalRecordIds = await getRecordIdsForTable(currentTable);
         currentRecordIds = originalRecordIds.slice();
@@ -9085,7 +9179,7 @@ async function incrementalSync() {
             await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
 
             updateStatus('Updating views...', false, null, null);
-            await renderSidebar();
+            await renderSidebar(true);
 
             // Update data view if table is selected
             if (currentTable && currentTable !== '_sync_status') {
@@ -9405,7 +9499,7 @@ async function init() {
 
     if (tables.length > 0) {
         updateStatus('Found ' + tables.length + ' tables', false, null, 'Loading data...');
-        await renderSidebar();
+        await renderSidebar(true);
 
         // Auto-select first table
         var firstTable = Object.keys(META_TABLES)[0];
@@ -9435,7 +9529,7 @@ async function init() {
                 META_VIEWS[v.tableId][v.viewId] = v;
             });
 
-            await renderSidebar();
+            await renderSidebar(true);
             var firstTable = Object.keys(META_TABLES)[0];
             if (firstTable) {
                 await showTable(firstTable);
@@ -9457,13 +9551,13 @@ async function init() {
         } else if (API_KEY) {
             // Box download failed or empty - fall back to full event sync
             updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
-            await renderSidebar();
+            await renderSidebar(true);
             await fullSync();
-            await renderSidebar();
+            await renderSidebar(true);
         } else {
             // No snapshot, no API key - show empty state
             updateStatus('No data available - add API key to sync', true, null, null);
-            await renderSidebar();
+            await renderSidebar(true);
         }
     }
 
