@@ -1391,8 +1391,15 @@
         .profile-field-name { font-size: 11px; font-weight: 500; color: var(--text-muted); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
         .profile-field-name .field-drag-handle { cursor: grab; color: var(--text-disabled); font-size: 10px; }
         .profile-field-name .field-drag-handle:hover { color: var(--text-muted); }
-        .profile-field-value { font-size: 13px; color: var(--text-primary); word-break: break-word; }
+        .profile-field-value { font-size: 13px; color: var(--text-primary); word-break: break-word; cursor: pointer; padding: 2px 4px; margin: -2px -4px; border-radius: var(--radius-sm); transition: background var(--transition-fast); }
+        .profile-field-value:hover:not(.editing) { background: var(--bg-hover); }
+        .configure-mode .profile-field-value { cursor: default; }
+        .configure-mode .profile-field-value:hover { background: none; }
         .profile-field-value.empty { color: var(--text-disabled); font-style: italic; }
+        .profile-field-value.editing { padding: 0; margin: 0; background: none; }
+        .profile-edit-input { width: 100%; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-secondary); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 13px; font-family: inherit; outline: none; box-sizing: border-box; resize: vertical; }
+        .profile-edit-input:focus { border-color: var(--primary-500, #3b82f6); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3); }
+        .profile-edit-checkbox { width: 16px; height: 16px; cursor: pointer; }
 
         /* Profile Navigation */
         .profile-nav { padding: 12px 20px; border-top: 1px solid var(--border-primary); display: flex; align-items: center; gap: 12px; background: var(--bg-tertiary); }
@@ -12023,9 +12030,9 @@ async function renderRecordProfile() {
             }
             html += '</div>';
             if (isEmpty) {
-                html += '<div class="profile-field-value empty">—</div>';
+                html += '<div class="profile-field-value empty" data-edit-field-id="' + esc(fieldId) + '" onclick="startProfileFieldEdit(this)">—</div>';
             } else {
-                html += '<div class="profile-field-value">' + formatCell(value) + '</div>';
+                html += '<div class="profile-field-value" data-edit-field-id="' + esc(fieldId) + '" onclick="startProfileFieldEdit(this)">' + formatCell(value) + '</div>';
             }
             html += '</div>';
         });
@@ -12298,6 +12305,199 @@ async function handleBlockDrop(event, targetBlockIndex) {
     await saveProfileConfig(profileCurrentTableId, viewId, config);
 
     profileDragData = null;
+    renderRecordProfile();
+}
+
+// ============ Inline Field Editing ============
+
+var profileEditingFieldId = null;
+
+async function startProfileFieldEdit(element) {
+    if (profileConfigureMode) return;
+    if (profileEditingFieldId) return;
+
+    // Don't edit if clicking a link
+    if (event && event.target.tagName === 'A') return;
+
+    var fieldId = element.dataset.editFieldId;
+    if (!fieldId) return;
+
+    profileEditingFieldId = fieldId;
+
+    // Get current record data
+    var records = await getRecordsByIds(profileCurrentTableId, [profileCurrentRecordId]);
+    if (records.length === 0) { profileEditingFieldId = null; return; }
+
+    var record = records[0];
+    var recordFields = record.fields || {};
+    var field = META_FIELDS[profileCurrentTableId]?.[fieldId];
+    var fieldType = field?.fieldType || 'text';
+
+    // Resolve the value (try fieldId first, then fieldName)
+    var currentValue = recordFields[fieldId];
+    if (currentValue === undefined && field?.fieldName) {
+        currentValue = recordFields[field.fieldName];
+    }
+
+    var input;
+    if (fieldType === 'checkbox' || typeof currentValue === 'boolean') {
+        input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = !!currentValue;
+        input.className = 'profile-edit-checkbox';
+        input.onchange = function() {
+            commitProfileFieldEdit(fieldId, input.checked);
+        };
+    } else if (Array.isArray(currentValue) || (typeof currentValue === 'object' && currentValue !== null)) {
+        input = document.createElement('textarea');
+        input.className = 'profile-edit-input';
+        input.value = JSON.stringify(currentValue, null, 2);
+        input.rows = 4;
+    } else {
+        var strValue = currentValue != null ? String(currentValue) : '';
+        if (strValue.length > 100 || strValue.includes('\n')) {
+            input = document.createElement('textarea');
+            input.className = 'profile-edit-input';
+            input.value = strValue;
+            input.rows = 3;
+        } else {
+            input = document.createElement('input');
+            input.type = (fieldType === 'number' || typeof currentValue === 'number') ? 'number' : 'text';
+            input.className = 'profile-edit-input';
+            input.value = strValue;
+        }
+    }
+
+    if (input.type !== 'checkbox') {
+        input.onkeydown = function(e) {
+            if (e.key === 'Enter' && !e.shiftKey && input.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                commitProfileFieldEdit(fieldId, parseProfileEditValue(input.value, currentValue, fieldType));
+            }
+            if (e.key === 'Escape') {
+                cancelProfileFieldEdit();
+            }
+        };
+        input.onblur = function() {
+            setTimeout(function() {
+                if (profileEditingFieldId === fieldId) {
+                    commitProfileFieldEdit(fieldId, parseProfileEditValue(input.value, currentValue, fieldType));
+                }
+            }, 150);
+        };
+    }
+
+    element.innerHTML = '';
+    element.appendChild(input);
+    element.classList.add('editing');
+
+    input.focus();
+    if (input.select) input.select();
+}
+
+function parseProfileEditValue(strValue, originalValue, fieldType) {
+    if (strValue === '') return '';
+
+    if (typeof originalValue === 'number' || fieldType === 'number') {
+        var num = Number(strValue);
+        if (!isNaN(num)) return num;
+    }
+
+    if (Array.isArray(originalValue) || (typeof originalValue === 'object' && originalValue !== null)) {
+        try { return JSON.parse(strValue); } catch (e) { return strValue; }
+    }
+
+    return strValue;
+}
+
+async function commitProfileFieldEdit(fieldId, newValue) {
+    if (!profileEditingFieldId) return;
+    profileEditingFieldId = null;
+
+    var tableId = profileCurrentTableId;
+    var recordId = profileCurrentRecordId;
+    if (!tableId || !recordId) return;
+
+    // Get current record
+    var records = await getRecordsByIds(tableId, [recordId]);
+    if (records.length === 0) return;
+
+    var record = records[0];
+    var recordFields = record.fields || {};
+    var field = META_FIELDS[tableId]?.[fieldId];
+
+    // Determine the key used in the record fields
+    var fieldKey = fieldId;
+    var oldValue = recordFields[fieldId];
+    if (oldValue === undefined && field?.fieldName && recordFields[field.fieldName] !== undefined) {
+        fieldKey = field.fieldName;
+        oldValue = recordFields[fieldKey];
+    }
+
+    // Skip if value hasn't changed
+    if (JSON.stringify(oldValue) === JSON.stringify(newValue)) {
+        renderRecordProfile();
+        return;
+    }
+
+    // Update in-memory data
+    if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
+        window.IN_MEMORY_DATA[tableId][recordId][fieldKey] = newValue;
+    }
+
+    // Update record and save to IndexedDB
+    if (!record.fields) record.fields = {};
+    record.fields[fieldKey] = newValue;
+    await saveDataRecord(record);
+
+    // Save field history
+    await saveFieldHistory([{
+        tableId: tableId,
+        recordId: recordId,
+        fieldId: fieldId,
+        eventId: null,
+        timestamp: Date.now(),
+        changeType: 'updated',
+        oldValue: oldValue !== undefined ? oldValue : null,
+        newValue: newValue
+    }]);
+
+    // Post event to sync backend
+    if (API_KEY && XANO_POST_API) {
+        var altFields = {};
+        altFields[fieldId] = newValue;
+
+        var payload = {
+            uuid: crypto.randomUUID(),
+            recordId: recordId,
+            set: 'airtable:' + tableId,
+            operator: 'ALT',
+            created_at: new Date().toISOString(),
+            apiKey: API_KEY,
+            payload: JSON.stringify({
+                fields: { ALT: altFields }
+            })
+        };
+
+        try {
+            await AminoSync.postEvent(payload);
+            console.log('Field edit saved to backend:', fieldId);
+        } catch (error) {
+            console.error('Failed to save field edit to backend:', error);
+        }
+    }
+
+    // Re-render profile
+    renderRecordProfile();
+
+    // Re-render table if the same table is showing
+    if (tableId === currentTable) {
+        renderTable();
+    }
+}
+
+function cancelProfileFieldEdit() {
+    profileEditingFieldId = null;
     renderRecordProfile();
 }
 
