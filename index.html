@@ -1631,15 +1631,23 @@
 
     <div id="synapse-login-screen" class="hidden">
         <div class="synapse-login-box">
-            <h2>Connect to Matrix</h2>
-            <p>Sign in to enable room sync and collaboration. Your data works locally without this.</p>
+            <h2>Amino Viewer</h2>
+            <p>Sign in to your account at app.aminoimmigration.com</p>
             <div id="synapse-login-error" class="synapse-error"></div>
             <label for="synapse-username">Username</label>
             <input type="text" id="synapse-username" placeholder="Username" autocomplete="username">
             <label for="synapse-password">Password</label>
             <input type="password" id="synapse-password" placeholder="Password" autocomplete="current-password">
             <button id="synapse-login-btn">Sign In</button>
-            <button id="synapse-skip-btn" onclick="hideSynapseLoginScreen()" style="width: 100%; padding: 10px; background: transparent; border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-muted); font-size: 13px; cursor: pointer; margin-top: 8px;">Skip - Stay Local Only</button>
+        </div>
+    </div>
+
+    <div id="view-selection-screen" class="hidden" style="position: fixed; inset: 0; background: var(--bg-primary); display: flex; align-items: center; justify-content: center; z-index: 104;">
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); padding: 32px; width: 400px; box-shadow: var(--shadow-xl);">
+            <h2 style="font-size: 20px; margin-bottom: 8px; color: var(--text-primary);">Amino Viewer</h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Choose how to view your data</p>
+            <button id="view-as-database-btn" style="width: 100%; padding: 14px; background: var(--primary-500); border: none; border-radius: var(--radius-md); color: #fff; font-size: 14px; cursor: pointer; font-weight: 500; margin-bottom: 10px; transition: background var(--transition-fast);">View as Database</button>
+            <button id="view-as-interface-btn" style="width: 100%; padding: 14px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-muted); font-size: 14px; cursor: pointer; font-weight: 500; transition: background var(--transition-fast);" disabled>View as Interface <span style="font-size: 11px; opacity: 0.6;">(coming soon)</span></button>
         </div>
     </div>
 
@@ -6400,10 +6408,30 @@ async function trySynapseLogin() {
         // Set up MatrixClient session for room operations
         MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, data.access_token, data.user_id, data.device_id);
 
+        // Derive encryption key from Synapse password (deterministic, per-user salt)
+        try {
+            var salt = new TextEncoder().encode('amino-local-encrypt:' + data.user_id);
+            var derivedKey = await deriveKeyFromPassword(password, salt);
+            if (derivedKey) {
+                encryptionKey = derivedKey;
+                encryptionEnabled = true;
+                saveSessionKey(derivedKey);
+            }
+        } catch (encErr) {
+            console.warn('[Synapse] Encryption key derivation skipped:', encErr);
+        }
+
         hideSynapseLoginScreen();
-        // Update sidebar to show Matrix-connected state
-        updateMatrixStatus();
-        renderSidebar(true);
+
+        // Go directly to app initialization — no API key needed
+        try {
+            await init();
+            showViewSelection();
+        } catch (initErr) {
+            console.error('[Synapse] Init failed after login:', initErr);
+            showSynapseError('Signed in but initialization failed: ' + initErr.message);
+            showSynapseLoginScreen();
+        }
     } catch (err) {
         console.error('[Synapse] Login failed:', err);
         showSynapseError(err.message || 'Login failed. Please check your credentials.');
@@ -6443,12 +6471,39 @@ function hideSynapseLoginScreen() {
 async function initSynapseLogin() {
     var valid = await verifySynapseSession();
     if (valid) {
-        // Session is valid, proceed to app auth
+        // Session is valid — restore MatrixClient and proceed
+        var session = _loadSynapseSession();
+        if (session) {
+            MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+        }
         return true;
     }
     // No valid session — show Synapse login screen
     showSynapseLoginScreen();
     return false;
+}
+
+// ============ View Selection ============
+
+function showViewSelection() {
+    var el = document.getElementById('view-selection-screen');
+    el.classList.remove('hidden');
+}
+
+function hideViewSelection() {
+    var el = document.getElementById('view-selection-screen');
+    el.classList.add('hidden');
+}
+
+function selectDatabaseView() {
+    hideViewSelection();
+    // Database view is the current default — already rendered by init()
+}
+
+function selectInterfaceView() {
+    hideViewSelection();
+    // Interface view — to be developed
+    // For now, fall through to database view
 }
 
 function synapseLogout() {
@@ -6470,6 +6525,10 @@ function synapseLogout() {
 document.getElementById('synapse-login-btn').onclick = trySynapseLogin;
 document.getElementById('synapse-username').onkeydown = function(e) { if (e.key === 'Enter') document.getElementById('synapse-password').focus(); };
 document.getElementById('synapse-password').onkeydown = function(e) { if (e.key === 'Enter') trySynapseLogin(); };
+
+// Wire up view selection UI
+document.getElementById('view-as-database-btn').onclick = selectDatabaseView;
+document.getElementById('view-as-interface-btn').onclick = selectInterfaceView;
 
 // ============ Auth ============
 
@@ -6675,28 +6734,23 @@ function showAuthScreen() {
 function logout() {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = null;
-    SyncHistory.stopPolling();
-    API_KEY = null;
-    SET_FILTER = null;
-    clearSecureEndpoints();
+    SynapseSync.stop();
     // Close stale IndexedDB connection
     if (db) {
         try { db.close(); } catch (e) { /* ignore */ }
         db = null;
     }
-    // Clear saved credentials (both encrypted and plaintext)
-    clearEncryptedCredentials();
     clearSessionKey();
-    // Show auth screen (Matrix session is independent — user disconnects Matrix separately)
-    showAuthScreen();
+    // Log out of Synapse and show login screen
+    synapseLogout();
+    showSynapseLoginScreen();
 }
 
 async function manualSync() {
-    if (!API_KEY) {
-        showConnectApiModal();
-        return;
+    // Manual sync: restart the Synapse sync loop
+    if (!SynapseSync.running) {
+        SynapseSync.start();
     }
-    await incrementalSync();
 }
 
 // Skip auth and go directly to CSV upload
@@ -6811,9 +6865,10 @@ async function skipAuthAndUploadAmo() {
 
 // Show/hide the Connect API button based on API_KEY state
 function updateConnectApiButton() {
+    // No longer needed — Synapse auth replaces API key
     var btn = document.getElementById('connect-api-btn');
     if (btn) {
-        btn.style.display = API_KEY ? 'none' : '';
+        btn.style.display = 'none';
     }
 }
 
@@ -9754,6 +9809,351 @@ function formatSyncTimestamp(ts) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time;
 }
 
+// ============ Synapse Sync ============
+
+// SynapseSync: real-time sync from Matrix room timelines via /sync long-poll
+// Each Airtable table has its own room. Events are law.firm.record.mutate.
+var SynapseSync = {
+    running: false,
+    since: null,
+    tableRooms: [],       // [{ tableId, roomId, name }]
+    roomToTable: {},      // roomId → tableId
+    _backoffMs: 1000,
+
+    async discoverTableRooms() {
+        // Discover table rooms from org space config
+        try {
+            var session = _loadSynapseSession();
+            if (!session || !session.accessToken) return [];
+
+            // Get joined rooms
+            var res = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/joined_rooms', {
+                headers: { 'Authorization': 'Bearer ' + session.accessToken }
+            });
+            if (!res.ok) return [];
+            var data = await res.json();
+            var joinedRooms = data.joined_rooms || [];
+
+            var tableRooms = [];
+            // Check each joined room for law.firm.schema.table state event
+            for (var roomId of joinedRooms) {
+                try {
+                    var stateRes = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(roomId) + '/state/law.firm.schema.table/', {
+                        headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                    });
+                    if (stateRes.ok) {
+                        var tableInfo = await stateRes.json();
+                        if (tableInfo && tableInfo.tableId) {
+                            tableRooms.push({
+                                tableId: tableInfo.tableId,
+                                roomId: roomId,
+                                name: tableInfo.name || tableInfo.tableId
+                            });
+                        }
+                    }
+                } catch (e) {
+                    // Not a table room — skip
+                }
+            }
+
+            this.tableRooms = tableRooms;
+            this.roomToTable = {};
+            for (var tr of tableRooms) {
+                this.roomToTable[tr.roomId] = tr.tableId;
+            }
+
+            console.log('[SynapseSync] Discovered ' + tableRooms.length + ' table rooms');
+            return tableRooms;
+        } catch (err) {
+            console.error('[SynapseSync] Room discovery failed:', err);
+            return [];
+        }
+    },
+
+    async start() {
+        if (this.running) return;
+        this.running = true;
+        this._backoffMs = 1000;
+
+        // Load saved sync token
+        try {
+            this.since = await getSyncMeta('synapseSyncToken');
+        } catch (e) {
+            this.since = null;
+        }
+
+        // Discover table rooms if not already done
+        if (this.tableRooms.length === 0) {
+            await this.discoverTableRooms();
+        }
+
+        if (this.tableRooms.length === 0) {
+            console.log('[SynapseSync] No table rooms found — sync idle');
+            this.running = false;
+            return;
+        }
+
+        console.log('[SynapseSync] Starting sync loop with ' + this.tableRooms.length + ' rooms');
+        this._loop();
+    },
+
+    stop() {
+        this.running = false;
+        console.log('[SynapseSync] Stopped');
+    },
+
+    async _loop() {
+        while (this.running) {
+            try {
+                var session = _loadSynapseSession();
+                if (!session || !session.accessToken) {
+                    console.warn('[SynapseSync] No session — stopping');
+                    this.running = false;
+                    return;
+                }
+
+                var roomIds = this.tableRooms.map(function(r) { return r.roomId; });
+
+                // Build sync filter
+                var filter = JSON.stringify({
+                    room: {
+                        rooms: roomIds,
+                        timeline: {
+                            types: ['law.firm.record.mutate'],
+                            limit: 100
+                        },
+                        state: {
+                            types: ['law.firm.schema.table', 'law.firm.schema.field']
+                        }
+                    }
+                });
+
+                var url = SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=30000&filter=' + encodeURIComponent(filter);
+                if (this.since) {
+                    url += '&since=' + encodeURIComponent(this.since);
+                }
+
+                var res = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                });
+
+                if (!res.ok) {
+                    throw new Error('Sync failed: ' + res.status);
+                }
+
+                var syncData = await res.json();
+                await this._processSync(syncData);
+
+                this.since = syncData.next_batch;
+                await setSyncMeta('synapseSyncToken', this.since);
+
+                // Reset backoff on success
+                this._backoffMs = 1000;
+            } catch (err) {
+                console.error('[SynapseSync] Error:', err);
+                // Exponential backoff
+                await new Promise(function(resolve) { setTimeout(resolve, SynapseSync._backoffMs); });
+                this._backoffMs = Math.min(this._backoffMs * 2, 300000); // max 5 min
+            }
+        }
+    },
+
+    async _processSync(syncData) {
+        var joinedRooms = syncData.rooms && syncData.rooms.join ? syncData.rooms.join : {};
+        var newEvents = 0;
+
+        for (var roomId in joinedRooms) {
+            var tableId = this.roomToTable[roomId];
+            if (!tableId) continue;
+
+            var roomData = joinedRooms[roomId];
+
+            // Process state events (schema changes)
+            var stateEvents = roomData.state && roomData.state.events ? roomData.state.events : [];
+            for (var i = 0; i < stateEvents.length; i++) {
+                var evt = stateEvents[i];
+                if (evt.type === 'law.firm.schema.table' && evt.content) {
+                    // Update table metadata in IndexedDB
+                    await saveTable({ tableId: evt.content.tableId || tableId, tableName: evt.content.name || tableId });
+                    if (META_TABLES) META_TABLES[tableId] = { tableId: tableId, tableName: evt.content.name || tableId };
+                } else if (evt.type === 'law.firm.schema.field' && evt.content) {
+                    // Update field metadata in IndexedDB
+                    var fieldData = { tableId: tableId, fieldId: evt.content.fieldId || evt.state_key, fieldName: evt.content.name, fieldType: evt.content.type, options: evt.content.options };
+                    await saveField(fieldData);
+                    if (META_FIELDS && META_FIELDS[tableId]) META_FIELDS[tableId][fieldData.fieldId] = fieldData;
+                }
+            }
+
+            // Process timeline events (record mutations)
+            var timelineEvents = roomData.timeline && roomData.timeline.events ? roomData.timeline.events : [];
+            for (var j = 0; j < timelineEvents.length; j++) {
+                var tevt = timelineEvents[j];
+                if (tevt.type === 'law.firm.record.mutate' && tevt.content) {
+                    var c = tevt.content;
+                    var evtTableId = c.tableId || tableId;
+
+                    // Convert Matrix event to the format processEvents expects
+                    var syntheticEvent = {
+                        id: tevt.event_id,
+                        set: 'airtable:' + evtTableId,
+                        recordId: c.recordId,
+                        operator: c.op,
+                        created_at: tevt.origin_server_ts,
+                        payload: { fields: {} }
+                    };
+
+                    // Map op + fields to the INS/ALT/NUL payload format
+                    if (c.op === 'INS' && c.fields) {
+                        syntheticEvent.payload.fields.INS = c.fields;
+                    } else if (c.op === 'ALT' && c.fields) {
+                        syntheticEvent.payload.fields.ALT = c.fields;
+                    } else if (c.op === 'NUL' && c.fields) {
+                        syntheticEvent.payload.fields.NUL = Object.keys(c.fields);
+                    }
+
+                    try {
+                        await processEvents([syntheticEvent]);
+                        newEvents++;
+                    } catch (procErr) {
+                        console.error('[SynapseSync] Error processing event:', procErr);
+                    }
+                }
+            }
+        }
+
+        if (newEvents > 0) {
+            console.log('[SynapseSync] Processed ' + newEvents + ' new events');
+            // Re-render current table if visible
+            if (currentTable) {
+                await showTable(currentTable, true);
+            }
+            await renderSidebar(false);
+        }
+    }
+};
+
+// hydrateFromSynapse: full initial hydration from Synapse table rooms
+async function hydrateFromSynapse() {
+    try {
+        var session = _loadSynapseSession();
+        if (!session || !session.accessToken) {
+            console.warn('[Hydration] No Synapse session — cannot hydrate');
+            return false;
+        }
+
+        // Discover table rooms
+        var tableRooms = await SynapseSync.discoverTableRooms();
+        if (tableRooms.length === 0) {
+            console.log('[Hydration] No table rooms found');
+            return false;
+        }
+
+        updateStatus('Hydrating from Synapse...', false, 0, 'Found ' + tableRooms.length + ' tables');
+        var totalProcessed = 0;
+
+        for (var idx = 0; idx < tableRooms.length; idx++) {
+            var tr = tableRooms[idx];
+            updateStatus('Hydrating ' + tr.name + '...', false, Math.round((idx / tableRooms.length) * 100), 'Table ' + (idx + 1) + ' of ' + tableRooms.length);
+
+            // 1. Read schema state events for this room
+            try {
+                var stateRes = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(tr.roomId) + '/state', {
+                    headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                });
+                if (stateRes.ok) {
+                    var stateEvents = await stateRes.json();
+                    for (var i = 0; i < stateEvents.length; i++) {
+                        var evt = stateEvents[i];
+                        if (evt.type === 'law.firm.schema.table' && evt.content) {
+                            await saveTable({ tableId: evt.content.tableId || tr.tableId, tableName: evt.content.name || tr.name });
+                        } else if (evt.type === 'law.firm.schema.field' && evt.content) {
+                            await saveField({ tableId: tr.tableId, fieldId: evt.content.fieldId || evt.state_key, fieldName: evt.content.name, fieldType: evt.content.type, options: evt.content.options });
+                        }
+                    }
+                }
+            } catch (stateErr) {
+                console.warn('[Hydration] State read failed for ' + tr.name + ':', stateErr);
+            }
+
+            // 2. Paginate full timeline for record events
+            var from = null;
+            var roomEvents = 0;
+            while (true) {
+                try {
+                    var msgUrl = SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(tr.roomId) + '/messages?dir=f&limit=100';
+                    if (from) msgUrl += '&from=' + encodeURIComponent(from);
+                    msgUrl += '&filter=' + encodeURIComponent(JSON.stringify({ types: ['law.firm.record.mutate'] }));
+
+                    var msgRes = await fetch(msgUrl, {
+                        headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                    });
+                    if (!msgRes.ok) break;
+
+                    var msgData = await msgRes.json();
+                    var chunk = msgData.chunk || [];
+                    if (chunk.length === 0) break;
+
+                    // Process each event
+                    for (var j = 0; j < chunk.length; j++) {
+                        var mevt = chunk[j];
+                        if (mevt.type === 'law.firm.record.mutate' && mevt.content) {
+                            var mc = mevt.content;
+                            var synEvent = {
+                                id: mevt.event_id,
+                                set: 'airtable:' + (mc.tableId || tr.tableId),
+                                recordId: mc.recordId,
+                                operator: mc.op,
+                                created_at: mevt.origin_server_ts,
+                                payload: { fields: {} }
+                            };
+
+                            if (mc.op === 'INS' && mc.fields) synEvent.payload.fields.INS = mc.fields;
+                            else if (mc.op === 'ALT' && mc.fields) synEvent.payload.fields.ALT = mc.fields;
+                            else if (mc.op === 'NUL' && mc.fields) synEvent.payload.fields.NUL = Object.keys(mc.fields);
+
+                            try {
+                                await processEvents([synEvent]);
+                                roomEvents++;
+                                totalProcessed++;
+                            } catch (procErr) {
+                                console.warn('[Hydration] Event processing error:', procErr);
+                            }
+                        }
+                    }
+
+                    from = msgData.end;
+                    if (!from) break;
+                } catch (pageErr) {
+                    console.warn('[Hydration] Pagination error for ' + tr.name + ':', pageErr);
+                    break;
+                }
+            }
+
+            console.log('[Hydration] ' + tr.name + ': ' + roomEvents + ' events processed');
+        }
+
+        // Save sync token for incremental updates going forward
+        try {
+            var syncRes = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=0&filter=' + encodeURIComponent(JSON.stringify({ room: { rooms: tableRooms.map(function(r) { return r.roomId; }), timeline: { limit: 0 } } })), {
+                headers: { 'Authorization': 'Bearer ' + session.accessToken }
+            });
+            if (syncRes.ok) {
+                var syncData = await syncRes.json();
+                SynapseSync.since = syncData.next_batch;
+                await setSyncMeta('synapseSyncToken', syncData.next_batch);
+            }
+        } catch (tokenErr) {
+            console.warn('[Hydration] Could not save sync token:', tokenErr);
+        }
+
+        updateStatus('Hydration complete: ' + totalProcessed + ' events', true, 100, null);
+        return totalProcessed > 0;
+    } catch (err) {
+        console.error('[Hydration] Failed:', err);
+        return false;
+    }
+}
+
 // ============ Init ============
 
 async function init() {
@@ -9779,7 +10179,6 @@ async function init() {
 
     updateStatus('Loading local data...', false, null, null);
 
-    var storedLastTimestamp = await getSyncMeta('lastEventTimestamp');
     var tables = await getAllTables();
     var fields = await getAllFields();
     var views = await getAllViews();
@@ -9801,6 +10200,7 @@ async function init() {
     hideAuthScreen();
 
     if (tables.length > 0) {
+        // Local data exists — render it
         updateStatus('Found ' + tables.length + ' tables', false, null, 'Loading data...');
         await renderSidebar(true);
 
@@ -9809,13 +10209,10 @@ async function init() {
         if (firstTable) {
             await showTable(firstTable);
         }
-
-        lastEventTimestamp = storedLastTimestamp || null;
-        if (API_KEY) await incrementalSync();
     } else {
-        // No local data - always try to hydrate from Box snapshot first
-        updateStatus('Hydrating from cloud snapshot...', false, 0, 'Downloading snapshot...');
-        var hydrated = await hydrateFromBoxDownload();
+        // No local data — try to hydrate from Synapse rooms
+        updateStatus('Hydrating from Synapse...', false, 0, 'Connecting to rooms...');
+        var hydrated = await hydrateFromSynapse();
 
         if (hydrated) {
             // Reload metadata after hydration
@@ -9837,51 +10234,23 @@ async function init() {
             if (firstTable) {
                 await showTable(firstTable);
             }
-
-            // Continue with incremental sync if API key is available
-            if (API_KEY) {
-                // Re-read lastEventTimestamp that was set during hydration
-                // (storedLastTimestamp was read before hydration, so it would be null)
-                var postHydrationTimestamp = await getSyncMeta('lastEventTimestamp');
-                lastEventTimestamp = postHydrationTimestamp || null;
-
-                // Run one immediate sync to fill the most critical gap
-                await incrementalSync();
-
-                // Start aggressive background polling to catch up any remaining events
-                PostHydrationSync.start();
-            }
-        } else if (API_KEY) {
-            // Box download failed or empty - fall back to full event sync
-            updateStatus('Starting initial sync...', false, 0, 'Fetching data from server...');
-            await renderSidebar(true);
-            await fullSync();
-            await renderSidebar(true);
         } else {
-            // No snapshot, no API key - show empty state
-            updateStatus('No data available - add API key to sync', true, null, null);
+            // No data from Synapse either — show empty state
+            updateStatus('No data available — waiting for Synapse sync', true, null, null);
             await renderSidebar(true);
         }
     }
 
-    updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
-    updateConnectApiButton();
+    updateStatus('Up to date', true, null, null);
 
     // Start the refresh indicator countdown
     lastSyncTime = Date.now();
     startRefreshCountdown();
 
-    if (API_KEY) {
-        if (pollInterval) clearInterval(pollInterval);
-        pollInterval = setInterval(incrementalSync, 180000);
+    // Start Synapse real-time sync (long-poll /sync for room events)
+    SynapseSync.start();
 
-        // Start background polling for new events (lightweight 15s checks)
-        // This uses the 'last' query parameter to efficiently detect new events
-        // and triggers incremental sync only when new data is available
-        SyncHistory.startPolling();
-    }
-
-    // Initialize Box sync toggle
+    // Initialize Box sync toggle (optional backup)
     initBoxSyncToggle();
 }
 
@@ -15810,14 +16179,22 @@ document.getElementById('unlock-password').onkeydown = (e) => { if (e.key === 'E
 document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('setup-password-confirm').focus(); };
 document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
 
-// Initialize: skip Synapse gate — boot directly to encryption/auth
-// Matrix login is now optional and accessible from the sidebar
+// Initialize: Synapse login is the gate — everything derives from it
 (async function() {
-    var encryptionReady = await initEncryption();
-    if (encryptionReady) {
-        initAuthScreen();
+    var sessionValid = await initSynapseLogin();
+    if (sessionValid) {
+        // Existing session — go directly to init + view selection
+        try {
+            await init();
+            showViewSelection();
+        } catch (err) {
+            console.error('[Boot] Init failed with cached session:', err);
+            // Session may be stale — force re-login
+            _clearSynapseSession();
+            showSynapseLoginScreen();
+        }
     }
-    // If encryption is not ready, the unlock screen handlers will call initAuthScreen after unlock
+    // If no valid session, initSynapseLogin already showed the login screen
 })();
     </script>
 </body>
