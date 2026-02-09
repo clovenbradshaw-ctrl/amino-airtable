@@ -3444,7 +3444,8 @@ var BOX_SYNC_WEBHOOK = null; // Secured: initialized after authentication via in
 var BOX_DOWNLOAD_WEBHOOK = null; // Secured: initialized after authentication via initSecureEndpoints()
 var BOX_SYNC_FOLDER_ID = '364363223627';
 var BOX_SYNC_FILENAME = 'amino-snapshot.amo';
-var BOX_SYNC_VERSIONED = true; // When true, push creates versioned files (backlog) instead of overwriting
+var BOX_SYNC_MIN_PUSH_INTERVAL = 60 * 60 * 1000; // 1 hour — hydration snapshots don't need to be frequent
+var BOX_SYNC_LAST_PUSH_TIME = 0; // Timestamp of last successful push
 
 // ============ Events View State ============
 var eventsPageSize = 50;
@@ -4071,18 +4072,22 @@ var PostHydrationSync = {
 var BoxSync = {
     isPushing: false,
 
-    // Generate a versioned filename with ISO timestamp for backlog management
-    // e.g. amino-snapshot-20260209T153045Z.amo
-    buildVersionedFilename: function() {
-        var now = new Date();
-        var ts = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); // 20260209T153045Z
-        return 'amino-snapshot-' + ts + '.amo';
-    },
-
-    // Push full event stream as .amo binary to Box via n8n webhook
-    // Creates versioned files on Box so older snapshots form a backlog
-    async push() {
+    // Push full event stream as .amo binary to Box via n8n webhook.
+    // n8n stamps its own timestamped filename and handles backlog cleanup (>24h).
+    // This is a hydration checkpoint — not a real-time sync — so we throttle to
+    // BOX_SYNC_MIN_PUSH_INTERVAL (default 1 hour).
+    async push(force) {
         if (this.isPushing || !API_KEY || !BOX_SYNC_WEBHOOK) return;
+
+        // Throttle: skip if we pushed recently (unless forced by manual push)
+        if (!force && BOX_SYNC_LAST_PUSH_TIME > 0) {
+            var elapsed = Date.now() - BOX_SYNC_LAST_PUSH_TIME;
+            if (elapsed < BOX_SYNC_MIN_PUSH_INTERVAL) {
+                console.log('[BoxSync] Skipping push — last push was ' + Math.round(elapsed / 60000) + 'm ago (min interval: ' + Math.round(BOX_SYNC_MIN_PUSH_INTERVAL / 60000) + 'm)');
+                return;
+            }
+        }
+
         this.isPushing = true;
         try {
             // Read all raw events from IndexedDB
@@ -4118,35 +4123,21 @@ var BoxSync = {
                 return;
             }
 
-            // Produce .amo binary with full event stream and metadata
+            // Produce .amo binary with full event stream and all metadata
             var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS });
             var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
 
-            // Use versioned filename to preserve older snapshots as a backlog on Box
-            var uploadFilename = BOX_SYNC_VERSIONED
-                ? this.buildVersionedFilename()
-                : BOX_SYNC_FILENAME;
-
-            // Compute cursor (max event ID) for the webhook metadata
-            var maxEventId = 0;
-            for (var i = 0; i < allEvents.length; i++) {
-                if (allEvents[i].id > maxEventId) maxEventId = allEvents[i].id;
-            }
-
-            // Build FormData and POST to n8n webhook with the full binary .amo
+            // Build FormData and POST binary .amo to n8n webhook
+            // n8n generates its own timestamped filename for Box versioning
             var form = new FormData();
-            form.append('file', blob, uploadFilename);
+            form.append('file', blob, BOX_SYNC_FILENAME);
 
             var res = await fetch(BOX_SYNC_WEBHOOK, {
                 method: 'POST',
                 headers: {
-                    'x-file-name': uploadFilename,
+                    'x-file-name': BOX_SYNC_FILENAME,
                     'x-folder-id': BOX_SYNC_FOLDER_ID,
-                    'x-api-key': API_KEY,
-                    'x-snapshot-cursor': String(maxEventId),
-                    'x-snapshot-event-count': String(allEvents.length),
-                    'x-snapshot-timestamp': new Date().toISOString(),
-                    'x-snapshot-versioned': BOX_SYNC_VERSIONED ? '1' : '0'
+                    'x-api-key': API_KEY
                 },
                 body: form
             });
@@ -4155,13 +4146,15 @@ var BoxSync = {
                 throw new Error('Box upload failed: ' + res.status + ' ' + res.statusText);
             }
 
+            BOX_SYNC_LAST_PUSH_TIME = Date.now();
+
             var sizeStr = binary.length < 1024
                 ? binary.length + ' B'
                 : binary.length < 1048576
                     ? (binary.length / 1024).toFixed(1) + ' KB'
                     : (binary.length / 1048576).toFixed(1) + ' MB';
 
-            console.log('[BoxSync] Pushed ' + allEvents.length + ' events (' + sizeStr + ') as ' + uploadFilename + ' (cursor=' + maxEventId + ')');
+            console.log('[BoxSync] Pushed ' + allEvents.length + ' events (' + sizeStr + ') to Box');
             SyncStatusFeed.success('Box: pushed ' + allEvents.length + ' events (' + sizeStr + ')');
         } catch (err) {
             console.error('[BoxSync] Push failed:', err);
@@ -4195,7 +4188,7 @@ function manualBoxPush() {
     var btn = document.getElementById('box-push-btn');
     if (btn) btn.disabled = true;
     SyncStatusFeed.info('Box: manual push started…');
-    BoxSync.push().then(function() {
+    BoxSync.push(true).then(function() {
         if (btn) btn.disabled = false;
     });
 }
@@ -11419,12 +11412,10 @@ async function hydrateFromBoxDownload() {
             return false;
         }
 
-        // Request the latest .amo version from Box
-        // The webhook should resolve the latest file from the backlog of versioned snapshots
-        var downloadUrl = BOX_DOWNLOAD_WEBHOOK
-            + '?api_key=' + encodeURIComponent(API_KEY)
-            + '&folder_id=' + encodeURIComponent(BOX_SYNC_FOLDER_ID)
-            + '&version=latest';
+        // n8n download webhook lists all .amo files in the Box folder,
+        // picks the latest by timestamp-sorted name, and returns the binary directly.
+        // X-Amo-Available response header lists all available snapshots.
+        var downloadUrl = BOX_DOWNLOAD_WEBHOOK + '?api_key=' + encodeURIComponent(API_KEY);
         var response = await fetch(downloadUrl);
         if (!response.ok) {
             console.warn('[BoxDownload] HTTP ' + response.status + ' - no data available');
@@ -11432,74 +11423,14 @@ async function hydrateFromBoxDownload() {
             return false;
         }
 
-        // Check if the webhook returned a file listing (JSON) instead of a binary .amo
-        var contentType = response.headers.get('content-type') || '';
-        var buffer;
-
-        if (contentType.indexOf('application/json') !== -1) {
-            // Webhook returned a JSON listing of available .amo files in the folder
-            // Pick the latest by sorting on name (timestamped) or modified date
-            var listing = await response.json();
-            var files = listing.files || listing.entries || listing;
-
-            if (!Array.isArray(files) || files.length === 0) {
-                console.warn('[BoxDownload] No .amo files found in Box folder');
-                hideLoadingOverlay();
-                return false;
-            }
-
-            // Filter to only .amo files
-            var amoFiles = files.filter(function(f) {
-                var name = f.name || f.file_name || '';
-                return name.endsWith('.amo');
-            });
-
-            if (amoFiles.length === 0) {
-                console.warn('[BoxDownload] No .amo files in listing');
-                hideLoadingOverlay();
-                return false;
-            }
-
-            // Sort by modified date descending (newest first), fall back to name sort
-            amoFiles.sort(function(a, b) {
-                var aDate = a.modified_at || a.content_modified_at || a.name || '';
-                var bDate = b.modified_at || b.content_modified_at || b.name || '';
-                return aDate > bDate ? -1 : aDate < bDate ? 1 : 0;
-            });
-
-            var latestFile = amoFiles[0];
-            var latestFileName = latestFile.name || latestFile.file_name || 'unknown';
-            console.log('[BoxDownload] Found ' + amoFiles.length + ' .amo file(s) in backlog, using latest: ' + latestFileName);
-            SyncStatusFeed.info('Box: found ' + amoFiles.length + ' snapshot(s), downloading latest: ' + latestFileName);
-
-            updateLoadingOverlay('Downloading data...', 'Downloading latest snapshot: ' + latestFileName + '...', 10, 0, 0, 0, '');
-
-            // Download the latest file using its ID or download URL
-            var fileDownloadUrl;
-            if (latestFile.download_url) {
-                fileDownloadUrl = latestFile.download_url;
-            } else if (latestFile.id) {
-                fileDownloadUrl = BOX_DOWNLOAD_WEBHOOK
-                    + '?api_key=' + encodeURIComponent(API_KEY)
-                    + '&file_id=' + encodeURIComponent(latestFile.id);
-            } else {
-                console.warn('[BoxDownload] Cannot determine download URL for latest file');
-                hideLoadingOverlay();
-                return false;
-            }
-
-            var fileResponse = await fetch(fileDownloadUrl);
-            if (!fileResponse.ok) {
-                console.warn('[BoxDownload] Failed to download latest file: HTTP ' + fileResponse.status);
-                hideLoadingOverlay();
-                return false;
-            }
-            buffer = await fileResponse.arrayBuffer();
-        } else {
-            // Webhook returned the binary .amo file directly (latest version)
-            buffer = await response.arrayBuffer();
+        // Log which snapshot we got (n8n sends available list in header)
+        var availableSnapshots = response.headers.get('x-amo-available');
+        if (availableSnapshots) {
+            var snapshotList = availableSnapshots.split(',');
+            console.log('[BoxDownload] Available snapshots in backlog: ' + snapshotList.length + ' (' + snapshotList[0] + ' … ' + snapshotList[snapshotList.length - 1] + ')');
         }
 
+        var buffer = await response.arrayBuffer();
         if (!buffer || buffer.byteLength === 0) {
             console.warn('[BoxDownload] Empty response');
             hideLoadingOverlay();
