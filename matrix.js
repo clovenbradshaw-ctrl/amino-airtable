@@ -37,6 +37,8 @@ var MatrixClient = (function() {
         RECORD_UPDATE: 'law.firm.record.update',
         RECORD_DELETE: 'law.firm.record.delete',
         VIEW: 'law.firm.view',
+        VIEW_SHARE: 'law.firm.view.share',
+        USER_PREFERENCES: 'law.firm.user.preferences',
         INTERFACE: 'law.firm.interface',
         CLIENT_MESSAGE: 'law.firm.client.message',
         NOTE_INTERNAL: 'law.firm.note.internal',
@@ -628,6 +630,62 @@ var MatrixClient = (function() {
         });
     }
 
+    // ============ Account Data (Per-User Private Storage) ============
+
+    async function setAccountData(type, content) {
+        if (!_userId) throw new Error('Not logged in');
+        var path = '/user/' + encodeURIComponent(_userId) + '/account_data/' + encodeURIComponent(type);
+        return _requestWithRetry('PUT', path, content);
+    }
+
+    async function getAccountData(type) {
+        if (!_userId) throw new Error('Not logged in');
+        var path = '/user/' + encodeURIComponent(_userId) + '/account_data/' + encodeURIComponent(type);
+        try {
+            return await _request('GET', path);
+        } catch (e) {
+            if (e.httpStatus === 404) return null;
+            throw e;
+        }
+    }
+
+    async function setRoomAccountData(roomId, type, content) {
+        if (!_userId) throw new Error('Not logged in');
+        var path = '/user/' + encodeURIComponent(_userId) +
+            '/rooms/' + encodeURIComponent(roomId) +
+            '/account_data/' + encodeURIComponent(type);
+        return _requestWithRetry('PUT', path, content);
+    }
+
+    async function getRoomAccountData(roomId, type) {
+        if (!_userId) throw new Error('Not logged in');
+        var path = '/user/' + encodeURIComponent(_userId) +
+            '/rooms/' + encodeURIComponent(roomId) +
+            '/account_data/' + encodeURIComponent(type);
+        try {
+            return await _request('GET', path);
+        } catch (e) {
+            if (e.httpStatus === 404) return null;
+            throw e;
+        }
+    }
+
+    // ============ Room Member Listing ============
+
+    async function getRoomMembers(roomId) {
+        var path = '/rooms/' + encodeURIComponent(roomId) + '/members';
+        var data = await _requestWithRetry('GET', path);
+        return (data.chunk || []).filter(function(e) {
+            return e.content && e.content.membership === 'join';
+        }).map(function(e) {
+            return {
+                userId: e.state_key,
+                displayName: e.content.displayname || e.state_key,
+                avatarUrl: e.content.avatar_url || null
+            };
+        });
+    }
+
     // ============ Org Space Helpers ============
 
     async function findOrgSpace() {
@@ -881,6 +939,15 @@ var MatrixClient = (function() {
         registerUser: registerUser,
         getProfile: getProfile,
         setDisplayName: setDisplayName,
+
+        // Account data (per-user private storage)
+        setAccountData: setAccountData,
+        getAccountData: getAccountData,
+        setRoomAccountData: setRoomAccountData,
+        getRoomAccountData: getRoomAccountData,
+
+        // Room members
+        getRoomMembers: getRoomMembers,
 
         // Org helpers
         findOrgSpace: findOrgSpace,
