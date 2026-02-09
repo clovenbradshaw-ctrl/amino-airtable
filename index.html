@@ -1439,6 +1439,113 @@
         #room-manager .rm-client-row .rm-room-info {
             font-size: 11px; color: var(--text-muted); margin-left: auto;
         }
+
+        /* ===== Admin User Management Panel ===== */
+        #admin-panel {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 170;
+        }
+        #admin-panel.hidden { display: none; }
+        .admin-container {
+            background: var(--bg-secondary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl); width: 680px; max-height: 85vh;
+            display: flex; flex-direction: column; box-shadow: var(--shadow-xl);
+        }
+        .admin-header {
+            padding: 20px 24px 16px; border-bottom: 1px solid var(--border-primary);
+        }
+        .admin-header h2 { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+        .admin-header p { font-size: 13px; color: var(--text-muted); }
+        .admin-body {
+            padding: 16px 24px; overflow-y: auto; flex: 1;
+        }
+        .admin-section-title {
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 10px;
+        }
+        .admin-user-row {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 12px; border-radius: var(--radius-md);
+            border: 1px solid var(--border-primary); margin-bottom: 8px;
+            background: var(--bg-primary); transition: background var(--transition-fast);
+        }
+        .admin-user-row:hover { background: var(--bg-hover); }
+        .admin-user-avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: var(--primary-500); display: flex; align-items: center;
+            justify-content: center; font-size: 14px; font-weight: 600; color: #fff;
+            flex-shrink: 0;
+        }
+        .admin-user-info { flex: 1; min-width: 0; }
+        .admin-user-name {
+            font-size: 13px; font-weight: 500; color: var(--text-primary);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .admin-user-id {
+            font-size: 11px; color: var(--text-muted);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .admin-user-role {
+            font-size: 11px; font-weight: 500; padding: 3px 8px;
+            border-radius: 10px; flex-shrink: 0;
+        }
+        .admin-user-role.role-admin { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+        .admin-user-role.role-staff { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+        .admin-user-role.role-client { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+        .admin-user-role.role-default { background: var(--bg-tertiary); color: var(--text-muted); }
+        .admin-user-actions {
+            display: flex; gap: 6px; flex-shrink: 0;
+        }
+        .admin-action-btn {
+            padding: 5px 10px; font-size: 11px; border-radius: var(--radius-sm);
+            border: 1px solid var(--border-primary); background: var(--bg-tertiary);
+            color: var(--text-secondary); cursor: pointer; font-weight: 500;
+            transition: all var(--transition-fast); white-space: nowrap;
+        }
+        .admin-action-btn:hover { background: var(--bg-hover); border-color: var(--border-secondary); }
+        .admin-action-btn.danger { color: #f87171; border-color: rgba(239,68,68,0.3); }
+        .admin-action-btn.danger:hover { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.5); }
+        .admin-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .admin-role-select {
+            padding: 4px 8px; font-size: 11px; border-radius: var(--radius-sm);
+            border: 1px solid var(--border-primary); background: var(--bg-tertiary);
+            color: var(--text-secondary); cursor: pointer; font-weight: 500;
+        }
+        .admin-footer {
+            padding: 16px 24px; border-top: 1px solid var(--border-primary);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .admin-footer .admin-status { font-size: 12px; color: var(--text-muted); }
+        .admin-invite-section {
+            display: flex; gap: 8px; margin-bottom: 16px;
+        }
+        .admin-invite-section input {
+            flex: 1; padding: 8px 12px; background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-md);
+            color: var(--text-primary); font-size: 13px;
+        }
+        .admin-invite-section input:focus {
+            outline: none; border-color: var(--primary-500);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        .admin-invite-section button {
+            padding: 8px 16px; background: var(--primary-500); border: none;
+            border-radius: var(--radius-md); color: #fff; font-size: 13px;
+            font-weight: 500; cursor: pointer; white-space: nowrap;
+        }
+        .admin-invite-section button:hover { background: var(--primary-600); }
+        .admin-invite-section button:disabled { background: var(--gray-600); cursor: not-allowed; }
+        .admin-error {
+            color: #f87171; font-size: 12px; padding: 8px 12px;
+            background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: var(--radius-sm); margin-bottom: 12px; display: none;
+        }
+        .admin-success {
+            color: #4ade80; font-size: 12px; padding: 8px 12px;
+            background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.2);
+            border-radius: var(--radius-sm); margin-bottom: 12px; display: none;
+        }
     </style>
 </head>
 <body>
@@ -1506,15 +1613,17 @@
 
     <div id="synapse-login-screen" class="hidden">
         <div class="synapse-login-box">
-            <h2>Connect to Matrix</h2>
-            <p>Sign in to enable room sync and collaboration. Your data works locally without this.</p>
+            <h2>Sign In</h2>
+            <p>Log in to your Synapse account. Your credentials are used to encrypt all local data.</p>
             <div id="synapse-login-error" class="synapse-error"></div>
             <label for="synapse-username">Username</label>
             <input type="text" id="synapse-username" placeholder="Username" autocomplete="username">
             <label for="synapse-password">Password</label>
             <input type="password" id="synapse-password" placeholder="Password" autocomplete="current-password">
             <button id="synapse-login-btn">Sign In</button>
-            <button id="synapse-skip-btn" onclick="hideSynapseLoginScreen()" style="width: 100%; padding: 10px; background: transparent; border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-muted); font-size: 13px; cursor: pointer; margin-top: 8px;">Skip - Stay Local Only</button>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 12px; text-align: center; line-height: 1.5;">
+                Your login encrypts all locally cached data using keys derived from your Synapse session.
+            </div>
         </div>
     </div>
 
@@ -1659,6 +1768,35 @@
         </div>
     </div>
 
+    <!-- Admin User Management Panel -->
+    <div id="admin-panel" class="hidden">
+        <div class="admin-container">
+            <div class="admin-header">
+                <h2 id="admin-title">User Management</h2>
+                <p id="admin-subtitle">Manage who can access data and use the app</p>
+            </div>
+            <div class="admin-body" id="admin-body">
+                <div class="admin-error" id="admin-error"></div>
+                <div class="admin-success" id="admin-success"></div>
+
+                <div class="admin-section-title">Invite User</div>
+                <div class="admin-invite-section">
+                    <input type="text" id="admin-invite-input" placeholder="@username:server.com">
+                    <button id="admin-invite-btn" onclick="adminInviteUser()">Invite</button>
+                </div>
+
+                <div class="admin-section-title" id="admin-members-title">Members</div>
+                <div id="admin-members-list">
+                    <div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">Loading members...</div>
+                </div>
+            </div>
+            <div class="admin-footer">
+                <span class="admin-status" id="admin-status"></span>
+                <button class="btn-back" onclick="hideAdminPanel()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-header-top">
@@ -1687,6 +1825,10 @@
             <button class="theme-toggle-btn" id="matrix-connect-btn" onclick="showSynapseLoginScreen()" title="Connect to Matrix for room sync">
                 <span id="matrix-status-icon">&#9675;</span>
                 <span id="matrix-status-label">Connect Matrix</span>
+            </button>
+            <button class="theme-toggle-btn" id="admin-panel-btn" onclick="showAdminPanel()" title="Manage users and access" style="display: none;">
+                <span>&#9935;</span>
+                <span>Manage Users</span>
             </button>
             <button class="theme-toggle-btn" id="manage-rooms-btn" onclick="showRoomManager()" title="Manage Matrix rooms" style="display: none;">
                 <span>&#9881;</span>
@@ -3030,6 +3172,28 @@ async function clearEncryptedData() {
         console.error('Failed to clear data:', e);
         alert('Failed to clear data: ' + e.message);
     }
+}
+
+// ============ Synapse-derived Encryption ============
+
+// Derive an AES-256-GCM encryption key from Synapse credentials.
+// Uses the access token + user ID as the key material, run through PBKDF2
+// with a stable salt so the same login always produces the same key.
+async function deriveKeyFromSynapse(accessToken, userId) {
+    var encoder = new TextEncoder();
+    var material = encoder.encode(accessToken + '|' + userId);
+    var keyMaterial = await crypto.subtle.importKey(
+        'raw', material, 'PBKDF2', false, ['deriveBits', 'deriveKey']
+    );
+    // Use a fixed, app-specific salt so the key is deterministic for the same session
+    var salt = encoder.encode('amino-synapse-encryption-v1');
+    return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        true,
+        ['encrypt', 'decrypt']
+    );
 }
 
 // ============ Encrypted Credentials Storage ============
@@ -6202,10 +6366,20 @@ async function trySynapseLogin() {
         // Set up MatrixClient session for room operations
         MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, data.access_token, data.user_id, data.device_id);
 
+        // Derive encryption key from Synapse credentials
+        encryptionKey = await deriveKeyFromSynapse(data.access_token, data.user_id);
+        encryptionEnabled = true;
+
+        // Save encryption config as synapse-type
+        saveEncryptionConfig({ type: 'synapse', userId: data.user_id });
+        await saveSessionKey(encryptionKey);
+
         hideSynapseLoginScreen();
         // Update sidebar to show Matrix-connected state
         updateMatrixStatus();
-        renderSidebar();
+
+        // Proceed to API auth or auto-login
+        initAuthScreen();
     } catch (err) {
         console.error('[Synapse] Login failed:', err);
         showSynapseError(err.message || 'Login failed. Please check your credentials.');
@@ -6489,8 +6663,15 @@ function logout() {
     // Clear saved credentials (both encrypted and plaintext)
     clearEncryptedCredentials();
     clearSessionKey();
-    // Show auth screen (Matrix session is independent — user disconnects Matrix separately)
-    showAuthScreen();
+    encryptionKey = null;
+    encryptionEnabled = false;
+    // Also log out of Synapse and show Synapse login screen
+    synapseLogout();
+    _adminOrgSpaceId = null;
+    // Hide auth screen, show Synapse login
+    var authEl = document.getElementById('auth-screen');
+    authEl.classList.add('hidden');
+    showSynapseLoginScreen();
 }
 
 async function manualSync() {
@@ -14320,6 +14501,280 @@ function wizardComplete() {
     initAuthScreen();
 }
 
+// ============ Admin User Management Panel ============
+
+var _adminOrgSpaceId = null; // cached org space ID for admin operations
+
+function showAdminPanel() {
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken) {
+        alert('You must be signed in to Synapse to manage users.');
+        return;
+    }
+
+    // Ensure MatrixClient has the session
+    if (!MatrixClient.isLoggedIn()) {
+        MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+    }
+
+    document.getElementById('admin-panel').classList.remove('hidden');
+    document.getElementById('admin-error').style.display = 'none';
+    document.getElementById('admin-success').style.display = 'none';
+    document.getElementById('admin-invite-input').value = '';
+
+    loadAdminMembers();
+}
+
+function hideAdminPanel() {
+    document.getElementById('admin-panel').classList.add('hidden');
+}
+
+function showAdminError(msg) {
+    var el = document.getElementById('admin-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+    // Auto-hide after 5s
+    setTimeout(function() { el.style.display = 'none'; }, 5000);
+}
+
+function showAdminSuccess(msg) {
+    var el = document.getElementById('admin-success');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(function() { el.style.display = 'none'; }, 4000);
+}
+
+async function getAdminOrgSpace() {
+    if (_adminOrgSpaceId) return _adminOrgSpaceId;
+
+    // First try from saved config
+    var config = MatrixClient.loadConfig();
+    if (config && config.orgSpaceId) {
+        _adminOrgSpaceId = config.orgSpaceId;
+        return _adminOrgSpaceId;
+    }
+
+    // Do a sync to populate room state, then search
+    try {
+        await MatrixClient.initialSync();
+        _adminOrgSpaceId = await MatrixClient.findOrgSpace();
+    } catch (e) {
+        console.error('[Admin] Failed to find org space:', e);
+    }
+    return _adminOrgSpaceId;
+}
+
+function adminGetRoleLabel(level) {
+    if (level >= 100) return 'admin';
+    if (level >= 50) return 'staff';
+    if (level >= 10) return 'client';
+    return 'default';
+}
+
+function adminGetAvatarLetter(userId) {
+    // Extract username from @user:server
+    var name = userId.replace('@', '').split(':')[0];
+    return name.charAt(0).toUpperCase();
+}
+
+async function loadAdminMembers() {
+    var listEl = document.getElementById('admin-members-list');
+    listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">Loading members...</div>';
+
+    try {
+        var orgSpaceId = await getAdminOrgSpace();
+        if (!orgSpaceId) {
+            listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">No organization space found. Set up Matrix rooms first.</div>';
+            return;
+        }
+
+        // Get members and power levels in parallel
+        var membersPromise = MatrixClient.getJoinedMembers(orgSpaceId);
+        var powerLevelsPromise = MatrixClient.getRoomPowerLevels(orgSpaceId);
+        var results = await Promise.all([membersPromise, powerLevelsPromise]);
+        var members = results[0];
+        var powerLevels = results[1];
+
+        var currentUserId = MatrixClient.getUserId();
+        var currentUserLevel = (powerLevels.users && powerLevels.users[currentUserId]) || powerLevels.users_default || 0;
+        var isAdmin = currentUserLevel >= MatrixClient.POWER_LEVELS.ADMIN;
+
+        // Show/hide admin panel button based on admin status
+        var adminBtn = document.getElementById('admin-panel-btn');
+        if (adminBtn) {
+            adminBtn.style.display = isAdmin ? '' : 'none';
+        }
+
+        var userIds = Object.keys(members).sort(function(a, b) {
+            var levelA = (powerLevels.users && powerLevels.users[a]) || powerLevels.users_default || 0;
+            var levelB = (powerLevels.users && powerLevels.users[b]) || powerLevels.users_default || 0;
+            return levelB - levelA; // Highest power level first
+        });
+
+        document.getElementById('admin-members-title').textContent = 'Members (' + userIds.length + ')';
+        document.getElementById('admin-status').textContent = isAdmin ? 'You are an admin' : 'View only — admin required for changes';
+
+        var html = '';
+        userIds.forEach(function(userId) {
+            var member = members[userId];
+            var level = (powerLevels.users && powerLevels.users[userId]) || powerLevels.users_default || 0;
+            var role = adminGetRoleLabel(level);
+            var displayName = (member && member.display_name) ? member.display_name : userId.split(':')[0].replace('@', '');
+            var isSelf = userId === currentUserId;
+
+            html += '<div class="admin-user-row" data-userid="' + esc(userId) + '">';
+            html += '<div class="admin-user-avatar">' + esc(adminGetAvatarLetter(userId)) + '</div>';
+            html += '<div class="admin-user-info">';
+            html += '<div class="admin-user-name">' + esc(displayName) + (isSelf ? ' (you)' : '') + '</div>';
+            html += '<div class="admin-user-id">' + esc(userId) + '</div>';
+            html += '</div>';
+
+            if (isAdmin && !isSelf) {
+                // Role selector
+                html += '<select class="admin-role-select" onchange="adminChangeRole(\'' + esc(userId) + '\', this.value)" title="Change access level">';
+                html += '<option value="100"' + (level >= 100 ? ' selected' : '') + '>Admin</option>';
+                html += '<option value="50"' + (level >= 50 && level < 100 ? ' selected' : '') + '>Staff</option>';
+                html += '<option value="10"' + (level >= 10 && level < 50 ? ' selected' : '') + '>Client</option>';
+                html += '<option value="0"' + (level < 10 ? ' selected' : '') + '>No Access</option>';
+                html += '</select>';
+
+                // Action buttons
+                html += '<div class="admin-user-actions">';
+                html += '<button class="admin-action-btn danger" onclick="adminKickUser(\'' + esc(userId) + '\')" title="Kick from organization">Kick</button>';
+                html += '</div>';
+            } else {
+                html += '<span class="admin-user-role role-' + role + '">' + role + '</span>';
+            }
+
+            html += '</div>';
+        });
+
+        listEl.innerHTML = html;
+
+    } catch (err) {
+        console.error('[Admin] Failed to load members:', err);
+        listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">Failed to load members: ' + esc(err.message) + '</div>';
+    }
+}
+
+async function adminChangeRole(userId, newLevel) {
+    newLevel = parseInt(newLevel, 10);
+    try {
+        var orgSpaceId = await getAdminOrgSpace();
+        if (!orgSpaceId) throw new Error('No org space found');
+
+        await MatrixClient.setUserPowerLevel(orgSpaceId, userId, newLevel);
+
+        // Also update child rooms if they exist
+        var config = MatrixBridge.getConfig();
+        if (config && config.clientRoomMap) {
+            var clientNames = Object.keys(config.clientRoomMap);
+            for (var i = 0; i < clientNames.length; i++) {
+                var mapping = config.clientRoomMap[clientNames[i]];
+                try {
+                    if (mapping.matterRoomId) {
+                        await MatrixClient.setUserPowerLevel(mapping.matterRoomId, userId, newLevel);
+                    }
+                    if (mapping.portalRoomId) {
+                        await MatrixClient.setUserPowerLevel(mapping.portalRoomId, userId, newLevel);
+                    }
+                } catch (e) {
+                    // Room-level errors are non-fatal — user might not be in that room
+                }
+            }
+        }
+
+        var roleName = adminGetRoleLabel(newLevel);
+        showAdminSuccess('Updated ' + userId + ' to ' + roleName);
+    } catch (err) {
+        console.error('[Admin] Failed to change role:', err);
+        showAdminError('Failed to update role: ' + err.message);
+        // Reload to reset the UI
+        loadAdminMembers();
+    }
+}
+
+async function adminKickUser(userId) {
+    if (!confirm('Kick ' + userId + ' from the organization?\n\nThis will remove them from all rooms. They will need to be re-invited to regain access.')) {
+        return;
+    }
+
+    try {
+        var orgSpaceId = await getAdminOrgSpace();
+        if (!orgSpaceId) throw new Error('No org space found');
+
+        // Kick from org space
+        await MatrixClient.kickUser(orgSpaceId, userId, 'Removed by admin');
+
+        // Also kick from all child rooms
+        var config = MatrixBridge.getConfig();
+        if (config && config.clientRoomMap) {
+            var clientNames = Object.keys(config.clientRoomMap);
+            for (var i = 0; i < clientNames.length; i++) {
+                var mapping = config.clientRoomMap[clientNames[i]];
+                try {
+                    if (mapping.spaceId) {
+                        await MatrixClient.kickUser(mapping.spaceId, userId, 'Removed by admin');
+                    }
+                    if (mapping.matterRoomId) {
+                        await MatrixClient.kickUser(mapping.matterRoomId, userId, 'Removed by admin');
+                    }
+                    if (mapping.portalRoomId) {
+                        await MatrixClient.kickUser(mapping.portalRoomId, userId, 'Removed by admin');
+                    }
+                } catch (e) {
+                    // Ignore errors for rooms user isn't in
+                }
+            }
+        }
+
+        showAdminSuccess('Kicked ' + userId + ' from the organization');
+        loadAdminMembers(); // Refresh list
+    } catch (err) {
+        console.error('[Admin] Failed to kick user:', err);
+        showAdminError('Failed to kick user: ' + err.message);
+    }
+}
+
+async function adminInviteUser() {
+    var input = document.getElementById('admin-invite-input');
+    var userId = input.value.trim();
+
+    if (!userId) {
+        showAdminError('Enter a user ID (e.g. @username:server.com)');
+        return;
+    }
+
+    if (!userId.startsWith('@') || !userId.includes(':')) {
+        showAdminError('User ID must be in the format @username:server.com');
+        return;
+    }
+
+    var btn = document.getElementById('admin-invite-btn');
+    btn.disabled = true;
+    btn.textContent = 'Inviting...';
+
+    try {
+        var orgSpaceId = await getAdminOrgSpace();
+        if (!orgSpaceId) throw new Error('No org space found');
+
+        await MatrixClient.inviteUser(orgSpaceId, userId);
+
+        // Set default power level to CLIENT for new invites
+        await MatrixClient.setUserPowerLevel(orgSpaceId, userId, MatrixClient.POWER_LEVELS.CLIENT);
+
+        input.value = '';
+        showAdminSuccess('Invited ' + userId + ' to the organization');
+        loadAdminMembers();
+    } catch (err) {
+        console.error('[Admin] Failed to invite user:', err);
+        showAdminError('Failed to invite: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Invite';
+    }
+}
+
 // ============ Matrix Status & Manual Room Publishing ============
 
 // Track Matrix connection state in sidebar
@@ -14343,12 +14798,30 @@ function updateMatrixStatus() {
             var rmBtn = document.getElementById('manage-rooms-btn');
             if (rmBtn) rmBtn.style.display = '';
         }
+
+        // Check admin status and show admin button (non-blocking)
+        (async function() {
+            try {
+                var orgId = await getAdminOrgSpace();
+                if (orgId) {
+                    var role = await MatrixClient.detectUserRole(orgId);
+                    var adminBtn = document.getElementById('admin-panel-btn');
+                    if (adminBtn) {
+                        adminBtn.style.display = (role === 'admin') ? '' : 'none';
+                    }
+                }
+            } catch (e) { /* ignore — admin button stays hidden */ }
+        })();
     } else {
         btn.classList.remove('matrix-connected');
         icon.textContent = '\u25CB'; // empty circle
         label.textContent = 'Connect Matrix';
         btn.onclick = function() { showSynapseLoginScreen(); };
         btn.title = 'Connect to Matrix for room sync';
+
+        // Hide admin button when not connected
+        var adminBtn = document.getElementById('admin-panel-btn');
+        if (adminBtn) adminBtn.style.display = 'none';
     }
 }
 
@@ -14732,15 +15205,22 @@ init = async function() {
 // Keyboard handler for modals (Escape to close)
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
+        // Close admin panel if open
+        var adminPanel = document.getElementById('admin-panel');
+        if (adminPanel && !adminPanel.classList.contains('hidden')) {
+            hideAdminPanel();
+            return;
+        }
         // Close room publish modal if open
         var pubModal = document.getElementById('room-publish-modal');
         if (pubModal && !pubModal.classList.contains('hidden')) {
             closeRoomPublishModal();
             return;
         }
-        // Close Synapse login if open (non-blocking, just hides)
+        // Close Synapse login if open (non-blocking, only if user is already logged in)
         var synapseScreen = document.getElementById('synapse-login-screen');
-        if (synapseScreen && !synapseScreen.classList.contains('hidden')) {
+        var synapseSession = _loadSynapseSession();
+        if (synapseScreen && !synapseScreen.classList.contains('hidden') && synapseSession && synapseSession.accessToken) {
             hideSynapseLoginScreen();
             return;
         }
@@ -14768,15 +15248,68 @@ document.addEventListener('keydown', function(e) {
 document.getElementById('unlock-password').onkeydown = (e) => { if (e.key === 'Enter') unlockWithPassword(); };
 document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('setup-password-confirm').focus(); };
 document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
+document.getElementById('admin-invite-input').onkeydown = (e) => { if (e.key === 'Enter') adminInviteUser(); };
 
-// Initialize: skip Synapse gate — boot directly to encryption/auth
-// Matrix login is now optional and accessible from the sidebar
+// Initialize: Synapse login is the primary gateway.
+// If a valid Synapse session exists and the encryption key can be restored,
+// skip straight to the API auth screen. Otherwise show the Synapse login.
 (async function() {
-    var encryptionReady = await initEncryption();
-    if (encryptionReady) {
+    // First, try restoring encryption key from sessionStorage (survives page refresh)
+    var sessionKey = await loadSessionKey();
+    var config = getEncryptionConfig();
+
+    if (sessionKey && config && config.type === 'synapse') {
+        // Session key is valid — restore encryption and proceed
+        encryptionKey = sessionKey;
+        encryptionEnabled = true;
+
+        // Restore Matrix session from saved Synapse session
+        var session = _loadSynapseSession();
+        if (session && session.accessToken) {
+            MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+            updateMatrixStatus();
+        }
+
         initAuthScreen();
+        return;
     }
-    // If encryption is not ready, the unlock screen handlers will call initAuthScreen after unlock
+
+    // Try to re-derive key from stored Synapse session
+    var session = _loadSynapseSession();
+    if (session && session.accessToken) {
+        var valid = await verifySynapseSession();
+        if (valid) {
+            encryptionKey = await deriveKeyFromSynapse(session.accessToken, session.userId);
+            encryptionEnabled = true;
+            saveEncryptionConfig({ type: 'synapse', userId: session.userId });
+            await saveSessionKey(encryptionKey);
+
+            MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+            updateMatrixStatus();
+
+            initAuthScreen();
+            return;
+        }
+    }
+
+    // Legacy: check for password/passkey encryption already configured
+    if (config && (config.type === 'password' || config.type === 'passkey')) {
+        var legacyReady = await initEncryption();
+        if (legacyReady) {
+            initAuthScreen();
+        }
+        return;
+    }
+
+    if (config && config.type === 'none') {
+        encryptionEnabled = false;
+        encryptionKey = null;
+        initAuthScreen();
+        return;
+    }
+
+    // No session and no legacy config — show Synapse login as the primary entry point
+    showSynapseLoginScreen();
 })();
     </script>
 </body>
