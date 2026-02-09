@@ -3419,7 +3419,8 @@ var expandedPayloads = new Set(); // Set of event IDs with expanded payloads
 var appOpenedEventId = 0; // Highest event ID when app was opened (events with higher IDs are "new")
 
 // Infinite scroll state
-var loadedEvents = []; // All currently loaded events
+var loadedEvents = []; // Currently loaded events (capped to MAX_LOADED_EVENTS)
+var MAX_LOADED_EVENTS = 2000; // Cap to prevent unbounded memory growth
 var eventsOffset = 0; // Current offset for loading more
 var isLoadingMoreEvents = false; // Prevent multiple simultaneous loads
 var hasMoreEvents = true; // Whether there are more events to load
@@ -4317,11 +4318,14 @@ async function getAllRawEvents(limit, offset) {
     // Check in-memory events first (from CSV import)
     if (inMemoryEvents && inMemoryEvents.length > 0) {
         // Events are sorted by ID ascending, we want newest first (descending)
-        var reversed = [];
-        for (var i = inMemoryEvents.length - 1; i >= 0; i--) {
-            reversed.push(inMemoryEvents[i]);
+        // Iterate in reverse and collect only the slice we need (avoids copying entire array)
+        var results = [];
+        var end = inMemoryEvents.length - 1 - startOffset;
+        var start = Math.max(end - maxLimit + 1, 0);
+        for (var i = end; i >= start && results.length < maxLimit; i--) {
+            results.push(inMemoryEvents[i]);
         }
-        return reversed.slice(startOffset, startOffset + maxLimit);
+        return results;
     }
 
     var results = await new Promise((resolve, reject) => {
@@ -7013,7 +7017,8 @@ async function processEvents(events) {
         }
     }
 
-    // Convert tableDataMap to dataRecords array
+    // Convert tableDataMap to dataRecords array and save per-table to limit peak memory
+    var dataRecords = [];
     for (var tableId in tableDataMap) {
         for (var recordId in tableDataMap[tableId]) {
             dataRecords.push({
@@ -7022,17 +7027,24 @@ async function processEvents(events) {
                 fields: tableDataMap[tableId][recordId]
             });
         }
+        // Free this table's data from the map after converting
+        delete tableDataMap[tableId];
     }
 
     // Save batch
     if (tables.length || fields.length || views.length || dataRecords.length) {
         await saveBatch(tables, fields, views, dataRecords);
     }
+    dataRecords = null; // release
 
-    // Save field history
-    if (fieldHistoryEntries.length) {
-        await saveFieldHistory(fieldHistoryEntries);
+    // Save field history in batches to avoid peak memory from huge array
+    if (fieldHistoryEntries.length > 0) {
+        var histBatchSize = 1000;
+        for (var fhi = 0; fhi < fieldHistoryEntries.length; fhi += histBatchSize) {
+            await saveFieldHistory(fieldHistoryEntries.slice(fhi, fhi + histBatchSize));
+        }
     }
+    fieldHistoryEntries = null; // release
 
     // Save raw events for Events view
     await saveRawEvents(events);
@@ -8048,6 +8060,14 @@ async function selectTableView(tableId, viewId) {
 
     // If switching to a different table, load it first
     if (currentTable !== tableId) {
+        // Release previous table's cached data to free memory
+        if (currentTable) {
+            delete META_FIELDS[currentTable];
+            delete META_VIEWS[currentTable];
+        }
+        originalRecordIds = [];
+        currentRecordIds = [];
+
         currentTable = tableId;
         currentPage = 0;
 
@@ -8074,7 +8094,7 @@ async function selectTableView(tableId, viewId) {
         // Load record IDs
         originalRecordIds = await getRecordIdsForTable(tableId);
         if (navVersion !== myNav) return;
-        currentRecordIds = originalRecordIds.slice();
+        currentRecordIds = originalRecordIds;
         totalRecords = currentRecordIds.length;
     }
 
@@ -8211,6 +8231,16 @@ async function showTable(tableId) {
     // Clean up special view state (Events, Sync Status)
     cleanupSpecialViewState();
 
+    // Release previous table's cached data to free memory
+    // META_FIELDS and META_VIEWS for non-current tables are re-loaded from IndexedDB on demand
+    if (currentTable && currentTable !== tableId) {
+        delete META_FIELDS[currentTable];
+        delete META_VIEWS[currentTable];
+    }
+    // Release previous record IDs
+    originalRecordIds = [];
+    currentRecordIds = [];
+
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
     currentPage = 0;
@@ -8310,7 +8340,7 @@ async function showTable(tableId) {
     // Load record IDs
     originalRecordIds = await getRecordIdsForTable(tableId);
     if (navVersion !== myNav) return;
-    currentRecordIds = originalRecordIds.slice();
+    currentRecordIds = originalRecordIds;
     totalRecords = currentRecordIds.length;
 
     // Now render full table with data
@@ -8399,7 +8429,8 @@ async function renderTable() {
         currentRecordIds = await getFilteredSortedRecords();
         if (navVersion !== renderNav) return; // Navigation changed, abort stale render
     } else {
-        currentRecordIds = originalRecordIds.slice();
+        // Reuse original array directly when no filters are active (avoid copying large arrays)
+        currentRecordIds = originalRecordIds;
     }
     totalRecords = currentRecordIds.length;
 
@@ -8410,8 +8441,8 @@ async function renderTable() {
     var isGrouped = !!currentGroupBy;
 
     if (isGrouped) {
-        // When grouping, show all records (no pagination) - up to a reasonable limit
-        var maxGroupedRecords = 1000;
+        // When grouping, show all records (no pagination) - capped to limit memory
+        var maxGroupedRecords = 500;
         displayRecordIds = currentRecordIds.slice(0, maxGroupedRecords);
     } else {
         // Standard pagination
@@ -8707,7 +8738,7 @@ async function fetchAllBySet(setType, onProgress) {
             return payload && payload._set === setType;
         });
 
-        allEvents = allEvents.concat(matchingEvents);
+        for (var m = 0; m < matchingEvents.length; m++) allEvents.push(matchingEvents[m]);
         if (onProgress) onProgress(allEvents.length);
         if (!result.hasMore) break;
         page = result.nextPage;
@@ -8989,7 +9020,7 @@ async function fullSync() {
             // Refresh current table view to show new data
             if (currentTable && currentTable !== '_events') {
                 originalRecordIds = await getRecordIdsForTable(currentTable);
-                currentRecordIds = originalRecordIds.slice();
+                currentRecordIds = originalRecordIds;
                 totalRecords = currentRecordIds.length;
                 await renderTable();
             }
@@ -9017,7 +9048,7 @@ async function fullSync() {
     await renderSidebar();
     if (currentTable && currentTable !== '_events') {
         originalRecordIds = await getRecordIdsForTable(currentTable);
-        currentRecordIds = originalRecordIds.slice();
+        currentRecordIds = originalRecordIds;
         totalRecords = currentRecordIds.length;
         await renderTable();
     }
@@ -9066,7 +9097,7 @@ async function incrementalSync() {
         while (true) {
             var result = await fetchPage(page, lastEventTimestamp);
             if (!result.events || result.events.length === 0) break;
-            allEvents = allEvents.concat(result.events);
+            for (var ei = 0; ei < result.events.length; ei++) allEvents.push(result.events[ei]);
             if (!result.hasMore) break;
             page = result.nextPage;
             iterations++;
@@ -9090,7 +9121,7 @@ async function incrementalSync() {
             // Update data view if table is selected
             if (currentTable && currentTable !== '_sync_status') {
                 originalRecordIds = await getRecordIdsForTable(currentTable);
-                currentRecordIds = originalRecordIds.slice();
+                currentRecordIds = originalRecordIds;
                 totalRecords = currentRecordIds.length;
                 await renderTable();
             }
@@ -9940,8 +9971,11 @@ async function loadMoreEvents(totalEventsCount, totalRecordsCount) {
         if (newEvents.length === 0) {
             hasMoreEvents = false;
         } else {
-            // Add new events to loaded array
-            loadedEvents = loadedEvents.concat(newEvents);
+            // Add new events to loaded array, capping total to prevent memory bloat
+            for (var le = 0; le < newEvents.length; le++) loadedEvents.push(newEvents[le]);
+            if (loadedEvents.length > MAX_LOADED_EVENTS) {
+                loadedEvents = loadedEvents.slice(loadedEvents.length - MAX_LOADED_EVENTS);
+            }
             eventsOffset += newEvents.length;
             hasMoreEvents = newEvents.length === eventsPageSize;
 
@@ -10306,7 +10340,7 @@ async function exportEventsToCSV() {
         while (true) {
             var batch = await getRawEventsPaginated(offset, batchSize);
             if (batch.length === 0) break;
-            allEvents = allEvents.concat(batch);
+            for (var bi = 0; bi < batch.length; bi++) allEvents.push(batch[bi]);
             offset += batch.length;
 
             var progress = Math.round((allEvents.length / totalCount) * 50);
@@ -10430,6 +10464,7 @@ async function importEventsFromCSV() {
 
             var text = await file.text();
             var lines = text.split(/\r?\n/);
+            text = null; // Release original text string to free memory
 
             if (lines.length < 2) {
                 showImportStatus('Import Failed', 'CSV file is empty or has no data rows.', 'error');
@@ -10498,11 +10533,14 @@ async function importEventsFromCSV() {
             var newEvents = events.filter(function(e) {
                 return !existingIds.has(e.id);
             });
+            existingIds = null; // Release
 
-            var duplicateCount = events.length - newEvents.length;
+            var totalEventCount = events.length;
+            var duplicateCount = totalEventCount - newEvents.length;
+            events = null; // Release original array — only newEvents needed now
 
             if (newEvents.length === 0) {
-                showImportStatus('Import Complete', 'All ' + events.length.toLocaleString() + ' events already exist (no new events to import).', 'success');
+                showImportStatus('Import Complete', 'All ' + totalEventCount.toLocaleString() + ' events already exist (no new events to import).', 'success');
                 return;
             }
 
@@ -10643,31 +10681,49 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
             }
         }
 
-        // Phase 3: Save data records from IN_MEMORY_DATA
-        var dataRecords = [];
+        // Save metadata first (tables, fields, views)
+        if (tables.length || fields.length || views.length) {
+            await saveBatch(tables, fields, views, []);
+        }
+
+        // Phase 3: Save data records from IN_MEMORY_DATA per-table and free each table's data after save
         if (window.IN_MEMORY_DATA) {
-            for (var tableId in window.IN_MEMORY_DATA) {
-                for (var recordId in window.IN_MEMORY_DATA[tableId]) {
+            var tableIds = Object.keys(window.IN_MEMORY_DATA);
+            for (var ti = 0; ti < tableIds.length; ti++) {
+                var tableId = tableIds[ti];
+                var tableData = window.IN_MEMORY_DATA[tableId];
+                if (!tableData) continue;
+                var dataRecords = [];
+                for (var recordId in tableData) {
                     dataRecords.push({
                         tableId: tableId,
                         recordId: recordId,
-                        fields: window.IN_MEMORY_DATA[tableId][recordId]
+                        fields: tableData[recordId]
                     });
                 }
+                if (dataRecords.length > 0) {
+                    // Save in sub-batches to avoid large transactions
+                    for (var di = 0; di < dataRecords.length; di += batchSize) {
+                        var dataBatch = dataRecords.slice(di, di + batchSize);
+                        await saveBatch([], [], [], dataBatch);
+                    }
+                }
+                // Free this table's in-memory data now that it's persisted
+                delete window.IN_MEMORY_DATA[tableId];
+                // Yield to GC and UI
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
         }
 
-        // Save metadata and records in batch
-        if (tables.length || fields.length || views.length || dataRecords.length) {
-            await saveBatch(tables, fields, views, dataRecords);
-        }
-
         // Phase 4: Build and save field history from raw events
-        // Group events by tableId and recordId, then build history for each record
-        // Only process data events (set starts with 'airtable:')
+        // Group events by tableId and recordId, then build history per-record
+        // Save incrementally to avoid accumulating a huge array
         var eventsByTableAndRecord = {};
+        var maxId = 0;
+        var lastEventCreatedAt = null;
         for (var i = 0; i < events.length; i++) {
             var evt = events[i];
+            if (evt.id > maxId) { maxId = evt.id; lastEventCreatedAt = evt.created_at; }
             if (evt.recordId && evt.set && evt.set.startsWith('airtable:')) {
                 var tableId = evt.set.replace('airtable:', '');
                 var key = tableId + '|' + evt.recordId;
@@ -10678,31 +10734,42 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
             }
         }
 
-        var allFieldHistoryEntries = [];
+        // Process field history in batches, saving and releasing as we go
+        var historyBatch = [];
+        var totalHistoryEntries = 0;
         var recordKeys = Object.keys(eventsByTableAndRecord);
         for (var k = 0; k < recordKeys.length; k++) {
             var group = eventsByTableAndRecord[recordKeys[k]];
             var historyEntries = buildFieldHistoryFromRawEvents(group.tableId, group.recordId, group.events);
-            allFieldHistoryEntries = allFieldHistoryEntries.concat(historyEntries);
+            // Free the events for this record immediately
+            group.events = null;
+            for (var he = 0; he < historyEntries.length; he++) {
+                historyBatch.push(historyEntries[he]);
+            }
+            totalHistoryEntries += historyEntries.length;
+
+            // Save when batch is large enough
+            if (historyBatch.length >= batchSize) {
+                await saveFieldHistory(historyBatch);
+                historyBatch = [];
+            }
 
             // Yield periodically to keep UI responsive
             if (k % 500 === 0 && k > 0) {
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
         }
-
-        // Save field history in batches
-        if (allFieldHistoryEntries.length > 0) {
-            for (var h = 0; h < allFieldHistoryEntries.length; h += batchSize) {
-                var historyBatch = allFieldHistoryEntries.slice(h, h + batchSize);
-                await saveFieldHistory(historyBatch);
-            }
-            console.log('Saved ' + allFieldHistoryEntries.length + ' field history entries');
+        // Save remaining
+        if (historyBatch.length > 0) {
+            await saveFieldHistory(historyBatch);
         }
+        if (totalHistoryEntries > 0) {
+            console.log('Saved ' + totalHistoryEntries + ' field history entries');
+        }
+        eventsByTableAndRecord = null; // release
 
         // Update the last event timestamp in IndexedDB
-        var maxId = events.reduce(function(max, e) { return Math.max(max, e.id); }, 0);
-        var lastEvent = events.find(function(e) { return e.id === maxId; });
+        var lastEvent = lastEventCreatedAt ? { created_at: lastEventCreatedAt } : null;
         if (lastEvent && lastEvent.created_at) {
             await setSyncMeta('lastEventTimestamp', lastEvent.created_at);
         }
@@ -12245,53 +12312,71 @@ function compareValues(a, b, direction) {
 }
 
 // Apply all filters, search, and sorts to get filtered record IDs
+// Processes records in batches to avoid loading entire dataset into memory at once
 async function getFilteredSortedRecords() {
     if (!currentTable) return [];
 
-    // Fetch all records for the table
-    var allRecords = await getRecordsByIds(currentTable, originalRecordIds);
+    var hasFilters = currentFilters.length > 0;
+    var hasSearch = !!currentSearchQuery;
+    var hasSorts = currentSorts.length > 0;
+    var needsRecordData = hasFilters || hasSearch || hasSorts;
 
-    // Build record map
-    var recordsById = {};
-    allRecords.forEach(r => {
-        recordsById[r.recordId] = r;
-    });
+    // If no filters/search/sorts, just return a copy
+    if (!needsRecordData) return originalRecordIds.slice();
 
-    // Start with original order
-    var filteredIds = originalRecordIds.slice();
+    var BATCH_SIZE = 500;
+    var filteredIds = [];
 
-    // Apply search filter
-    if (currentSearchQuery) {
-        filteredIds = filteredIds.filter(id => {
-            var record = recordsById[id];
-            return record && matchesSearch(record, currentSearchQuery);
-        });
+    // Phase 1: Filter in batches — only load BATCH_SIZE records at a time
+    for (var batchStart = 0; batchStart < originalRecordIds.length; batchStart += BATCH_SIZE) {
+        var batchIds = originalRecordIds.slice(batchStart, batchStart + BATCH_SIZE);
+        var batchRecords = await getRecordsByIds(currentTable, batchIds);
+        var batchById = {};
+        for (var r = 0; r < batchRecords.length; r++) {
+            batchById[batchRecords[r].recordId] = batchRecords[r];
+        }
+
+        for (var b = 0; b < batchIds.length; b++) {
+            var id = batchIds[b];
+            var record = batchById[id];
+            if (!record) continue;
+
+            if (hasSearch && !matchesSearch(record, currentSearchQuery)) continue;
+            if (hasFilters && !currentFilters.every(function(filter) { return matchesFilter(record, filter); })) continue;
+
+            filteredIds.push(id);
+        }
+        // batchRecords and batchById go out of scope here — GC can reclaim
     }
 
-    // Apply custom filters
-    if (currentFilters.length > 0) {
-        filteredIds = filteredIds.filter(id => {
-            var record = recordsById[id];
-            if (!record) return false;
-            return currentFilters.every(filter => matchesFilter(record, filter));
-        });
-    }
+    // Phase 2: Sort — only load the sort field values, not full records
+    if (hasSorts && filteredIds.length > 1) {
+        // For sorting we need field values, but only for filtered records and only sort fields
+        var sortCache = {};
+        for (var s = 0; s < filteredIds.length; s += BATCH_SIZE) {
+            var sortBatchIds = filteredIds.slice(s, s + BATCH_SIZE);
+            var sortBatchRecords = await getRecordsByIds(currentTable, sortBatchIds);
+            for (var sr = 0; sr < sortBatchRecords.length; sr++) {
+                var rec = sortBatchRecords[sr];
+                var vals = {};
+                for (var si = 0; si < currentSorts.length; si++) {
+                    vals[currentSorts[si].fieldId] = getCellValue(rec, currentSorts[si].fieldId);
+                }
+                sortCache[rec.recordId] = vals;
+            }
+        }
 
-    // Apply sorts
-    if (currentSorts.length > 0) {
-        filteredIds.sort((idA, idB) => {
-            var recordA = recordsById[idA];
-            var recordB = recordsById[idB];
-
+        filteredIds.sort(function(idA, idB) {
+            var valsA = sortCache[idA] || {};
+            var valsB = sortCache[idB] || {};
             for (var i = 0; i < currentSorts.length; i++) {
                 var sort = currentSorts[i];
-                var valueA = getCellValue(recordA, sort.fieldId);
-                var valueB = getCellValue(recordB, sort.fieldId);
-                var cmp = compareValues(valueA, valueB, sort.direction);
+                var cmp = compareValues(valsA[sort.fieldId], valsB[sort.fieldId], sort.direction);
                 if (cmp !== 0) return cmp;
             }
             return 0;
         });
+        sortCache = null; // release
     }
 
     return filteredIds;
