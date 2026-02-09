@@ -3562,6 +3562,8 @@ var BOX_SYNC_WEBHOOK = null; // Secured: initialized after authentication via in
 var BOX_DOWNLOAD_WEBHOOK = null; // Secured: initialized after authentication via initSecureEndpoints()
 var BOX_SYNC_FOLDER_ID = '364363223627';
 var BOX_SYNC_FILENAME = 'amino-snapshot.amo';
+var BOX_SYNC_MIN_PUSH_INTERVAL = 60 * 60 * 1000; // 1 hour — hydration snapshots don't need to be frequent
+var BOX_SYNC_LAST_PUSH_TIME = 0; // Timestamp of last successful push
 
 // ============ Events View State ============
 var eventsPageSize = 50;
@@ -4188,9 +4190,22 @@ var PostHydrationSync = {
 var BoxSync = {
     isPushing: false,
 
-    // Push full event stream as .amo to Box via n8n webhook
-    async push() {
+    // Push full event stream as .amo binary to Box via n8n webhook.
+    // n8n stamps its own timestamped filename and handles backlog cleanup (>24h).
+    // This is a hydration checkpoint — not a real-time sync — so we throttle to
+    // BOX_SYNC_MIN_PUSH_INTERVAL (default 1 hour).
+    async push(force) {
         if (this.isPushing || !API_KEY || !BOX_SYNC_WEBHOOK) return;
+
+        // Throttle: skip if we pushed recently (unless forced by manual push)
+        if (!force && BOX_SYNC_LAST_PUSH_TIME > 0) {
+            var elapsed = Date.now() - BOX_SYNC_LAST_PUSH_TIME;
+            if (elapsed < BOX_SYNC_MIN_PUSH_INTERVAL) {
+                console.log('[BoxSync] Skipping push — last push was ' + Math.round(elapsed / 60000) + 'm ago (min interval: ' + Math.round(BOX_SYNC_MIN_PUSH_INTERVAL / 60000) + 'm)');
+                return;
+            }
+        }
+
         this.isPushing = true;
         try {
             // Read all raw events from IndexedDB
@@ -4226,11 +4241,12 @@ var BoxSync = {
                 return;
             }
 
-            // Produce .amo binary with full event stream
+            // Produce .amo binary with full event stream and all metadata
             var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS });
             var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
 
-            // Build FormData and POST to n8n webhook
+            // Build FormData and POST binary .amo to n8n webhook
+            // n8n generates its own timestamped filename for Box versioning
             var form = new FormData();
             form.append('file', blob, BOX_SYNC_FILENAME);
 
@@ -4247,6 +4263,8 @@ var BoxSync = {
             if (!res.ok) {
                 throw new Error('Box upload failed: ' + res.status + ' ' + res.statusText);
             }
+
+            BOX_SYNC_LAST_PUSH_TIME = Date.now();
 
             var sizeStr = binary.length < 1024
                 ? binary.length + ' B'
@@ -4288,7 +4306,7 @@ function manualBoxPush() {
     var btn = document.getElementById('box-push-btn');
     if (btn) btn.disabled = true;
     SyncStatusFeed.info('Box: manual push started…');
-    BoxSync.push().then(function() {
+    BoxSync.push(true).then(function() {
         if (btn) btn.disabled = false;
     });
 }
@@ -11505,18 +11523,29 @@ async function skipSetupAndUploadAmoFile() {
 async function hydrateFromBoxDownload() {
     try {
         showLoadingOverlay();
-        updateLoadingOverlay('Downloading data...', 'Fetching from cloud storage...', 5, 0, 0, 0, '');
+        updateLoadingOverlay('Downloading data...', 'Fetching latest snapshot from cloud storage...', 5, 0, 0, 0, '');
 
         if (!BOX_DOWNLOAD_WEBHOOK || !API_KEY) {
             hideLoadingOverlay();
             return false;
         }
+
+        // n8n download webhook lists all .amo files in the Box folder,
+        // picks the latest by timestamp-sorted name, and returns the binary directly.
+        // X-Amo-Available response header lists all available snapshots.
         var downloadUrl = BOX_DOWNLOAD_WEBHOOK + '?api_key=' + encodeURIComponent(API_KEY);
         var response = await fetch(downloadUrl);
         if (!response.ok) {
             console.warn('[BoxDownload] HTTP ' + response.status + ' - no data available');
             hideLoadingOverlay();
             return false;
+        }
+
+        // Log which snapshot we got (n8n sends available list in header)
+        var availableSnapshots = response.headers.get('x-amo-available');
+        if (availableSnapshots) {
+            var snapshotList = availableSnapshots.split(',');
+            console.log('[BoxDownload] Available snapshots in backlog: ' + snapshotList.length + ' (' + snapshotList[0] + ' … ' + snapshotList[snapshotList.length - 1] + ')');
         }
 
         var buffer = await response.arrayBuffer();
