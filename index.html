@@ -1652,7 +1652,7 @@
         </div>
     </div>
 
-    <div id="synapse-login-screen" class="hidden">
+    <div id="synapse-login-screen">
         <div class="synapse-login-box">
             <h2>Amino Viewer</h2>
             <p>Sign in to your account at app.aminoimmigration.com</p>
@@ -6722,12 +6722,23 @@ async function trySynapseLogin() {
 
         hideSynapseLoginScreen();
 
-        // Go directly to app initialization — no API key needed
+        // Fresh login — clear stale local data so we always hydrate cleanly from Synapse
+        try {
+            var freshDb = await openDB();
+            db = freshDb;
+            await clearAllData();
+            db.close();
+            db = null;
+        } catch (clearErr) {
+            console.warn('[Synapse] Could not clear local data for fresh sync:', clearErr);
+        }
+
+        // Go directly to app initialization — will hydrate all rooms from Synapse
         try {
             await init();
-            showViewSelection();
         } catch (initErr) {
             console.error('[Synapse] Init failed after login:', initErr);
+            hideLoadingOverlay();
             showSynapseError('Signed in but initialization failed: ' + initErr.message);
             showSynapseLoginScreen();
         }
@@ -10018,10 +10029,16 @@ async function hydrateFromSynapse() {
 
         updateStatus('Hydrating from Synapse...', false, 0, 'Found ' + tableRooms.length + ' tables');
         var totalProcessed = 0;
+        var totalFieldsFound = 0;
+        var totalRecordsFound = 0;
+
+        updateLoadingOverlay('Downloading data...', 'Found ' + tableRooms.length + ' tables', 0, tableRooms.length, 0, 0, null);
 
         for (var idx = 0; idx < tableRooms.length; idx++) {
             var tr = tableRooms[idx];
-            updateStatus('Hydrating ' + tr.name + '...', false, Math.round((idx / tableRooms.length) * 100), 'Table ' + (idx + 1) + ' of ' + tableRooms.length);
+            var progressPct = Math.round((idx / tableRooms.length) * 100);
+            updateStatus('Hydrating ' + tr.name + '...', false, progressPct, 'Table ' + (idx + 1) + ' of ' + tableRooms.length);
+            updateLoadingOverlay('Downloading ' + tr.name + '...', 'Table ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
 
             // 1. Read schema state events for this room
             try {
@@ -10040,8 +10057,10 @@ async function hydrateFromSynapse() {
                             await saveTable({ tableId: evt.content.tableId || evt.content.table_id || tr.tableId, tableName: evt.content.name || evt.content.tableName || tr.name });
                         } else if (evt.type === 'law.firm.schema.field' && evt.content) {
                             await saveField({ tableId: tr.tableId, fieldId: evt.content.fieldId || evt.content.field_id || evt.state_key, fieldName: evt.content.name, fieldType: evt.content.type, options: evt.content.options });
+                            totalFieldsFound++;
                         }
                     }
+                    updateLoadingOverlay('Downloading ' + tr.name + '...', 'Reading records...', progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
                 }
             } catch (stateErr) {
                 console.warn('[Hydration] State read failed for ' + tr.name + ':', stateErr);
@@ -10076,11 +10095,15 @@ async function hydrateFromSynapse() {
                                 await processEvents([synEvent]);
                                 roomEvents++;
                                 totalProcessed++;
+                                totalRecordsFound++;
                             } catch (procErr) {
                                 console.warn('[Hydration] Event processing error:', procErr);
                             }
                         }
                     }
+
+                    // Update loading overlay with record progress
+                    updateLoadingOverlay('Downloading ' + tr.name + '...', 'Table ' + (idx + 1) + ' of ' + tableRooms.length + ' (' + roomEvents + ' records)', progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
 
                     from = msgData.end;
                     if (!from) break;
@@ -10092,6 +10115,8 @@ async function hydrateFromSynapse() {
 
             console.log('[Hydration] ' + tr.name + ': ' + roomEvents + ' events processed');
         }
+
+        updateLoadingOverlay('Encrypting and saving...', 'Finalizing ' + totalProcessed + ' records', 95, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
 
         // Save sync token for incremental updates going forward
         try {
@@ -10107,6 +10132,7 @@ async function hydrateFromSynapse() {
             console.warn('[Hydration] Could not save sync token:', tokenErr);
         }
 
+        updateLoadingOverlay('Sync complete', totalProcessed + ' records downloaded and encrypted', 100, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
         updateStatus('Hydration complete: ' + totalProcessed + ' events', true, 100, null);
         return totalProcessed > 0;
     } catch (err) {
@@ -10198,9 +10224,11 @@ async function init() {
             await showTable(firstTable);
         }
     } else {
-        // No local data — try to hydrate from Synapse rooms
-        updateStatus('Hydrating from Synapse...', false, 0, 'Connecting to rooms...');
+        // No local data — show loading overlay and hydrate from Synapse rooms
+        showLoadingOverlay();
+        updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
         var hydrated = await hydrateFromSynapse();
+        hideLoadingOverlay();
 
         if (hydrated) {
             // Reload metadata after hydration
@@ -16272,9 +16300,9 @@ document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key
                     encryptionKey = sessionKey;
                     encryptionEnabled = true;
 
-                    // Session + encryption restored — init app + show view selection
+                    // Session + encryption restored — hide login and init app
+                    hideSynapseLoginScreen();
                     await init();
-                    showViewSelection();
                     return;
                 } catch (e) {
                     // Session key invalid, need re-login to re-derive
@@ -16289,8 +16317,7 @@ document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key
         }
     }
 
-    // No valid session or need re-authentication — show Synapse login
-    showSynapseLoginScreen();
+    // No valid session or need re-authentication — login screen is already visible
 })();
     </script>
 </body>
