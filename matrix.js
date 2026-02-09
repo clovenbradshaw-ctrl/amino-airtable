@@ -570,6 +570,27 @@ var MatrixClient = (function() {
             .map(function(e) { return e.state_key; });
     }
 
+    // ============ Room Membership ============
+
+    async function getJoinedMembers(roomId) {
+        var data = await _requestWithRetry('GET',
+            '/rooms/' + encodeURIComponent(roomId) + '/joined_members');
+        return data.joined || {};
+    }
+
+    async function banUser(roomId, userId, reason) {
+        await _requestWithRetry('POST', '/rooms/' + encodeURIComponent(roomId) + '/ban', {
+            user_id: userId,
+            reason: reason || undefined
+        });
+    }
+
+    async function unbanUser(roomId, userId) {
+        await _requestWithRetry('POST', '/rooms/' + encodeURIComponent(roomId) + '/unban', {
+            user_id: userId
+        });
+    }
+
     // ============ User Role Detection ============
 
     async function detectUserRole(orgSpaceId) {
@@ -841,9 +862,12 @@ var MatrixClient = (function() {
         setRoomParentSpace: setRoomParentSpace,
         inviteUser: inviteUser,
         kickUser: kickUser,
+        banUser: banUser,
+        unbanUser: unbanUser,
         joinRoom: joinRoom,
         leaveRoom: leaveRoom,
         forgetRoom: forgetRoom,
+        getJoinedMembers: getJoinedMembers,
 
         // Power levels
         getRoomPowerLevels: getRoomPowerLevels,
