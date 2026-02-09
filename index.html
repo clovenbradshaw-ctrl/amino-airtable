@@ -1654,15 +1654,14 @@
 
     <div id="synapse-login-screen" class="hidden">
         <div class="synapse-login-box">
-            <h2>Connect to Matrix</h2>
-            <p>Sign in to enable room sync and collaboration. Your data works locally without this.</p>
+            <h2>Amino Viewer</h2>
+            <p>Sign in to your account at app.aminoimmigration.com</p>
             <div id="synapse-login-error" class="synapse-error"></div>
             <label for="synapse-username">Username</label>
             <input type="text" id="synapse-username" placeholder="Username" autocomplete="username">
             <label for="synapse-password">Password</label>
             <input type="password" id="synapse-password" placeholder="Password" autocomplete="current-password">
             <button id="synapse-login-btn">Sign In</button>
-            <button id="synapse-skip-btn" onclick="hideSynapseLoginScreen()" style="width: 100%; padding: 10px; background: transparent; border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-muted); font-size: 13px; cursor: pointer; margin-top: 8px;">Skip - Stay Local Only</button>
         </div>
     </div>
 
@@ -7061,7 +7060,95 @@ async function trySynapseLogin() {
         // Set up MatrixClient session for room operations
         MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, data.access_token, data.user_id, data.device_id);
 
+        // Derive local encryption key from Synapse password
+        var salt = new TextEncoder().encode('amino-local-encrypt:' + data.user_id);
+        var derivedKey = await deriveKeyFromPassword(password, salt);
+
+        // Check for existing encryption config and handle migration
+        var existingConfig = getEncryptionConfig();
+        if (existingConfig && existingConfig.verificationToken && existingConfig.type === 'synapse') {
+            // Returning user — verify the derived key matches
+            try {
+                await decryptData(existingConfig.verificationToken, derivedKey);
+            } catch (e) {
+                // Password changed on Synapse — re-create encryption config with new key
+                console.warn('[Synapse] Password changed, re-creating encryption config');
+                var verificationToken = await encryptData({ verify: 'amino-encryption-check' }, derivedKey);
+                saveEncryptionConfig({
+                    type: 'synapse',
+                    userId: data.user_id,
+                    verificationToken: verificationToken
+                });
+            }
+        } else {
+            // First time or migrating from old flow — create new encryption config
+            var verificationToken = await encryptData({ verify: 'amino-encryption-check' }, derivedKey);
+            saveEncryptionConfig({
+                type: 'synapse',
+                userId: data.user_id,
+                verificationToken: verificationToken
+            });
+        }
+
+        encryptionKey = derivedKey;
+        encryptionEnabled = true;
+        await saveSessionKey(encryptionKey);
+
+        // Password no longer needed
+        password = null;
+
+        // Fetch API key from Matrix account data
+        try {
+            var apiConfig = await MatrixClient.getAccountData('law.firm.api_config');
+            if (apiConfig && apiConfig.apiKey) {
+                API_KEY = apiConfig.apiKey;
+                SET_FILTER = apiConfig.setFilter || null;
+                await saveEncryptedCredentials(API_KEY, SET_FILTER);
+                await initSecureEndpoints(API_KEY);
+            } else {
+                // No API key provisioned — try loading from local encrypted credentials
+                var savedCreds = await loadEncryptedCredentials();
+                if (savedCreds && savedCreds.apiKey) {
+                    API_KEY = savedCreds.apiKey;
+                    SET_FILTER = savedCreds.setFilter || null;
+                    await initSecureEndpoints(API_KEY);
+                } else {
+                    showSynapseError('No API key provisioned. Contact your administrator.');
+                    btn.textContent = 'Sign In';
+                    btn.disabled = false;
+                    return;
+                }
+            }
+        } catch (apiErr) {
+            console.warn('[Synapse] Could not fetch API config from account data:', apiErr);
+            // Fall back to locally saved credentials
+            var savedCreds = await loadEncryptedCredentials();
+            if (savedCreds && savedCreds.apiKey) {
+                API_KEY = savedCreds.apiKey;
+                SET_FILTER = savedCreds.setFilter || null;
+                await initSecureEndpoints(API_KEY);
+            } else {
+                showSynapseError('No API key provisioned. Contact your administrator.');
+                btn.textContent = 'Sign In';
+                btn.disabled = false;
+                return;
+            }
+        }
+
         hideSynapseLoginScreen();
+
+        // Initialize the app
+        try {
+            await init();
+        } catch (initErr) {
+            console.error('[Synapse] Init failed after login:', initErr);
+            showSynapseError('Initialization failed: ' + initErr.message);
+            showSynapseLoginScreen();
+            btn.textContent = 'Sign In';
+            btn.disabled = false;
+            return;
+        }
+
         // Update sidebar to show Matrix-connected state
         updateMatrixStatus();
         renderSidebar(true);
@@ -7348,8 +7435,15 @@ function logout() {
     // Clear saved credentials (both encrypted and plaintext)
     clearEncryptedCredentials();
     clearSessionKey();
-    // Show auth screen (Matrix session is independent — user disconnects Matrix separately)
-    showAuthScreen();
+    // Clear encryption state
+    encryptionKey = null;
+    encryptionEnabled = false;
+    // Log out of Synapse and show Synapse login screen
+    synapseLogout();
+    // Hide auth screen if visible, show Synapse login
+    var authEl = document.getElementById('auth-screen');
+    authEl.classList.add('hidden');
+    showSynapseLoginScreen();
 }
 
 async function manualSync() {
@@ -16754,10 +16848,9 @@ document.addEventListener('keydown', function(e) {
             closeRoomPublishModal();
             return;
         }
-        // Close Synapse login if open (non-blocking, just hides)
+        // Synapse login is mandatory — do not dismiss with Escape
         var synapseScreen = document.getElementById('synapse-login-screen');
         if (synapseScreen && !synapseScreen.classList.contains('hidden')) {
-            hideSynapseLoginScreen();
             return;
         }
         // Close room manager if open
@@ -16785,14 +16878,51 @@ document.getElementById('unlock-password').onkeydown = (e) => { if (e.key === 'E
 document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('setup-password-confirm').focus(); };
 document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
 
-// Initialize: skip Synapse gate — boot directly to encryption/auth
-// Matrix login is now optional and accessible from the sidebar
+// Initialize: Synapse login is the gate — everything derives from it
 (async function() {
-    var encryptionReady = await initEncryption();
-    if (encryptionReady) {
-        initAuthScreen();
+    // Check for existing valid Synapse session
+    var session = _loadSynapseSession();
+    if (session && session.accessToken) {
+        var valid = await verifySynapseSession();
+        if (valid) {
+            // Set up MatrixClient with existing session
+            MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+
+            // Try to restore encryption from session key
+            var sessionKey = await loadSessionKey();
+            var config = getEncryptionConfig();
+            if (sessionKey && config && config.verificationToken && config.type === 'synapse') {
+                try {
+                    await decryptData(config.verificationToken, sessionKey);
+                    encryptionKey = sessionKey;
+                    encryptionEnabled = true;
+
+                    // Restore API key from saved credentials or account data
+                    var savedCreds = await loadEncryptedCredentials();
+                    if (savedCreds && savedCreds.apiKey) {
+                        API_KEY = savedCreds.apiKey;
+                        SET_FILTER = savedCreds.setFilter || null;
+                        await initSecureEndpoints(API_KEY);
+                        await init();
+                        updateMatrixStatus();
+                        renderSidebar(true);
+                        return; // Fully auto-logged in
+                    }
+                } catch (e) {
+                    // Session key invalid, need re-login
+                    clearSessionKey();
+                }
+            }
+            // Session is valid but no encryption key — need password to re-derive
+            // Fall through to show Synapse login
+        } else {
+            // Session invalid/expired, clear it
+            _clearSynapseSession();
+        }
     }
-    // If encryption is not ready, the unlock screen handlers will call initAuthScreen after unlock
+
+    // No valid session or need re-authentication — show Synapse login
+    showSynapseLoginScreen();
 })();
     </script>
 </body>
