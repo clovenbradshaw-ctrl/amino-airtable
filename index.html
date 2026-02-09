@@ -291,7 +291,7 @@
         .sidebar-footer {
             margin-top: auto; padding: 12px 16px;
             border-top: 1px solid var(--border-primary);
-            display: flex; align-items: center; gap: 8px;
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
         }
         .theme-toggle-btn {
             display: flex; align-items: center; gap: 6px;
@@ -301,6 +301,39 @@
             transition: all var(--transition-fast); flex: 1;
         }
         .theme-toggle-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border-secondary); }
+
+        /* Matrix connection status */
+        .theme-toggle-btn.matrix-connected { border-color: var(--success-500); color: var(--success-500); }
+        .theme-toggle-btn.matrix-connected:hover { background: rgba(34,197,94,0.1); }
+
+        /* ===== Room Publishing Modal ===== */
+        .room-publish-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; }
+        .room-publish-modal.hidden { display: none !important; }
+        .room-publish-box { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); padding: 24px; width: 480px; max-height: 80vh; overflow-y: auto; box-shadow: var(--shadow-xl); }
+        .room-publish-box h2 { font-size: 18px; margin-bottom: 4px; color: var(--text-primary); }
+        .room-publish-box .pub-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+        .room-publish-section { margin-bottom: 16px; }
+        .room-publish-section h3 { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .room-table-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); margin-bottom: 6px; cursor: pointer; transition: all var(--transition-fast); }
+        .room-table-item:hover { border-color: var(--primary-500); background: var(--bg-hover); }
+        .room-table-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary-500); flex-shrink: 0; }
+        .room-table-item .table-info { flex: 1; }
+        .room-table-item .table-info .table-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+        .room-table-item .table-info .table-meta { font-size: 11px; color: var(--text-muted); }
+        .room-table-item .pub-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+        .room-table-item .pub-status.local { background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-primary); }
+        .room-table-item .pub-status.published { background: rgba(34,197,94,0.15); color: var(--success-500); }
+        .pub-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+        .pub-actions button { padding: 8px 16px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; cursor: pointer; transition: all var(--transition-fast); }
+        .pub-btn-cancel { background: var(--bg-tertiary); border: 1px solid var(--border-primary); color: var(--text-secondary); }
+        .pub-btn-cancel:hover { background: var(--bg-hover); }
+        .pub-btn-publish { background: var(--primary-500); border: none; color: #fff; }
+        .pub-btn-publish:hover { background: var(--primary-600); }
+        .pub-btn-publish:disabled { background: var(--gray-600); cursor: not-allowed; }
+        .pub-progress { margin-top: 12px; }
+        .pub-progress-bar { height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; }
+        .pub-progress-fill { height: 100%; background: var(--primary-500); transition: width 0.3s ease; }
+        .pub-progress-text { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
         /* ===== Main Content Area ===== */
         .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-primary); }
 
@@ -1473,14 +1506,15 @@
 
     <div id="synapse-login-screen" class="hidden">
         <div class="synapse-login-box">
-            <h2>Sign In</h2>
-            <p>Log in with your Amino account to continue</p>
+            <h2>Connect to Matrix</h2>
+            <p>Sign in to enable room sync and collaboration. Your data works locally without this.</p>
             <div id="synapse-login-error" class="synapse-error"></div>
             <label for="synapse-username">Username</label>
             <input type="text" id="synapse-username" placeholder="Username" autocomplete="username">
             <label for="synapse-password">Password</label>
             <input type="password" id="synapse-password" placeholder="Password" autocomplete="current-password">
             <button id="synapse-login-btn">Sign In</button>
+            <button id="synapse-skip-btn" onclick="hideSynapseLoginScreen()" style="width: 100%; padding: 10px; background: transparent; border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-muted); font-size: 13px; cursor: pointer; margin-top: 8px;">Skip - Stay Local Only</button>
         </div>
     </div>
 
@@ -1650,6 +1684,10 @@
         </div>
         <div id="table-list"></div>
         <div class="sidebar-footer">
+            <button class="theme-toggle-btn" id="matrix-connect-btn" onclick="showSynapseLoginScreen()" title="Connect to Matrix for room sync">
+                <span id="matrix-status-icon">&#9675;</span>
+                <span id="matrix-status-label">Connect Matrix</span>
+            </button>
             <button class="theme-toggle-btn" id="manage-rooms-btn" onclick="showRoomManager()" title="Manage Matrix rooms" style="display: none;">
                 <span>&#9881;</span>
                 <span>Manage Rooms</span>
@@ -2065,6 +2103,59 @@
                     Next
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Room Publishing Modal -->
+    <div class="room-publish-modal hidden" id="room-publish-modal" onclick="closeRoomPublishModal(event)">
+        <div class="room-publish-box" onclick="event.stopPropagation()">
+            <h2>Publish to Matrix Rooms</h2>
+            <p class="pub-subtitle">Select tables to publish as Matrix rooms. Each table becomes a room with its schema and records stored as state events.</p>
+            <div id="room-publish-not-connected" style="display: none;">
+                <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+                    <p style="margin-bottom: 12px;">Not connected to Matrix. Sign in first to publish rooms.</p>
+                    <button class="pub-btn-publish" onclick="closeRoomPublishModal(); showSynapseLoginScreen();">Sign in to Matrix</button>
+                </div>
+            </div>
+            <div id="room-publish-content">
+                <div class="room-publish-section">
+                    <h3>Organization</h3>
+                    <div id="pub-org-section">
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="text" id="pub-org-name" placeholder="Organization name" style="flex:1; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-primary); font-size: 13px;">
+                            <span id="pub-org-status" style="font-size: 12px; color: var(--text-muted);"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="room-publish-section">
+                    <h3>Tables to Publish</h3>
+                    <div id="pub-table-list">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                <div class="room-publish-section">
+                    <h3>Client Grouping (Optional)</h3>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">If you want per-client rooms, select the table and field that identifies clients.</p>
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <select id="pub-client-table" style="flex:1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-primary); font-size: 13px;" onchange="pubClientTableChanged()">
+                            <option value="">No client grouping</option>
+                        </select>
+                        <select id="pub-client-field" style="flex:1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-primary); font-size: 13px;" disabled>
+                            <option value="">Select identifier field</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="pub-progress-section" style="display: none;">
+                    <div class="pub-progress">
+                        <div class="pub-progress-bar"><div class="pub-progress-fill" id="pub-progress-fill" style="width: 0%"></div></div>
+                        <div class="pub-progress-text" id="pub-progress-text">Preparing...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="pub-actions">
+                <button class="pub-btn-cancel" onclick="closeRoomPublishModal()">Cancel</button>
+                <button class="pub-btn-publish" id="pub-publish-btn" onclick="executeRoomPublish()">Publish Selected</button>
             </div>
         </div>
     </div>
@@ -6771,12 +6862,13 @@ async function trySynapseLogin() {
             deviceId: data.device_id
         });
 
+        // Set up MatrixClient session for room operations
+        MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, data.access_token, data.user_id, data.device_id);
+
         hideSynapseLoginScreen();
-        // Continue initialization: encryption check, then auth
-        var encryptionReady = await initEncryption();
-        if (encryptionReady) {
-            initAuthScreen();
-        }
+        // Update sidebar to show Matrix-connected state
+        updateMatrixStatus();
+        renderSidebar();
     } catch (err) {
         console.error('[Synapse] Login failed:', err);
         showSynapseError(err.message || 'Login failed. Please check your credentials.');
@@ -6885,6 +6977,8 @@ async function initAuthScreen() {
         try {
             await initSecureEndpoints(API_KEY);
             await init();
+            // Silently restore Matrix session if one exists (non-blocking)
+            restoreMatrixSessionQuietly();
             return; // Success - auth screen stays hidden
         } catch (err) {
             console.error('Auto-login failed:', err);
@@ -6906,23 +7000,15 @@ async function initAuthScreen() {
     if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
     var authEl = document.getElementById('auth-screen');
     authEl.classList.remove('hidden', 'fading-out');
+}
 
-    // Check Matrix mode and add setup option
-    var matrixMode = checkMatrixMode();
-    if (matrixMode === 'active') {
-        // Matrix session exists — try to restore and proceed
-        authEl.classList.add('hidden');
-        await init();
-        // Show manage rooms button if bridge config has rooms
-        var mConfig = MatrixBridge.getConfig();
-        if (mConfig && mConfig.clientRoomMap && Object.keys(mConfig.clientRoomMap).length > 0) {
-            var rmBtn = document.getElementById('manage-rooms-btn');
-            if (rmBtn) rmBtn.style.display = '';
-        }
-        return;
+// Silently restore Matrix session without blocking app startup
+function restoreMatrixSessionQuietly() {
+    var session = _loadSynapseSession();
+    if (session && session.accessToken) {
+        MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+        updateMatrixStatus();
     }
-    // Add Matrix setup button to auth screen
-    addMatrixOptionToAuth();
 }
 
 async function clearLocalAndReset() {
@@ -6978,6 +7064,9 @@ async function tryAuth() {
     // Save credentials (encrypted if encryption is enabled)
     await saveEncryptedCredentials(API_KEY, SET_FILTER);
 
+    // Silently restore Matrix session if one exists (non-blocking)
+    restoreMatrixSessionQuietly();
+
     btn.textContent = 'Connect';
     btn.disabled = false;
 }
@@ -7028,9 +7117,8 @@ function logout() {
     // Clear saved credentials (both encrypted and plaintext)
     clearEncryptedCredentials();
     clearSessionKey();
-    // Clear Synapse session and show Synapse login
-    synapseLogout();
-    showSynapseLoginScreen();
+    // Show auth screen (Matrix session is independent — user disconnects Matrix separately)
+    showAuthScreen();
 }
 
 async function manualSync() {
@@ -14901,6 +14989,337 @@ function wizardComplete() {
     initAuthScreen();
 }
 
+// ============ Matrix Status & Manual Room Publishing ============
+
+// Track Matrix connection state in sidebar
+function updateMatrixStatus() {
+    var btn = document.getElementById('matrix-connect-btn');
+    var icon = document.getElementById('matrix-status-icon');
+    var label = document.getElementById('matrix-status-label');
+    if (!btn) return;
+
+    var session = _loadSynapseSession();
+    if (session && session.accessToken) {
+        btn.classList.add('matrix-connected');
+        icon.textContent = '\u25CF'; // filled circle
+        label.textContent = session.userId ? session.userId.split(':')[0].replace('@', '') : 'Connected';
+        btn.onclick = showMatrixMenu;
+        btn.title = 'Matrix: Connected as ' + (session.userId || 'unknown');
+
+        // Show manage rooms button if bridge config has rooms
+        var mConfig = MatrixBridge.getConfig();
+        if (mConfig && mConfig.clientRoomMap && Object.keys(mConfig.clientRoomMap).length > 0) {
+            var rmBtn = document.getElementById('manage-rooms-btn');
+            if (rmBtn) rmBtn.style.display = '';
+        }
+    } else {
+        btn.classList.remove('matrix-connected');
+        icon.textContent = '\u25CB'; // empty circle
+        label.textContent = 'Connect Matrix';
+        btn.onclick = function() { showSynapseLoginScreen(); };
+        btn.title = 'Connect to Matrix for room sync';
+    }
+}
+
+// Context menu for connected Matrix user
+function showMatrixMenu() {
+    var session = _loadSynapseSession();
+    if (!session) return;
+
+    // Simple menu via prompt-style - publish rooms or disconnect
+    var choice = confirm(
+        'Matrix: ' + (session.userId || 'Connected') + '\n\n' +
+        'OK = Open Room Publisher\n' +
+        'Cancel = Disconnect Matrix'
+    );
+
+    if (choice) {
+        showRoomPublishModal();
+    } else {
+        if (confirm('Disconnect from Matrix? Your local data is not affected.')) {
+            synapseLogout();
+            updateMatrixStatus();
+        }
+    }
+}
+
+// ============ Room Publishing Modal ============
+
+function showRoomPublishModal() {
+    var modal = document.getElementById('room-publish-modal');
+    modal.classList.remove('hidden');
+
+    var session = _loadSynapseSession();
+    var isConnected = session && session.accessToken;
+
+    document.getElementById('room-publish-not-connected').style.display = isConnected ? 'none' : '';
+    document.getElementById('room-publish-content').style.display = isConnected ? '' : 'none';
+    document.getElementById('pub-publish-btn').style.display = isConnected ? '' : 'none';
+
+    if (!isConnected) return;
+
+    // Make sure MatrixClient has the session
+    if (!MatrixClient.isLoggedIn()) {
+        MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+    }
+
+    // Check for existing org space
+    var config = MatrixClient.loadConfig();
+    if (config && config.orgSpaceId) {
+        document.getElementById('pub-org-name').value = config.bridge ? config.bridge.name || '' : '';
+        document.getElementById('pub-org-status').textContent = 'Existing org found';
+        document.getElementById('pub-org-status').style.color = 'var(--success-500)';
+    }
+
+    // Populate table list
+    var tableIds = Object.keys(META_TABLES);
+    var listEl = document.getElementById('pub-table-list');
+    var clientSelect = document.getElementById('pub-client-table');
+
+    var html = '';
+    var clientOpts = '<option value="">No client grouping</option>';
+
+    tableIds.forEach(function(tid) {
+        var t = META_TABLES[tid];
+        var fieldCount = META_FIELDS[tid] ? Object.keys(META_FIELDS[tid]).length : 0;
+        // Count records for this table from in-memory data
+        var recordCount = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tid]) ? Object.keys(window.IN_MEMORY_DATA[tid]).length : 0;
+
+        html +=
+            '<label class="room-table-item" for="pub-tbl-' + esc(tid) + '">' +
+                '<input type="checkbox" id="pub-tbl-' + esc(tid) + '" value="' + esc(tid) + '" checked>' +
+                '<div class="table-info">' +
+                    '<div class="table-name">' + esc(t.tableName || tid) + '</div>' +
+                    '<div class="table-meta">' + fieldCount + ' fields, ' + recordCount + ' records</div>' +
+                '</div>' +
+                '<span class="pub-status local">Local</span>' +
+            '</label>';
+
+        clientOpts += '<option value="' + esc(tid) + '">' + esc(t.tableName || tid) + '</option>';
+    });
+
+    listEl.innerHTML = html;
+    clientSelect.innerHTML = clientOpts;
+
+    // Reset progress
+    document.getElementById('pub-progress-section').style.display = 'none';
+    document.getElementById('pub-publish-btn').disabled = false;
+    document.getElementById('pub-publish-btn').textContent = 'Publish Selected';
+}
+
+function closeRoomPublishModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('room-publish-modal').classList.add('hidden');
+}
+
+function pubClientTableChanged() {
+    var tableId = document.getElementById('pub-client-table').value;
+    var fieldSelect = document.getElementById('pub-client-field');
+
+    if (!tableId) {
+        fieldSelect.disabled = true;
+        fieldSelect.innerHTML = '<option value="">Select identifier field</option>';
+        return;
+    }
+
+    fieldSelect.disabled = false;
+    var fields = META_FIELDS[tableId] || {};
+    var html = '<option value="">Select identifier field</option>';
+    Object.keys(fields).forEach(function(fid) {
+        var f = fields[fid];
+        html += '<option value="' + esc(fid) + '">' + esc(f.fieldName || fid) + '</option>';
+    });
+    fieldSelect.innerHTML = html;
+}
+
+async function executeRoomPublish() {
+    var btn = document.getElementById('pub-publish-btn');
+    btn.disabled = true;
+    btn.textContent = 'Publishing...';
+
+    var progressSection = document.getElementById('pub-progress-section');
+    var progressFill = document.getElementById('pub-progress-fill');
+    var progressText = document.getElementById('pub-progress-text');
+    progressSection.style.display = '';
+
+    function updatePub(pct, text) {
+        progressFill.style.width = pct + '%';
+        progressText.textContent = text;
+    }
+
+    try {
+        // Collect selected tables
+        var selectedTables = [];
+        document.querySelectorAll('#pub-table-list input[type="checkbox"]:checked').forEach(function(cb) {
+            selectedTables.push(cb.value);
+        });
+
+        if (selectedTables.length === 0) {
+            alert('Please select at least one table to publish.');
+            btn.disabled = false;
+            btn.textContent = 'Publish Selected';
+            progressSection.style.display = 'none';
+            return;
+        }
+
+        var orgName = document.getElementById('pub-org-name').value.trim() || 'My Organization';
+        var clientTable = document.getElementById('pub-client-table').value;
+        var clientField = document.getElementById('pub-client-field').value;
+
+        updatePub(5, 'Syncing with Matrix...');
+
+        // Ensure we have a Matrix sync
+        await MatrixClient.initialSync();
+
+        // Find or create org space
+        updatePub(10, 'Setting up organization space...');
+        var orgSpaceId = await MatrixClient.findOrgSpace();
+        if (!orgSpaceId) {
+            orgSpaceId = await MatrixClient.createOrgSpace(orgName);
+        }
+
+        // If no client grouping, publish tables as individual rooms under the org space
+        if (!clientTable || !clientField) {
+            updatePub(15, 'Publishing ' + selectedTables.length + ' tables as rooms...');
+
+            for (var i = 0; i < selectedTables.length; i++) {
+                var tid = selectedTables[i];
+                var tMeta = META_TABLES[tid] || { tableName: tid };
+                var pct = 15 + Math.round((i / selectedTables.length) * 80);
+                updatePub(pct, 'Publishing ' + (tMeta.tableName || tid) + '...');
+
+                // Create a room for this table
+                var roomId = await MatrixClient.createRoom({
+                    name: tMeta.tableName || tid,
+                    preset: 'private_chat',
+                    initialState: [{
+                        type: 'm.room.history_visibility',
+                        state_key: '',
+                        content: { history_visibility: 'shared' }
+                    }]
+                });
+
+                await MatrixClient.addChildToSpace(orgSpaceId, roomId);
+                await MatrixClient.setRoomParentSpace(roomId, orgSpaceId);
+
+                // Write table schema
+                await MatrixClient.writeTableSchema(roomId, tid, tMeta.tableName, tMeta.icon, true);
+
+                // Write field schemas
+                var fields = META_FIELDS[tid] || {};
+                var fids = Object.keys(fields);
+                for (var f = 0; f < fids.length; f++) {
+                    await MatrixClient.writeFieldSchema(roomId, fids[f], fields[fids[f]]);
+                    if (f % 5 === 4) await new Promise(function(r) { setTimeout(r, 200); });
+                }
+
+                // Write records from IndexedDB
+                var records = await getRecordsForTableFromDB(tid);
+                for (var r = 0; r < records.length; r++) {
+                    await MatrixClient.writeRecord(roomId, tid, records[r].recordId, records[r].fields);
+                    if (r % 5 === 4) await new Promise(function(r2) { setTimeout(r2, 200); });
+                }
+            }
+        } else {
+            // Client-grouped publishing: use the bridge mechanism
+            updatePub(15, 'Loading records for grouping...');
+
+            var allRecords = [];
+            for (var i = 0; i < selectedTables.length; i++) {
+                var records = await getRecordsForTableFromDB(selectedTables[i]);
+                records.forEach(function(rec) {
+                    allRecords.push({ tableId: selectedTables[i], recordId: rec.recordId, fields: rec.fields });
+                });
+            }
+
+            updatePub(25, 'Grouping ' + allRecords.length + ' records by client...');
+
+            MatrixBridge.setConfig({
+                mode: 'bridge',
+                orgSpaceId: orgSpaceId,
+                clientTable: clientTable,
+                clientIdentifierField: clientField,
+                clientVisibleTables: selectedTables,
+                linkedRecordTables: {},
+                clientRoomMap: {},
+                lastSyncCursor: 0
+            });
+
+            var result = await MatrixBridge.hydrateToMatrix(
+                { tables: buildAmoTablesFromRecords(allRecords) },
+                { tables: META_TABLES, fields: META_FIELDS },
+                function(info) {
+                    if (info.phase === 'hydrating_client') {
+                        var pct = 25 + Math.round((info.completed / Math.max(info.total, 1)) * 70);
+                        updatePub(pct, 'Creating room for ' + (info.clientName || '...') + ' (' + info.completed + '/' + info.total + ')');
+                    }
+                }
+            );
+        }
+
+        // Save config locally
+        MatrixClient.saveConfig({
+            bridge: MatrixBridge.getConfig(),
+            homeserverUrl: MatrixClient.getHomeserverUrl(),
+            orgSpaceId: orgSpaceId,
+            userId: MatrixClient.getUserId()
+        });
+
+        updatePub(100, 'Published successfully!');
+        btn.textContent = 'Done';
+        updateMatrixStatus();
+
+        // Show manage rooms button
+        var rmBtn = document.getElementById('manage-rooms-btn');
+        if (rmBtn) rmBtn.style.display = '';
+
+        // Close modal after a short delay
+        setTimeout(function() { closeRoomPublishModal(); }, 1500);
+
+    } catch (err) {
+        console.error('[RoomPublish] Failed:', err);
+        updatePub(0, 'Failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+    }
+}
+
+// Helper: get all records for a table from IndexedDB data store
+async function getRecordsForTableFromDB(tableId) {
+    return new Promise(function(resolve, reject) {
+        var tx = db.transaction('data', 'readonly');
+        var store = tx.objectStore('data');
+        var index = store.index('by_table');
+        var req = index.getAll(tableId);
+        req.onsuccess = async function() {
+            var records = req.result || [];
+            // Decrypt if needed
+            var result = [];
+            for (var i = 0; i < records.length; i++) {
+                var rec = records[i];
+                if (encryptionEnabled && rec._encrypted) {
+                    try { rec = await decryptRecordFromStorage(rec); } catch (e) { continue; }
+                }
+                result.push({ recordId: rec.recordId, fields: rec.fields || {} });
+            }
+            resolve(result);
+        };
+        req.onerror = function() { reject(req.error); };
+    });
+}
+
+// Helper: convert flat record list to amo-style tables object
+function buildAmoTablesFromRecords(records) {
+    var tables = {};
+    records.forEach(function(rec) {
+        var key = 'airtable:' + rec.tableId;
+        if (!tables[key]) tables[key] = [];
+        var row = Object.assign({ record_id: rec.recordId }, rec.fields);
+        tables[key].push(row);
+    });
+    return tables;
+}
+
 // ============ Matrix Mode Detection ============
 
 // Check if Matrix mode should be offered or if we're already in Matrix mode
@@ -14914,31 +15333,6 @@ function checkMatrixMode() {
         return 'login'; // Config exists but session expired
     }
     return 'available'; // Matrix not configured, show option to set up
-}
-
-// Add Matrix setup button to auth screen
-function addMatrixOptionToAuth() {
-    var authBox = document.querySelector('.auth-box');
-    if (!authBox || document.getElementById('matrix-setup-btn')) return;
-
-    var divider = document.createElement('div');
-    divider.style.cssText = 'display: flex; align-items: center; gap: 12px; margin: 16px 0;';
-    divider.innerHTML = '<div style="flex: 1; height: 1px; background: var(--border-primary);"></div>' +
-        '<span style="font-size: 12px; color: var(--text-muted);">or</span>' +
-        '<div style="flex: 1; height: 1px; background: var(--border-primary);"></div>';
-
-    var btn = document.createElement('button');
-    btn.id = 'matrix-setup-btn';
-    btn.className = 'secondary';
-    btn.style.cssText = 'margin-top: 0; background: linear-gradient(135deg, var(--primary-500), #7c3aed); color: #fff; border: none;';
-    btn.textContent = 'Set Up with Matrix';
-    btn.onclick = function() {
-        document.getElementById('auth-screen').classList.add('hidden');
-        showMatrixWizard();
-    };
-
-    authBox.appendChild(divider);
-    authBox.appendChild(btn);
 }
 
 // ============ Workspace UI in Sidebar ============
@@ -14995,17 +15389,30 @@ async function promptCreateWorkspace() {
 
 // ============ Initialize Workspaces on Load ============
 
-// Extend init to load workspaces
+// Extend init to load workspaces and update Matrix status
 var originalInit = init;
 init = async function() {
     await originalInit();
     await loadWorkspaces();
     renderWorkspaceTabs();
+    updateMatrixStatus();
 };
 
 // Keyboard handler for modals (Escape to close)
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
+        // Close room publish modal if open
+        var pubModal = document.getElementById('room-publish-modal');
+        if (pubModal && !pubModal.classList.contains('hidden')) {
+            closeRoomPublishModal();
+            return;
+        }
+        // Close Synapse login if open (non-blocking, just hides)
+        var synapseScreen = document.getElementById('synapse-login-screen');
+        if (synapseScreen && !synapseScreen.classList.contains('hidden')) {
+            hideSynapseLoginScreen();
+            return;
+        }
         // Close room manager if open
         var rmPanel = document.getElementById('room-manager');
         if (rmPanel && !rmPanel.classList.contains('hidden')) {
@@ -15031,13 +15438,9 @@ document.getElementById('unlock-password').onkeydown = (e) => { if (e.key === 'E
 document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('setup-password-confirm').focus(); };
 document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
 
-// Initialize: check Synapse login first, then encryption, then auth
+// Initialize: skip Synapse gate — boot directly to encryption/auth
+// Matrix login is now optional and accessible from the sidebar
 (async function() {
-    var synapseValid = await initSynapseLogin();
-    if (!synapseValid) {
-        // Synapse login screen is showing — wait for login before continuing
-        return;
-    }
     var encryptionReady = await initEncryption();
     if (encryptionReady) {
         initAuthScreen();
