@@ -10194,6 +10194,10 @@ async function renderEventsView() {
         html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
         html += ' Export CSV';
         html += '</button>';
+        html += '<button class="btn" onclick="exportEventsToAmo()" title="Export all events as .amo snapshot file">';
+        html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
+        html += ' Export .amo';
+        html += '</button>';
         html += '<button class="btn" onclick="importEventsFromCSV()" title="Import events from CSV (deduplicates by ID)">';
         html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>';
         html += ' Import CSV';
@@ -10762,6 +10766,66 @@ async function exportEventsToCSV() {
 
     } catch (err) {
         console.error('Error exporting events:', err);
+        showImportStatus('Export Failed', err.message, 'error');
+    }
+}
+
+async function exportEventsToAmo() {
+    try {
+        showImportStatus('Exporting...', 'Collecting events from database...', 'progress', 0);
+
+        var allEvents = [];
+        var batchSize = 1000;
+        var offset = 0;
+        var totalCount = await getRawEventsCount();
+
+        while (true) {
+            var batch = await getRawEventsPaginated(offset, batchSize);
+            if (batch.length === 0) break;
+            for (var bi = 0; bi < batch.length; bi++) allEvents.push(batch[bi]);
+            offset += batch.length;
+
+            var progress = Math.round((allEvents.length / totalCount) * 50);
+            showImportStatus('Exporting...', 'Collected ' + allEvents.length.toLocaleString() + ' of ' + totalCount.toLocaleString() + ' events', 'progress', progress);
+        }
+
+        if (allEvents.length === 0) {
+            showImportStatus('No Events', 'No events to export.', 'error');
+            return;
+        }
+
+        // Decrypt events if encryption is enabled
+        if (encryptionEnabled && encryptionKey) {
+            showImportStatus('Exporting...', 'Decrypting events...', 'progress', 55);
+            allEvents = await Promise.all(allEvents.map(function(e) { return decryptEventFromStorage(e); }));
+        }
+
+        showImportStatus('Exporting...', 'Building .amo file...', 'progress', 70);
+
+        var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS });
+
+        showImportStatus('Exporting...', 'Creating download...', 'progress', 95);
+
+        var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = 'amino_snapshot_' + new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-') + '.amo';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        var sizeStr = binary.length < 1024
+            ? binary.length + ' B'
+            : binary.length < 1048576
+                ? (binary.length / 1024).toFixed(1) + ' KB'
+                : (binary.length / 1048576).toFixed(1) + ' MB';
+
+        showImportStatus('Export Complete', 'Exported ' + allEvents.length.toLocaleString() + ' events (' + sizeStr + ') to .amo file.', 'success');
+
+    } catch (err) {
+        console.error('Error exporting .amo:', err);
         showImportStatus('Export Failed', err.message, 'error');
     }
 }
