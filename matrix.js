@@ -32,7 +32,10 @@ var MatrixClient = (function() {
         ORG_MEMBER: 'law.firm.org.member',
         SCHEMA_TABLE: 'law.firm.schema.table',
         SCHEMA_FIELD: 'law.firm.schema.field',
+        SCHEMA_OBJECT: 'law.firm.schema.object',
+        VAULT_METADATA: 'law.firm.vault.metadata',
         RECORD: 'law.firm.record',
+        RECORD_MUTATE: 'law.firm.record.mutate',
         RECORD_CREATE: 'law.firm.record.create',
         RECORD_UPDATE: 'law.firm.record.update',
         RECORD_DELETE: 'law.firm.record.delete',
@@ -848,6 +851,31 @@ var MatrixClient = (function() {
         await writeRecord(portalRoomId, tableId, recordId, projected);
     }
 
+    // ============ EO Event Helpers (law.firm.schema.object) ============
+    // These methods work with the new n8n sync event format where each
+    // mutation is a law.firm.schema.object timeline event with EO operators.
+
+    // Get vault room metadata (maps room to Airtable table)
+    async function getVaultMetadata(roomId) {
+        return getStateEvent(roomId, EVENT_TYPES.VAULT_METADATA, '');
+    }
+
+    // Paginate through all law.firm.schema.object events in a room
+    async function getSchemaObjectMessages(roomId, opts) {
+        opts = opts || {};
+        return getRoomMessages(roomId, {
+            dir: opts.dir || 'f',
+            limit: opts.limit || 100,
+            from: opts.from || undefined,
+            filter: { types: [EVENT_TYPES.SCHEMA_OBJECT] }
+        });
+    }
+
+    // Get joined rooms (via API, not just cache)
+    async function getJoinedRoomsFromServer() {
+        return _requestWithRetry('GET', '/joined_rooms');
+    }
+
     // ============ Event Listener System ============
 
     function on(eventType, callback) {
@@ -967,6 +995,11 @@ var MatrixClient = (function() {
         writeRecordUpdate: writeRecordUpdate,
         getRecordsForTable: getRecordsForTable,
         writeProjectedRecord: writeProjectedRecord,
+
+        // EO Event helpers (law.firm.schema.object)
+        getVaultMetadata: getVaultMetadata,
+        getSchemaObjectMessages: getSchemaObjectMessages,
+        getJoinedRoomsFromServer: getJoinedRoomsFromServer,
 
         // Events
         on: on,
@@ -1209,21 +1242,12 @@ var MatrixBridge = (function() {
         };
     }
 
-    // ============ Bridge Mode: Legacy APIs → Matrix ============
+    // ============ Bridge Mode (Deprecated — n8n handles sync) ============
+    // Data now flows: Airtable → n8n → Matrix Synapse
+    // The client no longer bridges data between APIs.
 
     async function startBridge(aminoApiKey, endpoints) {
-        if (_bridgeRunning) return;
-        _bridgeRunning = true;
-        _config.mode = 'bridge';
-        await _saveBridgeConfig();
-
-        // Poll every 60 seconds
-        _bridgeInterval = setInterval(function() {
-            _bridgePoll(aminoApiKey, endpoints);
-        }, 60000);
-
-        // Do an immediate poll
-        await _bridgePoll(aminoApiKey, endpoints);
+        console.warn('[MatrixBridge] Client-side bridge deprecated — n8n handles Airtable → Matrix sync');
     }
 
     function stopBridge() {
@@ -1231,69 +1255,6 @@ var MatrixBridge = (function() {
         if (_bridgeInterval) {
             clearInterval(_bridgeInterval);
             _bridgeInterval = null;
-        }
-    }
-
-    async function _bridgePoll(apiKey, endpoints) {
-        if (!_bridgeRunning || !MatrixClient.isLoggedIn()) return;
-
-        try {
-            // Fetch new records from snapshot API
-            var snapshotUrl = endpoints.snapshot + '?last_amino_event_gt=' + _config.lastSyncCursor +
-                '&apiKey=' + encodeURIComponent(apiKey);
-            var response = await fetch(snapshotUrl);
-            if (!response.ok) return;
-
-            var updates = await response.json();
-            if (!Array.isArray(updates) || updates.length === 0) return;
-
-            var maxEventId = _config.lastSyncCursor;
-
-            for (var i = 0; i < updates.length; i++) {
-                var record = updates[i];
-                var recordId = record.record_id;
-                var tableId = record.source_table;
-                var data = record.data || {};
-
-                // Find which client this record belongs to
-                var targetRoomId = _findRoomForRecord(tableId, recordId, data);
-
-                if (targetRoomId) {
-                    // Write to matter room
-                    await MatrixClient.writeRecord(targetRoomId, tableId, recordId, data);
-
-                    // Write timeline event for audit trail
-                    await MatrixClient.sendEvent(targetRoomId, MatrixClient.EVENT_TYPES.RECORD_UPDATE, {
-                        table_id: tableId,
-                        record_id: recordId,
-                        data: data,
-                        source: 'bridge',
-                        amino_event_id: record.last_amino_event
-                    });
-
-                    // If client-visible and portal room exists, write projected record
-                    var clientName = _getClientForRecord(tableId, recordId, data);
-                    if (clientName && _config.clientRoomMap[clientName]) {
-                        var mapping = _config.clientRoomMap[clientName];
-                        if (mapping.portalRoomId && _config.clientVisibleTables.indexOf(tableId) !== -1) {
-                            await MatrixClient.writeRecord(mapping.portalRoomId, tableId, recordId, data);
-                        }
-                    }
-                } else if (_config.firmRoomId) {
-                    // Unassigned → firm reference room
-                    await MatrixClient.writeRecord(_config.firmRoomId, tableId, recordId, data);
-                }
-
-                if (record.last_amino_event > maxEventId) {
-                    maxEventId = record.last_amino_event;
-                }
-            }
-
-            _config.lastSyncCursor = maxEventId;
-            await _saveBridgeConfig();
-
-        } catch (err) {
-            console.error('[MatrixBridge] Poll error:', err);
         }
     }
 

@@ -2531,12 +2531,13 @@ function renderTabBar() {
     if (label) label.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
 }
 
-var API = null; // Secured: initialized after authentication via initSecureEndpoints()
+// Legacy Xano API variables (deprecated — kept as null for backward compatibility)
+var API = null;
 var DB_NAME = 'aminostream';
 var DB_VERSION = 8;
 var PAGE_SIZE = 100;
 
-var API_KEY = null;
+var API_KEY = null; // No longer used — auth is via Matrix Bearer token
 var SET_FILTER = null;
 var db = null;
 
@@ -2547,94 +2548,19 @@ var encryptionKey = null; // CryptoKey object, only kept in memory
 var encryptionEnabled = false;
 var passkeyCredentialId = null; // For WebAuthn
 
-// ============ Secure Endpoint Management ============
-// Webhook/API URLs are not stored in plaintext. They are encrypted with the
-// user's API key using AES-GCM and persisted in localStorage. On first auth,
-// endpoints are decoded from obfuscated bootstrap data, then encrypted and
-// stored. On subsequent logins, they are decrypted from localStorage using
-// the API key. If decryption fails (wrong key), endpoints remain null and
-// no API calls can be made.
+// ============ Secure Endpoint Management (Deprecated — Xano removed) ============
+// Xano endpoints are no longer used. All data flows through Matrix Synapse.
 var ENCRYPTED_ENDPOINTS_KEY = 'amino_encrypted_endpoints';
+var XANO_POST_API = null;
 
-// Obfuscated bootstrap endpoint data (not plaintext URLs)
-var _EP = [
-    'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zdHJlYW0=',
-    'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zdHJlYW1wb3N0',
-    'aHR0cHM6Ly9uOG4uaW50ZWxlY2hpYS5jb20vd2ViaG9vay9ib3gtdXBsb2Fk',
-    'aHR0cHM6Ly9uOG4uaW50ZWxlY2hpYS5jb20vd2ViaG9vay9ib3gtZG93bmxvYWQ='
-];
-
-// Derive an AES-GCM key from the API key for endpoint encryption
-async function deriveEndpointKey(apiKey) {
-    var encoder = new TextEncoder();
-    var keyMaterial = await crypto.subtle.importKey(
-        'raw', encoder.encode(apiKey), 'PBKDF2', false, ['deriveKey']
-    );
-    return crypto.subtle.deriveKey(
-        { name: 'PBKDF2', salt: encoder.encode('amino-endpoints-v1'), iterations: 50000, hash: 'SHA-256' },
-        keyMaterial,
-        { name: 'AES-GCM', length: 256 },
-        false,
-        ['encrypt', 'decrypt']
-    );
-}
-
-// Initialize secure endpoints after successful API key authentication
 async function initSecureEndpoints(apiKey) {
-    // Try to decrypt endpoints from localStorage first
-    var stored = localStorage.getItem(ENCRYPTED_ENDPOINTS_KEY);
-    if (stored) {
-        try {
-            var parsed = JSON.parse(stored);
-            var key = await deriveEndpointKey(apiKey);
-            var iv = Uint8Array.from(atob(parsed.iv), function(c) { return c.charCodeAt(0); });
-            var data = Uint8Array.from(atob(parsed.data), function(c) { return c.charCodeAt(0); });
-            var decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, data);
-            var endpoints = JSON.parse(new TextDecoder().decode(decrypted));
-            API = endpoints[0];
-            XANO_POST_API = endpoints[1];
-            BOX_SYNC_WEBHOOK = endpoints[2];
-            BOX_DOWNLOAD_WEBHOOK = endpoints[3];
-            return;
-        } catch (e) {
-            // Decryption failed (wrong key or corrupted data) - fall through to bootstrap
-            localStorage.removeItem(ENCRYPTED_ENDPOINTS_KEY);
-        }
-    }
-
-    // Bootstrap: decode from obfuscated source
-    API = atob(_EP[0]);
-    XANO_POST_API = atob(_EP[1]);
-    BOX_SYNC_WEBHOOK = atob(_EP[2]);
-    BOX_DOWNLOAD_WEBHOOK = atob(_EP[3]);
-
-    // Encrypt endpoints with the user's API key and store for future use
-    try {
-        var key = await deriveEndpointKey(apiKey);
-        var iv = crypto.getRandomValues(new Uint8Array(12));
-        var encoder = new TextEncoder();
-        var plaintext = encoder.encode(JSON.stringify([API, XANO_POST_API, BOX_SYNC_WEBHOOK, BOX_DOWNLOAD_WEBHOOK]));
-        var encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, plaintext);
-        var ivStr = '';
-        for (var i = 0; i < iv.length; i++) ivStr += String.fromCharCode(iv[i]);
-        var encArr = new Uint8Array(encrypted);
-        var encStr = '';
-        for (var j = 0; j < encArr.length; j++) encStr += String.fromCharCode(encArr[j]);
-        localStorage.setItem(ENCRYPTED_ENDPOINTS_KEY, JSON.stringify({
-            iv: btoa(ivStr),
-            data: btoa(encStr)
-        }));
-    } catch (e) {
-        console.warn('Failed to encrypt endpoints for storage:', e);
-    }
+    // No-op: Xano endpoints removed. Auth is via Matrix Synapse token.
+    console.warn('[initSecureEndpoints] Xano removed — endpoints no longer needed');
 }
 
-// Clear all endpoint URLs from memory and storage (called on logout)
 function clearSecureEndpoints() {
     API = null;
     XANO_POST_API = null;
-    BOX_SYNC_WEBHOOK = null;
-    BOX_DOWNLOAD_WEBHOOK = null;
     localStorage.removeItem(ENCRYPTED_ENDPOINTS_KEY);
 }
 
@@ -3662,13 +3588,14 @@ var SIDEBAR_ICONS = {
 var pendingViewAction = null; // { action: 'filter'|'sort'|'fields'|'group', data: any }
 
 // Box auto-sync state (off by default)
+// Box sync variables (deprecated — Box file hydration replaced by Matrix Synapse)
 var boxSyncEnabled = false;
-var BOX_SYNC_WEBHOOK = null; // Secured: initialized after authentication via initSecureEndpoints()
-var BOX_DOWNLOAD_WEBHOOK = null; // Secured: initialized after authentication via initSecureEndpoints()
-var BOX_SYNC_FOLDER_ID = '364363223627';
-var BOX_SYNC_FILENAME = 'amino-snapshot.amo';
-var BOX_SYNC_MIN_PUSH_INTERVAL = 60 * 60 * 1000; // 1 hour — hydration snapshots don't need to be frequent
-var BOX_SYNC_LAST_PUSH_TIME = 0; // Timestamp of last successful push
+var BOX_SYNC_WEBHOOK = null;
+var BOX_DOWNLOAD_WEBHOOK = null;
+var BOX_SYNC_FOLDER_ID = null;
+var BOX_SYNC_FILENAME = null;
+var BOX_SYNC_MIN_PUSH_INTERVAL = 0;
+var BOX_SYNC_LAST_PUSH_TIME = 0;
 
 // ============ Events View State ============
 var eventsPageSize = 50;
@@ -3693,7 +3620,6 @@ var inMemoryEventsByRecord = null; // Map of recordId -> array of events for fas
 var isBackgroundSaveInProgress = false; // Track background IndexedDB save status
 
 // ============ View Auto-Save System ============
-var XANO_POST_API = null; // Secured: initialized after authentication via initSecureEndpoints()
 var AUTO_SAVE_DELAY = 5 * 60 * 1000; // 5 minutes
 var autoSaveTimer = null;
 
@@ -3707,24 +3633,12 @@ var viewDirtyState = {
     }
 };
 
-// ============ AminoSync - Event Stream Client ============
-
+// ============ AminoSync - Event Stream Client (Deprecated - Xano removed) ============
+// Data flows one way: Airtable → n8n → Matrix. The client does NOT write events.
+// This stub is kept for backward compatibility with any code that references AminoSync.
 var AminoSync = {
-    // Post event to aminoStream
     async postEvent(event) {
-        if (!API_KEY || !XANO_POST_API) throw new Error('Not authenticated');
-        var streamRes = await fetch(XANO_POST_API + '?apiKey=' + encodeURIComponent(API_KEY), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(event)
-        });
-
-        if (!streamRes.ok) {
-            throw new Error('Failed to post event: HTTP ' + streamRes.status);
-        }
-
-        var streamResult = await streamRes.json();
-        return { eventId: streamResult.id, streamResult };
+        throw new Error('Direct event posting is not supported. Data flows from Airtable → n8n → Matrix.');
     }
 };
 
@@ -4056,79 +3970,20 @@ var SyncHistory = {
         this.notify();
     },
 
-    // Poll the API for new events since last known timestamp.
-    // Uses a lightweight "last" query to check if any new events exist,
-    // then triggers a full incremental sync only when new data is available.
+    // Poll for new events — now handled by SynapseSync long-poll /sync.
+    // This method is kept as a no-op for backward compatibility with UI that calls it.
     async pollForUpdates() {
-        if (this.isPolling || !API_KEY) return;
-        this.isPolling = true;
-        var pollStart = Date.now();
-        try {
-            // Lightweight check: fetch only the single most recent event
-            // If created_after is set, this tells us if anything new exists since our last sync
-            var hasNewEvents = false;
-            if (lastEventTimestamp) {
-                var peek = await fetchPage(1, lastEventTimestamp, { last: true });
-                // Check if the returned event is actually newer than our last synced timestamp
-                // The API returns events with created_at >= created_after (inclusive),
-                // so we must compare timestamps to avoid re-syncing the same boundary event
-                if (peek.events && peek.events.length > 0) {
-                    var latestEvent = peek.events[peek.events.length - 1];
-                    hasNewEvents = latestEvent.created_at && latestEvent.created_at > lastEventTimestamp;
-                }
-            } else {
-                // No lastEventTimestamp means we haven't synced yet - check for any events
-                var peek = await fetchPage(1, null, { last: true });
-                hasNewEvents = peek.events && peek.events.length > 0;
-            }
+        // Synapse /sync long-poll handles real-time updates — no separate polling needed.
+        this.record({
+            type: 'poll',
+            result: 'no-change',
+            eventsFound: 0,
+            detail: 'Updates delivered via Matrix /sync (real-time)'
+        });
+    },
 
-            // Poll succeeded - reset backoff state
-            if (this.consecutiveFailures > 0) {
-                var wasBackedOff = this.consecutiveFailures;
-                this.consecutiveFailures = 0;
-                this.currentPollInterval = this.POLL_INTERVAL;
-                this.record({
-                    type: 'poll',
-                    result: 'success',
-                    duration: Date.now() - pollStart,
-                    detail: 'Server recovered after ' + wasBackedOff + ' failure(s), resuming normal ' + (this.POLL_INTERVAL / 1000) + 's polling'
-                });
-            }
-
-            if (hasNewEvents) {
-                this.record({
-                    type: 'poll',
-                    result: 'success',
-                    eventsFound: 1,
-                    duration: Date.now() - pollStart,
-                    detail: 'New events detected since ' + (lastEventTimestamp || 'start') + ', syncing...'
-                });
-
-                // Trigger full incremental sync to fetch all new events with pagination
-                await incrementalSync();
-            } else {
-                this.record({
-                    type: 'poll',
-                    result: 'no-change',
-                    eventsFound: 0,
-                    duration: Date.now() - pollStart,
-                    detail: 'No new events since last sync'
-                });
-            }
-        } catch (err) {
-            this.consecutiveFailures++;
-            var nextInterval = this.getBackoffInterval();
-            this.currentPollInterval = nextInterval;
-            this.record({
-                type: 'poll',
-                result: 'error',
-                duration: Date.now() - pollStart,
-                error: err.message,
-                detail: 'Poll failed: ' + err.message + ' (failure ' + this.consecutiveFailures + ', next retry in ' + Math.round(nextInterval / 1000) + 's)'
-            });
-        } finally {
-            this.isPolling = false;
-            // If auto-polling is active, reschedule the next poll with the current interval
+    _pollNoOp: true, // marker for code that checks polling state
+    // Legacy compatibility: If auto-polling is active, reschedule the next poll with the current interval
             if (this.pollInterval) {
                 this.scheduleNextPoll();
             }
@@ -4201,244 +4056,21 @@ var SyncHistory = {
     }
 };
 
-// ============ Post-Hydration Auto-Poll ============
-// After hydrating from Box, aggressively polls Xano to fill in
-// any events that occurred between the snapshot creation time and now.
-// Uses rapid polling (3s intervals) until fully caught up, then stops.
-
+// ============ Post-Hydration Auto-Poll (Deprecated) ============
+// No longer needed — Matrix /sync handles incremental updates after initial hydration.
 var PostHydrationSync = {
-    POLL_INTERVAL: 3000,     // 3 seconds between catch-up rounds
-    MAX_ROUNDS: 50,          // Safety limit on catch-up rounds
     isRunning: false,
-    totalEventsCaughtUp: 0,
-    rounds: 0,
-
-    // Start the catch-up process (non-blocking, runs in background)
-    start() {
-        if (this.isRunning) return;
-        this.isRunning = true;
-        this.totalEventsCaughtUp = 0;
-        this.rounds = 0;
-
-        console.log('[PostHydrationSync] Starting auto-poll to fill gaps since hydration');
-        SyncStatusFeed.info('Post-hydration catch-up: polling Xano for missed updates...');
-
-        this.scheduleNext();
-    },
-
-    scheduleNext() {
-        if (!this.isRunning) return;
-        var self = this;
-        setTimeout(function() { self.runCatchUpRound(); }, this.POLL_INTERVAL);
-    },
-
-    async runCatchUpRound() {
-        if (!this.isRunning || !API_KEY) {
-            this.stop('no API key');
-            return;
-        }
-
-        this.rounds++;
-        if (this.rounds > this.MAX_ROUNDS) {
-            this.stop('reached max rounds (' + this.MAX_ROUNDS + ')');
-            return;
-        }
-
-        try {
-            // Lightweight check: peek at the latest event to see if there's anything newer
-            var peek = await fetchPage(1, lastEventTimestamp, { last: true });
-            var hasNewEvents = peek.events && peek.events.length > 0;
-
-            if (!hasNewEvents) {
-                // Fully caught up — no more gap events
-                this.stop('caught up');
-                return;
-            }
-
-            // There are new events — run a full incremental sync to fetch them all
-            SyncStatusFeed.info('Catch-up round ' + this.rounds + ': fetching new events...');
-            await incrementalSync();
-
-            // Check how many events were found in the last sync
-            var lastEntry = SyncHistory.entries[0];
-            var eventsThisRound = (lastEntry && lastEntry.eventsFound) || 0;
-            this.totalEventsCaughtUp += eventsThisRound;
-
-            if (eventsThisRound > 0) {
-                SyncStatusFeed.info('Catch-up round ' + this.rounds + ': ' + eventsThisRound + ' events synced (' + this.totalEventsCaughtUp + ' total)');
-            }
-
-            // If incremental sync found events, there might be more — keep polling
-            this.scheduleNext();
-
-        } catch (err) {
-            console.error('[PostHydrationSync] Catch-up error:', err);
-            SyncStatusFeed.error('Catch-up error: ' + err.message);
-            // Don't stop on error — retry on next round
-            this.scheduleNext();
-        }
-    },
-
-    stop(reason) {
-        if (!this.isRunning) return;
-        this.isRunning = false;
-        var msg = 'Post-hydration catch-up complete';
-        if (this.totalEventsCaughtUp > 0) {
-            msg += ': ' + this.totalEventsCaughtUp + ' events synced across ' + this.rounds + ' round(s)';
-        } else {
-            msg += ': already up to date';
-        }
-        if (reason) msg += ' (' + reason + ')';
-        console.log('[PostHydrationSync] ' + msg);
-        SyncStatusFeed.success(msg);
-
-        SyncHistory.record({
-            type: 'incremental',
-            result: 'success',
-            eventsFound: this.totalEventsCaughtUp,
-            detail: msg
-        });
-    }
+    start() { /* no-op: Matrix /sync handles post-hydration updates */ },
+    stop() { this.isRunning = false; }
 };
 
-// ============ Box Auto-Sync ============
-// Pushes full event stream as .amo to Box via n8n webhook after each sync with new data
-
-var BoxSync = {
-    isPushing: false,
-
-    // Push full event stream as .amo binary to Box via n8n webhook.
-    // n8n stamps its own timestamped filename and handles backlog cleanup (>24h).
-    // This is a hydration checkpoint — not a real-time sync — so we throttle to
-    // BOX_SYNC_MIN_PUSH_INTERVAL (default 1 hour).
-    async push(force) {
-        if (this.isPushing || !API_KEY || !BOX_SYNC_WEBHOOK) return;
-
-        // Throttle: skip if we pushed recently (unless forced by manual push)
-        if (!force && BOX_SYNC_LAST_PUSH_TIME > 0) {
-            var elapsed = Date.now() - BOX_SYNC_LAST_PUSH_TIME;
-            if (elapsed < BOX_SYNC_MIN_PUSH_INTERVAL) {
-                console.log('[BoxSync] Skipping push — last push was ' + Math.round(elapsed / 60000) + 'm ago (min interval: ' + Math.round(BOX_SYNC_MIN_PUSH_INTERVAL / 60000) + 'm)');
-                return;
-            }
-        }
-
-        this.isPushing = true;
-        try {
-            // Read all raw events from IndexedDB
-            if (!db || !db.objectStoreNames.contains('events')) {
-                console.log('[BoxSync] No events store available');
-                return;
-            }
-
-            var allEvents = await new Promise(function(resolve, reject) {
-                var tx = db.transaction('events', 'readonly');
-                var store = tx.objectStore('events');
-                var results = [];
-                var req = store.openCursor();
-                req.onsuccess = function(e) {
-                    var cursor = e.target.result;
-                    if (cursor) {
-                        results.push(cursor.value);
-                        cursor.continue();
-                    } else {
-                        resolve(results);
-                    }
-                };
-                req.onerror = function() { reject(req.error); };
-            });
-
-            // Decrypt events if encryption is enabled
-            if (encryptionEnabled && encryptionKey) {
-                allEvents = await Promise.all(allEvents.map(function(e) { return decryptEventFromStorage(e); }));
-            }
-
-            if (allEvents.length === 0) {
-                console.log('[BoxSync] No events to push');
-                return;
-            }
-
-            // Produce .amo binary with full event stream and all metadata
-            var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS });
-            var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
-
-            // Build FormData and POST binary .amo to n8n webhook
-            // n8n generates its own timestamped filename for Box versioning
-            var form = new FormData();
-            form.append('file', blob, BOX_SYNC_FILENAME);
-
-            var res = await fetch(BOX_SYNC_WEBHOOK, {
-                method: 'POST',
-                headers: {
-                    'x-file-name': BOX_SYNC_FILENAME,
-                    'x-folder-id': BOX_SYNC_FOLDER_ID,
-                    'x-api-key': API_KEY
-                },
-                body: form
-            });
-
-            if (!res.ok) {
-                throw new Error('Box upload failed: ' + res.status + ' ' + res.statusText);
-            }
-
-            BOX_SYNC_LAST_PUSH_TIME = Date.now();
-
-            var sizeStr = binary.length < 1024
-                ? binary.length + ' B'
-                : binary.length < 1048576
-                    ? (binary.length / 1024).toFixed(1) + ' KB'
-                    : (binary.length / 1048576).toFixed(1) + ' MB';
-
-            console.log('[BoxSync] Pushed ' + allEvents.length + ' events (' + sizeStr + ') to Box');
-            SyncStatusFeed.success('Box: pushed ' + allEvents.length + ' events (' + sizeStr + ')');
-        } catch (err) {
-            console.error('[BoxSync] Push failed:', err);
-            SyncStatusFeed.error('Box push failed: ' + err.message);
-        } finally {
-            this.isPushing = false;
-        }
-    }
-};
-
-// Toggle Box sync on/off
-function toggleBoxSync() {
-    boxSyncEnabled = !boxSyncEnabled;
-    var toggle = document.getElementById('box-sync-toggle');
-
-    if (boxSyncEnabled) {
-        toggle.classList.add('active');
-        console.log('[BoxSync] Enabled');
-        SyncStatusFeed.info('Box auto-sync enabled');
-        // Push immediately on enable
-        BoxSync.push();
-    } else {
-        toggle.classList.remove('active');
-        console.log('[BoxSync] Disabled');
-        SyncStatusFeed.info('Box auto-sync disabled');
-    }
-}
-
-// Manually push snapshot to Box (independent of auto-sync toggle)
-function manualBoxPush() {
-    var btn = document.getElementById('box-push-btn');
-    if (btn) btn.disabled = true;
-    SyncStatusFeed.info('Box: manual push started…');
-    BoxSync.push(true).then(function() {
-        if (btn) btn.disabled = false;
-    });
-}
-
-// Initialize Box sync toggle UI state
-function initBoxSyncToggle() {
-    var toggle = document.getElementById('box-sync-toggle');
-    if (toggle) {
-        if (boxSyncEnabled) {
-            toggle.classList.add('active');
-        } else {
-            toggle.classList.remove('active');
-        }
-    }
-}
+// ============ Box Auto-Sync (Deprecated - replaced by Matrix Synapse) ============
+// Box file hydration is no longer used. The client builds local state by replaying
+// Matrix events on first launch, then stays current via Matrix /sync.
+var BoxSync = { isPushing: false, async push() { /* no-op */ } };
+function toggleBoxSync() { /* no-op */ }
+function manualBoxPush() { /* no-op */ }
+function initBoxSyncToggle() { /* no-op */ }
 
 // ============ IndexedDB ============
 
@@ -5261,9 +4893,12 @@ function getFieldHistoryForRecord(tableId, recordId, limit) {
     });
 }
 
-// Fetch and process any new history events for a specific record from API
+// Fetch and process any new history events for a specific record
+// History is now available locally from Matrix event replay — no API call needed.
 async function fetchAndProcessHistoryForRecord(tableId, recordId) {
-    if (!API_KEY) return;
+    // With Matrix Synapse, the full event history is already replayed locally.
+    // No need to fetch from an external API.
+    return;
 
     // Get the highest eventId we have for this record to fetch only newer events
     var existingHistory = await getFieldHistoryForRecord(tableId, recordId);
@@ -5483,44 +5118,32 @@ function updateSaveIndicator(state) {
 }
 
 // Save view changes to backend
+// View config is now stored via Matrix state events (user preferences)
 async function saveViewToBackend() {
-    if (!viewDirtyState.isDirty || !API_KEY) return;
+    if (!viewDirtyState.isDirty) return;
 
     var { tableId, viewId, changes } = viewDirtyState.pendingChanges;
     if (!tableId || !viewId) return;
 
     updateSaveIndicator('saving');
 
-    // Get the full view data
-    var view = META_VIEWS[tableId]?.[viewId] || {};
-    var config = VIEW_FIELD_CONFIG[tableId]?.[viewId] || {};
-
-    // Build the complete view config data for snapshot
-    var viewConfigData = {
-        _set: 'viewConfig',
-        tableId: tableId,
-        viewId: viewId,
-        viewName: view.viewName || viewId,
-        hiddenFieldIds: config.hiddenFieldIds || [],
-        fieldOrder: config.fieldOrder || [],
-        filters: view.filters || [],
-        sorts: view.sorts || [],
-        folderId: view.folderId || null,
-        ...changes
-    };
-
-    var payload = {
-        uuid: crypto.randomUUID(),
-        recordId: viewId,
-        set: 'airtable:' + tableId,
-        operator: 'ALT',
-        created_at: new Date().toISOString(),
-        apiKey: API_KEY,
-        payload: JSON.stringify(viewConfigData)
-    };
-
     try {
-        await AminoSync.postEvent(payload);
+        // Save view config via user preferences (Matrix account data)
+        var view = META_VIEWS[tableId]?.[viewId] || {};
+        var config = VIEW_FIELD_CONFIG[tableId]?.[viewId] || {};
+        var viewConfigData = {
+            viewId: viewId,
+            viewName: view.viewName || viewId,
+            hiddenFieldIds: config.hiddenFieldIds || [],
+            fieldOrder: config.fieldOrder || [],
+            filters: view.filters || [],
+            sorts: view.sorts || [],
+            folderId: view.folderId || null,
+            ...changes
+        };
+
+        // Store via user preferences system (Matrix account data)
+        await UserPreferences.set('viewConfig:' + tableId + ':' + viewId, viewConfigData);
 
         // Clear dirty state
         viewDirtyState.isDirty = false;
@@ -5528,10 +5151,9 @@ async function saveViewToBackend() {
         clearTimeout(autoSaveTimer);
 
         updateSaveIndicator('saved');
-        console.log('View saved to backend:', viewId);
+        console.log('View saved via Matrix user preferences:', viewId);
     } catch (error) {
-        console.error('Failed to save view to backend:', error);
-        // Keep dirty state, will retry on next trigger
+        console.error('Failed to save view:', error);
         updateSaveIndicator('dirty');
     }
 }
@@ -5654,45 +5276,23 @@ function markTableSettingsDirty() {
     }, 2000);
 }
 
-// Save table settings to backend
+// Save table settings to backend (via Matrix user preferences)
 async function saveTableSettings() {
-    if (!tableSettingsDirty || !API_KEY) return;
-
-    var tableSettingsData = {
-        _set: 'tableSettings',
-        tables: TABLE_SETTINGS.tables,
-        tableOrder: TABLE_SETTINGS.tableOrder,
-        views: TABLE_SETTINGS.views
-    };
-
-    var payload = {
-        uuid: crypto.randomUUID(),
-        recordId: 'tableSettings:' + (API_KEY || 'default'),
-        set: 'userSettings',
-        operator: 'ALT',
-        created_at: new Date().toISOString(),
-        apiKey: API_KEY,
-        payload: JSON.stringify(tableSettingsData)
-    };
+    if (!tableSettingsDirty) return;
 
     try {
-        await AminoSync.postEvent(payload);
-
-        // Clear dirty state
-        tableSettingsDirty = false;
-        clearTimeout(tableSettingsAutoSaveTimer);
-
-        // Also sync table settings to user preferences (Synapse account data)
-        UserPreferences.set('tableSettings', {
+        // Save via user preferences (Matrix account data)
+        await UserPreferences.set('tableSettings', {
             tables: TABLE_SETTINGS.tables,
             tableOrder: TABLE_SETTINGS.tableOrder,
             views: TABLE_SETTINGS.views
         });
 
-        console.log('Table settings saved to backend');
+        tableSettingsDirty = false;
+        clearTimeout(tableSettingsAutoSaveTimer);
+        console.log('Table settings saved via Matrix user preferences');
     } catch (error) {
-        console.error('Failed to save table settings to backend:', error);
-        // Keep dirty state, will retry on next trigger
+        console.error('Failed to save table settings:', error);
     }
 }
 
@@ -7239,80 +6839,10 @@ document.getElementById('connect-api-key-input').onkeydown = (e) => { if (e.key 
 document.getElementById('connect-api-set-filter').onkeydown = (e) => { if (e.key === 'Enter') submitConnectApi(); };
 
 async function initAuthScreen() {
-    var stats = await getLocalStats();
-    var infoEl = document.getElementById('auth-info');
-    var clearBtn = document.getElementById('auth-clear');
-
-    if (stats.count > 0) {
-        infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
-        clearBtn.classList.remove('hidden');
-    } else {
-        infoEl.textContent = 'No local data';
-        clearBtn.classList.add('hidden');
-    }
-
-    // Check for saved credentials and auto-authenticate (encrypted or plaintext)
-    var savedCredentials = await loadEncryptedCredentials();
-
-    // Pre-fill input fields with saved credentials
-    if (savedCredentials && savedCredentials.apiKey) {
-        document.getElementById('api-key-input').value = savedCredentials.apiKey;
-    }
-    if (savedCredentials && savedCredentials.setFilter) {
-        document.getElementById('set-filter-input').value = savedCredentials.setFilter;
-    }
-
-    if (savedCredentials && savedCredentials.apiKey) {
-        // Auto-login without showing auth screen
-        API_KEY = savedCredentials.apiKey;
-        SET_FILTER = savedCredentials.setFilter || null;
-
-        // Step 1: Validate the saved API key still works
-        try {
-            await initSecureEndpoints(API_KEY);
-            await fetchPage(1, null, { last: true });
-        } catch (err) {
-            console.error('Saved API key validation failed:', err);
-            API_KEY = null;
-            SET_FILTER = null;
-            clearSecureEndpoints();
-            // Key is invalid or revoked — clear it so user isn't stuck in a loop
-            clearEncryptedCredentials();
-            showAuthError('Saved API key is no longer valid. Please re-enter your API key.');
-            if (stats.count > 0) {
-                infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
-            } else {
-                infoEl.textContent = 'No local data';
-            }
-            // Fall through to show auth screen below
-        }
-
-        // Step 2: Key is valid, proceed with init
-        if (API_KEY) {
-            try {
-                await init();
-                // Silently restore Matrix session if one exists (non-blocking)
-                restoreMatrixSessionQuietly();
-                return; // Success - auth screen stays hidden
-            } catch (err) {
-                console.error('Auto-login init failed:', err);
-                // Key was valid but init failed (transient error) — keep credentials
-                // so auto-login can retry on next page load
-                showAuthError('Initialization failed: ' + err.message + '. Click Connect to retry.');
-                if (stats.count > 0) {
-                    infoEl.textContent = 'Local cache: ' + stats.count.toLocaleString() + ' records';
-                } else {
-                    infoEl.textContent = 'No local data';
-                }
-            }
-        }
-    }
-
-    // No saved credentials or auto-login failed - show auth screen
-    // Cancel any pending hide timeout to prevent race condition
-    if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
-    var authEl = document.getElementById('auth-screen');
-    authEl.classList.remove('hidden', 'fading-out');
+    // Legacy API key auth screen — no longer used.
+    // Auth is now handled exclusively via Synapse login (trySynapseLogin).
+    // This function is kept as a no-op for backward compatibility.
+    console.warn('[initAuthScreen] Legacy API key auth removed — use Synapse login');
 }
 
 // Silently restore Matrix session without blocking app startup
@@ -7342,61 +6872,9 @@ async function clearLocalAndReset() {
 }
 
 async function tryAuth() {
-    var key = document.getElementById('api-key-input').value.trim();
-    if (!key) {
-        showAuthError('Please enter an API key');
-        return;
-    }
-
-    var btn = document.getElementById('auth-submit');
-    btn.textContent = 'Connecting...';
-    btn.disabled = true;
-    document.getElementById('auth-error').style.display = 'none';
-
-    API_KEY = key;
-    SET_FILTER = document.getElementById('set-filter-input').value.trim() || null;
-
-    try {
-        await initSecureEndpoints(key);
-
-        // Validate the API key with a lightweight test call before committing
-        await fetchPage(1, null, { last: true });
-    } catch (err) {
-        console.error('Auth validation error:', err);
-        showAuthError('Connection failed: ' + err.message);
-        btn.textContent = 'Connect';
-        btn.disabled = false;
-        API_KEY = null;
-        SET_FILTER = null;
-        clearSecureEndpoints();
-        return;
-    }
-
-    // API key is valid — save credentials immediately so they persist
-    // even if hydration/init is interrupted (e.g. user closes tab)
-    await saveEncryptedCredentials(API_KEY, SET_FILTER);
-
-    try {
-        await init();
-    } catch (err) {
-        console.error('Init error:', err);
-        // Re-show auth screen in case init() already hid it before failing
-        if (_hideAuthTimeout) { clearTimeout(_hideAuthTimeout); _hideAuthTimeout = null; }
-        var authEl = document.getElementById('auth-screen');
-        authEl.classList.remove('hidden', 'fading-out');
-        showAuthError('Initialization failed: ' + err.message);
-        btn.textContent = 'Connect';
-        btn.disabled = false;
-        // Don't clear credentials — the key is valid, init just had a transient error.
-        // On next page load, auto-login will retry init.
-        return;
-    }
-
-    // Silently restore Matrix session if one exists (non-blocking)
-    restoreMatrixSessionQuietly();
-
-    btn.textContent = 'Connect';
-    btn.disabled = false;
+    // Legacy API key auth — no longer used. Auth is via Synapse login.
+    console.warn('[tryAuth] Legacy API key auth removed — use Synapse login');
+    showAuthError('API key authentication has been replaced. Please use the Synapse login.');
 }
 
 function showAuthError(msg) {
@@ -7589,57 +7067,13 @@ function hideConnectApiModal() {
 }
 
 async function submitConnectApi() {
-    var key = document.getElementById('connect-api-key-input').value.trim();
-    if (!key) {
-        var errEl = document.getElementById('connect-api-error');
-        errEl.textContent = 'Please enter an API key';
+    // Legacy API key connection — no longer used. Auth is via Synapse login.
+    console.warn('[submitConnectApi] Legacy API key removed — use Synapse login');
+    var errEl = document.getElementById('connect-api-error');
+    if (errEl) {
+        errEl.textContent = 'API key authentication has been replaced by Synapse login.';
         errEl.style.display = 'block';
-        return;
     }
-
-    var btn = document.getElementById('connect-api-submit');
-    btn.textContent = 'Connecting...';
-    btn.disabled = true;
-    document.getElementById('connect-api-error').style.display = 'none';
-
-    API_KEY = key;
-    SET_FILTER = document.getElementById('connect-api-set-filter').value.trim() || null;
-
-    try {
-        // Initialize endpoint URLs before making any API calls
-        await initSecureEndpoints(key);
-
-        // Test the connection with a lightweight check
-        var testResult = await fetchPage(1, null, { last: true });
-
-        // Save credentials
-        await saveEncryptedCredentials(API_KEY, SET_FILTER);
-
-        // Hide modal and update UI
-        hideConnectApiModal();
-        updateConnectApiButton();
-
-        // Start syncing
-        updateStatus('Connected! Syncing...', false, null, null);
-        await incrementalSync();
-
-        if (pollInterval) clearInterval(pollInterval);
-        pollInterval = setInterval(incrementalSync, 60000);
-        SyncHistory.startPolling();
-
-        updateStatus('Up to date', true, null, null);
-    } catch (err) {
-        console.error('Connect API failed:', err);
-        var errEl = document.getElementById('connect-api-error');
-        errEl.textContent = 'Connection failed: ' + err.message;
-        errEl.style.display = 'block';
-        API_KEY = null;
-        SET_FILTER = null;
-        clearSecureEndpoints();
-    }
-
-    btn.textContent = 'Connect';
-    btn.disabled = false;
 }
 
 // ============ Data Processing ============
@@ -8683,23 +8117,14 @@ async function deleteViewFolder(tableId, folderId, event) {
     await loadTableViewsAsync(tableId);
 }
 
-// Save folder to backend
+// Save folder to backend (local only — data flows Airtable → n8n → Matrix)
 async function saveFolderToBackend(folder, operator) {
-    if (!API_KEY) return;
-    var payload = {
-        uuid: crypto.randomUUID(),
-        recordId: folder.folderId,
-        set: 'viewFolders',
-        operator: operator,
-        created_at: new Date().toISOString(),
-        apiKey: API_KEY,
-        payload: JSON.stringify(folder)
-    };
-
+    // Folder config is stored locally. The client does not write to Matrix.
+    // Folders are persisted via user preferences (Matrix account data).
     try {
-        await AminoSync.postEvent(payload);
+        await UserPreferences.set('viewFolder:' + folder.folderId, folder);
     } catch (error) {
-        console.error('Failed to save folder to backend:', error);
+        console.error('Failed to save folder:', error);
     }
 }
 
@@ -10066,437 +9491,33 @@ async function fetchAllBySet(setType, onProgress) {
     return allEvents;
 }
 
-// Fetch events using page-based pagination
-// API returns 2500 records per page with nextPage indicator
-// Supports aminoStream query parameters:
-//   page (int, min:1, default 1), per_page (int, min:1, max:10000, default 2500),
-//   created_after (timestamp), created_before (timestamp), last (bool - single most recent record)
-var FETCH_PAGE_TIMEOUT = 30000; // 30 second timeout per request
-var FETCH_PAGE_RETRIES = 3;    // retry up to 3 times on network errors
+// Fetch events (Deprecated - Xano API removed)
+// The client now reads from Matrix Synapse. This stub is kept for backward compatibility.
+var FETCH_PAGE_TIMEOUT = 30000;
+var FETCH_PAGE_RETRIES = 3;
 
 async function fetchPage(page, createdAfter, options) {
-    options = options || {};
-    var params = [];
-    if (API_KEY) params.push('apiKey=' + encodeURIComponent(API_KEY));
-    if (page && page > 1) params.push('page=' + page);
-    if (createdAfter) params.push('created_after=' + encodeURIComponent(createdAfter));
-    if (options.createdBefore) params.push('created_before=' + encodeURIComponent(options.createdBefore));
-    if (options.perPage) params.push('per_page=' + encodeURIComponent(options.perPage));
-    if (options.last) params.push('last=true');
-
-    var url = API + (params.length > 0 ? '?' + params.join('&') : '');
-
-    var maxRetries = options.last ? 1 : FETCH_PAGE_RETRIES;
-    var lastErr = null;
-
-    for (var attempt = 0; attempt <= maxRetries; attempt++) {
-        var controller = new AbortController();
-        var timeoutId = setTimeout(function() { controller.abort(); }, FETCH_PAGE_TIMEOUT);
-        try {
-            var res = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            break; // success - exit retry loop
-        } catch (err) {
-            clearTimeout(timeoutId);
-            lastErr = err;
-            if (err.name === 'AbortError') {
-                lastErr = new Error('Request timed out after ' + (FETCH_PAGE_TIMEOUT / 1000) + 's');
-            }
-            if (attempt < maxRetries) {
-                var delay = 2000 * Math.pow(2, attempt); // 2s, 4s, 8s
-                console.warn('[fetchPage] Attempt ' + (attempt + 1) + '/' + (maxRetries + 1) + ' failed: ' + lastErr.message + ', retrying in ' + (delay / 1000) + 's...');
-                await new Promise(function(r) { setTimeout(r, delay); });
-                continue;
-            }
-            throw lastErr;
-        }
-    }
-
-    if (res.status === 401 || res.status === 403) {
-        throw new Error('Invalid API key');
-    }
-
-    var contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-        throw new Error('Server returned non-JSON response (HTTP ' + res.status + '). Check your connection and try again.');
-    }
-
-    var data = await res.json();
-
-    if (!res.ok) {
-        throw new Error(data.message || data.error || 'HTTP ' + res.status);
-    }
-
-    // If 'last' was requested, API returns a single record instead of a paginated list
-    if (options.last) {
-        var singleEvent = Array.isArray(data) ? data[0] : (data.items ? data.items[0] : data);
-        return { events: singleEvent ? [singleEvent] : [], hasMore: false, nextPage: null };
-    }
-
-    // Handle paginated response format: { itemsReceived, curPage, nextPage, prevPage, offset, perPage, items }
-    var events = Array.isArray(data) ? data : (data.items || data.data || []);
-    // API returns nextPage as number if more pages exist, null otherwise
-    var hasMore = data.nextPage != null;
-    var nextPage = data.nextPage || null;
-
-    // Normalize event fields: API may return payload under alternative field names
-    for (var i = 0; i < events.length; i++) {
-        var ev = events[i];
-        if (ev && ev.payload === undefined) {
-            // Check for alternative payload field names from Xano/API
-            if (ev._payload !== undefined) { ev.payload = ev._payload; delete ev._payload; }
-            else if (ev.event_payload !== undefined) { ev.payload = ev.event_payload; delete ev.event_payload; }
-        }
-    }
-
-    return { events, hasMore, nextPage };
+    // Xano API has been removed. All data flows through Matrix Synapse.
+    console.warn('[fetchPage] Xano API removed — data now served via Matrix /sync');
+    return { events: [], hasMore: false, nextPage: null };
 }
 
+// fullSync (Deprecated - Xano API removed)
+// Initial data loading is now handled by hydrateFromSynapse() which replays
+// all law.firm.schema.object events from Matrix rooms.
 async function fullSync() {
-    if (!API_KEY) return;
-    var eventsLoaded = 0;
-    var tablesFound = 0;
-    var fieldsFound = 0;
-    var viewsFound = 0;
-    var recordsFound = 0;
-    var schemaLoaded = false;
-    var syncStartTime = Date.now();
-    var lastBatchTime = syncStartTime;
-    var recordsPerSecond = 0;
-
-    // Helper to format time remaining
-    function formatTimeRemaining(seconds) {
-        if (seconds < 0 || !isFinite(seconds)) return 'Calculating...';
-        if (seconds < 5) return 'Almost done...';
-        if (seconds < 60) return 'About ' + Math.ceil(seconds) + ' seconds remaining';
-        var minutes = Math.ceil(seconds / 60);
-        return 'About ' + minutes + ' minute' + (minutes > 1 ? 's' : '') + ' remaining';
-    }
-
-    // Show the loading overlay for initial sync
-    showLoadingOverlay();
-
-    // Background function to load schema metadata (proper names for tables/fields/views)
-    // Fetches all events once and filters by type client-side
-    async function loadSchemaInBackground() {
-        try {
-            var tableEvents = [];
-            var fieldEvents = [];
-            var viewEvents = [];
-            var page = 1; // Page-based pagination
-            var iterations = 0;
-
-            // Fetch all events once and categorize by payload._set
-            while (true) {
-                var result = await fetchPage(page);
-                if (!result.events || result.events.length === 0) break;
-
-                for (var e of result.events) {
-                    if (!e || !e.payload) continue;
-                    var payload = parsePayload(e.payload);
-                    if (!payload) continue;
-
-                    if (payload._set === 'table') {
-                        tableEvents.push(e);
-                    } else if (payload._set === 'field') {
-                        fieldEvents.push(e);
-                    } else if (payload._set === 'view') {
-                        viewEvents.push(e);
-                    }
-                }
-
-                if (!result.hasMore) break;
-                page = result.nextPage;
-                iterations++;
-                if (iterations > 100) break; // Safety limit for schema
-            }
-
-            // Process tables
-            if (tableEvents.length > 0) {
-                tableEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
-                await processEvents(tableEvents);
-                eventsLoaded += tableEvents.length;
-                tablesFound = tableEvents.length;
-            }
-
-            // Process fields
-            if (fieldEvents.length > 0) {
-                fieldEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
-                await processEvents(fieldEvents);
-                eventsLoaded += fieldEvents.length;
-                fieldsFound = fieldEvents.length;
-            }
-
-            // Process views
-            if (viewEvents.length > 0) {
-                viewEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
-                await processEvents(viewEvents);
-                eventsLoaded += viewEvents.length;
-                viewsFound = viewEvents.length;
-            }
-
-            schemaLoaded = true;
-
-            // Re-render UI with proper names
-            await renderSidebar(true);
-            if (currentTable && currentTable !== '_events') {
-                await renderTable();
-            }
-        } catch (err) {
-            console.error('Background schema load error:', err);
-        }
-    }
-
-    // PHASE 1: Start streaming data immediately (schema will be auto-discovered from records)
-    // This shows tables/fields right away with ID placeholders
-    updateStatus('Loading recent data...', false, 5, 'Streaming records...');
-    updateLoadingOverlay('Loading data...', 'Starting...', 5, 0, 0, 0, 'Connecting to server...');
-
-    // Start schema loading in background (will update placeholders with proper names)
-    var schemaPromise = loadSchemaInBackground();
-
-    var page = 1; // Page-based pagination
-    var iterations = 0;
-    var smoothProgress = 5; // For smooth animation between batches
-    var targetProgress = 5;
-
-    // Smooth progress animation - updates every 100ms between batches
-    var progressAnimationInterval = setInterval(function() {
-        if (smoothProgress < targetProgress) {
-            smoothProgress = Math.min(targetProgress, smoothProgress + 0.5);
-            var progressEl = document.getElementById('loading-progress-fill');
-            if (progressEl) progressEl.style.width = smoothProgress + '%';
-        }
-    }, 100);
-
-    while (true) {
-        // Calculate time-based estimates
-        var elapsed = (Date.now() - syncStartTime) / 1000;
-        var timeEstimate = '';
-
-        if (iterations > 0 && recordsFound > 0) {
-            // Calculate records per second based on overall progress
-            recordsPerSecond = recordsFound / elapsed;
-
-            // Estimate remaining time - we use hasMore to determine if there's more data
-            // Rough estimate: assume linear progress based on batch count
-            var estimatedTotalBatches = Math.max(iterations + 1, iterations * 1.2);
-            var remainingBatches = estimatedTotalBatches - iterations;
-            var avgBatchTime = elapsed / iterations;
-            var remainingSeconds = remainingBatches * avgBatchTime;
-
-            if (remainingSeconds > 0) {
-                timeEstimate = formatTimeRemaining(remainingSeconds) + ' • ' + Math.round(recordsPerSecond).toLocaleString() + ' records/sec';
-            }
-        } else {
-            timeEstimate = 'Calculating speed...';
-        }
-
-        // Show progress with estimates - smoother progress calculation
-        targetProgress = Math.min(95, 5 + (iterations / 50) * 85);
-        var tableCount = Object.keys(META_TABLES).length;
-        var fieldCount = Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0);
-        var detail = tableCount + ' tables, ' + fieldCount + ' fields, ' + recordsFound.toLocaleString() + ' records';
-        updateStatus('Loading page ' + page + '...', false, targetProgress, detail);
-
-        // Update the loading overlay with progress and time estimate
-        updateLoadingOverlay('Downloading data...', 'Page ' + page + ' • ' + Math.round(elapsed) + 's elapsed', targetProgress, tableCount, fieldCount, recordsFound, timeEstimate);
-
-        // Fetch all events using page-based pagination
-        var result = await fetchPage(page);
-        if (!result.events || result.events.length === 0) {
-            clearInterval(progressAnimationInterval);
-            break;
-        }
-
-        // Process all events (data records will auto-create placeholder schema,
-        // schema events will update with proper names)
-        var allEvents = result.events;
-        if (allEvents.length > 0) {
-            eventsLoaded += allEvents.length;
-            // Count data records (non-schema events)
-            var dataCount = allEvents.filter(function(e) {
-                var payload = parsePayload(e.payload);
-                var set = payload && payload._set;
-                return set !== 'table' && set !== 'field' && set !== 'view';
-            }).length;
-            recordsFound += dataCount;
-
-            // Sort events by ID ascending for correct state processing
-            allEvents.sort((a, b) => (a.id || 0) - (b.id || 0));
-            await processEvents(allEvents);
-
-            // Stream data to UI - render after every page for immediate feedback
-            await renderSidebar(true);
-
-            // Auto-select first table after first batch of data
-            if (!currentTable && Object.keys(META_TABLES).length > 0) {
-                var firstTable = Object.keys(META_TABLES)[0];
-                await showTable(firstTable);
-            }
-
-            // Refresh current table view to show new data
-            if (currentTable && currentTable !== '_events') {
-                originalRecordIds = await getRecordIdsForTable(currentTable);
-                currentRecordIds = originalRecordIds;
-                totalRecords = currentRecordIds.length;
-                await renderTable();
-            }
-        }
-
-        // Keep overlay visible during initial sync - only hide when complete
-        if (!result.hasMore) {
-            clearInterval(progressAnimationInterval);
-            break;
-        }
-        page = result.nextPage;
-        iterations++;
-        if (iterations > 500) {
-            clearInterval(progressAnimationInterval);
-            break;
-        }
-    }
-
-    // Wait for schema to finish loading (ensures proper names are applied)
-    var totalElapsed = Math.round((Date.now() - syncStartTime) / 1000);
-    updateLoadingOverlay('Finalizing schema...', 'Processing metadata', 95, Object.keys(META_TABLES).length, Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0), recordsFound, 'Almost done...');
-    await schemaPromise;
-
-    // Final render after sync completes
-    await renderSidebar(true);
-    if (currentTable && currentTable !== '_events') {
-        originalRecordIds = await getRecordIdsForTable(currentTable);
-        currentRecordIds = originalRecordIds;
-        totalRecords = currentRecordIds.length;
-        await renderTable();
-    }
-
-    await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
-    var finalTableCount = Object.keys(META_TABLES).length;
-    var finalFieldCount = Object.values(META_FIELDS).reduce((sum, t) => sum + Object.keys(t).length, 0);
-    var finalDetail = finalTableCount + ' tables, ' + finalFieldCount + ' fields, ' + viewsFound + ' views, ' + recordsFound.toLocaleString() + ' records';
-
-    // Show completion on overlay before hiding
-    var completionTime = Math.round((Date.now() - syncStartTime) / 1000);
-    var completionMsg = 'Completed in ' + completionTime + ' seconds';
-    updateLoadingOverlay('Setup complete!', 'Ready to explore your data', 100, finalTableCount, finalFieldCount, recordsFound, completionMsg);
-
-    // Brief delay to show completion, then hide overlay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    hideLoadingOverlay();
-
-    updateStatus('Synced ' + eventsLoaded.toLocaleString() + ' events', true, null, finalDetail);
-
-    // Push .amo to Box after full sync if auto-sync is enabled
-    if (boxSyncEnabled) {
-        BoxSync.push();
-    }
+    console.warn('[fullSync] Xano API removed — use hydrateFromSynapse() instead');
+    await hydrateFromSynapse();
 }
 
+// incrementalSync (Deprecated - Xano API removed)
+// Incremental updates are now handled by SynapseSync which long-polls Matrix /sync.
 var _incrementalSyncRunning = false;
-
 async function incrementalSync() {
-    if (!API_KEY) return;
-    if (_incrementalSyncRunning) {
-        console.warn('[incrementalSync] Already running, skipping concurrent call');
-        return;
-    }
-    _incrementalSyncRunning = true;
-    var syncStartTime = Date.now();
-    try {
-        // Show syncing indicator
-        setRefreshIndicatorSyncing(true);
-        updateStatus('Checking for updates...', false, null, null);
-
-        // Fetch all events created after the last synced timestamp (with pagination)
-        var allEvents = [];
-        var page = 1;
-        var iterations = 0;
-        while (true) {
-            var result = await fetchPage(page, lastEventTimestamp);
-            if (!result.events || result.events.length === 0) break;
-            for (var ei = 0; ei < result.events.length; ei++) allEvents.push(result.events[ei]);
-            if (!result.hasMore) break;
-            page = result.nextPage;
-            iterations++;
-            if (iterations > 100) break; // Safety limit
-        }
-
-        // Filter out events we've already synced (API uses inclusive created_after)
-        if (lastEventTimestamp && allEvents.length > 0) {
-            allEvents = allEvents.filter(function(e) {
-                return e.created_at && e.created_at > lastEventTimestamp;
-            });
-        }
-
-        if (allEvents.length > 0) {
-            updateStatus('Processing ' + allEvents.length + ' new events...', false, null, null);
-            // Sort by timestamp for correct processing order (handle both string and numeric timestamps)
-            allEvents.sort((a, b) => {
-                var aTime = a.created_at ? (typeof a.created_at === 'number' ? a.created_at : new Date(a.created_at).getTime()) : 0;
-                var bTime = b.created_at ? (typeof b.created_at === 'number' ? b.created_at : new Date(b.created_at).getTime()) : 0;
-                return aTime - bTime;
-            });
-            await processEvents(allEvents);
-            await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
-
-            updateStatus('Updating views...', false, null, null);
-            await renderSidebar(true);
-
-            // Update data view if table is selected
-            if (currentTable && currentTable !== '_sync_status') {
-                originalRecordIds = await getRecordIdsForTable(currentTable);
-                currentRecordIds = originalRecordIds;
-                totalRecords = currentRecordIds.length;
-                await renderTable();
-            }
-
-            var syncDetail = allEvents.length + ' events synced';
-            updateStatus('Up to date', true, null, syncDetail);
-
-            // Record to sync history
-            SyncHistory.record({
-                type: 'incremental',
-                result: 'success',
-                eventsFound: allEvents.length,
-                duration: Date.now() - syncStartTime,
-                detail: syncDetail
-            });
-
-            // Push .amo to Box if auto-sync is enabled and new data arrived
-            if (boxSyncEnabled) {
-                BoxSync.push();
-            }
-        } else {
-            updateStatus('Up to date', true, null, null);
-
-            // Record no-change sync
-            SyncHistory.record({
-                type: 'incremental',
-                result: 'no-change',
-                eventsFound: 0,
-                duration: Date.now() - syncStartTime,
-                detail: 'No new events'
-            });
-        }
-
-        // Reset indicator and start countdown
-        setRefreshIndicatorSyncing(false);
-    } catch (err) {
-        console.error('Sync error:', err);
-        updateStatus('Sync error: ' + err.message, false, null, null);
-        setRefreshIndicatorSyncing(false);
-
-        // Record error to sync history
-        SyncHistory.record({
-            type: 'incremental',
-            result: 'error',
-            duration: Date.now() - syncStartTime,
-            error: err.message,
-            detail: 'Sync error: ' + err.message
-        });
-    } finally {
-        _incrementalSyncRunning = false;
+    console.warn('[incrementalSync] Xano API removed — updates delivered via Matrix /sync');
+    // Ensure SynapseSync is running for incremental updates
+    if (!SynapseSync.running) {
+        SynapseSync.start();
     }
 }
 
@@ -10725,7 +9746,7 @@ var SynapseSync = {
     _backoffMs: 1000,
 
     async discoverTableRooms() {
-        // Discover table rooms from org space config
+        // Discover table rooms using law.firm.vault.metadata state events
         try {
             var session = _loadSynapseSession();
             if (!session || !session.accessToken) return [];
@@ -10739,19 +9760,35 @@ var SynapseSync = {
             var joinedRooms = data.joined_rooms || [];
 
             var tableRooms = [];
-            // Check each joined room for law.firm.schema.table state event
+            // Check each joined room for vault metadata or schema table state event
             for (var roomId of joinedRooms) {
                 try {
+                    // Try law.firm.vault.metadata first (new format)
+                    var metaRes = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(roomId) + '/state/law.firm.vault.metadata/', {
+                        headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                    });
+                    if (metaRes.ok) {
+                        var vaultMeta = await metaRes.json();
+                        if (vaultMeta && (vaultMeta.tableId || vaultMeta.table_id)) {
+                            tableRooms.push({
+                                tableId: vaultMeta.tableId || vaultMeta.table_id,
+                                roomId: roomId,
+                                name: vaultMeta.tableName || vaultMeta.table_name || vaultMeta.name || vaultMeta.tableId || vaultMeta.table_id
+                            });
+                            continue;
+                        }
+                    }
+                    // Fallback: try law.firm.schema.table (legacy format)
                     var stateRes = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(roomId) + '/state/law.firm.schema.table/', {
                         headers: { 'Authorization': 'Bearer ' + session.accessToken }
                     });
                     if (stateRes.ok) {
                         var tableInfo = await stateRes.json();
-                        if (tableInfo && tableInfo.tableId) {
+                        if (tableInfo && (tableInfo.tableId || tableInfo.table_id)) {
                             tableRooms.push({
-                                tableId: tableInfo.tableId,
+                                tableId: tableInfo.tableId || tableInfo.table_id,
                                 roomId: roomId,
-                                name: tableInfo.name || tableInfo.tableId
+                                name: tableInfo.name || tableInfo.tableId || tableInfo.table_id
                             });
                         }
                     }
@@ -10818,16 +9855,17 @@ var SynapseSync = {
 
                 var roomIds = this.tableRooms.map(function(r) { return r.roomId; });
 
-                // Build sync filter
+                // Build sync filter: listen for law.firm.schema.object timeline events
+                // and schema state events (table/field metadata + vault metadata)
                 var filter = JSON.stringify({
                     room: {
                         rooms: roomIds,
                         timeline: {
-                            types: ['law.firm.record.mutate'],
+                            types: ['law.firm.schema.object'],
                             limit: 100
                         },
                         state: {
-                            types: ['law.firm.schema.table', 'law.firm.schema.field']
+                            types: ['law.firm.schema.table', 'law.firm.schema.field', 'law.firm.vault.metadata']
                         }
                     }
                 });
@@ -10862,6 +9900,46 @@ var SynapseSync = {
         }
     },
 
+    // Convert a law.firm.schema.object Matrix event to the synthetic format processEvents expects
+    _convertSchemaObjectEvent: function(tevt, fallbackTableId) {
+        var c = tevt.content;
+        if (!c || !c.recordId) return null;
+
+        var evtTableId = fallbackTableId;
+        // Extract table ID from the 'set' field (e.g. "airtable:tblXXX")
+        if (c.set) {
+            evtTableId = c.set.replace('airtable:', '');
+        }
+
+        var syntheticEvent = {
+            id: tevt.event_id,
+            set: 'airtable:' + evtTableId,
+            recordId: c.recordId,
+            operator: c.op,
+            created_at: c.sourceTimestamp ? c.sourceTimestamp * 1000 : tevt.origin_server_ts,
+            payload: c.payload || { fields: {} }
+        };
+
+        // If payload doesn't have fields with EO operators, construct from op + fields
+        if (syntheticEvent.payload && !syntheticEvent.payload.fields) {
+            syntheticEvent.payload.fields = {};
+        }
+
+        // Handle case where event has flat fields + op but no EO-structured payload
+        if (c.op && c.fields && !c.payload) {
+            syntheticEvent.payload = { fields: {} };
+            if (c.op === 'INS') {
+                syntheticEvent.payload.fields.INS = c.fields;
+            } else if (c.op === 'ALT') {
+                syntheticEvent.payload.fields.ALT = c.fields;
+            } else if (c.op === 'NUL') {
+                syntheticEvent.payload.fields.NUL = Array.isArray(c.fields) ? c.fields : Object.keys(c.fields);
+            }
+        }
+
+        return syntheticEvent;
+    },
+
     async _processSync(syncData) {
         var joinedRooms = syncData.rooms && syncData.rooms.join ? syncData.rooms.join : {};
         var newEvents = 0;
@@ -10877,43 +9955,28 @@ var SynapseSync = {
             for (var i = 0; i < stateEvents.length; i++) {
                 var evt = stateEvents[i];
                 if (evt.type === 'law.firm.schema.table' && evt.content) {
-                    // Update table metadata in IndexedDB
-                    await saveTable({ tableId: evt.content.tableId || tableId, tableName: evt.content.name || tableId });
-                    if (META_TABLES) META_TABLES[tableId] = { tableId: tableId, tableName: evt.content.name || tableId };
+                    await saveTable({ tableId: evt.content.tableId || evt.content.table_id || tableId, tableName: evt.content.name || evt.content.tableName || tableId });
+                    if (META_TABLES) META_TABLES[tableId] = { tableId: tableId, tableName: evt.content.name || evt.content.tableName || tableId };
                 } else if (evt.type === 'law.firm.schema.field' && evt.content) {
-                    // Update field metadata in IndexedDB
-                    var fieldData = { tableId: tableId, fieldId: evt.content.fieldId || evt.state_key, fieldName: evt.content.name, fieldType: evt.content.type, options: evt.content.options };
+                    var fieldData = { tableId: tableId, fieldId: evt.content.fieldId || evt.content.field_id || evt.state_key, fieldName: evt.content.name, fieldType: evt.content.type, options: evt.content.options };
                     await saveField(fieldData);
                     if (META_FIELDS && META_FIELDS[tableId]) META_FIELDS[tableId][fieldData.fieldId] = fieldData;
+                } else if (evt.type === 'law.firm.vault.metadata' && evt.content) {
+                    // Update table metadata from vault metadata
+                    var vaultTableId = evt.content.tableId || evt.content.table_id || tableId;
+                    var vaultTableName = evt.content.tableName || evt.content.table_name || evt.content.name || tableId;
+                    await saveTable({ tableId: vaultTableId, tableName: vaultTableName });
+                    if (META_TABLES) META_TABLES[vaultTableId] = { tableId: vaultTableId, tableName: vaultTableName };
                 }
             }
 
-            // Process timeline events (record mutations)
+            // Process timeline events (law.firm.schema.object record mutations)
             var timelineEvents = roomData.timeline && roomData.timeline.events ? roomData.timeline.events : [];
             for (var j = 0; j < timelineEvents.length; j++) {
                 var tevt = timelineEvents[j];
-                if (tevt.type === 'law.firm.record.mutate' && tevt.content) {
-                    var c = tevt.content;
-                    var evtTableId = c.tableId || tableId;
-
-                    // Convert Matrix event to the format processEvents expects
-                    var syntheticEvent = {
-                        id: tevt.event_id,
-                        set: 'airtable:' + evtTableId,
-                        recordId: c.recordId,
-                        operator: c.op,
-                        created_at: tevt.origin_server_ts,
-                        payload: { fields: {} }
-                    };
-
-                    // Map op + fields to the INS/ALT/NUL payload format
-                    if (c.op === 'INS' && c.fields) {
-                        syntheticEvent.payload.fields.INS = c.fields;
-                    } else if (c.op === 'ALT' && c.fields) {
-                        syntheticEvent.payload.fields.ALT = c.fields;
-                    } else if (c.op === 'NUL' && c.fields) {
-                        syntheticEvent.payload.fields.NUL = Object.keys(c.fields);
-                    }
+                if (tevt.type === 'law.firm.schema.object' && tevt.content) {
+                    var syntheticEvent = this._convertSchemaObjectEvent(tevt, tableId);
+                    if (!syntheticEvent) continue;
 
                     try {
                         await processEvents([syntheticEvent]);
@@ -10937,6 +10000,7 @@ var SynapseSync = {
 };
 
 // hydrateFromSynapse: full initial hydration from Synapse table rooms
+// Replays all law.firm.schema.object events to build local state (~3-5 min one-time)
 async function hydrateFromSynapse() {
     try {
         var session = _loadSynapseSession();
@@ -10945,7 +10009,7 @@ async function hydrateFromSynapse() {
             return false;
         }
 
-        // Discover table rooms
+        // Discover table rooms (vault rooms)
         var tableRooms = await SynapseSync.discoverTableRooms();
         if (tableRooms.length === 0) {
             console.log('[Hydration] No table rooms found');
@@ -10968,10 +10032,14 @@ async function hydrateFromSynapse() {
                     var stateEvents = await stateRes.json();
                     for (var i = 0; i < stateEvents.length; i++) {
                         var evt = stateEvents[i];
-                        if (evt.type === 'law.firm.schema.table' && evt.content) {
-                            await saveTable({ tableId: evt.content.tableId || tr.tableId, tableName: evt.content.name || tr.name });
+                        if (evt.type === 'law.firm.vault.metadata' && evt.content) {
+                            var vaultTableId = evt.content.tableId || evt.content.table_id || tr.tableId;
+                            var vaultTableName = evt.content.tableName || evt.content.table_name || evt.content.name || tr.name;
+                            await saveTable({ tableId: vaultTableId, tableName: vaultTableName });
+                        } else if (evt.type === 'law.firm.schema.table' && evt.content) {
+                            await saveTable({ tableId: evt.content.tableId || evt.content.table_id || tr.tableId, tableName: evt.content.name || evt.content.tableName || tr.name });
                         } else if (evt.type === 'law.firm.schema.field' && evt.content) {
-                            await saveField({ tableId: tr.tableId, fieldId: evt.content.fieldId || evt.state_key, fieldName: evt.content.name, fieldType: evt.content.type, options: evt.content.options });
+                            await saveField({ tableId: tr.tableId, fieldId: evt.content.fieldId || evt.content.field_id || evt.state_key, fieldName: evt.content.name, fieldType: evt.content.type, options: evt.content.options });
                         }
                     }
                 }
@@ -10979,14 +10047,14 @@ async function hydrateFromSynapse() {
                 console.warn('[Hydration] State read failed for ' + tr.name + ':', stateErr);
             }
 
-            // 2. Paginate full timeline for record events
+            // 2. Paginate full timeline for law.firm.schema.object events
             var from = null;
             var roomEvents = 0;
             while (true) {
                 try {
                     var msgUrl = SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(tr.roomId) + '/messages?dir=f&limit=100';
                     if (from) msgUrl += '&from=' + encodeURIComponent(from);
-                    msgUrl += '&filter=' + encodeURIComponent(JSON.stringify({ types: ['law.firm.record.mutate'] }));
+                    msgUrl += '&filter=' + encodeURIComponent(JSON.stringify({ types: ['law.firm.schema.object'] }));
 
                     var msgRes = await fetch(msgUrl, {
                         headers: { 'Authorization': 'Bearer ' + session.accessToken }
@@ -10997,23 +10065,12 @@ async function hydrateFromSynapse() {
                     var chunk = msgData.chunk || [];
                     if (chunk.length === 0) break;
 
-                    // Process each event
+                    // Process each event using the shared converter
                     for (var j = 0; j < chunk.length; j++) {
                         var mevt = chunk[j];
-                        if (mevt.type === 'law.firm.record.mutate' && mevt.content) {
-                            var mc = mevt.content;
-                            var synEvent = {
-                                id: mevt.event_id,
-                                set: 'airtable:' + (mc.tableId || tr.tableId),
-                                recordId: mc.recordId,
-                                operator: mc.op,
-                                created_at: mevt.origin_server_ts,
-                                payload: { fields: {} }
-                            };
-
-                            if (mc.op === 'INS' && mc.fields) synEvent.payload.fields.INS = mc.fields;
-                            else if (mc.op === 'ALT' && mc.fields) synEvent.payload.fields.ALT = mc.fields;
-                            else if (mc.op === 'NUL' && mc.fields) synEvent.payload.fields.NUL = Object.keys(mc.fields);
+                        if (mevt.type === 'law.firm.schema.object' && mevt.content) {
+                            var synEvent = SynapseSync._convertSchemaObjectEvent(mevt, tr.tableId);
+                            if (!synEvent) continue;
 
                             try {
                                 await processEvents([synEvent]);
@@ -11180,9 +10237,6 @@ async function init() {
 
     // Start Synapse real-time sync (long-poll /sync for room events)
     SynapseSync.start();
-
-    // Initialize Box sync toggle (optional backup)
-    initBoxSyncToggle();
 }
 
 // ============ Field History Modal ============
@@ -12636,22 +11690,13 @@ async function processCSVFile(file) {
             updateLoadingOverlay('Import complete!', events.length.toLocaleString() + ' events loaded', 100, tablesCount, fieldsCount, recordsCount, '');
             setTimeout(hideLoadingOverlay, 300);
 
-            updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
+            updateStatus('Up to date', true, null, null);
 
             // Start the refresh indicator countdown
             lastSyncTime = Date.now();
             startRefreshCountdown();
 
-            // Start incremental sync polling (but don't block on it)
-            if (API_KEY) {
-                if (pollInterval) clearInterval(pollInterval);
-                pollInterval = setInterval(incrementalSync, 180000);
-
-                // Start background polling for new events (lightweight 15s checks)
-                SyncHistory.startPolling();
-            }
-
-            updateConnectApiButton();
+            // Synapse sync is started after init() — no API_KEY polling needed.
 
             // Background: Save to IndexedDB for next visit (non-blocking)
             // This happens after the UI is ready, so user can start working immediately
@@ -12850,20 +11895,11 @@ async function processAmoFile(file) {
             updateLoadingOverlay('Import complete!', totalRecords.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFields, totalRecords, '');
             setTimeout(hideLoadingOverlay, 300);
 
-            updateStatus(API_KEY ? 'Up to date' : 'Offline mode', true, null, null);
+            updateStatus('Up to date', true, null, null);
 
             // Start the refresh indicator countdown
             lastSyncTime = Date.now();
             startRefreshCountdown();
-
-            // Start incremental sync polling if API key is set
-            if (API_KEY) {
-                if (pollInterval) clearInterval(pollInterval);
-                pollInterval = setInterval(incrementalSync, 180000);
-                SyncHistory.startPolling();
-            }
-
-            updateConnectApiButton();
 
             console.log('AMO import complete: ' + totalRecords + ' records across ' + tableNames.length + ' tables');
 
@@ -12886,13 +11922,16 @@ async function skipSetupAndUploadAmoFile() {
     input.click();
 }
 
-// ============ Hydrate from Box Download ============
-
-// Fetches the latest snapshot file from Box via webhook and replays it locally.
-// Supports .amo binary, CSV event exports, and other formats.
-// On the next Box sync push, the data will be saved as .amo regardless of source format.
-// Returns true if hydration succeeded, false otherwise.
+// ============ Hydrate from Box Download (Deprecated) ============
+// Box file hydration replaced by Matrix Synapse event replay.
+// The client now builds local state by replaying law.firm.schema.object events.
 async function hydrateFromBoxDownload() {
+    console.warn('[hydrateFromBoxDownload] Box hydration removed — use hydrateFromSynapse()');
+    return false;
+}
+
+// Legacy function body kept as dead code for reference during migration.
+async function _hydrateFromBoxDownload_LEGACY() {
     try {
         showLoadingOverlay();
         updateLoadingOverlay('Downloading data...', 'Fetching latest snapshot from cloud storage...', 5, 0, 0, 0, '');
@@ -13901,30 +12940,8 @@ async function commitProfileFieldEdit(fieldId, newValue) {
         newValue: newValue
     }]);
 
-    // Post event to sync backend
-    if (API_KEY && XANO_POST_API) {
-        var altFields = {};
-        altFields[fieldId] = newValue;
-
-        var payload = {
-            uuid: crypto.randomUUID(),
-            recordId: recordId,
-            set: 'airtable:' + tableId,
-            operator: 'ALT',
-            created_at: new Date().toISOString(),
-            apiKey: API_KEY,
-            payload: JSON.stringify({
-                fields: { ALT: altFields }
-            })
-        };
-
-        try {
-            await AminoSync.postEvent(payload);
-            console.log('Field edit saved to backend:', fieldId);
-        } catch (error) {
-            console.error('Failed to save field edit to backend:', error);
-        }
-    }
+    // Note: Field edits are local-only. Data flows one way: Airtable → n8n → Matrix.
+    // To persist changes, edit the record in Airtable directly.
 
     // Re-render profile
     renderRecordProfile();
@@ -15771,23 +14788,13 @@ async function deleteWorkspace(workspaceId) {
     renderSidebar();
 }
 
-// Save workspace to backend
+// Save workspace to backend (local only — data flows Airtable → n8n → Matrix)
 async function saveWorkspaceToBackend(workspace, operator) {
-    if (!API_KEY) return;
-    var payload = {
-        uuid: crypto.randomUUID(),
-        recordId: workspace.workspaceId,
-        set: 'workspaces',
-        operator: operator,
-        created_at: new Date().toISOString(),
-        apiKey: API_KEY,
-        payload: JSON.stringify(workspace)
-    };
-
+    // Workspace config is stored locally via user preferences (Matrix account data).
     try {
-        await AminoSync.postEvent(payload);
+        await UserPreferences.set('workspace:' + workspace.workspaceId, workspace);
     } catch (error) {
-        console.error('Failed to save workspace to backend:', error);
+        console.error('Failed to save workspace:', error);
     }
 }
 
@@ -16393,33 +15400,12 @@ async function wizardValidateOrg() {
 }
 
 async function wizardValidateLegacy() {
-    var apiKey = document.getElementById('wiz-amino-key').value.trim();
-    if (!apiKey) throw new Error('Please enter your Amino API Key');
-
-    wizardData.aminoApiKey = apiKey;
-
-    // Initialize legacy endpoints using existing mechanism
-    await initSecureEndpoints(apiKey);
-    wizardData.aminoEndpoints = {
-        stream: API,
-        post: XANO_POST_API,
-        boxUpload: BOX_SYNC_WEBHOOK,
-        boxDownload: BOX_DOWNLOAD_WEBHOOK
-    };
-
-    // Set the global API_KEY so existing functions work
-    API_KEY = apiKey;
-
+    // Legacy wizard step — Xano endpoints removed. Data comes from Matrix Synapse.
     // Open IndexedDB
     if (!db) db = await openDB();
 
-    // Try to hydrate from Box to get data locally
-    var hydrated = await hydrateFromBoxDownload();
-
-    if (!hydrated) {
-        // Fall back to full sync from stream
-        await fullSync();
-    }
+    // Hydrate from Synapse rooms
+    await hydrateFromSynapse();
 
     // Reload metadata
     var tables = await getAllTables();
@@ -16431,7 +15417,7 @@ async function wizardValidateLegacy() {
     });
 
     if (Object.keys(wizardData.legacyTables).length === 0) {
-        throw new Error('No tables found. Check your API key and try again.');
+        throw new Error('No tables found. Verify your Synapse session and room membership.');
     }
 }
 
@@ -16808,10 +15794,8 @@ async function rmExecuteDelete(clientNames) {
 function wizardComplete() {
     hideMatrixWizard();
 
-    // Start bridge mode
-    if (API_KEY && wizardData.aminoEndpoints) {
-        MatrixBridge.startBridge(API_KEY, wizardData.aminoEndpoints);
-    }
+    // Bridge mode no longer uses Xano endpoints.
+    // Data flows Airtable → n8n → Matrix automatically.
 
     // Show manage rooms button
     var rmBtn = document.getElementById('manage-rooms-btn');
