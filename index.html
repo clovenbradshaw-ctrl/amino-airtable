@@ -1872,10 +1872,6 @@
                 </div>
                 <span id="status-detail" style="color: #999; font-size: 11px;"></span>
                 <div class="sync-toggle-wrapper">
-                    <span class="sync-toggle-label">Sync to Snapshot</span>
-                    <div class="sync-toggle" id="sync-toggle" onclick="toggleSnapshotSync()">
-                        <div class="sync-toggle-knob"></div>
-                    </div>
                     <button class="sync-feed-btn" id="sync-feed-btn" onclick="SyncStatusFeed.toggle()" title="View sync activity log">[log]</button>
                 </div>
                 <div class="sync-toggle-wrapper">
@@ -2250,7 +2246,6 @@ var ENCRYPTED_ENDPOINTS_KEY = 'amino_encrypted_endpoints';
 var _EP = [
     'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zdHJlYW0=',
     'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zdHJlYW1wb3N0',
-    'aHR0cHM6Ly94dmtxLXBxN2ktaWR0bC5uN2QueGFuby5pby9hcGk6bnJJTC1PaS0vYW1pbm9zbmFwc2hvdA==',
     'aHR0cHM6Ly9uOG4uaW50ZWxlY2hpYS5jb20vd2ViaG9vay9ib3gtdXBsb2Fk',
     'aHR0cHM6Ly9uOG4uaW50ZWxlY2hpYS5jb20vd2ViaG9vay9ib3gtZG93bmxvYWQ='
 ];
@@ -2284,9 +2279,8 @@ async function initSecureEndpoints(apiKey) {
             var endpoints = JSON.parse(new TextDecoder().decode(decrypted));
             API = endpoints[0];
             XANO_POST_API = endpoints[1];
-            XANO_SNAPSHOT_API = endpoints[2];
-            BOX_SYNC_WEBHOOK = endpoints[3];
-            BOX_DOWNLOAD_WEBHOOK = endpoints[4];
+            BOX_SYNC_WEBHOOK = endpoints[2];
+            BOX_DOWNLOAD_WEBHOOK = endpoints[3];
             return;
         } catch (e) {
             // Decryption failed (wrong key or corrupted data) - fall through to bootstrap
@@ -2297,16 +2291,15 @@ async function initSecureEndpoints(apiKey) {
     // Bootstrap: decode from obfuscated source
     API = atob(_EP[0]);
     XANO_POST_API = atob(_EP[1]);
-    XANO_SNAPSHOT_API = atob(_EP[2]);
-    BOX_SYNC_WEBHOOK = atob(_EP[3]);
-    BOX_DOWNLOAD_WEBHOOK = atob(_EP[4]);
+    BOX_SYNC_WEBHOOK = atob(_EP[2]);
+    BOX_DOWNLOAD_WEBHOOK = atob(_EP[3]);
 
     // Encrypt endpoints with the user's API key and store for future use
     try {
         var key = await deriveEndpointKey(apiKey);
         var iv = crypto.getRandomValues(new Uint8Array(12));
         var encoder = new TextEncoder();
-        var plaintext = encoder.encode(JSON.stringify([API, XANO_POST_API, XANO_SNAPSHOT_API, BOX_SYNC_WEBHOOK, BOX_DOWNLOAD_WEBHOOK]));
+        var plaintext = encoder.encode(JSON.stringify([API, XANO_POST_API, BOX_SYNC_WEBHOOK, BOX_DOWNLOAD_WEBHOOK]));
         var encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, plaintext);
         var ivStr = '';
         for (var i = 0; i < iv.length; i++) ivStr += String.fromCharCode(iv[i]);
@@ -2326,7 +2319,6 @@ async function initSecureEndpoints(apiKey) {
 function clearSecureEndpoints() {
     API = null;
     XANO_POST_API = null;
-    XANO_SNAPSHOT_API = null;
     BOX_SYNC_WEBHOOK = null;
     BOX_DOWNLOAD_WEBHOOK = null;
     localStorage.removeItem(ENCRYPTED_ENDPOINTS_KEY);
@@ -3317,9 +3309,6 @@ var SIDEBAR_ICONS = {
 // Pending view action (when user tries to modify default view)
 var pendingViewAction = null; // { action: 'filter'|'sort'|'fields'|'group', data: any }
 
-// Snapshot sync toggle state (off by default)
-var snapshotSyncEnabled = false;
-
 // Box auto-sync state (off by default)
 var boxSyncEnabled = false;
 var BOX_SYNC_WEBHOOK = null; // Secured: initialized after authentication via initSecureEndpoints()
@@ -3350,7 +3339,6 @@ var isBackgroundSaveInProgress = false; // Track background IndexedDB save statu
 
 // ============ View Auto-Save System ============
 var XANO_POST_API = null; // Secured: initialized after authentication via initSecureEndpoints()
-var XANO_SNAPSHOT_API = null; // Secured: initialized after authentication via initSecureEndpoints()
 var AUTO_SAVE_DELAY = 5 * 60 * 1000; // 5 minutes
 var autoSaveTimer = null;
 
@@ -3364,13 +3352,12 @@ var viewDirtyState = {
     }
 };
 
-// ============ AminoSync - Client-Side Snapshot Maintenance ============
+// ============ AminoSync - Event Stream Client ============
 
 var AminoSync = {
-    // Post event to aminoStream and update snapshot
-    async postEventWithSnapshot(event, snapshotData) {
+    // Post event to aminoStream
+    async postEvent(event) {
         if (!API_KEY || !XANO_POST_API) throw new Error('Not authenticated');
-        // Step 1: POST to aminoStream (append event, get event ID)
         var streamRes = await fetch(XANO_POST_API + '?apiKey=' + encodeURIComponent(API_KEY), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -3382,560 +3369,12 @@ var AminoSync = {
         }
 
         var streamResult = await streamRes.json();
-        var eventId = streamResult.id;
-
-        // Step 2: PUT to aminoSnapshot (upsert state + event ID)
-        if (snapshotData && event.recordId) {
-            var snapshotRecord = {
-                record_id: event.recordId,
-                source_table: snapshotData.source_table || event.set,
-                data: snapshotData.data,
-                last_amino_event: eventId
-            };
-
-            try {
-                await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(event.recordId) + '?apiKey=' + encodeURIComponent(API_KEY), {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(snapshotRecord)
-                });
-
-                // Step 3: Update local IndexedDB snapshot
-                if (db && db.objectStoreNames.contains('snapshot')) {
-                    var tx = db.transaction('snapshot', 'readwrite');
-                    tx.objectStore('snapshot').put(snapshotRecord);
-                }
-            } catch (snapshotErr) {
-                console.warn('Snapshot update failed (event still recorded):', snapshotErr);
-            }
-        }
-
-        return { eventId, streamResult };
-    },
-
-    // Delete from snapshot (for NUL operations)
-    async deleteSnapshot(recordId) {
-        if (!API_KEY || !XANO_SNAPSHOT_API) return;
-        try {
-            await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(recordId) + '?apiKey=' + encodeURIComponent(API_KEY), {
-                method: 'DELETE'
-            });
-
-            // Remove from local IndexedDB
-            if (db && db.objectStoreNames.contains('snapshot')) {
-                var tx = db.transaction('snapshot', 'readwrite');
-                tx.objectStore('snapshot').delete(recordId);
-            }
-        } catch (err) {
-            console.warn('Snapshot delete failed:', err);
-        }
-    },
-
-    // Get snapshot record from local IndexedDB
-    async getSnapshot(recordId) {
-        if (!db || !db.objectStoreNames.contains('snapshot')) return null;
-
-        return new Promise((resolve, reject) => {
-            var tx = db.transaction('snapshot', 'readonly');
-            var req = tx.objectStore('snapshot').get(recordId);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    },
-
-    // Get all snapshots by source table
-    async getSnapshotsByTable(sourceTable) {
-        if (!db || !db.objectStoreNames.contains('snapshot')) return [];
-
-        return new Promise((resolve, reject) => {
-            var tx = db.transaction('snapshot', 'readonly');
-            var index = tx.objectStore('snapshot').index('by_source_table');
-            var req = index.getAll(sourceTable);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    },
-
-    // Get last synced snapshot event ID
-    async getLastSnapshotEventId() {
-        var meta = await getSyncMeta('lastSnapshotEventId');
-        return meta || 0;
-    },
-
-    // Set last synced snapshot event ID
-    async setLastSnapshotEventId(eventId) {
-        await setSyncMeta('lastSnapshotEventId', eventId);
-    },
-
-    // Fetch with single retry for transient network errors
-    async fetchWithRetry(url, retries) {
-        retries = retries || 1;
-        for (var attempt = 0; attempt <= retries; attempt++) {
-            try {
-                var response = await fetch(url);
-                return response;
-            } catch (err) {
-                if (attempt < retries) {
-                    // Wait before retry: 2s for first retry
-                    await new Promise(function(r) { setTimeout(r, 2000 * (attempt + 1)); });
-                    console.warn('[AminoSync] Fetch retry ' + (attempt + 1) + '/' + retries + ' for snapshot pull');
-                } else {
-                    throw err;
-                }
-            }
-        }
-    },
-
-    // Incremental sync from snapshot endpoint
-    async syncFromSnapshot() {
-        if (!API_KEY) return { updated: 0 };
-        var lastEventId = await this.getLastSnapshotEventId();
-
-        if (lastEventId === 0) {
-            console.warn('[AminoSync] syncFromSnapshot called with cursor=0 — this will fetch ALL records. Was the cursor set after hydration?');
-        }
-
-        try {
-            var response = await this.fetchWithRetry(
-                XANO_SNAPSHOT_API + '?last_amino_event_gt=' + lastEventId +
-                (API_KEY ? '&apiKey=' + encodeURIComponent(API_KEY) : '')
-            );
-
-            if (!response.ok) {
-                throw new Error('Snapshot sync failed: HTTP ' + response.status);
-            }
-
-            var updates = await response.json();
-
-            // Handle non-array responses (API might return object or null)
-            if (!updates || !Array.isArray(updates)) {
-                if (updates && typeof updates === 'object' && updates.message) {
-                    // API returned an error object
-                    return { updated: 0, error: updates.message };
-                }
-                return { updated: 0 };
-            }
-
-            if (updates.length === 0) {
-                return { updated: 0 };
-            }
-
-            // Update local IndexedDB
-            if (db && db.objectStoreNames.contains('snapshot')) {
-                var tx = db.transaction('snapshot', 'readwrite');
-                var store = tx.objectStore('snapshot');
-                var maxEventId = lastEventId;
-
-                for (var record of updates) {
-                    store.put(record);
-                    if (record.last_amino_event > maxEventId) {
-                        maxEventId = record.last_amino_event;
-                    }
-                }
-
-                await new Promise((resolve, reject) => {
-                    tx.oncomplete = resolve;
-                    tx.onerror = () => reject(tx.error);
-                });
-
-                await this.setLastSnapshotEventId(maxEventId);
-            }
-
-            return { updated: updates.length };
-        } catch (err) {
-            console.error('Snapshot sync error:', err);
-            return { updated: 0, error: err.message };
-        }
-    },
-
-    // Bootstrap from snapshot file (for new clients)
-    // Supports .amo binary format, gzipped JSON, and plain JSON
-    async bootstrapFromSnapshot(snapshotUrl) {
-        try {
-            var response = await fetch(snapshotUrl);
-            if (!response.ok) {
-                throw new Error('Bootstrap failed: HTTP ' + response.status);
-            }
-
-            var buffer = await response.arrayBuffer();
-            var format = AmoFormat.detectFormat(buffer);
-            var records;
-
-            if (format === 'amo') {
-                // Binary .amo format
-                var amo = AmoFormat.read(buffer);
-                records = AmoFormat.toSnapshotRecords(amo.tables, amo.cursor);
-            } else if (format === 'json-gz') {
-                // Gzipped JSON
-                var decompressed = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
-                records = JSON.parse(decompressed);
-            } else {
-                // Plain JSON
-                var text = new TextDecoder().decode(buffer);
-                records = JSON.parse(text);
-            }
-
-            if (!records || records.length === 0) {
-                return { records: 0, lastEvent: 0, format: format };
-            }
-
-            if (db && db.objectStoreNames.contains('snapshot')) {
-                var tx = db.transaction('snapshot', 'readwrite');
-                var store = tx.objectStore('snapshot');
-                var maxEventId = 0;
-
-                for (var record of records) {
-                    store.put(record);
-                    if (record.last_amino_event > maxEventId) {
-                        maxEventId = record.last_amino_event;
-                    }
-                }
-
-                await new Promise((resolve, reject) => {
-                    tx.oncomplete = resolve;
-                    tx.onerror = () => reject(tx.error);
-                });
-
-                await this.setLastSnapshotEventId(maxEventId);
-                return { records: records.length, lastEvent: maxEventId, format: format };
-            }
-
-            return { records: 0, lastEvent: 0, format: format };
-        } catch (err) {
-            console.error('Bootstrap error:', err);
-            throw err;
-        }
-    },
-
-    // Compute current state from event (for snapshot data)
-    computeSnapshotData(currentData, eventPayload, operator) {
-        if (operator === 'INS') {
-            // Insert: use the event data as initial state
-            return eventPayload.context?.data || eventPayload.fields?.INS || eventPayload;
-        } else if (operator === 'ALT') {
-            // Alter: merge changes into current data
-            var changes = eventPayload.context?.data || eventPayload.fields?.ALT || eventPayload;
-            return { ...(currentData || {}), ...changes };
-        } else if (operator === 'NUL') {
-            // Nullify: record should be deleted
-            return null;
-        }
-        return currentData;
-    },
-
-    // Export all local snapshots as a .amo binary file
-    // Returns: { blob: Blob, filename: string, stats: { tables, records, bytes } }
-    async exportSnapshotAsAmo() {
-        var snapshots = await this.getAllLocalSnapshots();
-        if (snapshots.length === 0) {
-            return { blob: null, filename: null, stats: { tables: 0, records: 0, bytes: 0 } };
-        }
-
-        var binary = AmoFormat.produce(snapshots, { tables: META_TABLES, fields: META_FIELDS });
-        var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
-
-        // Count unique tables
-        var tableSet = {};
-        for (var i = 0; i < snapshots.length; i++) {
-            tableSet[snapshots[i].source_table] = true;
-        }
-
-        var timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        var filename = 'amino-snapshot-' + timestamp + '.amo';
-
-        return {
-            blob: blob,
-            filename: filename,
-            stats: {
-                tables: Object.keys(tableSet).length,
-                records: snapshots.length,
-                bytes: binary.length
-            }
-        };
-    },
-
-    // Download .amo snapshot file via browser
-    async downloadSnapshotAsAmo() {
-        var result = await this.exportSnapshotAsAmo();
-        if (!result.blob) {
-            console.warn('No snapshots to export');
-            return result;
-        }
-
-        var url = URL.createObjectURL(result.blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = result.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        return result;
-    },
-
-    // Get all local snapshots from IndexedDB
-    async getAllLocalSnapshots() {
-        if (!db || !db.objectStoreNames.contains('snapshot')) return [];
-
-        return new Promise((resolve, reject) => {
-            var tx = db.transaction('snapshot', 'readonly');
-            var req = tx.objectStore('snapshot').getAll();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = () => reject(req.error);
-        });
-    },
-
-    // Push a single snapshot to the server
-    async pushSnapshot(snapshot) {
-        if (!API_KEY || !XANO_SNAPSHOT_API) return { success: false, error: 'Not authenticated' };
-        try {
-            var response = await fetch(XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(snapshot.record_id) + '?apiKey=' + encodeURIComponent(API_KEY), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(snapshot)
-            });
-
-            // 200 = updated, 201 = created, 409 = stale (remote is newer)
-            if (response.ok) {
-                return { success: true, status: response.status };
-            } else if (response.status === 409) {
-                // Remote has newer data - this is fine, not an error
-                return { success: false, status: 409, stale: true };
-            } else {
-                return { success: false, status: response.status };
-            }
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
-    },
-
-    // Push local snapshots to server (sync local state to cache)
-    async pushLocalSnapshots(batchSize = 50) {
-        var localSnapshots = await this.getAllLocalSnapshots();
-        if (localSnapshots.length === 0) {
-            return { pushed: 0, stale: 0, errors: 0 };
-        }
-
-        var pushed = 0;
-        var stale = 0;
-        var errors = 0;
-
-        // Process in batches to avoid overwhelming the server
-        for (var i = 0; i < localSnapshots.length; i += batchSize) {
-            var batch = localSnapshots.slice(i, i + batchSize);
-
-            // Push batch in parallel
-            var results = await Promise.all(batch.map(s => this.pushSnapshot(s)));
-
-            for (var result of results) {
-                if (result.success) {
-                    pushed++;
-                } else if (result.stale) {
-                    stale++;
-                } else {
-                    errors++;
-                }
-            }
-        }
-
-        return { pushed, stale, errors, total: localSnapshots.length };
-    },
-
-    // Verify and repair a single record by replaying events from the server
-    async verifyRecord(recordId) {
-        try {
-            // 1. Fetch all events for this record from the server
-            var response = await fetch(
-                API + '?recordId=' + encodeURIComponent(recordId) +
-                (API_KEY ? '&apiKey=' + encodeURIComponent(API_KEY) : '')
-            );
-
-            if (!response.ok) {
-                return { status: 'error', recordId, error: 'HTTP ' + response.status };
-            }
-
-            var events = await response.json();
-
-            if (!events || events.length === 0) {
-                // No events = record shouldn't exist in snapshot
-                var existing = await this.getSnapshot(recordId);
-                if (existing) {
-                    // Orphaned snapshot row, clean it up
-                    await this.deleteSnapshot(recordId);
-                    return { status: 'deleted_orphan', recordId };
-                }
-                return { status: 'not_found', recordId };
-            }
-
-            // 2. Sort by id ascending (chronological order)
-            events.sort(function(a, b) { return (a.id || 0) - (b.id || 0); });
-
-            // 3. Replay to compute current state
-            var state = {};
-            var lastOp = null;
-            var lastEventId = 0;
-            var sourceTable = null;
-
-            for (var event of events) {
-                var payload = parsePayload(event.payload);
-                if (!payload || typeof payload !== 'object') continue;
-
-                sourceTable = event.set;
-                lastEventId = event.id;
-                lastOp = event.operator;
-
-                var pfields = payload.fields || {};
-
-                // Default first ALT as INS: if state is empty and operator is ALT, treat as INS
-                var effectiveOp = event.operator;
-                if (effectiveOp === 'ALT' && state !== null && Object.keys(state).length === 0) {
-                    effectiveOp = 'INS';
-                    // Promote ALT fields to INS for consistent handling
-                    if (!pfields.INS && pfields.ALT) {
-                        pfields = { INS: pfields.ALT, NUL: pfields.NUL };
-                    }
-                }
-
-                if (effectiveOp === 'INS') {
-                    // Insert: initialize state
-                    state = pfields.INS || payload.context?.data || {};
-                } else if (effectiveOp === 'ALT') {
-                    // Alter: merge changes
-                    if (pfields.ALT) {
-                        Object.assign(state, pfields.ALT);
-                    }
-                    if (payload.context?.data) {
-                        Object.assign(state, payload.context.data);
-                    }
-                } else if (event.operator === 'SYN') {
-                    // Sync: apply synced field state
-                    if (pfields.SYN) {
-                        Object.assign(state, pfields.SYN);
-                    }
-                } else if (event.operator === 'NUL') {
-                    // Nullify: handle field deletion or record deletion
-                    if (pfields.NUL && Array.isArray(pfields.NUL)) {
-                        pfields.NUL.forEach(function(fid) { delete state[fid]; });
-                    } else {
-                        state = null;
-                    }
-                }
-            }
-
-            // 4. Get current snapshot state from server
-            var snapshotRes = await fetch(
-                XANO_SNAPSHOT_API + '/record/' + encodeURIComponent(recordId) + '?apiKey=' + encodeURIComponent(API_KEY)
-            );
-            var currentSnapshot = snapshotRes.ok ? await snapshotRes.json() : null;
-
-            // 5. Compare and repair if needed
-            if (lastOp === 'NUL' || state === null) {
-                // Record was deleted
-                if (currentSnapshot) {
-                    await this.deleteSnapshot(recordId);
-                    return { status: 'repaired_delete', recordId };
-                }
-                return { status: 'verified_deleted', recordId };
-            }
-
-            // Record should exist
-            var replayedSnapshot = {
-                record_id: recordId,
-                source_table: sourceTable ? sourceTable.replace('airtable:', '') : null,
-                data: state,
-                last_amino_event: lastEventId
-            };
-
-            // Check if repair needed
-            var needsRepair = !currentSnapshot ||
-                currentSnapshot.last_amino_event !== lastEventId ||
-                JSON.stringify(currentSnapshot.data) !== JSON.stringify(state);
-
-            if (needsRepair) {
-                await this.pushSnapshot(replayedSnapshot);
-
-                // Also update local IndexedDB
-                if (db && db.objectStoreNames.contains('snapshot')) {
-                    var tx = db.transaction('snapshot', 'readwrite');
-                    tx.objectStore('snapshot').put(replayedSnapshot);
-                }
-
-                return {
-                    status: 'repaired',
-                    recordId: recordId,
-                    eventCount: events.length,
-                    lastEventId: lastEventId,
-                    diff: {
-                        had: currentSnapshot ? currentSnapshot.last_amino_event : null,
-                        expected: lastEventId
-                    }
-                };
-            }
-
-            return { status: 'verified_ok', recordId: recordId, eventCount: events.length };
-
-        } catch (err) {
-            return { status: 'error', recordId: recordId, error: err.message };
-        }
-    },
-
-    // Verify a random record from local snapshot
-    async verifyRandom() {
-        var all = await this.getAllLocalSnapshots();
-        if (all.length === 0) return { status: 'empty' };
-
-        var random = all[Math.floor(Math.random() * all.length)];
-        return this.verifyRecord(random.record_id);
-    },
-
-    // Background verification: check N random records
-    async backgroundVerify(count) {
-        count = count || 5;
-        var results = [];
-
-        for (var i = 0; i < count; i++) {
-            var result = await this.verifyRandom();
-            results.push(result);
-            // Small delay to avoid hammering the API
-            await new Promise(function(r) { setTimeout(r, 100); });
-        }
-
-        return {
-            checked: results.length,
-            repaired: results.filter(function(r) { return r.status === 'repaired'; }).length,
-            results: results
-        };
-    },
-
-    // Background verification interval handle
-    verifyInterval: null,
-
-    // Start background verification loop
-    startBackgroundVerify(intervalMs, countPerInterval) {
-        intervalMs = intervalMs || 60000;
-        countPerInterval = countPerInterval || 3;
-
-        var self = this;
-        this.verifyInterval = setInterval(function() {
-            self.backgroundVerify(countPerInterval);
-        }, intervalMs);
-
-        // Run initial verification
-        return this.backgroundVerify(countPerInterval);
-    },
-
-    // Stop background verification
-    stopBackgroundVerify() {
-        if (this.verifyInterval) {
-            clearInterval(this.verifyInterval);
-            this.verifyInterval = null;
-        }
+        return { eventId: streamResult.id, streamResult };
     }
 };
 
-// ============ AmoFormat - Binary Snapshot Format (.amo) ============
-// Compact binary representation using MessagePack + gzip with schema deduplication.
+// ============ AmoFormat - Binary Event Stream Format (.amo) ============
+// Compact binary representation using MessagePack + gzip with columnar compression.
 // Extension: .amo | MIME: application/x-amino-snapshot
 
 var AmoFormat = {
@@ -3943,53 +3382,55 @@ var AmoFormat = {
     VERSION: 1,
     HEADER_SIZE: 8,
 
-    // Produce a .amo binary snapshot from snapshot records
-    // snapshotRecords: array of { record_id, source_table, data: { field: value }, last_amino_event }
+    // Produce a .amo binary from the full event stream
+    // events: array of raw aminoStream events (id, set, recordId, operator, created_at, payload, uuid, ...)
     // meta: optional { tables: META_TABLES, fields: META_FIELDS } to preserve table/field names
     // Returns: Uint8Array
-    produce: function(snapshotRecords, meta) {
-        var schema = {};
-        var records = {};
-        var maxCursor = 0;
-
-        // First pass: collect all column names per table
-        // Always include record_id as the first column so it survives the round-trip
-        for (var i = 0; i < snapshotRecords.length; i++) {
-            var rec = snapshotRecords[i];
-            var table = rec.source_table;
-            if (rec.last_amino_event > maxCursor) maxCursor = rec.last_amino_event;
-
-            if (!schema[table]) {
-                schema[table] = ['record_id'];
-                records[table] = [];
-            }
-            var keys = Object.keys(rec.data || {});
+    produceEvents: function(events, meta) {
+        // Collect all unique keys across all events for the columnar schema
+        var colSet = {};
+        for (var i = 0; i < events.length; i++) {
+            var keys = Object.keys(events[i]);
             for (var k = 0; k < keys.length; k++) {
-                if (keys[k] !== 'record_id' && schema[table].indexOf(keys[k]) === -1) {
-                    schema[table].push(keys[k]);
+                // Skip encrypted payload marker — we store the decrypted payload
+                if (keys[k] !== '_encryptedPayload') {
+                    colSet[keys[k]] = true;
                 }
             }
         }
+        // Ensure core columns come first for readability
+        var coreColumns = ['id', 'set', 'recordId', 'operator', 'created_at', 'payload', 'uuid'];
+        var columns = [];
+        for (var c = 0; c < coreColumns.length; c++) {
+            if (colSet[coreColumns[c]]) {
+                columns.push(coreColumns[c]);
+                delete colSet[coreColumns[c]];
+            }
+        }
+        var extra = Object.keys(colSet);
+        for (var e = 0; e < extra.length; e++) {
+            columns.push(extra[e]);
+        }
 
-        // Second pass: convert records to positional arrays
-        for (var j = 0; j < snapshotRecords.length; j++) {
-            var r = snapshotRecords[j];
-            var cols = schema[r.source_table];
+        // Convert events to positional arrays
+        var rows = [];
+        var maxId = 0;
+        for (var j = 0; j < events.length; j++) {
+            var ev = events[j];
             var row = [];
-            for (var c = 0; c < cols.length; c++) {
-                var val;
-                if (cols[c] === 'record_id') {
-                    val = r.record_id || null;
-                } else {
-                    val = r.data ? r.data[cols[c]] : null;
-                }
+            for (var col = 0; col < columns.length; col++) {
+                var val = ev[columns[col]];
                 row.push(val !== undefined ? val : null);
             }
-            records[r.source_table].push(row);
+            rows.push(row);
+            if (ev.id > maxId) maxId = ev.id;
         }
 
+        var schema = { '_events': columns };
+        var records = { '_events': rows };
+
         // Encode payload with MessagePack
-        var payload = { v: 1, ts: Math.floor(Date.now() / 1000), cursor: maxCursor, schema: schema, records: records };
+        var payload = { v: 1, type: 'events', ts: Math.floor(Date.now() / 1000), cursor: maxId, schema: schema, records: records };
         if (meta) payload.meta = meta;
         var encoded = MessagePack.encode(payload);
 
@@ -4004,9 +3445,9 @@ var AmoFormat = {
         return out;
     },
 
-    // Read a .amo binary snapshot
+    // Read a .amo binary file
     // arrayBuffer: ArrayBuffer or Uint8Array of the .amo file
-    // Returns: { tables: { tableName: [{ field: value, ... }, ...] }, cursor, ts }
+    // Returns: { type: 'events'|'snapshot', events?: [...], tables?: {...}, cursor, ts, meta? }
     read: function(arrayBuffer) {
         var bytes = new Uint8Array(arrayBuffer);
 
@@ -4030,69 +3471,53 @@ var AmoFormat = {
         var decompressed = pako.ungzip(compressed);
         var payload = MessagePack.decode(decompressed);
 
-        // Re-hydrate positional arrays back into objects
-        var tables = {};
-        var schemaEntries = Object.entries(payload.schema);
-        for (var i = 0; i < schemaEntries.length; i++) {
-            var tableName = schemaEntries[i][0];
-            var columns = schemaEntries[i][1];
-            var rows = payload.records[tableName] || [];
-            tables[tableName] = [];
+        // Check if this is the new events format
+        if (payload.type === 'events') {
+            var columns = payload.schema['_events'];
+            var rows = payload.records['_events'] || [];
+            var events = [];
             for (var j = 0; j < rows.length; j++) {
                 var obj = {};
                 for (var k = 0; k < columns.length; k++) {
                     obj[columns[k]] = (k < rows[j].length) ? (rows[j][k] !== undefined ? rows[j][k] : null) : null;
                 }
-                tables[tableName].push(obj);
+                events.push(obj);
+            }
+            var result = { type: 'events', events: events, cursor: payload.cursor, ts: payload.ts };
+            if (payload.meta) result.meta = payload.meta;
+            return result;
+        }
+
+        // Legacy snapshot format: re-hydrate positional arrays back into objects
+        var tables = {};
+        var schemaEntries = Object.entries(payload.schema);
+        for (var i = 0; i < schemaEntries.length; i++) {
+            var tableName = schemaEntries[i][0];
+            var cols = schemaEntries[i][1];
+            var tblRows = payload.records[tableName] || [];
+            tables[tableName] = [];
+            for (var j2 = 0; j2 < tblRows.length; j2++) {
+                var obj2 = {};
+                for (var k2 = 0; k2 < cols.length; k2++) {
+                    obj2[cols[k2]] = (k2 < tblRows[j2].length) ? (tblRows[j2][k2] !== undefined ? tblRows[j2][k2] : null) : null;
+                }
+                tables[tableName].push(obj2);
             }
         }
 
-        var result = { tables: tables, cursor: payload.cursor, ts: payload.ts };
-        if (payload.meta) result.meta = payload.meta;
-        return result;
+        var result2 = { type: 'snapshot', tables: tables, cursor: payload.cursor, ts: payload.ts };
+        if (payload.meta) result2.meta = payload.meta;
+        return result2;
     },
 
-    // Detect the format of a snapshot buffer
+    // Detect the format of a buffer
     // Returns: 'amo' | 'json-gz' | 'json'
     detectFormat: function(buffer) {
         var b = new Uint8Array(buffer.slice(0, 4));
         if (b[0] === 0x41 && b[1] === 0x4D && b[2] === 0x4F && b[3] === 0x31) return 'amo';
         if (b[0] === 0x1F && b[1] === 0x8B) return 'json-gz';
         if (b[0] === 0x7B || b[0] === 0x5B) return 'json';
-        throw new Error('Unknown snapshot format');
-    },
-
-    // Convert re-hydrated tables back to flat snapshot records for IndexedDB
-    // tables: { tableName: [{ field: value }, ...] }
-    // cursor: the cursor value from the .amo file
-    // Returns: array of { record_id, source_table, data, last_amino_event }
-    toSnapshotRecords: function(tables, cursor) {
-        var records = [];
-        var tableNames = Object.keys(tables);
-        for (var i = 0; i < tableNames.length; i++) {
-            var tableName = tableNames[i];
-            var rows = tables[tableName];
-            for (var j = 0; j < rows.length; j++) {
-                var row = rows[j];
-                var recordId = row.record_id;
-                if (!recordId) continue;
-                // Build data object excluding record_id itself
-                var data = {};
-                var keys = Object.keys(row);
-                for (var k = 0; k < keys.length; k++) {
-                    if (keys[k] !== 'record_id') {
-                        data[keys[k]] = row[keys[k]];
-                    }
-                }
-                records.push({
-                    record_id: recordId,
-                    source_table: tableName,
-                    data: data,
-                    last_amino_event: cursor
-                });
-            }
-        }
-        return records;
+        throw new Error('Unknown format');
     }
 };
 
@@ -4155,12 +3580,7 @@ var SyncStatusFeed = {
     updateStats() {
         var statsEl = document.getElementById('sync-feed-stats');
         if (statsEl) {
-            var stats = PassiveSnapshotSync.getStats();
-            if (stats.isRunning) {
-                statsEl.textContent = 'Running | Pulled: ' + stats.pulled + ' | Verified: ' + stats.verified;
-            } else {
-                statsEl.textContent = 'Idle';
-            }
+            statsEl.textContent = 'Idle';
         }
     },
 
@@ -4408,226 +3828,53 @@ var SyncHistory = {
     }
 };
 
-// ============ Passive Snapshot Sync ============
-// Wrapper that orchestrates background verification and snapshot pulling
-
-var PassiveSnapshotSync = {
-    // Configuration
-    VERIFY_INTERVAL: 30000,  // 30 seconds between verification cycles
-    VERIFY_COUNT: 3,         // Records to verify per cycle
-    PULL_INTERVAL: 10000,    // 10 seconds between snapshot pulls
-    MAX_PULL_INTERVAL: 120000, // 2 minutes - max backoff cap for pull failures
-
-    // State
-    isRunning: false,
-    pullTimeout: null,
-    consecutiveFailures: 0,
-    stats: {
-        verified: 0,
-        repaired: 0,
-        pulled: 0
-    },
-
-    // Calculate next pull interval with exponential backoff + jitter
-    getNextPullInterval() {
-        if (this.consecutiveFailures === 0) return this.PULL_INTERVAL;
-        var exponential = this.PULL_INTERVAL * Math.pow(2, this.consecutiveFailures);
-        var capped = Math.min(exponential, this.MAX_PULL_INTERVAL);
-        var jitter = capped * 0.2 * (Math.random() * 2 - 1);
-        return Math.round(capped + jitter);
-    },
-
-    // Schedule the next pull using setTimeout (allows dynamic interval)
-    schedulePull() {
-        if (!this.isRunning) return;
-        var self = this;
-        var interval = this.getNextPullInterval();
-        this.pullTimeout = setTimeout(async function() {
-            try {
-                SyncStatusFeed.info('Pulling snapshots from server...');
-                var result = await AminoSync.syncFromSnapshot();
-                if (result.updated > 0) {
-                    self.stats.pulled += result.updated;
-                    SyncStatusFeed.success('Pulled ' + result.updated + ' snapshot(s)');
-                    if (self.consecutiveFailures > 0) {
-                        self.consecutiveFailures = 0;
-                        SyncStatusFeed.info('Pull recovered, resuming normal ' + (self.PULL_INTERVAL / 1000) + 's interval');
-                    }
-                } else if (result.error) {
-                    self.consecutiveFailures++;
-                    var nextInterval = self.getNextPullInterval();
-                    SyncStatusFeed.error('Pull failed: ' + result.error + ' (retry in ' + Math.round(nextInterval / 1000) + 's)');
-                } else {
-                    SyncStatusFeed.info('No new snapshots');
-                    if (self.consecutiveFailures > 0) {
-                        self.consecutiveFailures = 0;
-                        SyncStatusFeed.info('Pull recovered, resuming normal ' + (self.PULL_INTERVAL / 1000) + 's interval');
-                    }
-                }
-                SyncStatusFeed.updateStats();
-            } catch (err) {
-                self.consecutiveFailures++;
-                var nextInterval = self.getNextPullInterval();
-                SyncStatusFeed.error('Pull error: ' + err.message + ' (retry in ' + Math.round(nextInterval / 1000) + 's)');
-            }
-            // Schedule next pull (with potentially adjusted interval)
-            self.schedulePull();
-        }, interval);
-    },
-
-    // Start passive sync (both verification and pulling)
-    start() {
-        if (this.isRunning) return;
-        this.isRunning = true;
-        this.consecutiveFailures = 0;
-
-        console.log('[PassiveSync] Starting passive snapshot sync');
-        SyncStatusFeed.info('Snapshot sync started');
-        SyncStatusFeed.setActive(true);
-
-        // Start background verification (self-healing)
-        AminoSync.startBackgroundVerify(this.VERIFY_INTERVAL, this.VERIFY_COUNT);
-        SyncStatusFeed.info('Background verification enabled (every ' + (this.VERIFY_INTERVAL / 1000) + 's)');
-
-        // Start periodic snapshot pulls from server (with backoff on failure)
-        SyncStatusFeed.info('Snapshot pull interval: ' + (this.PULL_INTERVAL / 1000) + 's');
-        this.schedulePull();
-    },
-
-    // Stop passive sync
-    stop() {
-        if (!this.isRunning) return;
-        this.isRunning = false;
-
-        AminoSync.stopBackgroundVerify();
-
-        if (this.pullTimeout) {
-            clearTimeout(this.pullTimeout);
-            this.pullTimeout = null;
-        }
-        this.consecutiveFailures = 0;
-
-        console.log('[PassiveSync] Stopped');
-        SyncStatusFeed.warn('Snapshot sync stopped');
-        SyncStatusFeed.setActive(false);
-    },
-
-    // Get current stats
-    getStats() {
-        return {
-            isRunning: this.isRunning,
-            consecutiveFailures: this.consecutiveFailures,
-            ...this.stats
-        };
-    }
-};
-
-// Toggle snapshot sync on/off
-function toggleSnapshotSync() {
-    snapshotSyncEnabled = !snapshotSyncEnabled;
-    var toggle = document.getElementById('sync-toggle');
-
-    if (snapshotSyncEnabled) {
-        toggle.classList.add('active');
-        if (API_KEY) PassiveSnapshotSync.start();
-        console.log('[SnapshotSync] Enabled');
-    } else {
-        toggle.classList.remove('active');
-        PassiveSnapshotSync.stop();
-        console.log('[SnapshotSync] Disabled');
-    }
-}
-
-// Initialize sync toggle UI state
-function initSyncToggle() {
-    var toggle = document.getElementById('sync-toggle');
-    if (toggle) {
-        if (snapshotSyncEnabled) {
-            toggle.classList.add('active');
-        } else {
-            toggle.classList.remove('active');
-        }
-    }
-}
 
 // ============ Box Auto-Sync ============
-// Pushes .amo snapshot to Box via n8n webhook after each sync with new data
+// Pushes full event stream as .amo to Box via n8n webhook after each sync with new data
 
 var BoxSync = {
-    lastPushCursor: 0,
     isPushing: false,
 
-    // Push current data as .amo to Box via n8n webhook
+    // Push full event stream as .amo to Box via n8n webhook
     async push() {
         if (this.isPushing || !API_KEY || !BOX_SYNC_WEBHOOK) return;
         this.isPushing = true;
         try {
-            // Collect snapshot records from in-memory data
-            var snapshotRecords = [];
-            if (window.IN_MEMORY_DATA) {
-                var memTables = Object.keys(window.IN_MEMORY_DATA);
-                for (var t = 0; t < memTables.length; t++) {
-                    var tableId = memTables[t];
-                    var records = window.IN_MEMORY_DATA[tableId];
-                    var recordIds = Object.keys(records);
-                    for (var r = 0; r < recordIds.length; r++) {
-                        snapshotRecords.push({
-                            record_id: recordIds[r],
-                            source_table: 'airtable:' + tableId,
-                            data: records[recordIds[r]],
-                            last_amino_event: 0
-                        });
-                    }
-                }
-            }
-
-            // Also pull from IndexedDB if available
-            if (db && db.objectStoreNames.contains('data')) {
-                var allDbRecords = await new Promise(function(resolve, reject) {
-                    var tx = db.transaction('data', 'readonly');
-                    var store = tx.objectStore('data');
-                    var results = [];
-                    var req = store.openCursor();
-                    req.onsuccess = function(e) {
-                        var cursor = e.target.result;
-                        if (cursor) {
-                            results.push(cursor.value);
-                            cursor.continue();
-                        } else {
-                            resolve(results);
-                        }
-                    };
-                    req.onerror = function() { reject(req.error); };
-                });
-
-                if (encryptionEnabled && encryptionKey) {
-                    allDbRecords = await Promise.all(allDbRecords.map(function(r) { return decryptRecordFromStorage(r); }));
-                }
-
-                var existingIds = {};
-                for (var i = 0; i < snapshotRecords.length; i++) {
-                    existingIds[snapshotRecords[i].record_id] = true;
-                }
-                for (var j = 0; j < allDbRecords.length; j++) {
-                    var rec = allDbRecords[j];
-                    if (rec.recordId && !existingIds[rec.recordId]) {
-                        snapshotRecords.push({
-                            record_id: rec.recordId,
-                            source_table: 'airtable:' + rec.tableId,
-                            data: rec.fields || {},
-                            last_amino_event: 0
-                        });
-                    }
-                }
-            }
-
-            if (snapshotRecords.length === 0) {
-                console.log('[BoxSync] No records to push');
+            // Read all raw events from IndexedDB
+            if (!db || !db.objectStoreNames.contains('events')) {
+                console.log('[BoxSync] No events store available');
                 return;
             }
 
-            // Produce .amo binary
-            var binary = AmoFormat.produce(snapshotRecords, { tables: META_TABLES, fields: META_FIELDS });
+            var allEvents = await new Promise(function(resolve, reject) {
+                var tx = db.transaction('events', 'readonly');
+                var store = tx.objectStore('events');
+                var results = [];
+                var req = store.openCursor();
+                req.onsuccess = function(e) {
+                    var cursor = e.target.result;
+                    if (cursor) {
+                        results.push(cursor.value);
+                        cursor.continue();
+                    } else {
+                        resolve(results);
+                    }
+                };
+                req.onerror = function() { reject(req.error); };
+            });
+
+            // Decrypt events if encryption is enabled
+            if (encryptionEnabled && encryptionKey) {
+                allEvents = await Promise.all(allEvents.map(function(e) { return decryptEventFromStorage(e); }));
+            }
+
+            if (allEvents.length === 0) {
+                console.log('[BoxSync] No events to push');
+                return;
+            }
+
+            // Produce .amo binary with full event stream
+            var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS });
             var blob = new Blob([binary], { type: 'application/x-amino-snapshot' });
 
             // Build FormData and POST to n8n webhook
@@ -4654,8 +3901,8 @@ var BoxSync = {
                     ? (binary.length / 1024).toFixed(1) + ' KB'
                     : (binary.length / 1048576).toFixed(1) + ' MB';
 
-            console.log('[BoxSync] Pushed ' + snapshotRecords.length + ' records (' + sizeStr + ') to Box');
-            SyncStatusFeed.success('Box: pushed ' + snapshotRecords.length + ' records (' + sizeStr + ')');
+            console.log('[BoxSync] Pushed ' + allEvents.length + ' events (' + sizeStr + ') to Box');
+            SyncStatusFeed.success('Box: pushed ' + allEvents.length + ' events (' + sizeStr + ')');
         } catch (err) {
             console.error('[BoxSync] Push failed:', err);
             SyncStatusFeed.error('Box push failed: ' + err.message);
@@ -5769,11 +5016,7 @@ async function saveViewToBackend() {
     };
 
     try {
-        // Use AminoSync to post event and update snapshot
-        await AminoSync.postEventWithSnapshot(payload, {
-            source_table: 'viewConfig:' + tableId,
-            data: viewConfigData
-        });
+        await AminoSync.postEvent(payload);
 
         // Clear dirty state
         viewDirtyState.isDirty = false;
@@ -5929,11 +5172,7 @@ async function saveTableSettings() {
     };
 
     try {
-        // Use AminoSync to post event and update snapshot
-        await AminoSync.postEventWithSnapshot(payload, {
-            source_table: 'tableSettings',
-            data: tableSettingsData
-        });
+        await AminoSync.postEvent(payload);
 
         // Clear dirty state
         tableSettingsDirty = false;
@@ -5946,17 +5185,16 @@ async function saveTableSettings() {
     }
 }
 
-// Load table settings from snapshots
+// Load table settings from sync metadata
+// Table settings are now persisted via events and restored during event replay
 async function loadTableSettings() {
     try {
-        var recordId = 'tableSettings:' + (API_KEY || 'default');
-        var snapshot = await AminoSync.getSnapshot(recordId);
-
-        if (snapshot && snapshot.data) {
-            if (snapshot.data.tables) TABLE_SETTINGS.tables = snapshot.data.tables;
-            if (snapshot.data.tableOrder) TABLE_SETTINGS.tableOrder = snapshot.data.tableOrder;
-            if (snapshot.data.views) TABLE_SETTINGS.views = snapshot.data.views;
-            console.log('Table settings loaded from snapshot');
+        var stored = await getSyncMeta('tableSettings');
+        if (stored) {
+            if (stored.tables) TABLE_SETTINGS.tables = stored.tables;
+            if (stored.tableOrder) TABLE_SETTINGS.tableOrder = stored.tableOrder;
+            if (stored.views) TABLE_SETTINGS.views = stored.views;
+            console.log('Table settings loaded from sync metadata');
         }
     } catch (error) {
         console.error('Failed to load table settings:', error);
@@ -8159,17 +7397,7 @@ async function saveFolderToBackend(folder, operator) {
     };
 
     try {
-        if (operator === 'NUL') {
-            // For delete operations, post event and delete from snapshot
-            await AminoSync.postEventWithSnapshot(payload, null);
-            await AminoSync.deleteSnapshot(folder.folderId);
-        } else {
-            // For INS/ALT operations, post event and update snapshot
-            await AminoSync.postEventWithSnapshot(payload, {
-                source_table: 'viewFolders',
-                data: folder
-            });
-        }
+        await AminoSync.postEvent(payload);
     } catch (error) {
         console.error('Failed to save folder to backend:', error);
     }
@@ -9704,12 +8932,6 @@ async function incrementalSync() {
         setRefreshIndicatorSyncing(true);
         updateStatus('Checking for updates...', false, null, null);
 
-        // Sync snapshot table in parallel with event stream
-        var snapshotSyncPromise = AminoSync.syncFromSnapshot().catch(err => {
-            console.warn('Snapshot sync failed:', err);
-            return { updated: 0 };
-        });
-
         // Fetch all events created after the last synced timestamp (with pagination)
         var allEvents = [];
         var page = 1;
@@ -9723,9 +8945,6 @@ async function incrementalSync() {
             iterations++;
             if (iterations > 100) break; // Safety limit
         }
-
-        // Wait for snapshot sync to complete
-        var snapshotResult = await snapshotSyncPromise;
 
         if (allEvents.length > 0) {
             updateStatus('Processing ' + allEvents.length + ' new events...', false, null, null);
@@ -9750,9 +8969,6 @@ async function incrementalSync() {
             }
 
             var syncDetail = allEvents.length + ' events synced';
-            if (snapshotResult.updated > 0) {
-                syncDetail += ', ' + snapshotResult.updated + ' snapshots updated';
-            }
             updateStatus('Up to date', true, null, syncDetail);
 
             // Record to sync history
@@ -9760,7 +8976,6 @@ async function incrementalSync() {
                 type: 'incremental',
                 result: 'success',
                 eventsFound: allEvents.length,
-                snapshotsUpdated: snapshotResult.updated || 0,
                 duration: Date.now() - syncStartTime,
                 detail: syncDetail
             });
@@ -9770,17 +8985,15 @@ async function incrementalSync() {
                 BoxSync.push();
             }
         } else {
-            var statusDetail = snapshotResult.updated > 0 ? snapshotResult.updated + ' snapshots updated' : null;
-            updateStatus('Up to date', true, null, statusDetail);
+            updateStatus('Up to date', true, null, null);
 
             // Record no-change sync
             SyncHistory.record({
                 type: 'incremental',
-                result: snapshotResult.updated > 0 ? 'success' : 'no-change',
+                result: 'no-change',
                 eventsFound: 0,
-                snapshotsUpdated: snapshotResult.updated || 0,
                 duration: Date.now() - syncStartTime,
-                detail: statusDetail || 'No new events'
+                detail: 'No new events'
             });
         }
 
@@ -9861,7 +9074,7 @@ async function showSyncStatusView() {
 async function renderSyncStatusView() {
     var container = document.querySelector('.table-container');
     var stats = SyncHistory.getStats();
-    var passiveStats = PassiveSnapshotSync.getStats();
+    var passiveStats = { isRunning: false, pulled: 0, verified: 0 };
     var totalEventsCount = await getRawEventsCount();
 
     // Determine overall sync state
@@ -10134,12 +9347,6 @@ async function init() {
         // This uses the 'last' query parameter to efficiently detect new events
         // and triggers incremental sync only when new data is available
         SyncHistory.startPolling();
-    }
-
-    // Initialize sync toggle UI and only start if enabled
-    initSyncToggle();
-    if (snapshotSyncEnabled && API_KEY) {
-        PassiveSnapshotSync.start();
     }
 
     // Initialize Box sync toggle
@@ -11567,6 +10774,30 @@ async function processAmoFile(file) {
             var amoData;
             if (format === 'amo') {
                 amoData = AmoFormat.read(buffer);
+                // Handle events-type .amo files: replay events to rebuild state
+                if (amoData.type === 'events' && amoData.events) {
+                    var events = amoData.events;
+                    events.sort(function(a, b) { return (a.id || 0) - (b.id || 0); });
+                    updateLoadingOverlay('Replaying events...', 'Processing ' + events.length.toLocaleString() + ' events...', 40, 0, 0, events.length, '');
+                    await saveRawEvents(events);
+                    await processEvents(events);
+                    if (events.length > 0) {
+                        var lastEv = events[events.length - 1];
+                        if (lastEv.created_at) {
+                            lastEventTimestamp = lastEv.created_at;
+                            await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
+                        }
+                    }
+                    // Restore metadata
+                    var savedMeta = amoData.meta || {};
+                    if (savedMeta.tables) { for (var mt in savedMeta.tables) META_TABLES[mt] = savedMeta.tables[mt]; }
+                    if (savedMeta.fields) { for (var mf in savedMeta.fields) { if (!META_FIELDS[mf]) META_FIELDS[mf] = {}; for (var ff in savedMeta.fields[mf]) META_FIELDS[mf][ff] = savedMeta.fields[mf][ff]; } }
+                    updateLoadingOverlay('Import complete!', events.length.toLocaleString() + ' events replayed', 100, 0, 0, 0, '');
+                    await renderSidebar();
+                    if (currentTable) await renderTable();
+                    setTimeout(hideLoadingOverlay, 300);
+                    return;
+                }
             } else if (format === 'json-gz') {
                 var decompressed = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
                 var records = JSON.parse(decompressed);
@@ -11690,10 +10921,10 @@ async function processAmoFile(file) {
             // Store in memory for immediate UI access
             window.IN_MEMORY_DATA = tableDataMap;
 
-            // Set the snapshot cursor so incremental sync only fetches records newer than the file
+            // Set the last event timestamp from the imported file cursor
             if (amoData.cursor > 0) {
-                await AminoSync.setLastSnapshotEventId(amoData.cursor);
-                console.log('[AmoImport] Set lastSnapshotEventId to ' + amoData.cursor + ' from imported file');
+                await setSyncMeta('lastImportCursor', amoData.cursor);
+                console.log('[AmoImport] Set import cursor to ' + amoData.cursor + ' from imported file');
             }
 
             updateLoadingOverlay('Import complete!', 'Rendering interface...', 90, tableNames.length, totalFields, totalRecords, '');
@@ -11749,13 +10980,13 @@ async function skipSetupAndUploadAmoFile() {
 
 // ============ Hydrate from Box Download ============
 
-// Fetches .amo snapshot from Box via webhook and imports it locally.
+// Fetches .amo event stream from Box via webhook and replays it locally.
 // Data is encrypted locally via the existing encryption system (user's password/passkey).
 // Returns true if hydration succeeded, false otherwise.
 async function hydrateFromBoxDownload() {
     try {
         showLoadingOverlay();
-        updateLoadingOverlay('Downloading snapshot...', 'Fetching from cloud storage...', 5, 0, 0, 0, '');
+        updateLoadingOverlay('Downloading data...', 'Fetching from cloud storage...', 5, 0, 0, 0, '');
 
         if (!BOX_DOWNLOAD_WEBHOOK || !API_KEY) {
             hideLoadingOverlay();
@@ -11764,7 +10995,7 @@ async function hydrateFromBoxDownload() {
         var downloadUrl = BOX_DOWNLOAD_WEBHOOK + '?api_key=' + encodeURIComponent(API_KEY);
         var response = await fetch(downloadUrl);
         if (!response.ok) {
-            console.warn('[BoxDownload] HTTP ' + response.status + ' - no snapshot available');
+            console.warn('[BoxDownload] HTTP ' + response.status + ' - no data available');
             hideLoadingOverlay();
             return false;
         }
@@ -11776,7 +11007,7 @@ async function hydrateFromBoxDownload() {
             return false;
         }
 
-        updateLoadingOverlay('Downloading snapshot...', 'Parsing snapshot data...', 15, 0, 0, 0, '');
+        updateLoadingOverlay('Downloading data...', 'Parsing data...', 15, 0, 0, 0, '');
 
         // Detect format
         var format;
@@ -11791,48 +11022,13 @@ async function hydrateFromBoxDownload() {
         var amoData;
         if (format === 'amo') {
             amoData = AmoFormat.read(buffer);
-        } else if (format === 'json-gz') {
-            var decompressed = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
-            var records = JSON.parse(decompressed);
-            amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
-            for (var i = 0; i < records.length; i++) {
-                var rec = records[i];
-                var tbl = rec.source_table || 'unknown';
-                if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
-                var rowData = Object.assign({}, rec.data || {});
-                if (rec.record_id) rowData.record_id = rec.record_id;
-                amoData.tables[tbl].push(rowData);
-                if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
-            }
-        } else if (format === 'json') {
-            var text = new TextDecoder().decode(buffer);
-            var records = JSON.parse(text);
-            amoData = { tables: {}, cursor: 0, ts: Math.floor(Date.now() / 1000) };
-            for (var i = 0; i < records.length; i++) {
-                var rec = records[i];
-                var tbl = rec.source_table || 'unknown';
-                if (!amoData.tables[tbl]) amoData.tables[tbl] = [];
-                var rowData = Object.assign({}, rec.data || {});
-                if (rec.record_id) rowData.record_id = rec.record_id;
-                amoData.tables[tbl].push(rowData);
-                if (rec.last_amino_event > amoData.cursor) amoData.cursor = rec.last_amino_event;
-            }
         } else {
             console.warn('[BoxDownload] Unsupported format:', format);
             hideLoadingOverlay();
             return false;
         }
 
-        var tableNames = Object.keys(amoData.tables);
-        if (tableNames.length === 0) {
-            console.warn('[BoxDownload] Snapshot contains no data');
-            hideLoadingOverlay();
-            return false;
-        }
-
-        updateLoadingOverlay('Importing snapshot...', 'Building tables and fields...', 40, tableNames.length, 0, 0, '');
-
-        // Restore table/field metadata from snapshot if available
+        // Restore table/field metadata if available
         var savedMeta = amoData.meta || {};
         if (savedMeta.tables) {
             var savedTableIds = Object.keys(savedMeta.tables);
@@ -11843,109 +11039,130 @@ async function hydrateFromBoxDownload() {
         }
         if (savedMeta.fields) {
             var savedFieldTableIds = Object.keys(savedMeta.fields);
-            for (var m = 0; m < savedFieldTableIds.length; m++) {
-                var tid = savedFieldTableIds[m];
-                if (!META_FIELDS[tid]) META_FIELDS[tid] = {};
-                var fieldIds = Object.keys(savedMeta.fields[tid]);
+            for (var m2 = 0; m2 < savedFieldTableIds.length; m2++) {
+                var tid2 = savedFieldTableIds[m2];
+                if (!META_FIELDS[tid2]) META_FIELDS[tid2] = {};
+                var fieldIds = Object.keys(savedMeta.fields[tid2]);
                 for (var f = 0; f < fieldIds.length; f++) {
-                    META_FIELDS[tid][fieldIds[f]] = savedMeta.fields[tid][fieldIds[f]];
+                    META_FIELDS[tid2][fieldIds[f]] = savedMeta.fields[tid2][fieldIds[f]];
                 }
             }
         }
 
-        // Build data structures and persist to IndexedDB (encrypted via saveBatch)
-        var batchTables = [];
-        var batchFields = [];
-        var batchData = [];
-        var totalRecordCount = 0;
-        var totalFieldCount = 0;
-
-        for (var t = 0; t < tableNames.length; t++) {
-            var fullTableName = tableNames[t];
-            var tableId = fullTableName.replace('airtable:', '');
-            var rows = amoData.tables[fullTableName];
-
-            if (!META_TABLES[tableId]) {
-                META_TABLES[tableId] = {
-                    tableId: tableId,
-                    tableName: tableId,
-                    _placeholder: true
-                };
+        // Handle events format: replay the full event stream
+        if (amoData.type === 'events' && amoData.events) {
+            var events = amoData.events;
+            if (events.length === 0) {
+                console.warn('[BoxDownload] No events in file');
+                hideLoadingOverlay();
+                return false;
             }
-            batchTables.push(META_TABLES[tableId]);
 
-            if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+            updateLoadingOverlay('Replaying events...', 'Processing ' + events.length.toLocaleString() + ' events...', 30, 0, 0, events.length, '');
 
-            for (var r = 0; r < rows.length; r++) {
-                var row = rows[r];
-                var recordId = row.record_id;
-                if (!recordId) continue;
+            // Sort events by ID ascending for correct replay order
+            events.sort(function(a, b) { return (a.id || 0) - (b.id || 0); });
 
-                var data = {};
-                var keys = Object.keys(row);
-                for (var k = 0; k < keys.length; k++) {
-                    if (keys[k] !== 'record_id') {
-                        data[keys[k]] = row[keys[k]];
+            // Store raw events in IndexedDB
+            updateLoadingOverlay('Storing events...', 'Saving ' + events.length.toLocaleString() + ' raw events...', 50, 0, 0, events.length, '');
+            await saveRawEvents(events);
 
-                        if (!META_FIELDS[tableId][keys[k]]) {
-                            META_FIELDS[tableId][keys[k]] = {
-                                tableId: tableId,
-                                fieldId: keys[k],
-                                fieldName: keys[k],
-                                fieldType: inferFieldType(row[keys[k]]),
-                                _placeholder: true
-                            };
-                            totalFieldCount++;
+            // Replay events through processEvents to rebuild current state
+            updateLoadingOverlay('Rebuilding state...', 'Replaying ' + events.length.toLocaleString() + ' events...', 65, 0, 0, events.length, '');
+            await processEvents(events);
+
+            // Set the last event timestamp for incremental sync
+            if (events.length > 0) {
+                var lastEvent = events[events.length - 1];
+                if (lastEvent.created_at) {
+                    lastEventTimestamp = lastEvent.created_at;
+                    await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
+                }
+            }
+
+            var totalRecords = await getCurrentRecordsCount();
+            updateLoadingOverlay('Hydration complete!', events.length.toLocaleString() + ' events replayed, ' + totalRecords.toLocaleString() + ' records', 100, 0, 0, totalRecords, '');
+            setTimeout(hideLoadingOverlay, 300);
+
+            console.log('[BoxDownload] Hydration complete: ' + events.length + ' events replayed, ' + totalRecords + ' records rebuilt');
+            return true;
+        }
+
+        // Legacy snapshot format fallback
+        if (amoData.type === 'snapshot' && amoData.tables) {
+            var tableNames = Object.keys(amoData.tables);
+            if (tableNames.length === 0) {
+                console.warn('[BoxDownload] Snapshot contains no data');
+                hideLoadingOverlay();
+                return false;
+            }
+
+            updateLoadingOverlay('Importing snapshot...', 'Building tables and fields...', 40, tableNames.length, 0, 0, '');
+
+            var batchTables = [];
+            var batchFields = [];
+            var batchData = [];
+            var totalRecordCount = 0;
+            var totalFieldCount = 0;
+
+            for (var t = 0; t < tableNames.length; t++) {
+                var fullTableName = tableNames[t];
+                var tableId = fullTableName.replace('airtable:', '');
+                var rows = amoData.tables[fullTableName];
+
+                if (!META_TABLES[tableId]) {
+                    META_TABLES[tableId] = { tableId: tableId, tableName: tableId, _placeholder: true };
+                }
+                batchTables.push(META_TABLES[tableId]);
+
+                if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+
+                for (var r = 0; r < rows.length; r++) {
+                    var row = rows[r];
+                    var recordId = row.record_id;
+                    if (!recordId) continue;
+
+                    var data = {};
+                    var keys = Object.keys(row);
+                    for (var k = 0; k < keys.length; k++) {
+                        if (keys[k] !== 'record_id') {
+                            data[keys[k]] = row[keys[k]];
+                            if (!META_FIELDS[tableId][keys[k]]) {
+                                META_FIELDS[tableId][keys[k]] = {
+                                    tableId: tableId, fieldId: keys[k], fieldName: keys[k],
+                                    fieldType: inferFieldType(row[keys[k]]), _placeholder: true
+                                };
+                                totalFieldCount++;
+                            }
                         }
                     }
-                }
 
-                batchData.push({ tableId: tableId, recordId: recordId, fields: data });
-                totalRecordCount++;
-
-                if (totalRecordCount % 5000 === 0) {
-                    var pct = 40 + Math.round((t / tableNames.length) * 40);
-                    updateLoadingOverlay('Importing snapshot...', 'Processed ' + totalRecordCount.toLocaleString() + ' records...', pct, tableNames.length, totalFieldCount, totalRecordCount, '');
-                    await new Promise(function(resolve) { setTimeout(resolve, 0); });
+                    batchData.push({ tableId: tableId, recordId: recordId, fields: data });
+                    totalRecordCount++;
                 }
             }
-        }
 
-        // Collect all field metadata for batch save
-        var fieldTableIds = Object.keys(META_FIELDS);
-        for (var ft = 0; ft < fieldTableIds.length; ft++) {
-            var fids = Object.keys(META_FIELDS[fieldTableIds[ft]]);
-            for (var fi = 0; fi < fids.length; fi++) {
-                batchFields.push(META_FIELDS[fieldTableIds[ft]][fids[fi]]);
+            var fieldTableIds = Object.keys(META_FIELDS);
+            for (var ft = 0; ft < fieldTableIds.length; ft++) {
+                var fids = Object.keys(META_FIELDS[fieldTableIds[ft]]);
+                for (var fi = 0; fi < fids.length; fi++) {
+                    batchFields.push(META_FIELDS[fieldTableIds[ft]][fids[fi]]);
+                }
             }
+
+            updateLoadingOverlay('Saving to local storage...', 'Persisting ' + totalRecordCount.toLocaleString() + ' records...', 85, tableNames.length, totalFieldCount, totalRecordCount, '');
+            await saveBatch(batchTables, batchFields, [], batchData);
+
+            updateLoadingOverlay('Hydration complete!', totalRecordCount.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFieldCount, totalRecordCount, '');
+            setTimeout(hideLoadingOverlay, 300);
+
+            console.log('[BoxDownload] Legacy hydration complete: ' + totalRecordCount + ' records across ' + tableNames.length + ' tables');
+            return true;
         }
 
-        updateLoadingOverlay('Saving to local storage...', 'Encrypting and persisting ' + totalRecordCount.toLocaleString() + ' records...', 85, tableNames.length, totalFieldCount, totalRecordCount, '');
-
-        // saveBatch handles encryption automatically when encryptionEnabled
-        await saveBatch(batchTables, batchFields, [], batchData);
-
-        // Set the snapshot cursor so incremental sync only fetches records newer than the file
-        if (amoData.cursor > 0) {
-            await AminoSync.setLastSnapshotEventId(amoData.cursor);
-            console.log('[BoxDownload] Set lastSnapshotEventId to ' + amoData.cursor + ' from hydrated file');
-        } else {
-            console.warn('[BoxDownload] Hydrated file had no cursor (cursor=0) — incremental sync will fetch all records on first run');
-        }
-
-        // Verify persisted record count matches what we parsed
-        var verifyCount = await getCurrentRecordsCount();
-        if (verifyCount < totalRecordCount) {
-            console.warn('[BoxDownload] Verification: only ' + verifyCount + ' of ' + totalRecordCount + ' records persisted — possible data loss');
-        } else {
-            console.log('[BoxDownload] Verification: ' + verifyCount + ' records persisted (expected ' + totalRecordCount + ')');
-        }
-
-        updateLoadingOverlay('Hydration complete!', totalRecordCount.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFieldCount, totalRecordCount, '');
-        setTimeout(hideLoadingOverlay, 300);
-
-        console.log('[BoxDownload] Hydration complete: ' + totalRecordCount + ' records across ' + tableNames.length + ' tables');
-        return true;
+        console.warn('[BoxDownload] Unknown data format in .amo file');
+        hideLoadingOverlay();
+        return false;
 
     } catch (err) {
         console.error('[BoxDownload] Hydration failed:', err);
@@ -14335,17 +13552,7 @@ async function saveWorkspaceToBackend(workspace, operator) {
     };
 
     try {
-        if (operator === 'NUL') {
-            // For delete operations, post event and delete from snapshot
-            await AminoSync.postEventWithSnapshot(payload, null);
-            await AminoSync.deleteSnapshot(workspace.workspaceId);
-        } else {
-            // For INS/ALT operations, post event and update snapshot
-            await AminoSync.postEventWithSnapshot(payload, {
-                source_table: 'workspaces',
-                data: workspace
-            });
-        }
+        await AminoSync.postEvent(payload);
     } catch (error) {
         console.error('Failed to save workspace to backend:', error);
     }
@@ -14963,7 +14170,6 @@ async function wizardValidateLegacy() {
     wizardData.aminoEndpoints = {
         stream: API,
         post: XANO_POST_API,
-        snapshot: XANO_SNAPSHOT_API,
         boxUpload: BOX_SYNC_WEBHOOK,
         boxDownload: BOX_DOWNLOAD_WEBHOOK
     };
