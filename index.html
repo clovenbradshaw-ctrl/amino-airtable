@@ -3982,14 +3982,6 @@ var SyncHistory = {
         });
     },
 
-    _pollNoOp: true, // marker for code that checks polling state
-    // Legacy compatibility: If auto-polling is active, reschedule the next poll with the current interval
-            if (this.pollInterval) {
-                this.scheduleNextPoll();
-            }
-        }
-    },
-
     // Schedule the next poll using setTimeout (allows dynamic interval changes)
     scheduleNextPoll() {
         if (this.pollInterval) {
