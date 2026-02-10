@@ -166,9 +166,18 @@ var AminoData = (function() {
             throw new Error('Not authenticated');
         }
 
-        var response = await fetch(WEBHOOK_BASE_URL + path, {
-            headers: { 'Authorization': 'Bearer ' + _accessToken }
-        });
+        var response;
+        try {
+            response = await fetch(WEBHOOK_BASE_URL + path, {
+                headers: { 'Authorization': 'Bearer ' + _accessToken }
+            });
+        } catch (headerErr) {
+            // CORS preflight failure — retry with query-param auth
+            // to avoid the OPTIONS preflight entirely.
+            console.warn('[AminoData] Header-auth fetch failed (' + headerErr.message + '), retrying with query-param auth for ' + path);
+            var separator = path.indexOf('?') === -1 ? '?' : '&';
+            response = await fetch(WEBHOOK_BASE_URL + path + separator + 'access_token=' + encodeURIComponent(_accessToken));
+        }
 
         if (response.status === 401) {
             var err = new Error('Authentication expired');
