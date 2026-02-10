@@ -10436,7 +10436,7 @@ async function hydrateFromWebhooks() {
 
         // 1. Fetch table list
         updateStatus('Fetching tables from webhook API...', false, 0, null);
-        var tablesData = await webhookFetch('/api/tables');
+        var tablesData = await webhookFetch('/amino-tables');
         var webhookTables = tablesData.tables || [];
 
         if (webhookTables.length === 0) {
@@ -10475,7 +10475,7 @@ async function hydrateFromWebhooks() {
 
             // Fetch records for this table
             try {
-                var recordsData = await webhookFetch('/api/records/' + encodeURIComponent(tableId));
+                var recordsData = await webhookFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
                 var records = recordsData.records || [];
                 consecutiveRecordFailures = 0; // reset on success
 
@@ -10592,7 +10592,7 @@ async function webhookIncrementalSync() {
             return 0;
         }
 
-        var tablesData = await webhookFetch('/api/tables');
+        var tablesData = await webhookFetch('/amino-tables');
         var tables = tablesData.tables || [];
         var totalUpdated = 0;
 
@@ -10601,8 +10601,8 @@ async function webhookIncrementalSync() {
             var tableId = tables[i].table_id;
             try {
                 var data = await webhookFetch(
-                    '/api/records/' + encodeURIComponent(tableId) +
-                    '/since/' + encodeURIComponent(lastWebhookSync)
+                    '/amino-records-since?tableId=' + encodeURIComponent(tableId) +
+                    '&since=' + encodeURIComponent(lastWebhookSync)
                 );
                 var records = data.records || [];
                 consecutiveSyncFailures = 0;
