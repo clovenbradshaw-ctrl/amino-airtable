@@ -100,12 +100,13 @@
           "id": "PKlgmlqQf0SbnPZT",
           "name": "Amino State DB"
         }
-      }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ tables: $input.all().map(i => i.json) }) }}",
+        "responseBody": "={{ JSON.stringify({ tables: $input.all().filter(i => i.json.table_id).map(i => i.json) }) }}",
         "options": {
           "responseHeaders": {
             "entries": [
@@ -251,12 +252,13 @@
           "id": "PKlgmlqQf0SbnPZT",
           "name": "Amino State DB"
         }
-      }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/:tableId').first().json.params.tableId, count: $input.all().length, records: $input.all().map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/:tableId').first().json.params.tableId, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
         "options": {
           "responseHeaders": {
             "entries": [
@@ -402,7 +404,8 @@
           "id": "PKlgmlqQf0SbnPZT",
           "name": "Amino State DB"
         }
-      }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -553,12 +556,13 @@
           "id": "PKlgmlqQf0SbnPZT",
           "name": "Amino State DB"
         }
-      }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/since').first().json.params.tableId, since: $('GET /records/since').first().json.params.since, count: $input.all().length, records: $input.all().map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/since').first().json.params.tableId, since: $('GET /records/since').first().json.params.since, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
         "options": {
           "responseHeaders": {
             "entries": [
