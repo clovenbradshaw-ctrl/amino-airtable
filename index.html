@@ -1691,6 +1691,26 @@
         .toast .toast-dismiss:hover {
             color: #fff;
         }
+        .toast.toast-undo {
+            background: var(--gray-700);
+        }
+        .toast .toast-undo-btn {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: inherit;
+            line-height: 1;
+            padding: 4px 10px;
+            border-radius: 4px;
+            margin-left: 4px;
+            white-space: nowrap;
+        }
+        .toast .toast-undo-btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
         @keyframes toast-in {
             to { opacity: 1; transform: translateY(0); }
         }
@@ -13248,6 +13268,7 @@ async function handleBlockDrop(event, targetBlockIndex) {
 // ============ Inline Field Editing ============
 
 var profileEditingFieldId = null;
+var _profileEditCommitExplicit = false;
 
 async function startProfileFieldEdit(element) {
     if (profileConfigureMode) return;
@@ -13283,7 +13304,8 @@ async function startProfileFieldEdit(element) {
         input.checked = !!currentValue;
         input.className = 'profile-edit-checkbox';
         input.onchange = function() {
-            commitProfileFieldEdit(fieldId, input.checked);
+            _profileEditCommitExplicit = true;
+            commitProfileFieldEdit(fieldId, input.checked, currentValue);
         };
     } else if (Array.isArray(currentValue) || (typeof currentValue === 'object' && currentValue !== null)) {
         input = document.createElement('textarea');
@@ -13309,7 +13331,8 @@ async function startProfileFieldEdit(element) {
         input.onkeydown = function(e) {
             if (e.key === 'Enter' && !e.shiftKey && input.tagName !== 'TEXTAREA') {
                 e.preventDefault();
-                commitProfileFieldEdit(fieldId, parseProfileEditValue(input.value, currentValue, fieldType));
+                _profileEditCommitExplicit = true;
+                commitProfileFieldEdit(fieldId, parseProfileEditValue(input.value, currentValue, fieldType), currentValue);
             }
             if (e.key === 'Escape') {
                 cancelProfileFieldEdit();
@@ -13318,7 +13341,8 @@ async function startProfileFieldEdit(element) {
         input.onblur = function() {
             setTimeout(function() {
                 if (profileEditingFieldId === fieldId) {
-                    commitProfileFieldEdit(fieldId, parseProfileEditValue(input.value, currentValue, fieldType));
+                    _profileEditCommitExplicit = false;
+                    commitProfileFieldEdit(fieldId, parseProfileEditValue(input.value, currentValue, fieldType), currentValue);
                 }
             }, 150);
         };
@@ -13347,13 +13371,28 @@ function parseProfileEditValue(strValue, originalValue, fieldType) {
     return strValue;
 }
 
-async function commitProfileFieldEdit(fieldId, newValue) {
+async function commitProfileFieldEdit(fieldId, newValue, originalValueFromInput) {
     if (!profileEditingFieldId) return;
-    profileEditingFieldId = null;
+    var wasExplicit = _profileEditCommitExplicit;
+    _profileEditCommitExplicit = false;
 
     var tableId = profileCurrentTableId;
     var recordId = profileCurrentRecordId;
-    if (!tableId || !recordId) return;
+    if (!tableId || !recordId) { profileEditingFieldId = null; return; }
+
+    // Safety: if the edit would clear a non-empty field and the commit was
+    // triggered by blur (not an explicit Enter), cancel instead of saving.
+    var preEditValue = originalValueFromInput;
+    var wouldClear = (newValue === '' || newValue === null || newValue === undefined) &&
+                     preEditValue != null && preEditValue !== '' &&
+                     !(typeof preEditValue === 'boolean');
+    if (wouldClear && !wasExplicit) {
+        profileEditingFieldId = null;
+        renderRecordProfile();
+        return;
+    }
+
+    profileEditingFieldId = null;
 
     // Get current record
     var records = await getRecordsByIds(tableId, [recordId]);
@@ -13398,6 +13437,8 @@ async function commitProfileFieldEdit(fieldId, newValue) {
     // dispatches amino:record-updated which re-renders the UI.
     try {
         await editRecord(tableId, recordId, fieldChanges);
+        // Show undo toast after successful save
+        showUndoToast(tableId, recordId, fieldId, fieldKey, oldValue);
     } catch (err) {
         console.error('[WriteAPI] Edit failed for', recordId, fieldKey, err);
         // editRecord already rolled back local state and showed error toast.
@@ -13459,6 +13500,52 @@ function dismissToast(toast) {
     setTimeout(function() {
         if (toast.parentNode) toast.parentNode.removeChild(toast);
     }, 300);
+}
+
+// ============ Undo Toast ============
+
+function showUndoToast(tableId, recordId, fieldId, fieldKey, previousValue) {
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+
+    var toast = document.createElement('div');
+    toast.className = 'toast toast-undo';
+
+    var span = document.createElement('span');
+    span.textContent = 'Field updated';
+    toast.appendChild(span);
+
+    var undoBtn = document.createElement('button');
+    undoBtn.className = 'toast-undo-btn';
+    undoBtn.textContent = 'Undo';
+    var undoUsed = false;
+    undoBtn.onclick = function() {
+        if (undoUsed) return;
+        undoUsed = true;
+        dismissToast(toast);
+        // Revert the field to its previous value
+        var revertChanges = {};
+        revertChanges[fieldKey] = previousValue !== undefined ? previousValue : null;
+        editRecord(tableId, recordId, revertChanges).then(function() {
+            showToast('success', 'Change reverted');
+        }).catch(function(err) {
+            console.error('[Undo] Revert failed', err);
+        });
+    };
+    toast.appendChild(undoBtn);
+
+    var dismissBtn = document.createElement('button');
+    dismissBtn.className = 'toast-dismiss';
+    dismissBtn.innerHTML = '&times;';
+    dismissBtn.onclick = function() { dismissToast(toast); };
+    toast.appendChild(dismissBtn);
+
+    container.appendChild(toast);
+
+    // Auto-dismiss after 5 seconds
+    setTimeout(function() { dismissToast(toast); }, 5000);
+
+    return toast;
 }
 
 // ============ Write API — editRecord ============
@@ -14003,6 +14090,7 @@ function handleRowDblClick(event, tableId, recordId) {
 
 var _inlineEditingCell = null; // Currently editing cell element
 var _inlineEditJustCommitted = false; // Suppress re-render right after inline commit
+var _inlineEditCommitExplicit = false; // True when commit triggered by Enter/Tab (not blur)
 
 function startInlineCellEdit(event, td) {
     // Don't start edit if clicking a link, button, or already in an input
@@ -14141,6 +14229,7 @@ function startInlineCellEdit(event, td) {
             if (e.key === 'Enter' && !e.shiftKey && input.tagName !== 'TEXTAREA') {
                 e.preventDefault();
                 e.stopPropagation();
+                _inlineEditCommitExplicit = true;
                 commitInlineCellEdit(td);
             } else if (e.key === 'Escape') {
                 e.stopPropagation();
@@ -14148,6 +14237,7 @@ function startInlineCellEdit(event, td) {
             } else if (e.key === 'Tab') {
                 e.preventDefault();
                 e.stopPropagation();
+                _inlineEditCommitExplicit = true;
                 commitInlineCellEdit(td);
                 // Move to adjacent cell
                 moveToAdjacentCell(td, e.shiftKey);
@@ -14156,6 +14246,7 @@ function startInlineCellEdit(event, td) {
         input.onblur = function() {
             setTimeout(function() {
                 if (_inlineEditingCell === td) {
+                    _inlineEditCommitExplicit = false;
                     commitInlineCellEdit(td);
                 }
             }, 150);
@@ -14229,6 +14320,8 @@ async function commitInlineCellEdit(td, explicitValue) {
     var recordId = td._inlineRecordId;
     var tableId = td._inlineTableId;
     var originalValue = td._inlineOriginalValue;
+    var wasExplicit = _inlineEditCommitExplicit;
+    _inlineEditCommitExplicit = false;
 
     // Get the new value from the input
     var inputEl = td.querySelector('input, textarea, select');
@@ -14247,6 +14340,17 @@ async function commitInlineCellEdit(td, explicitValue) {
         }
     } else {
         // No input found — just restore
+        cancelInlineCellEdit(td);
+        return;
+    }
+
+    // Safety: if the edit would clear a non-empty field and the commit was
+    // triggered by blur (not an explicit Enter/Tab), cancel instead of saving.
+    // This prevents accidental wipes from clicking away.
+    var wouldClear = (newValue === '' || newValue === null || newValue === undefined) &&
+                     originalValue != null && originalValue !== '' &&
+                     !(typeof originalValue === 'boolean');
+    if (wouldClear && !wasExplicit) {
         cancelInlineCellEdit(td);
         return;
     }
@@ -14293,6 +14397,8 @@ async function commitInlineCellEdit(td, explicitValue) {
 
     try {
         await editRecord(tableId, recordId, fieldChanges);
+        // Show undo toast after successful save
+        showUndoToast(tableId, recordId, fieldId, fieldKey, originalValue);
     } catch (err) {
         console.error('[InlineEdit] Edit failed for', recordId, fieldKey, err);
         // editRecord already rolled back + showed error toast; table will re-render via event
