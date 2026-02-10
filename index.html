@@ -9749,68 +9749,59 @@ var SynapseSync = {
     _backoffMs: 1000,
 
     async discoverTableRooms() {
-        // Discover table rooms via a single /sync call with a state filter.
-        // We filter for law.firm.schema.table and law.firm.vault.metadata state
-        // events so we find them regardless of what state_key was used.
+        // Discover table rooms by fetching each room's full state and looking
+        // for law.firm.schema.table / law.firm.vault.metadata events (any state key).
         try {
             var session = _loadSynapseSession();
             if (!session || !session.accessToken) return [];
 
-            var filter = JSON.stringify({
-                room: {
-                    state: {
-                        types: ['law.firm.schema.table', 'law.firm.vault.metadata']
-                    },
-                    timeline: { limit: 0 },
-                    ephemeral: { types: [] },
-                    account_data: { types: [] }
-                },
-                account_data: { types: [] },
-                presence: { types: [] }
+            // 1. Get joined rooms
+            var res = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/joined_rooms', {
+                headers: { 'Authorization': 'Bearer ' + session.accessToken }
             });
+            if (!res.ok) return [];
+            var data = await res.json();
+            var joinedRooms = data.joined_rooms || [];
+            console.log('[SynapseSync] Joined rooms: ' + joinedRooms.length);
 
-            var syncRes = await fetch(
-                SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=0&filter=' + encodeURIComponent(filter),
-                { headers: { 'Authorization': 'Bearer ' + session.accessToken } }
-            );
-            if (!syncRes.ok) {
-                console.error('[SynapseSync] Discovery sync failed:', syncRes.status);
-                return [];
-            }
-            var syncData = await syncRes.json();
-
+            // 2. For each room, fetch full state and look for table-identifying events
             var tableRooms = [];
-            var joinRooms = (syncData.rooms && syncData.rooms.join) || {};
+            for (var roomId of joinedRooms) {
+                try {
+                    var stateRes = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(roomId) + '/state', {
+                        headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                    });
+                    if (!stateRes.ok) continue;
+                    var stateEvents = await stateRes.json();
 
-            for (var roomId in joinRooms) {
-                var roomData = joinRooms[roomId];
-                var stateEvents = (roomData.state && roomData.state.events) || [];
+                    // A single room can host multiple tables (e.g. matter rooms),
+                    // so collect every table-identifying state event we find.
+                    for (var i = 0; i < stateEvents.length; i++) {
+                        var evt = stateEvents[i];
+                        if (!evt.content) continue;
 
-                // A single room can host multiple tables (e.g. matter rooms),
-                // so collect every table-identifying state event we find.
-                for (var i = 0; i < stateEvents.length; i++) {
-                    var evt = stateEvents[i];
-                    if (!evt.content) continue;
-
-                    if (evt.type === 'law.firm.vault.metadata') {
-                        var tid = evt.content.tableId || evt.content.table_id;
-                        if (tid) {
-                            tableRooms.push({
-                                tableId: tid,
-                                roomId: roomId,
-                                name: evt.content.tableName || evt.content.table_name || evt.content.name || tid
-                            });
-                        }
-                    } else if (evt.type === 'law.firm.schema.table') {
-                        var tid2 = evt.content.tableId || evt.content.table_id || evt.content.id;
-                        if (tid2) {
-                            tableRooms.push({
-                                tableId: tid2,
-                                roomId: roomId,
-                                name: evt.content.name || evt.content.tableName || evt.content.table_name || tid2
-                            });
+                        if (evt.type === 'law.firm.vault.metadata') {
+                            var tid = evt.content.tableId || evt.content.table_id;
+                            if (tid) {
+                                tableRooms.push({
+                                    tableId: tid,
+                                    roomId: roomId,
+                                    name: evt.content.tableName || evt.content.table_name || evt.content.name || tid
+                                });
+                            }
+                        } else if (evt.type === 'law.firm.schema.table') {
+                            var tid2 = evt.content.tableId || evt.content.table_id || evt.content.id;
+                            if (tid2) {
+                                tableRooms.push({
+                                    tableId: tid2,
+                                    roomId: roomId,
+                                    name: evt.content.name || evt.content.tableName || evt.content.table_name || tid2
+                                });
+                            }
                         }
                     }
+                } catch (e) {
+                    console.warn('[SynapseSync] Could not read state for room ' + roomId + ':', e);
                 }
             }
 
@@ -9820,7 +9811,7 @@ var SynapseSync = {
                 this.roomToTable[tr.roomId] = tr.tableId;
             }
 
-            console.log('[SynapseSync] Discovered ' + tableRooms.length + ' table rooms');
+            console.log('[SynapseSync] Discovered ' + tableRooms.length + ' table rooms from ' + joinedRooms.length + ' joined rooms');
             return tableRooms;
         } catch (err) {
             console.error('[SynapseSync] Room discovery failed:', err);
