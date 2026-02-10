@@ -10350,30 +10350,48 @@ async function hydrateFromSynapse() {
 // ============ Webhook Hydration ============
 
 // Fetch from n8n webhook API using the Synapse access token.
-// Uses Authorization header first; on CORS preflight failure (common with
-// parameterized n8n webhook paths), retries with the token as a query
-// parameter so the browser sends a "simple" request (no OPTIONS preflight).
+// Uses query-parameter auth by default to avoid CORS preflight (the
+// Authorization header triggers an OPTIONS preflight that n8n may not
+// handle).  Falls back to Authorization header only if query-param auth
+// returns 401 (meaning the server didn't recognise the token in the URL).
 async function webhookFetch(path) {
     var session = _loadSynapseSession();
     if (!session || !session.accessToken) throw new Error('No Synapse session');
 
+    // Primary: query-param auth — avoids CORS preflight entirely
+    var separator = path.indexOf('?') === -1 ? '?' : '&';
+    var url = N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(session.accessToken);
+
     try {
-        var response = await fetch(N8N_WEBHOOK_BASE + path, {
-            headers: { 'Authorization': 'Bearer ' + session.accessToken }
-        });
-    } catch (headerErr) {
-        // CORS preflight failure surfaces as a TypeError from fetch.
-        // Retry without the Authorization header, passing the token as a
-        // query parameter instead.  This makes the request "simple" (no
-        // preflight) so it bypasses broken OPTIONS handling on the server.
-        console.warn('[webhookFetch] Header-auth fetch failed (' + headerErr.message + '), retrying with query-param auth for ' + path);
-        var separator = path.indexOf('?') === -1 ? '?' : '&';
-        response = await fetch(N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(session.accessToken));
+        var response = await fetch(url);
+    } catch (fetchErr) {
+        // Network / CORS failure on the simple request — try header auth
+        // as a last resort (will trigger OPTIONS preflight).
+        console.warn('[webhookFetch] Query-param fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
+        try {
+            response = await fetch(N8N_WEBHOOK_BASE + path, {
+                headers: { 'Authorization': 'Bearer ' + session.accessToken }
+            });
+        } catch (headerErr) {
+            throw new Error('Webhook unreachable (CORS/network): ' + headerErr.message);
+        }
     }
 
     if (response.status === 401) {
-        throw new Error('Webhook auth failed (Synapse token rejected)');
+        // Query-param token may not have been picked up — retry with header
+        console.warn('[webhookFetch] 401 with query-param auth, retrying with header auth for ' + path);
+        try {
+            response = await fetch(N8N_WEBHOOK_BASE + path, {
+                headers: { 'Authorization': 'Bearer ' + session.accessToken }
+            });
+        } catch (headerErr) {
+            throw new Error('Webhook auth retry failed (CORS/network): ' + headerErr.message);
+        }
+        if (response.status === 401) {
+            throw new Error('Webhook auth failed (Synapse token rejected)');
+        }
     }
+
     if (!response.ok) {
         throw new Error('Webhook API error: ' + response.status);
     }
@@ -13567,17 +13585,33 @@ async function editRecord(tableId, recordId, fieldChanges) {
 
     try {
         // ── Stage 2: Write to server ──────────────────────────
-        var response = await fetch(
-            WRITE_API_BASE + '/' + encodeURIComponent(tableId) + '/' + encodeURIComponent(recordId),
-            {
+        // Try with query-param auth first to avoid CORS preflight, then
+        // fall back to Authorization header if that fails.
+        var writeUrl = WRITE_API_BASE + '/' + encodeURIComponent(tableId) + '/' + encodeURIComponent(recordId);
+        var writeBody = JSON.stringify({ fields: fieldChanges });
+        var response;
+
+        try {
+            response = await fetch(
+                writeUrl + '?access_token=' + encodeURIComponent(session.accessToken),
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: writeBody
+                }
+            );
+        } catch (patchErr) {
+            // CORS preflight failure — retry with header auth
+            console.warn('[editRecord] Query-param PATCH failed (' + patchErr.message + '), retrying with header auth');
+            response = await fetch(writeUrl, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': 'Bearer ' + session.accessToken,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ fields: fieldChanges })
-            }
-        );
+                body: writeBody
+            });
+        }
 
         // Dismiss the saving toast
         dismissToast(savingToast);
