@@ -1338,6 +1338,54 @@
         .events-load-more .loading-spinner-small { width: 20px; height: 20px; border: 2px solid var(--border-primary); border-top-color: var(--primary-500); border-radius: 50%; animation: spin 0.8s linear infinite; }
         .events-end-message { text-align: center; padding: 20px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border-primary); }
 
+        /* Events Tab Bar */
+        .events-tab-bar { display: flex; gap: 0; background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary); padding: 0 20px; position: sticky; top: 0; z-index: 11; }
+        .events-tab { padding: 10px 20px; font-size: 13px; font-weight: 500; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; user-select: none; }
+        .events-tab:hover { color: var(--text-secondary); }
+        .events-tab.active { color: var(--text-primary); border-bottom-color: var(--primary-500); }
+
+        /* Changelog styles */
+        .changelog-list { padding: 0; }
+        .changelog-entry { display: flex; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--border-primary); transition: background 0.1s; }
+        .changelog-entry:hover { background: var(--bg-hover); }
+        .changelog-timeline { display: flex; flex-direction: column; align-items: center; width: 20px; flex-shrink: 0; padding-top: 3px; }
+        .changelog-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .changelog-dot.INS { background: #4ade80; }
+        .changelog-dot.ALT { background: #fbbf24; }
+        .changelog-dot.NUL { background: #f87171; }
+        .changelog-dot.SYN { background: #60a5fa; }
+        .changelog-line { width: 2px; flex: 1; background: var(--border-primary); margin-top: 4px; }
+        .changelog-content { flex: 1; min-width: 0; }
+        .changelog-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+        .changelog-op { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: var(--radius-sm); }
+        .changelog-op.INS { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+        .changelog-op.ALT { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+        .changelog-op.NUL { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .changelog-op.SYN { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+        .changelog-table-badge { font-size: 11px; color: var(--primary-400); background: rgba(59, 130, 246, 0.12); padding: 2px 8px; border-radius: var(--radius-sm); }
+        .changelog-record-id { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+        .changelog-time { font-size: 11px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+        .changelog-fields { display: flex; flex-direction: column; gap: 3px; }
+        .changelog-field { font-size: 12px; color: var(--text-secondary); display: flex; align-items: baseline; gap: 6px; }
+        .changelog-field-name { font-weight: 500; color: var(--text-primary); flex-shrink: 0; }
+        .changelog-field-value { color: var(--text-secondary); word-break: break-word; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
+        .changelog-field-arrow { color: var(--text-muted); flex-shrink: 0; }
+        .changelog-actor { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+        .changelog-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+        .changelog-empty h3 { font-size: 15px; margin-bottom: 6px; color: var(--text-secondary); }
+        .changelog-empty p { font-size: 13px; }
+
+        /* Light theme overrides for changelog */
+        html.light-theme .changelog-dot.INS { background: #16a34a; }
+        html.light-theme .changelog-dot.ALT { background: #d97706; }
+        html.light-theme .changelog-dot.NUL { background: #dc2626; }
+        html.light-theme .changelog-dot.SYN { background: #2563eb; }
+        html.light-theme .changelog-op.INS { background: rgba(22, 163, 74, 0.10); color: #15803d; }
+        html.light-theme .changelog-op.ALT { background: rgba(217, 119, 6, 0.10); color: #b45309; }
+        html.light-theme .changelog-op.NUL { background: rgba(220, 38, 38, 0.10); color: #dc2626; }
+        html.light-theme .changelog-op.SYN { background: rgba(37, 99, 235, 0.10); color: #2563eb; }
+        html.light-theme .changelog-table-badge { color: #2563eb; background: rgba(37, 99, 235, 0.10); }
+
         /* Point in Time Modal */
         .pit-modal { max-width: 900px; width: 95%; }
         .pit-modal-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -3749,6 +3797,17 @@ var eventsOffset = 0; // Current offset for loading more
 var isLoadingMoreEvents = false; // Prevent multiple simultaneous loads
 var hasMoreEvents = true; // Whether there are more events to load
 var eventsScrollHandler = null; // Reference to scroll handler for cleanup
+
+// Events view tab state: 'events' or 'changelog'
+var eventsActiveTab = 'events';
+
+// Changelog state (drawn from Matrix room data)
+var changelogEntries = [];
+var changelogPaginationTokens = {};
+var changelogHasMore = true;
+var changelogIsLoading = false;
+var changelogTableFilter = '';
+var changelogScrollHandler = null;
 
 // In-memory event cache for fast startup from file import
 // Events are loaded into memory first for instant UI, then saved to IndexedDB in background
@@ -9047,6 +9106,11 @@ function cleanupSpecialViewState() {
         if (container) container.removeEventListener('scroll', eventsScrollHandler);
         eventsScrollHandler = null;
     }
+    if (changelogScrollHandler) {
+        var container = document.querySelector('.table-container');
+        if (container) container.removeEventListener('scroll', changelogScrollHandler);
+        changelogScrollHandler = null;
+    }
 
     // Clean up sync status listener
     if (syncStatusUnsubscribe) { syncStatusUnsubscribe(); syncStatusUnsubscribe = null; }
@@ -9902,6 +9966,11 @@ async function showSyncStatusView() {
         var evContainer = document.querySelector('.table-container');
         if (evContainer) evContainer.removeEventListener('scroll', eventsScrollHandler);
         eventsScrollHandler = null;
+    }
+    if (changelogScrollHandler) {
+        var evContainer = document.querySelector('.table-container');
+        if (evContainer) evContainer.removeEventListener('scroll', changelogScrollHandler);
+        changelogScrollHandler = null;
     }
 
     currentTable = '_sync_status';
@@ -11253,13 +11322,43 @@ async function showEventsView() {
 
 async function renderEventsView() {
     var container = document.querySelector('.table-container');
-    container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading events...</h3></div>';
 
-    // Clean up previous scroll handler
+    // Clean up previous scroll handlers
     if (eventsScrollHandler) {
         container.removeEventListener('scroll', eventsScrollHandler);
         eventsScrollHandler = null;
     }
+    if (changelogScrollHandler) {
+        container.removeEventListener('scroll', changelogScrollHandler);
+        changelogScrollHandler = null;
+    }
+
+    // Build tab bar + content shell
+    var tabBarHtml = '<div class="events-tab-bar">';
+    tabBarHtml += '<div class="events-tab' + (eventsActiveTab === 'events' ? ' active' : '') + '" onclick="switchEventsTab(\'events\')">Events</div>';
+    tabBarHtml += '<div class="events-tab' + (eventsActiveTab === 'changelog' ? ' active' : '') + '" onclick="switchEventsTab(\'changelog\')">Changelog</div>';
+    tabBarHtml += '</div>';
+    tabBarHtml += '<div id="events-tab-content" style="flex:1; overflow-y: auto; display: flex; flex-direction: column;"></div>';
+    container.innerHTML = tabBarHtml;
+
+    // Render the active tab's content
+    if (eventsActiveTab === 'changelog') {
+        await renderChangelogContent();
+    } else {
+        await renderEventsContent();
+    }
+}
+
+function switchEventsTab(tab) {
+    if (eventsActiveTab === tab) return;
+    eventsActiveTab = tab;
+    renderEventsView();
+}
+
+async function renderEventsContent() {
+    var container = document.getElementById('events-tab-content');
+    if (!container) return;
+    container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading events...</h3></div>';
 
     // Reset infinite scroll state
     loadedEvents = [];
@@ -11379,8 +11478,9 @@ async function renderEventsView() {
 
         container.innerHTML = html;
 
-        // Set up infinite scroll
-        setupEventsInfiniteScroll(container, totalEventsCount, totalRecordsCount);
+        // Set up infinite scroll on the actual scrolling parent (.table-container)
+        var scrollParent = document.querySelector('.table-container');
+        setupEventsInfiniteScroll(scrollParent, totalEventsCount, totalRecordsCount);
 
     } catch (err) {
         console.error('Error loading events:', err);
@@ -11830,6 +11930,300 @@ function setEventsSetFilter(set) {
 function setEventsSearch(query) {
     eventsSearchQuery = query;
     renderEventsView();
+}
+
+// ============ Changelog Tab (drawn from Matrix room data) ============
+
+async function renderChangelogContent() {
+    var container = document.getElementById('events-tab-content');
+    if (!container) return;
+    container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading changelog from room data...</h3></div>';
+
+    // Reset changelog state
+    changelogEntries = [];
+    changelogPaginationTokens = {};
+    changelogHasMore = true;
+    changelogIsLoading = false;
+
+    // Clean up previous scroll handler
+    if (changelogScrollHandler) {
+        var scrollParent = document.querySelector('.table-container');
+        if (scrollParent) scrollParent.removeEventListener('scroll', changelogScrollHandler);
+        changelogScrollHandler = null;
+    }
+
+    try {
+        // Check if AminoData / Matrix is available
+        if (typeof AminoData === 'undefined' || !AminoData.isInitialized || !AminoData.isInitialized()) {
+            container.innerHTML = '<div class="changelog-empty"><h3>Not connected</h3><p>Changelog requires an active Matrix connection. Sign in with Synapse to view all changes from room data.</p></div>';
+            return;
+        }
+
+        var result = await AminoData.getRoomChangelog({
+            limit: 50,
+            tableFilter: changelogTableFilter || undefined
+        });
+
+        changelogEntries = result.entries;
+        changelogPaginationTokens = result.paginationTokens;
+        changelogHasMore = result.hasMore;
+
+        var html = '';
+
+        // Changelog controls bar
+        html += '<div class="events-controls">';
+        html += '<div class="events-filter-group">';
+        html += '<label>Table:</label>';
+        html += '<select onchange="setChangelogTableFilter(this.value)">';
+        html += '<option value="">All Tables</option>';
+        for (var tid in META_TABLES) {
+            var tableName = META_TABLES[tid].tableName || tid;
+            html += '<option value="' + esc(tid) + '"' + (changelogTableFilter === tid ? ' selected' : '') + '>' + esc(tableName) + '</option>';
+        }
+        html += '</select>';
+        html += '</div>';
+
+        html += '<div class="events-stats">';
+        html += 'Loaded ' + changelogEntries.length.toLocaleString() + ' changes';
+        if (changelogHasMore) html += ' <span style="color: var(--text-muted);">(scroll for more)</span>';
+        html += '</div>';
+        html += '</div>';
+
+        // Changelog entry list
+        html += '<div class="changelog-list" id="changelog-list">';
+
+        if (changelogEntries.length === 0) {
+            html += '<div class="changelog-empty"><h3>No changes found</h3><p>No mutations have been recorded in the room data yet.</p></div>';
+        } else {
+            for (var i = 0; i < changelogEntries.length; i++) {
+                html += renderChangelogEntry(changelogEntries[i], i === changelogEntries.length - 1);
+            }
+        }
+
+        html += '</div>';
+
+        // Infinite scroll loading indicator
+        html += '<div id="changelog-load-more" class="events-load-more" style="display: ' + (changelogHasMore ? 'flex' : 'none') + ';">';
+        html += '<div class="loading-spinner-small"></div>';
+        html += '<span>Loading more changes...</span>';
+        html += '</div>';
+
+        html += '<div id="changelog-end-message" class="events-end-message" style="display: ' + (changelogHasMore ? 'none' : 'block') + ';">';
+        html += 'All changes loaded';
+        html += '</div>';
+
+        container.innerHTML = html;
+
+        // Set up infinite scroll on the actual scrolling parent
+        var scrollParent = document.querySelector('.table-container');
+        setupChangelogInfiniteScroll(scrollParent);
+
+    } catch (err) {
+        console.error('Error loading changelog:', err);
+        container.innerHTML = '<div class="changelog-empty"><h3>Error loading changelog</h3><p>' + esc(err.message) + '</p></div>';
+    }
+}
+
+function renderChangelogEntry(entry, isLast) {
+    var op = entry.op || 'ALT';
+    var opLabel = ENTITY_TYPE_NAMES[op] || op;
+    var tableName = (META_TABLES[entry.tableId] && META_TABLES[entry.tableId].tableName) || entry.tableId || 'Unknown';
+    var timeStr = entry.timestamp ? formatTimestamp(entry.timestamp) : 'Unknown';
+    var fieldsMeta = META_FIELDS[entry.tableId] || {};
+
+    var html = '<div class="changelog-entry">';
+
+    // Timeline dot and line
+    html += '<div class="changelog-timeline">';
+    html += '<div class="changelog-dot ' + esc(op) + '"></div>';
+    if (!isLast) html += '<div class="changelog-line"></div>';
+    html += '</div>';
+
+    // Content
+    html += '<div class="changelog-content">';
+
+    // Header row: op badge, table, record ID, timestamp
+    html += '<div class="changelog-header">';
+    html += '<span class="changelog-op ' + esc(op) + '">' + esc(opLabel) + '</span>';
+    html += '<span class="changelog-table-badge">' + esc(tableName) + '</span>';
+    if (entry.recordId) {
+        html += '<span class="changelog-record-id">' + esc(entry.recordId) + '</span>';
+    }
+    html += '<span class="changelog-time">' + esc(timeStr) + '</span>';
+    html += '</div>';
+
+    // Changed fields
+    var fieldOps = entry.fieldOps || {};
+    var hasFields = false;
+    html += '<div class="changelog-fields">';
+
+    // INS fields
+    if (fieldOps.INS) {
+        var insKeys = Object.keys(fieldOps.INS);
+        for (var a = 0; a < insKeys.length; a++) {
+            hasFields = true;
+            var fname = resolveFieldName(fieldsMeta, insKeys[a]);
+            html += '<div class="changelog-field">';
+            html += '<span class="changelog-field-name">' + esc(fname) + '</span>';
+            html += '<span class="changelog-field-arrow">&#8592;</span>';
+            html += '<span class="changelog-field-value">' + esc(truncateValue(fieldOps.INS[insKeys[a]])) + '</span>';
+            html += '</div>';
+        }
+    }
+
+    // ALT fields
+    if (fieldOps.ALT) {
+        var altKeys = Object.keys(fieldOps.ALT);
+        for (var b = 0; b < altKeys.length; b++) {
+            hasFields = true;
+            var fname = resolveFieldName(fieldsMeta, altKeys[b]);
+            html += '<div class="changelog-field">';
+            html += '<span class="changelog-field-name">' + esc(fname) + '</span>';
+            html += '<span class="changelog-field-arrow">&#8592;</span>';
+            html += '<span class="changelog-field-value">' + esc(truncateValue(fieldOps.ALT[altKeys[b]])) + '</span>';
+            html += '</div>';
+        }
+    }
+
+    // SYN fields
+    if (fieldOps.SYN) {
+        var synKeys = Object.keys(fieldOps.SYN);
+        for (var s = 0; s < synKeys.length; s++) {
+            hasFields = true;
+            var fname = resolveFieldName(fieldsMeta, synKeys[s]);
+            html += '<div class="changelog-field">';
+            html += '<span class="changelog-field-name">' + esc(fname) + '</span>';
+            html += '<span class="changelog-field-arrow">&#8592;</span>';
+            html += '<span class="changelog-field-value">' + esc(truncateValue(fieldOps.SYN[synKeys[s]])) + '</span>';
+            html += '</div>';
+        }
+    }
+
+    // NUL fields
+    if (fieldOps.NUL) {
+        var nulFields = Array.isArray(fieldOps.NUL) ? fieldOps.NUL : Object.keys(fieldOps.NUL);
+        for (var c = 0; c < nulFields.length; c++) {
+            hasFields = true;
+            var fname = resolveFieldName(fieldsMeta, nulFields[c]);
+            html += '<div class="changelog-field">';
+            html += '<span class="changelog-field-name">' + esc(fname) + '</span>';
+            html += '<span class="changelog-field-arrow">&#8592;</span>';
+            html += '<span class="changelog-field-value" style="font-style: italic; opacity: 0.6;">deleted</span>';
+            html += '</div>';
+        }
+    }
+
+    if (!hasFields) {
+        html += '<div class="changelog-field" style="opacity: 0.5; font-style: italic;">No field details available</div>';
+    }
+
+    html += '</div>';
+
+    // Actor/sender info
+    if (entry.actor || entry.sender || entry.source) {
+        html += '<div class="changelog-actor">';
+        if (entry.actor) html += 'by ' + esc(entry.actor);
+        else if (entry.sender) html += 'by ' + esc(entry.sender);
+        if (entry.source) html += ' via ' + esc(entry.source);
+        html += '</div>';
+    }
+
+    html += '</div>'; // .changelog-content
+    html += '</div>'; // .changelog-entry
+
+    return html;
+}
+
+function resolveFieldName(fieldsMeta, fieldId) {
+    if (fieldsMeta[fieldId] && fieldsMeta[fieldId].fieldName) {
+        return fieldsMeta[fieldId].fieldName;
+    }
+    return fieldId;
+}
+
+function truncateValue(val) {
+    if (val === null || val === undefined) return '';
+    var str = typeof val === 'object' ? JSON.stringify(val) : String(val);
+    if (str.length > 120) return str.substring(0, 117) + '...';
+    return str;
+}
+
+function setChangelogTableFilter(tableId) {
+    changelogTableFilter = tableId;
+    renderChangelogContent();
+}
+
+function setupChangelogInfiniteScroll(scrollParent) {
+    changelogScrollHandler = function() {
+        var scrollTop = scrollParent.scrollTop;
+        var scrollHeight = scrollParent.scrollHeight;
+        var clientHeight = scrollParent.clientHeight;
+
+        if (scrollHeight - scrollTop - clientHeight < 200) {
+            loadMoreChangelog();
+        }
+    };
+    scrollParent.addEventListener('scroll', changelogScrollHandler);
+}
+
+async function loadMoreChangelog() {
+    if (changelogIsLoading || !changelogHasMore) return;
+    changelogIsLoading = true;
+
+    var loadMoreDiv = document.getElementById('changelog-load-more');
+    if (loadMoreDiv) loadMoreDiv.style.display = 'flex';
+
+    try {
+        var result = await AminoData.getRoomChangelog({
+            limit: 50,
+            paginationTokens: changelogPaginationTokens,
+            tableFilter: changelogTableFilter || undefined
+        });
+
+        if (result.entries.length === 0) {
+            changelogHasMore = false;
+        } else {
+            for (var i = 0; i < result.entries.length; i++) {
+                changelogEntries.push(result.entries[i]);
+            }
+            changelogPaginationTokens = result.paginationTokens;
+            changelogHasMore = result.hasMore;
+
+            // Append to the list
+            var list = document.getElementById('changelog-list');
+            if (list) {
+                // Remove isLast styling from previously last entry
+                var lastEntry = list.querySelector('.changelog-entry:last-child .changelog-timeline');
+                if (lastEntry && !lastEntry.querySelector('.changelog-line')) {
+                    var line = document.createElement('div');
+                    line.className = 'changelog-line';
+                    lastEntry.appendChild(line);
+                }
+                var newHtml = '';
+                for (var j = 0; j < result.entries.length; j++) {
+                    var isLast = (j === result.entries.length - 1) && !changelogHasMore;
+                    newHtml += renderChangelogEntry(result.entries[j], isLast);
+                }
+                list.insertAdjacentHTML('beforeend', newHtml);
+            }
+
+            // Update stats
+            var statsDiv = document.querySelector('.events-controls .events-stats');
+            if (statsDiv) {
+                var statsHtml = 'Loaded ' + changelogEntries.length.toLocaleString() + ' changes';
+                if (changelogHasMore) statsHtml += ' <span style="color: var(--text-muted);">(scroll for more)</span>';
+                statsDiv.innerHTML = statsHtml;
+            }
+        }
+    } catch (err) {
+        console.error('Error loading more changelog:', err);
+    } finally {
+        changelogIsLoading = false;
+        var loadMoreDiv = document.getElementById('changelog-load-more');
+        var endMessage = document.getElementById('changelog-end-message');
+        if (loadMoreDiv) loadMoreDiv.style.display = changelogHasMore ? 'none' : 'none';
+        if (endMessage) endMessage.style.display = changelogHasMore ? 'none' : 'block';
+    }
 }
 
 // ============ Events CSV Export/Import ============
