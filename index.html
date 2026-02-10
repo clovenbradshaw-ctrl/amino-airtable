@@ -975,6 +975,8 @@
         .loading-status { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
         .loading-detail { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
         .loading-time-estimate { font-size: 11px; color: var(--text-muted); margin-top: 8px; min-height: 16px; }
+        .loading-table-progress { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 4px; min-height: 16px; }
+        .loading-speed { font-size: 11px; color: var(--primary-500); margin-top: 8px; min-height: 16px; font-family: var(--font-mono); }
         .loading-progress-activity { position: absolute; top: 0; left: 0; height: 100%; width: 100%; overflow: hidden; border-radius: 3px; }
         .loading-progress-activity::after {
             content: ''; position: absolute; top: 0; left: -100%; height: 100%; width: 50%;
@@ -1820,7 +1822,8 @@
                 </div>
                 <div class="loading-status" id="loading-status">Connecting to server...</div>
                 <div class="loading-detail" id="loading-detail">Page 1</div>
-                <div class="loading-time-estimate" id="loading-time-estimate"></div>
+                <div class="loading-table-progress" id="loading-table-progress"></div>
+                <div class="loading-speed" id="loading-speed"></div>
             </div>
 
             <div class="loading-note">
@@ -9103,14 +9106,28 @@ function hideLoadingOverlay() {
     setTimeout(function() { overlay.classList.add('hidden'); overlay.classList.remove('fading-out'); }, 500);
 }
 
-function updateLoadingOverlay(status, detail, progress, tables, fields, records, timeEstimate) {
+var _loadingStartTime = null;
+var _loadingPrevRecords = 0;
+var _loadingPrevTime = null;
+var _loadingSmoothedSpeed = 0;
+
+function _formatElapsed(ms) {
+    var secs = Math.floor(ms / 1000);
+    if (secs < 60) return secs + 's';
+    var mins = Math.floor(secs / 60);
+    secs = secs % 60;
+    return mins + 'm ' + (secs < 10 ? '0' : '') + secs + 's';
+}
+
+function updateLoadingOverlay(status, detail, progress, tables, fields, records, tableProgress) {
     var statusEl = document.getElementById('loading-status');
     var detailEl = document.getElementById('loading-detail');
     var progressEl = document.getElementById('loading-progress-fill');
     var tablesEl = document.getElementById('loading-tables');
     var fieldsEl = document.getElementById('loading-fields');
     var recordsEl = document.getElementById('loading-records');
-    var timeEl = document.getElementById('loading-time-estimate');
+    var tableProgressEl = document.getElementById('loading-table-progress');
+    var speedEl = document.getElementById('loading-speed');
 
     if (statusEl) statusEl.textContent = status || 'Loading...';
     if (detailEl) detailEl.textContent = detail || '';
@@ -9118,7 +9135,41 @@ function updateLoadingOverlay(status, detail, progress, tables, fields, records,
     if (tablesEl) tablesEl.textContent = (tables || 0).toLocaleString();
     if (fieldsEl) fieldsEl.textContent = (fields || 0).toLocaleString();
     if (recordsEl) recordsEl.textContent = (records || 0).toLocaleString();
-    if (timeEl) timeEl.textContent = timeEstimate || '';
+    if (tableProgressEl) tableProgressEl.textContent = tableProgress || '';
+
+    // Speed and elapsed time calculation
+    var now = Date.now();
+    var totalRecords = records || 0;
+    if (!_loadingStartTime && totalRecords > 0) {
+        _loadingStartTime = now;
+        _loadingPrevTime = now;
+        _loadingPrevRecords = 0;
+    }
+
+    if (speedEl && _loadingStartTime && totalRecords > 0) {
+        var elapsedMs = now - _loadingStartTime;
+        var elapsed = _formatElapsed(elapsedMs);
+
+        // Calculate instantaneous speed over recent interval
+        var intervalMs = now - (_loadingPrevTime || now);
+        if (intervalMs > 200) {
+            var intervalRecords = totalRecords - _loadingPrevRecords;
+            var instantSpeed = intervalRecords / (intervalMs / 1000);
+            // Smooth with exponential moving average
+            _loadingSmoothedSpeed = _loadingSmoothedSpeed > 0
+                ? _loadingSmoothedSpeed * 0.7 + instantSpeed * 0.3
+                : instantSpeed;
+            _loadingPrevTime = now;
+            _loadingPrevRecords = totalRecords;
+        }
+
+        var speedStr = _loadingSmoothedSpeed > 0
+            ? Math.round(_loadingSmoothedSpeed).toLocaleString() + ' records/sec'
+            : '';
+        speedEl.textContent = elapsed + (speedStr ? '  \u00B7  ' + speedStr : '');
+    } else if (speedEl) {
+        speedEl.textContent = '';
+    }
 }
 
 function setRefreshIndicatorSyncing(isSyncing) {
@@ -10234,13 +10285,19 @@ async function hydrateFromSynapse() {
         var totalFieldsFound = 0;
         var totalRecordsFound = 0;
 
+        // Reset speed tracking for this hydration run
+        _loadingStartTime = null;
+        _loadingPrevRecords = 0;
+        _loadingPrevTime = null;
+        _loadingSmoothedSpeed = 0;
+
         updateLoadingOverlay('Downloading data...', 'Found ' + tableRooms.length + ' tables', 0, tableRooms.length, 0, 0, null);
 
         for (var idx = 0; idx < tableRooms.length; idx++) {
             var tr = tableRooms[idx];
             var progressPct = Math.round((idx / tableRooms.length) * 100);
             updateStatus('Hydrating ' + tr.name + '...', false, progressPct, 'Table ' + (idx + 1) + ' of ' + tableRooms.length);
-            updateLoadingOverlay('Downloading ' + tr.name + '...', 'Table ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
+            updateLoadingOverlay('Downloading ' + tr.name + '...', 'Table ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, 'Reading schema...');
 
             // 1. Read schema state events for this room
             try {
@@ -10262,7 +10319,7 @@ async function hydrateFromSynapse() {
                             totalFieldsFound++;
                         }
                     }
-                    updateLoadingOverlay('Downloading ' + tr.name + '...', 'Reading records...', progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
+                    updateLoadingOverlay('Downloading ' + tr.name + '...', 'Table ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, 'Schema loaded \u2014 fetching records...');
                 }
             } catch (stateErr) {
                 console.warn('[Hydration] State read failed for ' + tr.name + ':', stateErr);
@@ -10298,14 +10355,19 @@ async function hydrateFromSynapse() {
                                 roomEvents++;
                                 totalProcessed++;
                                 totalRecordsFound++;
+
+                                // Update every 10 records for responsive feedback
+                                if (roomEvents % 10 === 0) {
+                                    updateLoadingOverlay('Downloading ' + tr.name + '...', 'Table ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, roomEvents.toLocaleString() + ' records in this table...');
+                                }
                             } catch (procErr) {
                                 console.warn('[Hydration] Event processing error:', procErr);
                             }
                         }
                     }
 
-                    // Update loading overlay with record progress
-                    updateLoadingOverlay('Downloading ' + tr.name + '...', 'Table ' + (idx + 1) + ' of ' + tableRooms.length + ' (' + roomEvents + ' records)', progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
+                    // Update loading overlay with record progress at page boundary
+                    updateLoadingOverlay('Downloading ' + tr.name + '...', 'Table ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, roomEvents.toLocaleString() + ' records in this table...');
 
                     from = msgData.end;
                     if (!from) break;
@@ -10318,7 +10380,7 @@ async function hydrateFromSynapse() {
             console.log('[Hydration] ' + tr.name + ': ' + roomEvents + ' events processed');
         }
 
-        updateLoadingOverlay('Encrypting and saving...', 'Finalizing ' + totalProcessed + ' records', 95, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
+        updateLoadingOverlay('Encrypting and saving...', 'Finalizing ' + totalProcessed.toLocaleString() + ' records', 95, tableRooms.length, totalFieldsFound, totalRecordsFound, 'Writing to local storage...');
 
         // Save sync token for incremental updates going forward
         try {
@@ -10334,7 +10396,7 @@ async function hydrateFromSynapse() {
             console.warn('[Hydration] Could not save sync token:', tokenErr);
         }
 
-        updateLoadingOverlay('Sync complete', totalProcessed + ' records downloaded and encrypted', 100, tableRooms.length, totalFieldsFound, totalRecordsFound, null);
+        updateLoadingOverlay('Sync complete', totalProcessed.toLocaleString() + ' records downloaded and encrypted', 100, tableRooms.length, totalFieldsFound, totalRecordsFound, '');
         updateStatus('Hydration complete: ' + totalProcessed + ' events', true, 100, null);
         return totalProcessed > 0;
     } catch (err) {
@@ -10453,6 +10515,12 @@ async function hydrateFromWebhooks() {
         var consecutiveRecordFailures = 0;
         var recordFetchAborted = false;
 
+        // Reset speed tracking for this hydration run
+        _loadingStartTime = null;
+        _loadingPrevRecords = 0;
+        _loadingPrevTime = null;
+        _loadingSmoothedSpeed = 0;
+
         updateLoadingOverlay('Downloading from API...', 'Found ' + webhookTables.length + ' tables', 0, webhookTables.length, 0, 0, null);
 
         // 2. For each table, fetch records and store in main app IndexedDB
@@ -10463,7 +10531,7 @@ async function hydrateFromWebhooks() {
             var progressPct = Math.round((idx / webhookTables.length) * 100);
 
             updateStatus('Downloading ' + tableName + '...', false, progressPct, 'Table ' + (idx + 1) + ' of ' + webhookTables.length);
-            updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, null);
+            updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, 'Fetching records...');
 
             // Save table metadata
             await saveTable({ tableId: tableId, tableName: tableName });
@@ -10534,11 +10602,15 @@ async function hydrateFromWebhooks() {
                         }
 
                         totalRecords += dataRecords.length;
+
+                        // Update progress within this table's batch processing
+                        var recordsSoFar = Math.min(b + BATCH, records.length);
+                        updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, recordsSoFar.toLocaleString() + ' of ' + records.length.toLocaleString() + ' records saved');
                     }
                 }
 
                 console.log('[WebhookHydration] ' + tableName + ': ' + records.length + ' records');
-                updateLoadingOverlay('Downloading ' + tableName + '...', records.length + ' records', progressPct, webhookTables.length, totalFields, totalRecords, null);
+                updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records \u2714');
 
             } catch (recErr) {
                 consecutiveRecordFailures++;
@@ -10556,7 +10628,7 @@ async function hydrateFromWebhooks() {
             }
         }
 
-        updateLoadingOverlay('Sync complete', totalRecords + ' records downloaded', 100, webhookTables.length, totalFields, totalRecords, null);
+        updateLoadingOverlay('Sync complete', totalRecords.toLocaleString() + ' records downloaded', 100, webhookTables.length, totalFields, totalRecords, '');
         updateStatus('Webhook hydration complete: ' + totalRecords + ' records', true, 100, null);
         SyncStatusFeed.success('Webhook hydration complete: ' + totalRecords + ' records across ' + webhookTables.length + ' tables');
 
