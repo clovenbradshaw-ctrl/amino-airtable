@@ -1373,6 +1373,8 @@
         .profile-sync-history-type.created { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
         .profile-sync-history-type.updated { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
         .profile-sync-history-type.deleted { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .profile-sync-history-type.synced { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+        .profile-sync-history-sender { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: rgba(168, 85, 247, 0.15); color: #c084fc; font-weight: 500; }
         .profile-sync-history-time { margin-left: auto; font-size: 11px; color: var(--text-muted); }
         .profile-sync-history-values { display: flex; gap: 12px; font-size: 12px; }
         .profile-sync-history-value { flex: 1; padding: 6px 8px; border-radius: var(--radius-sm); word-break: break-word; }
@@ -4990,127 +4992,204 @@ function getFieldHistoryForRecord(tableId, recordId, limit) {
 // Fetch and process any new history events for a specific record
 // History is now available locally from Matrix event replay — no API call needed.
 async function fetchAndProcessHistoryForRecord(tableId, recordId) {
-    // With Matrix Synapse, the full event history is already replayed locally.
-    // No need to fetch from an external API.
-    return;
-
-    // Get the highest eventId we have for this record to fetch only newer events
-    var existingHistory = await getFieldHistoryForRecord(tableId, recordId);
-    var maxEventId = existingHistory.reduce((max, h) => Math.max(max, h.eventId || 0), 0);
-
-    // Build API URL with recordId filter and id > maxEventId
-    var url = API + '?page=1&per_page=500';
-    url += '&apiKey=' + encodeURIComponent(API_KEY);
-    url += '&recordId=' + encodeURIComponent(recordId);
-    if (maxEventId > 0) {
-        url += '&id=' + maxEventId;
+    // Fetch history from Matrix room messages on-demand.
+    // Each table maps to a Matrix room; paginate through room events,
+    // filter for this record, decrypt, and return field history entries.
+    var roomId = AminoData.getRoomForTable(tableId);
+    if (!roomId || !MatrixClient.isLoggedIn()) {
+        console.warn('[History] No room mapping or not logged in for table:', tableId);
+        return;
     }
 
     try {
-        var res = await fetch(url);
-        if (!res.ok) return;
+        var allEvents = [];
+        var paginationToken = null;
+        var maxPages = 20; // Safety limit to avoid infinite pagination
 
-        var data = await res.json();
-        var events = Array.isArray(data) ? data : (data.items || data.data || []);
+        for (var page = 0; page < maxPages; page++) {
+            var opts = { dir: 'b', limit: 100 };
+            if (paginationToken) opts.from = paginationToken;
+            opts.filter = { types: ['law.firm.record.mutate'] };
 
-        if (!events || events.length === 0) return;
+            var response = await MatrixClient.getRoomMessages(roomId, opts);
+            if (!response || !response.chunk) break;
 
-        // Sort events by id ascending (oldest first for proper state tracking)
-        events.sort((a, b) => (a.id || 0) - (b.id || 0));
+            var chunk = response.chunk;
+            for (var i = 0; i < chunk.length; i++) {
+                var evt = chunk[i];
+                if (!evt.content) continue;
 
-        // Get existing record state to calculate oldValue correctly
-        var existingRecord = await getRecord(tableId, recordId);
-        var state = existingRecord ? { ...existingRecord.fields } : {};
+                // Check if this event is for our target record
+                var content = evt.content;
+                if (content.recordId === recordId) {
+                    allEvents.push(evt);
+                }
+            }
 
+            // Check if there are more pages
+            if (!response.end || chunk.length < 100) break;
+            paginationToken = response.end;
+        }
+
+        if (allEvents.length === 0) return;
+
+        // Sort events by origin_server_ts ascending (oldest first for state tracking)
+        allEvents.sort(function(a, b) {
+            return (a.origin_server_ts || 0) - (b.origin_server_ts || 0);
+        });
+
+        // Build field history entries by replaying events in order
+        var state = {};
         var fieldHistoryEntries = [];
 
-        for (var e of events) {
-            if (!e || !e.recordId || e.recordId !== recordId) continue;
+        for (var e = 0; e < allEvents.length; e++) {
+            var evt = allEvents[e];
+            var content = evt.content;
 
-            var payload = parsePayload(e.payload);
-            if (!payload || typeof payload !== 'object') continue;
-
-            var pfields = payload.fields;
-            if (!pfields || typeof pfields !== 'object') continue;
-
-            var eventId = e.id;
-            var timestamp = e.created_at ? new Date(e.created_at).getTime() : Date.now();
-
-            // Process INS (insert/create)
-            if (pfields.INS) {
-                for (var fieldId in pfields.INS) {
-                    fieldHistoryEntries.push({
-                        tableId: tableId,
-                        recordId: recordId,
-                        fieldId: fieldId,
-                        eventId: eventId,
-                        timestamp: timestamp,
-                        changeType: 'created',
-                        oldValue: null,
-                        newValue: pfields.INS[fieldId]
-                    });
+            // Decrypt encrypted payloads
+            if (AminoData.isEncryptedPayload(content)) {
+                try {
+                    var decryptedFields = await AminoData.decryptEventPayload(content);
+                    content = {
+                        recordId: content.recordId,
+                        tableId: content.tableId,
+                        op: content.op || 'ALT',
+                        fields: decryptedFields
+                    };
+                } catch (decErr) {
+                    console.warn('[History] Could not decrypt event:', decErr.message);
+                    continue;
                 }
-                Object.assign(state, pfields.INS);
             }
 
-            // Process ALT (alter/update)
-            if (pfields.ALT) {
-                for (var fieldId in pfields.ALT) {
-                    fieldHistoryEntries.push({
-                        tableId: tableId,
-                        recordId: recordId,
-                        fieldId: fieldId,
-                        eventId: eventId,
-                        timestamp: timestamp,
-                        changeType: 'updated',
-                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
-                        newValue: pfields.ALT[fieldId]
-                    });
-                }
-                Object.assign(state, pfields.ALT);
-            }
+            var eventId = evt.event_id || null;
+            var timestamp = evt.origin_server_ts || Date.now();
+            var sender = evt.sender || null;
 
-            // Process SYN (sync/snapshot)
-            if (pfields.SYN) {
-                for (var fieldId in pfields.SYN) {
-                    fieldHistoryEntries.push({
-                        tableId: tableId,
-                        recordId: recordId,
-                        fieldId: fieldId,
-                        eventId: eventId,
-                        timestamp: timestamp,
-                        changeType: 'synced',
-                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
-                        newValue: pfields.SYN[fieldId]
-                    });
-                }
-                Object.assign(state, pfields.SYN);
-            }
+            // Extract field operations (structured or flat format)
+            var payload = content.payload || content;
+            var fieldOps = payload.fields || {};
+            var hasStructuredOps = !!(fieldOps.ALT || fieldOps.INS || fieldOps.NUL || fieldOps.SYN);
 
-            // Process NUL (nullify/delete)
-            if (pfields.NUL && Array.isArray(pfields.NUL)) {
-                pfields.NUL.forEach(fieldId => {
-                    fieldHistoryEntries.push({
-                        tableId: tableId,
-                        recordId: recordId,
-                        fieldId: fieldId,
-                        eventId: eventId,
-                        timestamp: timestamp,
-                        changeType: 'deleted',
-                        oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
-                        newValue: null
-                    });
-                    delete state[fieldId];
-                });
+            if (hasStructuredOps) {
+                // Process INS (insert/create)
+                if (fieldOps.INS) {
+                    for (var fieldId in fieldOps.INS) {
+                        fieldHistoryEntries.push({
+                            tableId: tableId,
+                            recordId: recordId,
+                            fieldId: fieldId,
+                            eventId: eventId,
+                            timestamp: timestamp,
+                            sender: sender,
+                            changeType: 'created',
+                            oldValue: null,
+                            newValue: fieldOps.INS[fieldId]
+                        });
+                    }
+                    Object.assign(state, fieldOps.INS);
+                }
+
+                // Process ALT (alter/update)
+                if (fieldOps.ALT) {
+                    for (var fieldId in fieldOps.ALT) {
+                        fieldHistoryEntries.push({
+                            tableId: tableId,
+                            recordId: recordId,
+                            fieldId: fieldId,
+                            eventId: eventId,
+                            timestamp: timestamp,
+                            sender: sender,
+                            changeType: 'updated',
+                            oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                            newValue: fieldOps.ALT[fieldId]
+                        });
+                    }
+                    Object.assign(state, fieldOps.ALT);
+                }
+
+                // Process SYN (sync/snapshot)
+                if (fieldOps.SYN) {
+                    for (var fieldId in fieldOps.SYN) {
+                        fieldHistoryEntries.push({
+                            tableId: tableId,
+                            recordId: recordId,
+                            fieldId: fieldId,
+                            eventId: eventId,
+                            timestamp: timestamp,
+                            sender: sender,
+                            changeType: 'synced',
+                            oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                            newValue: fieldOps.SYN[fieldId]
+                        });
+                    }
+                    Object.assign(state, fieldOps.SYN);
+                }
+
+                // Process NUL (nullify/delete)
+                if (fieldOps.NUL) {
+                    var nulFields = Array.isArray(fieldOps.NUL) ? fieldOps.NUL : Object.keys(fieldOps.NUL);
+                    for (var n = 0; n < nulFields.length; n++) {
+                        fieldHistoryEntries.push({
+                            tableId: tableId,
+                            recordId: recordId,
+                            fieldId: nulFields[n],
+                            eventId: eventId,
+                            timestamp: timestamp,
+                            sender: sender,
+                            changeType: 'deleted',
+                            oldValue: state[nulFields[n]] !== undefined ? state[nulFields[n]] : null,
+                            newValue: null
+                        });
+                        delete state[nulFields[n]];
+                    }
+                }
+            } else if (content.op && content.fields) {
+                // Flat format: { recordId, op, fields: { key: val } }
+                var op = content.op;
+                var flatFields = content.fields;
+                if (op === 'INS') {
+                    for (var fieldId in flatFields) {
+                        fieldHistoryEntries.push({
+                            tableId: tableId, recordId: recordId, fieldId: fieldId,
+                            eventId: eventId, timestamp: timestamp, sender: sender,
+                            changeType: 'created', oldValue: null, newValue: flatFields[fieldId]
+                        });
+                    }
+                    Object.assign(state, flatFields);
+                } else if (op === 'ALT') {
+                    for (var fieldId in flatFields) {
+                        fieldHistoryEntries.push({
+                            tableId: tableId, recordId: recordId, fieldId: fieldId,
+                            eventId: eventId, timestamp: timestamp, sender: sender,
+                            changeType: 'updated',
+                            oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
+                            newValue: flatFields[fieldId]
+                        });
+                    }
+                    Object.assign(state, flatFields);
+                } else if (op === 'NUL') {
+                    var removeKeys = Array.isArray(flatFields) ? flatFields : Object.keys(flatFields);
+                    for (var r = 0; r < removeKeys.length; r++) {
+                        fieldHistoryEntries.push({
+                            tableId: tableId, recordId: recordId, fieldId: removeKeys[r],
+                            eventId: eventId, timestamp: timestamp, sender: sender,
+                            changeType: 'deleted',
+                            oldValue: state[removeKeys[r]] !== undefined ? state[removeKeys[r]] : null,
+                            newValue: null
+                        });
+                        delete state[removeKeys[r]];
+                    }
+                }
             }
         }
 
-        // Save new history entries
+        // Save to IndexedDB for caching
         if (fieldHistoryEntries.length > 0) {
             await saveFieldHistory(fieldHistoryEntries);
         }
     } catch (err) {
-        console.error('Error fetching history for record:', err);
+        console.error('[History] Error fetching room history for record:', err);
     }
 }
 
@@ -13496,6 +13575,85 @@ window.addEventListener('amino:record-updated', function(e) {
     }
 });
 
+// ============ Live Field History from Matrix Sync ============
+
+window.addEventListener('amino:record-mutate', function(e) {
+    var d = e.detail;
+    if (!d || !d.tableId || !d.recordId) return;
+
+    var entries = [];
+    var tableId = d.tableId;
+    var recordId = d.recordId;
+    var eventId = d.eventId || null;
+    var timestamp = d.timestamp || Date.now();
+    var sender = d.sender || null;
+    var fieldOps = d.fieldOps || {};
+    var hasStructuredOps = !!(fieldOps.ALT || fieldOps.INS || fieldOps.NUL || fieldOps.SYN);
+
+    if (hasStructuredOps) {
+        if (fieldOps.INS) {
+            for (var fid in fieldOps.INS) {
+                entries.push({ tableId: tableId, recordId: recordId, fieldId: fid,
+                    eventId: eventId, timestamp: timestamp, sender: sender,
+                    changeType: 'created', oldValue: null, newValue: fieldOps.INS[fid] });
+            }
+        }
+        if (fieldOps.ALT) {
+            for (var fid in fieldOps.ALT) {
+                entries.push({ tableId: tableId, recordId: recordId, fieldId: fid,
+                    eventId: eventId, timestamp: timestamp, sender: sender,
+                    changeType: 'updated', oldValue: null, newValue: fieldOps.ALT[fid] });
+            }
+        }
+        if (fieldOps.SYN) {
+            for (var fid in fieldOps.SYN) {
+                entries.push({ tableId: tableId, recordId: recordId, fieldId: fid,
+                    eventId: eventId, timestamp: timestamp, sender: sender,
+                    changeType: 'synced', oldValue: null, newValue: fieldOps.SYN[fid] });
+            }
+        }
+        if (fieldOps.NUL) {
+            var nulFields = Array.isArray(fieldOps.NUL) ? fieldOps.NUL : Object.keys(fieldOps.NUL);
+            for (var n = 0; n < nulFields.length; n++) {
+                entries.push({ tableId: tableId, recordId: recordId, fieldId: nulFields[n],
+                    eventId: eventId, timestamp: timestamp, sender: sender,
+                    changeType: 'deleted', oldValue: null, newValue: null });
+            }
+        }
+    } else if (d.flatOp && d.flatFields) {
+        var op = d.flatOp;
+        var ff = d.flatFields;
+        if (op === 'INS' || op === 'ALT') {
+            var ct = op === 'INS' ? 'created' : 'updated';
+            for (var fid in ff) {
+                entries.push({ tableId: tableId, recordId: recordId, fieldId: fid,
+                    eventId: eventId, timestamp: timestamp, sender: sender,
+                    changeType: ct, oldValue: null, newValue: ff[fid] });
+            }
+        } else if (op === 'NUL') {
+            var rk = Array.isArray(ff) ? ff : Object.keys(ff);
+            for (var r = 0; r < rk.length; r++) {
+                entries.push({ tableId: tableId, recordId: recordId, fieldId: rk[r],
+                    eventId: eventId, timestamp: timestamp, sender: sender,
+                    changeType: 'deleted', oldValue: null, newValue: null });
+            }
+        }
+    }
+
+    if (entries.length > 0) {
+        saveFieldHistory(entries).catch(function(err) {
+            console.error('[History] Error saving live field history:', err);
+        });
+
+        // Refresh sync history tab if currently viewing this record
+        if (profileCurrentTab === 'sync-history' &&
+            profileCurrentTableId === tableId &&
+            profileCurrentRecordId === recordId) {
+            renderProfileSyncHistory();
+        }
+    }
+});
+
 // Navigation between records
 function updateProfileNavigation() {
     if (!profileCurrentTableId || !profileCurrentRecordId) return;
@@ -13700,11 +13858,17 @@ async function renderProfileSyncHistory() {
             var fieldName = fields[item.fieldId]?.fieldName || item.fieldId;
             var changeType = item.changeType || 'updated';
             var timestamp = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown';
+            var sender = item.sender || null;
+            // Show short sender (strip @...:server part to just the localpart)
+            var senderDisplay = sender ? sender.replace(/^@/, '').replace(/:.*$/, '') : null;
 
             html += '<div class="profile-sync-history-item">';
             html += '<div class="profile-sync-history-item-header">';
             html += '<span class="profile-sync-history-field">' + esc(fieldName) + '</span>';
             html += '<span class="profile-sync-history-type ' + changeType + '">' + changeType.charAt(0).toUpperCase() + changeType.slice(1) + '</span>';
+            if (senderDisplay) {
+                html += '<span class="profile-sync-history-sender">' + esc(senderDisplay) + '</span>';
+            }
             html += '<span class="profile-sync-history-time">' + esc(timestamp) + '</span>';
             html += '</div>';
 
