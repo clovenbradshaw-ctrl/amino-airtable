@@ -166,23 +166,45 @@ var AminoData = (function() {
             throw new Error('Not authenticated');
         }
 
+        // Use query-param auth by default to avoid CORS preflight.
+        // The Authorization header triggers an OPTIONS preflight that n8n
+        // may not handle; passing the token as a query parameter makes the
+        // request "simple" and skips the preflight entirely.
+        var separator = path.indexOf('?') === -1 ? '?' : '&';
+        var url = WEBHOOK_BASE_URL + path + separator + 'access_token=' + encodeURIComponent(_accessToken);
+
         var response;
         try {
-            response = await fetch(WEBHOOK_BASE_URL + path, {
-                headers: { 'Authorization': 'Bearer ' + _accessToken }
-            });
-        } catch (headerErr) {
-            // CORS preflight failure — retry with query-param auth
-            // to avoid the OPTIONS preflight entirely.
-            console.warn('[AminoData] Header-auth fetch failed (' + headerErr.message + '), retrying with query-param auth for ' + path);
-            var separator = path.indexOf('?') === -1 ? '?' : '&';
-            response = await fetch(WEBHOOK_BASE_URL + path + separator + 'access_token=' + encodeURIComponent(_accessToken));
+            response = await fetch(url);
+        } catch (fetchErr) {
+            // Network / CORS failure — try header auth as last resort
+            console.warn('[AminoData] Query-param fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
+            try {
+                response = await fetch(WEBHOOK_BASE_URL + path, {
+                    headers: { 'Authorization': 'Bearer ' + _accessToken }
+                });
+            } catch (headerErr) {
+                throw new Error('API unreachable (CORS/network): ' + headerErr.message);
+            }
         }
 
         if (response.status === 401) {
-            var err = new Error('Authentication expired');
-            err.status = 401;
-            throw err;
+            // Query-param token may not have been recognised — retry with header
+            console.warn('[AminoData] 401 with query-param auth, retrying with header auth for ' + path);
+            try {
+                response = await fetch(WEBHOOK_BASE_URL + path, {
+                    headers: { 'Authorization': 'Bearer ' + _accessToken }
+                });
+            } catch (headerErr) {
+                var err = new Error('Authentication expired (CORS/network)');
+                err.status = 401;
+                throw err;
+            }
+            if (response.status === 401) {
+                var err2 = new Error('Authentication expired');
+                err2.status = 401;
+                throw err2;
+            }
         }
 
         if (!response.ok) {
