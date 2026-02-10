@@ -5176,7 +5176,7 @@ function getFieldHistoryForRecord(tableId, recordId, limit) {
 // filters by recordId client-side, decrypts encrypted payloads, and
 // builds field history entries with source/actor metadata.
 async function fetchAndProcessHistoryForRecord(tableId, recordId) {
-    var roomId = AminoData.getRoomForTable(tableId);
+    var roomId = _getRoomForTable(tableId);
     if (!roomId || !MatrixClient.isLoggedIn()) {
         console.warn('[History] No room mapping or not logged in for table:', tableId);
         return;
@@ -10536,6 +10536,37 @@ var SynapseSync = {
     }
 };
 
+// Look up the Matrix room ID for a table, using SynapseSync room map first,
+// then AminoData as fallback (if initialized). Returns null if not found.
+function _getRoomForTable(tableId) {
+    // Try SynapseSync room map first (always available after discovery)
+    if (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms && SynapseSync.tableRooms.length > 0) {
+        for (var i = 0; i < SynapseSync.tableRooms.length; i++) {
+            if (SynapseSync.tableRooms[i].tableId === tableId) {
+                return SynapseSync.tableRooms[i].roomId;
+            }
+        }
+    }
+    // Fall back to AminoData if initialized
+    if (typeof AminoData !== 'undefined' && AminoData.isInitialized && AminoData.isInitialized()) {
+        return AminoData.getRoomForTable(tableId);
+    }
+    return null;
+}
+
+// Build a reverse map of roomId -> tableId from SynapseSync, for use in
+// changelog and other functions that iterate over rooms.
+function _getRoomTableMap() {
+    var map = {};
+    if (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms) {
+        for (var i = 0; i < SynapseSync.tableRooms.length; i++) {
+            var tr = SynapseSync.tableRooms[i];
+            map[tr.roomId] = tr.tableId;
+        }
+    }
+    return map;
+}
+
 // hydrateFromSynapse: full initial hydration from Synapse table rooms
 // Replays all law.firm.schema.object + law.firm.record.mutate events to build local state
 async function hydrateFromSynapse() {
@@ -12013,6 +12044,132 @@ function setEventsSearch(query) {
 
 // ============ Changelog Tab (drawn from Matrix room data) ============
 
+// Fetch a changelog of mutations from Matrix rooms using SynapseSync room map.
+// Paginates backwards (newest first) through law.firm.record.mutate events
+// in each room, merges across rooms, and returns a unified list.
+async function _fetchRoomChangelog(options) {
+    options = options || {};
+    var limit = options.limit || 50;
+    var prevTokens = options.paginationTokens || {};
+    var tableFilter = options.tableFilter || null;
+
+    var roomTableMap = _getRoomTableMap();
+    var roomIds = Object.keys(roomTableMap);
+
+    if (tableFilter) {
+        var filterRoom = _getRoomForTable(tableFilter);
+        if (!filterRoom) throw new Error('No Matrix room for table: ' + tableFilter);
+        roomIds = [filterRoom];
+    }
+
+    var perRoomEntries = [];
+    var nextTokens = {};
+    var anyHasMore = false;
+
+    for (var r = 0; r < roomIds.length; r++) {
+        var roomId = roomIds[r];
+        var tableId = roomTableMap[roomId];
+        var fromToken = prevTokens[roomId] || undefined;
+
+        if (fromToken === 'exhausted') {
+            nextTokens[roomId] = 'exhausted';
+            continue;
+        }
+
+        try {
+            var msgOpts = {
+                dir: 'b',
+                limit: limit,
+                filter: { types: ['law.firm.record.mutate'] }
+            };
+            if (fromToken) msgOpts.from = fromToken;
+
+            var response = await MatrixClient.getRoomMessages(roomId, msgOpts);
+            if (!response || !response.chunk) {
+                nextTokens[roomId] = 'exhausted';
+                continue;
+            }
+
+            var chunk = response.chunk;
+            for (var i = 0; i < chunk.length; i++) {
+                var evt = chunk[i];
+                if (!evt.content) continue;
+
+                var content = evt.content;
+
+                // Decrypt if needed (gracefully skip failures)
+                if (typeof AminoData !== 'undefined' && AminoData.isEncryptedPayload(content)) {
+                    try {
+                        var decryptedFields = await AminoData.decryptEventPayload(content);
+                        content = {
+                            recordId: content.recordId,
+                            tableId: content.tableId,
+                            op: content.op || 'ALT',
+                            payload: content.payload,
+                            set: content.set,
+                            source: content.source,
+                            sourceTimestamp: content.sourceTimestamp,
+                            fields: decryptedFields
+                        };
+                    } catch (decErr) {
+                        // Cannot decrypt — still show the entry with whatever metadata is available
+                    }
+                }
+
+                var payload = content.payload || {};
+                var fieldOps = payload.fields || {};
+
+                // Handle flat format
+                if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
+                    fieldOps = {};
+                    if (content.op === 'INS' || content.op === 'ALT') {
+                        fieldOps[content.op] = content.fields;
+                    } else if (content.op === 'NUL') {
+                        fieldOps.NUL = content.fields;
+                    }
+                }
+
+                perRoomEntries.push({
+                    eventId: evt.event_id || null,
+                    sender: evt.sender || null,
+                    timestamp: evt.origin_server_ts || null,
+                    tableId: tableId,
+                    recordId: content.recordId || null,
+                    op: content.op || 'ALT',
+                    source: content.source || null,
+                    sourceTimestamp: content.sourceTimestamp || null,
+                    actor: payload._a || null,
+                    fieldOps: fieldOps
+                });
+            }
+
+            if (response.end && chunk.length >= limit) {
+                nextTokens[roomId] = response.end;
+                anyHasMore = true;
+            } else {
+                nextTokens[roomId] = 'exhausted';
+            }
+        } catch (err) {
+            console.warn('[Changelog] Error fetching room', roomId, err.message);
+            nextTokens[roomId] = prevTokens[roomId] || 'exhausted';
+        }
+    }
+
+    // Sort newest first
+    perRoomEntries.sort(function(a, b) {
+        return (b.timestamp || 0) - (a.timestamp || 0);
+    });
+
+    var entries = perRoomEntries.slice(0, limit);
+    if (perRoomEntries.length > limit) anyHasMore = true;
+
+    return {
+        entries: entries,
+        paginationTokens: nextTokens,
+        hasMore: anyHasMore
+    };
+}
+
 async function renderChangelogContent() {
     var container = document.getElementById('events-tab-content');
     if (!container) return;
@@ -12032,13 +12189,14 @@ async function renderChangelogContent() {
     }
 
     try {
-        // Check if AminoData / Matrix is available
-        if (typeof AminoData === 'undefined' || !AminoData.isInitialized || !AminoData.isInitialized()) {
+        // Check if Matrix is available and we have room mappings
+        var roomTableMap = _getRoomTableMap();
+        if (!MatrixClient.isLoggedIn() || Object.keys(roomTableMap).length === 0) {
             container.innerHTML = '<div class="changelog-empty"><h3>Not connected</h3><p>Changelog requires an active Matrix connection. Sign in with Synapse to view all changes from room data.</p></div>';
             return;
         }
 
-        var result = await AminoData.getRoomChangelog({
+        var result = await _fetchRoomChangelog({
             limit: 50,
             tableFilter: changelogTableFilter || undefined
         });
@@ -12253,7 +12411,7 @@ async function loadMoreChangelog() {
     if (loadMoreDiv) loadMoreDiv.style.display = 'flex';
 
     try {
-        var result = await AminoData.getRoomChangelog({
+        var result = await _fetchRoomChangelog({
             limit: 50,
             paginationTokens: changelogPaginationTokens,
             tableFilter: changelogTableFilter || undefined
@@ -14154,6 +14312,33 @@ async function editRecord(tableId, recordId, fieldChanges) {
             window.dispatchEvent(new CustomEvent('amino:record-updated', {
                 detail: { recordId: recordId, tableId: tableId, fields: result.fields, optimistic: false }
             }));
+        }
+
+        // ── Stage 4: Send law.firm.record.mutate event to Matrix room ──
+        // This makes the edit immediately visible in the changelog, edit
+        // history, and to other syncing clients without waiting for n8n.
+        try {
+            var editRoomId = _getRoomForTable(tableId);
+            if (editRoomId && MatrixClient.isLoggedIn()) {
+                var mutateContent = {
+                    recordId: recordId,
+                    tableId: tableId,
+                    op: 'ALT',
+                    source: 'ui',
+                    sourceTimestamp: Date.now(),
+                    payload: {
+                        _a: session.userId || MatrixClient.getUserId(),
+                        fields: { ALT: fieldChanges }
+                    }
+                };
+                MatrixClient.sendEvent(editRoomId, 'law.firm.record.mutate', mutateContent)
+                    .catch(function(matrixErr) {
+                        console.warn('[editRecord] Matrix event send failed (non-blocking):', matrixErr.message);
+                    });
+            }
+        } catch (matrixEvtErr) {
+            // Non-blocking — the webhook save already succeeded
+            console.warn('[editRecord] Could not send Matrix event:', matrixEvtErr.message);
         }
 
         showToast('success', 'Saved \u2713');
