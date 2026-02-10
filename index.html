@@ -10340,14 +10340,27 @@ async function hydrateFromSynapse() {
 
 // ============ Webhook Hydration ============
 
-// Fetch from n8n webhook API using the Synapse access token
+// Fetch from n8n webhook API using the Synapse access token.
+// Uses Authorization header first; on CORS preflight failure (common with
+// parameterized n8n webhook paths), retries with the token as a query
+// parameter so the browser sends a "simple" request (no OPTIONS preflight).
 async function webhookFetch(path) {
     var session = _loadSynapseSession();
     if (!session || !session.accessToken) throw new Error('No Synapse session');
 
-    var response = await fetch(N8N_WEBHOOK_BASE + path, {
-        headers: { 'Authorization': 'Bearer ' + session.accessToken }
-    });
+    try {
+        var response = await fetch(N8N_WEBHOOK_BASE + path, {
+            headers: { 'Authorization': 'Bearer ' + session.accessToken }
+        });
+    } catch (headerErr) {
+        // CORS preflight failure surfaces as a TypeError from fetch.
+        // Retry without the Authorization header, passing the token as a
+        // query parameter instead.  This makes the request "simple" (no
+        // preflight) so it bypasses broken OPTIONS handling on the server.
+        console.warn('[webhookFetch] Header-auth fetch failed (' + headerErr.message + '), retrying with query-param auth for ' + path);
+        var separator = path.indexOf('?') === -1 ? '?' : '&';
+        response = await fetch(N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(session.accessToken));
+    }
 
     if (response.status === 401) {
         throw new Error('Webhook auth failed (Synapse token rejected)');
@@ -10386,6 +10399,8 @@ async function hydrateFromWebhooks() {
 
         var totalRecords = 0;
         var totalFields = 0;
+        var consecutiveRecordFailures = 0;
+        var recordFetchAborted = false;
 
         updateLoadingOverlay('Downloading from API...', 'Found ' + webhookTables.length + ' tables', 0, webhookTables.length, 0, 0, null);
 
@@ -10403,10 +10418,15 @@ async function hydrateFromWebhooks() {
             await saveTable({ tableId: tableId, tableName: tableName });
             META_TABLES[tableId] = { tableId: tableId, tableName: tableName };
 
+            // Skip record fetches if previous attempts show a persistent
+            // failure pattern (e.g. CORS blocking all record endpoints).
+            if (recordFetchAborted) continue;
+
             // Fetch records for this table
             try {
                 var recordsData = await webhookFetch('/api/records/' + encodeURIComponent(tableId));
                 var records = recordsData.records || [];
+                consecutiveRecordFailures = 0; // reset on success
 
                 if (records.length > 0) {
                     // Process records in batches to avoid blocking
@@ -10470,8 +10490,18 @@ async function hydrateFromWebhooks() {
                 updateLoadingOverlay('Downloading ' + tableName + '...', records.length + ' records', progressPct, webhookTables.length, totalFields, totalRecords, null);
 
             } catch (recErr) {
-                console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
-                SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
+                consecutiveRecordFailures++;
+                // After 2 consecutive failures, stop trying remaining tables.
+                // This avoids flooding the console with CORS errors for every
+                // table when the records endpoint is unreachable.
+                if (consecutiveRecordFailures >= 2) {
+                    console.warn('[WebhookHydration] ' + consecutiveRecordFailures + ' consecutive record fetch failures — skipping remaining tables (likely CORS). Will fall back to Synapse.');
+                    SyncStatusFeed.warn('Record endpoint unreachable (CORS/network) — falling back to Synapse room replay');
+                    recordFetchAborted = true;
+                } else {
+                    console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
+                    SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
+                }
             }
         }
 
@@ -10483,7 +10513,7 @@ async function hydrateFromWebhooks() {
             type: 'full',
             result: totalRecords > 0 ? 'success' : 'no-change',
             eventsFound: totalRecords,
-            detail: 'Webhook hydration: ' + totalRecords + ' records from ' + webhookTables.length + ' tables'
+            detail: 'Webhook hydration: ' + totalRecords + ' records from ' + webhookTables.length + ' tables' + (recordFetchAborted ? ' (record fetch aborted — CORS/network)' : '')
         });
 
         return totalRecords > 0;
@@ -10515,6 +10545,7 @@ async function webhookIncrementalSync() {
         var tables = tablesData.tables || [];
         var totalUpdated = 0;
 
+        var consecutiveSyncFailures = 0;
         for (var i = 0; i < tables.length; i++) {
             var tableId = tables[i].table_id;
             try {
@@ -10523,6 +10554,7 @@ async function webhookIncrementalSync() {
                     '/since/' + encodeURIComponent(lastWebhookSync)
                 );
                 var records = data.records || [];
+                consecutiveSyncFailures = 0;
                 if (records.length === 0) continue;
 
                 var dataRecords = [];
@@ -10545,6 +10577,11 @@ async function webhookIncrementalSync() {
                     totalUpdated += dataRecords.length;
                 }
             } catch (tableErr) {
+                consecutiveSyncFailures++;
+                if (consecutiveSyncFailures >= 2) {
+                    console.warn('[WebhookSync] ' + consecutiveSyncFailures + ' consecutive sync failures — aborting remaining tables');
+                    break;
+                }
                 console.warn('[WebhookSync] Failed to sync table ' + tableId + ':', tableErr);
             }
         }
