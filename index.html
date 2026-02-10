@@ -575,11 +575,6 @@
 
         /* Sync Toggle */
         .sync-toggle-wrapper { display: flex; align-items: center; gap: 6px; margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--border-primary); }
-        .sync-toggle-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-        .sync-toggle { position: relative; width: 32px; height: 18px; background: var(--border-secondary); border-radius: 9px; cursor: pointer; transition: background 0.2s; }
-        .sync-toggle.active { background: var(--success-500); }
-        .sync-toggle-knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: left 0.2s; box-shadow: var(--shadow-sm); }
-        .sync-toggle.active .sync-toggle-knob { left: 16px; }
 
         /* Sync Feed */
         .sync-feed-btn { background: none; border: none; padding: 2px 6px; cursor: pointer; font-size: 11px; color: var(--text-muted); border-radius: 3px; margin-left: 4px; }
@@ -2151,13 +2146,6 @@
                 <div class="sync-toggle-wrapper">
                     <button class="sync-feed-btn" id="sync-feed-btn" onclick="SyncStatusFeed.toggle()" title="View sync activity log">[log]</button>
                 </div>
-                <div class="sync-toggle-wrapper">
-                    <span class="sync-toggle-label">Sync to Box</span>
-                    <div class="sync-toggle" id="box-sync-toggle" onclick="toggleBoxSync()">
-                        <div class="sync-toggle-knob"></div>
-                    </div>
-                    <button class="sync-feed-btn" id="box-push-btn" onclick="manualBoxPush()" title="Manually push snapshot to Box">[push]</button>
-                </div>
                 <span style="flex: 1;"></span>
                 <span class="refresh-indicator" id="refresh-indicator">
                     <span class="refresh-dot"></span>
@@ -3676,15 +3664,6 @@ var SIDEBAR_ICONS = {
 // Pending view action (when user tries to modify default view)
 var pendingViewAction = null; // { action: 'filter'|'sort'|'fields'|'group', data: any }
 
-// Box auto-sync state (off by default)
-// Box sync variables (deprecated — Box file hydration replaced by Matrix Synapse)
-var boxSyncEnabled = false;
-var BOX_SYNC_WEBHOOK = null;
-var BOX_DOWNLOAD_WEBHOOK = null;
-var BOX_SYNC_FOLDER_ID = null;
-var BOX_SYNC_FILENAME = null;
-var BOX_SYNC_MIN_PUSH_INTERVAL = 0;
-var BOX_SYNC_LAST_PUSH_TIME = 0;
 
 // ============ Events View State ============
 var eventsPageSize = 50;
@@ -4183,13 +4162,6 @@ var PostHydrationSync = {
     stop() { this.isRunning = false; }
 };
 
-// ============ Box Auto-Sync (Deprecated - replaced by Matrix Synapse) ============
-// Box file hydration is no longer used. The client builds local state by replaying
-// Matrix events on first launch, then stays current via Matrix /sync.
-var BoxSync = { isPushing: false, async push() { /* no-op */ } };
-function toggleBoxSync() { /* no-op */ }
-function manualBoxPush() { /* no-op */ }
-function initBoxSyncToggle() { /* no-op */ }
 
 // ============ IndexedDB ============
 
@@ -12500,294 +12472,6 @@ async function skipSetupAndUploadAmoFile() {
     input.click();
 }
 
-// ============ Hydrate from Box Download (Deprecated) ============
-// Box file hydration replaced by Matrix Synapse event replay.
-// The client now builds local state by replaying law.firm.schema.object events.
-async function hydrateFromBoxDownload() {
-    console.warn('[hydrateFromBoxDownload] Box hydration removed — use hydrateFromSynapse()');
-    return false;
-}
-
-// Legacy function body kept as dead code for reference during migration.
-async function _hydrateFromBoxDownload_LEGACY() {
-    try {
-        showLoadingOverlay();
-        updateLoadingOverlay('Downloading data...', 'Fetching latest snapshot from cloud storage...', 5, 0, 0, 0, '');
-
-        if (!BOX_DOWNLOAD_WEBHOOK || !API_KEY) {
-            hideLoadingOverlay();
-            return false;
-        }
-
-        // n8n download webhook lists files in the Box folder,
-        // picks the latest by timestamp-sorted name, and returns the binary directly.
-        // any_format=1 tells n8n to return the latest file regardless of extension
-        // (not just .amo — could be .csv or other formats uploaded directly).
-        // X-Amo-Available response header lists all available snapshots.
-        var downloadUrl = BOX_DOWNLOAD_WEBHOOK + '?api_key=' + encodeURIComponent(API_KEY) + '&any_format=1';
-        var response = await fetch(downloadUrl);
-        if (!response.ok) {
-            console.warn('[BoxDownload] HTTP ' + response.status + ' - no data available');
-            hideLoadingOverlay();
-            return false;
-        }
-
-        // Log which snapshot we got (n8n sends available list in header)
-        var availableSnapshots = response.headers.get('x-amo-available');
-        if (availableSnapshots) {
-            var snapshotList = availableSnapshots.split(',');
-            console.log('[BoxDownload] Available snapshots in backlog: ' + snapshotList.length + ' (' + snapshotList[0] + ' … ' + snapshotList[snapshotList.length - 1] + ')');
-        }
-
-        var buffer = await response.arrayBuffer();
-        if (!buffer || buffer.byteLength === 0) {
-            console.warn('[BoxDownload] Empty response');
-            hideLoadingOverlay();
-            return false;
-        }
-
-        updateLoadingOverlay('Downloading data...', 'Parsing data...', 15, 0, 0, 0, '');
-
-        // Detect format
-        var format;
-        try {
-            format = AmoFormat.detectFormat(buffer);
-        } catch (err) {
-            console.warn('[BoxDownload] Unrecognized format:', err);
-            hideLoadingOverlay();
-            return false;
-        }
-
-        var amoData;
-        if (format === 'amo') {
-            amoData = AmoFormat.read(buffer);
-        } else if (format === 'csv') {
-            // Parse CSV events format — same structure as processCSVFile but from a buffer
-            updateLoadingOverlay('Downloading data...', 'Parsing CSV data...', 20, 0, 0, 0, '');
-            var csvText = new TextDecoder().decode(buffer);
-            buffer = null; // Free the ArrayBuffer
-            var csvLines = csvText.split(/\r?\n/);
-            csvText = null; // Free the text
-
-            if (csvLines.length < 2) {
-                console.warn('[BoxDownload] CSV file is empty');
-                hideLoadingOverlay();
-                return false;
-            }
-
-            var csvHeader = parseCSVLine(csvLines[0]);
-            var csvIdIndex = csvHeader.indexOf('id');
-            var csvSetIndex = csvHeader.indexOf('set');
-            var csvRecordIdIndex = csvHeader.indexOf('recordId');
-            var csvCreatedAtIndex = csvHeader.indexOf('created_at');
-            var csvPayloadIndex = csvHeader.indexOf('payload');
-
-            if (csvIdIndex === -1) {
-                console.warn('[BoxDownload] CSV missing required "id" column');
-                hideLoadingOverlay();
-                return false;
-            }
-
-            var csvEvents = [];
-            var csvMaxId = 0;
-            for (var ci = 1; ci < csvLines.length; ci++) {
-                if (!csvLines[ci].trim()) continue;
-
-                var csvFields = parseCSVLine(csvLines[ci]);
-                var csvEvent = { id: parseInt(csvFields[csvIdIndex], 10) };
-                if (isNaN(csvEvent.id)) continue;
-
-                if (csvSetIndex !== -1) csvEvent.set = csvFields[csvSetIndex] || '';
-                if (csvRecordIdIndex !== -1) csvEvent.recordId = csvFields[csvRecordIdIndex] || '';
-                if (csvCreatedAtIndex !== -1) csvEvent.created_at = csvFields[csvCreatedAtIndex] || '';
-                if (csvPayloadIndex !== -1) {
-                    var csvPayloadStr = csvFields[csvPayloadIndex] || '{}';
-                    try { csvEvent.payload = JSON.parse(csvPayloadStr); } catch (pe) { csvEvent.payload = csvPayloadStr; }
-                }
-
-                // Include any extra columns not in the core set
-                for (var cx = 0; cx < csvHeader.length; cx++) {
-                    if (cx !== csvIdIndex && cx !== csvSetIndex && cx !== csvRecordIdIndex && cx !== csvCreatedAtIndex && cx !== csvPayloadIndex) {
-                        var colName = csvHeader[cx].replace(/"/g, '').trim();
-                        if (colName && csvFields[cx] !== undefined && csvFields[cx] !== '') {
-                            csvEvent[colName] = csvFields[cx];
-                        }
-                    }
-                }
-
-                csvEvents.push(csvEvent);
-                if (csvEvent.id > csvMaxId) csvMaxId = csvEvent.id;
-
-                if (ci % 10000 === 0) {
-                    var csvPct = 20 + Math.round((ci / csvLines.length) * 10);
-                    updateLoadingOverlay('Downloading data...', 'Parsed ' + csvEvents.length.toLocaleString() + ' events from CSV...', csvPct, 0, 0, 0, '');
-                }
-            }
-            csvLines = null; // Free line array
-
-            if (csvEvents.length === 0) {
-                console.warn('[BoxDownload] No valid events in CSV');
-                hideLoadingOverlay();
-                return false;
-            }
-
-            console.log('[BoxDownload] Parsed ' + csvEvents.length + ' events from CSV (will convert to .amo on next Box sync)');
-            amoData = { type: 'events', events: csvEvents, cursor: csvMaxId, ts: Math.floor(Date.now() / 1000) };
-        } else {
-            console.warn('[BoxDownload] Unsupported format:', format);
-            hideLoadingOverlay();
-            return false;
-        }
-
-        // Restore table/field metadata if available
-        var savedMeta = amoData.meta || {};
-        if (savedMeta.tables) {
-            var savedTableIds = Object.keys(savedMeta.tables);
-            for (var m = 0; m < savedTableIds.length; m++) {
-                var tid = savedTableIds[m];
-                META_TABLES[tid] = savedMeta.tables[tid];
-            }
-        }
-        if (savedMeta.fields) {
-            var savedFieldTableIds = Object.keys(savedMeta.fields);
-            for (var m2 = 0; m2 < savedFieldTableIds.length; m2++) {
-                var tid2 = savedFieldTableIds[m2];
-                if (!META_FIELDS[tid2]) META_FIELDS[tid2] = {};
-                var fieldIds = Object.keys(savedMeta.fields[tid2]);
-                for (var f = 0; f < fieldIds.length; f++) {
-                    META_FIELDS[tid2][fieldIds[f]] = savedMeta.fields[tid2][fieldIds[f]];
-                }
-            }
-        }
-
-        // Handle events format: replay the full event stream
-        if (amoData.type === 'events' && amoData.events) {
-            var events = amoData.events;
-            if (events.length === 0) {
-                console.warn('[BoxDownload] No events in file');
-                hideLoadingOverlay();
-                return false;
-            }
-
-            updateLoadingOverlay('Replaying events...', 'Processing ' + events.length.toLocaleString() + ' events...', 30, 0, 0, events.length, '');
-
-            // Sort events by ID ascending for correct replay order
-            events.sort(function(a, b) { return (a.id || 0) - (b.id || 0); });
-
-            // Store raw events in IndexedDB
-            updateLoadingOverlay('Storing events...', 'Saving ' + events.length.toLocaleString() + ' raw events...', 50, 0, 0, events.length, '');
-            await saveRawEvents(events);
-
-            // Replay events through processEvents to rebuild current state
-            updateLoadingOverlay('Rebuilding state...', 'Replaying ' + events.length.toLocaleString() + ' events...', 65, 0, 0, events.length, '');
-            await processEvents(events);
-
-            // Set the last event timestamp for incremental sync
-            if (events.length > 0) {
-                var lastEvent = events[events.length - 1];
-                if (lastEvent.created_at) {
-                    lastEventTimestamp = lastEvent.created_at;
-                    await setSyncMeta('lastEventTimestamp', lastEventTimestamp);
-                }
-            }
-
-            var totalRecords = await getCurrentRecordsCount();
-            updateLoadingOverlay('Hydration complete!', events.length.toLocaleString() + ' events replayed, ' + totalRecords.toLocaleString() + ' records', 100, 0, 0, totalRecords, '');
-            setTimeout(hideLoadingOverlay, 300);
-
-            console.log('[BoxDownload] Hydration complete: ' + events.length + ' events replayed, ' + totalRecords + ' records rebuilt');
-            return true;
-        }
-
-        // Legacy snapshot format fallback
-        if (amoData.type === 'snapshot' && amoData.tables) {
-            var tableNames = Object.keys(amoData.tables);
-            if (tableNames.length === 0) {
-                console.warn('[BoxDownload] Snapshot contains no data');
-                hideLoadingOverlay();
-                return false;
-            }
-
-            updateLoadingOverlay('Importing snapshot...', 'Building tables and fields...', 40, tableNames.length, 0, 0, '');
-
-            var batchTables = [];
-            var batchFields = [];
-            var batchData = [];
-            var totalRecordCount = 0;
-            var totalFieldCount = 0;
-
-            for (var t = 0; t < tableNames.length; t++) {
-                var fullTableName = tableNames[t];
-                var tableId = fullTableName.replace('airtable:', '');
-                var rows = amoData.tables[fullTableName];
-
-                if (!META_TABLES[tableId]) {
-                    META_TABLES[tableId] = { tableId: tableId, tableName: tableId, _placeholder: true };
-                }
-                batchTables.push(META_TABLES[tableId]);
-
-                if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
-
-                for (var r = 0; r < rows.length; r++) {
-                    var row = rows[r];
-                    var recordId = row.record_id;
-                    if (!recordId) continue;
-
-                    var data = {};
-                    var keys = Object.keys(row);
-                    for (var k = 0; k < keys.length; k++) {
-                        if (keys[k] !== 'record_id') {
-                            data[keys[k]] = row[keys[k]];
-                            if (!META_FIELDS[tableId][keys[k]]) {
-                                META_FIELDS[tableId][keys[k]] = {
-                                    tableId: tableId, fieldId: keys[k], fieldName: keys[k],
-                                    fieldType: inferFieldType(row[keys[k]]), _placeholder: true
-                                };
-                                totalFieldCount++;
-                            }
-                        }
-                    }
-
-                    batchData.push({ tableId: tableId, recordId: recordId, fields: data });
-                    totalRecordCount++;
-                }
-            }
-
-            var fieldTableIds = Object.keys(META_FIELDS);
-            for (var ft = 0; ft < fieldTableIds.length; ft++) {
-                var fids = Object.keys(META_FIELDS[fieldTableIds[ft]]);
-                for (var fi = 0; fi < fids.length; fi++) {
-                    batchFields.push(META_FIELDS[fieldTableIds[ft]][fids[fi]]);
-                }
-            }
-
-            updateLoadingOverlay('Saving to local storage...', 'Persisting ' + totalRecordCount.toLocaleString() + ' records...', 85, tableNames.length, totalFieldCount, totalRecordCount, '');
-            await saveBatch(batchTables, batchFields, [], batchData);
-
-            // Set lastEventTimestamp from snapshot so post-hydration sync only fetches the gap
-            if (amoData.ts > 0) {
-                var hydratedTimestamp = new Date(amoData.ts * 1000).toISOString();
-                await setSyncMeta('lastEventTimestamp', hydratedTimestamp);
-                console.log('[BoxDownload] Set lastEventTimestamp to ' + hydratedTimestamp + ' from hydrated file (ts=' + amoData.ts + ')');
-            }
-
-            updateLoadingOverlay('Hydration complete!', totalRecordCount.toLocaleString() + ' records from ' + tableNames.length + ' tables', 100, tableNames.length, totalFieldCount, totalRecordCount, '');
-            setTimeout(hideLoadingOverlay, 300);
-
-            console.log('[BoxDownload] Legacy hydration complete: ' + totalRecordCount + ' records across ' + tableNames.length + ' tables');
-            return true;
-        }
-
-        console.warn('[BoxDownload] Unknown data format in .amo file');
-        hideLoadingOverlay();
-        return false;
-
-    } catch (err) {
-        console.error('[BoxDownload] Hydration failed:', err);
-        hideLoadingOverlay();
-        return false;
-    }
-}
 
 // ============ Point in Time View ============
 
@@ -15955,8 +15639,8 @@ function renderWizardLegacy(container) {
             '<input type="password" id="wiz-amino-key" placeholder="API Key" value="' + esc(wizardData.aminoApiKey) + '">' +
         '</div>' +
         '<div class="wizard-info-box">' +
-            '<strong>How this works:</strong> We\'ll download your current snapshot from Box, ' +
-            'then build Matrix rooms from it. Your Airtable data stays untouched until you decide to sever the connection.' +
+            '<strong>How this works:</strong> We\'ll download your current data via Matrix Synapse, ' +
+            'then build local state from it. Your Airtable data stays untouched until you decide to sever the connection.' +
         '</div>';
 }
 
