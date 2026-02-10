@@ -10609,8 +10609,7 @@ async function hydrateFromWebhooks() {
 
         var totalRecords = 0;
         var totalFields = 0;
-        var consecutiveRecordFailures = 0;
-        var recordFetchAborted = false;
+        var failedTables = 0;
 
         // Reset speed tracking for this hydration run
         _loadingStartTime = null;
@@ -10634,15 +10633,10 @@ async function hydrateFromWebhooks() {
             await saveTable({ tableId: tableId, tableName: tableName });
             META_TABLES[tableId] = { tableId: tableId, tableName: tableName };
 
-            // Skip record fetches if previous attempts show a persistent
-            // failure pattern (e.g. CORS blocking all record endpoints).
-            if (recordFetchAborted) continue;
-
             // Fetch records for this table
             try {
                 var recordsData = await webhookFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
                 var records = recordsData.records || [];
-                consecutiveRecordFailures = 0; // reset on success
 
                 if (records.length > 0) {
                     // Process records in batches to avoid blocking
@@ -10710,33 +10704,26 @@ async function hydrateFromWebhooks() {
                 updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records \u2714');
 
             } catch (recErr) {
-                consecutiveRecordFailures++;
-                // After 2 consecutive failures, stop trying remaining tables.
-                // This avoids flooding the console with CORS errors for every
-                // table when the records endpoint is unreachable.
-                if (consecutiveRecordFailures >= 2) {
-                    console.warn('[WebhookHydration] ' + consecutiveRecordFailures + ' consecutive record fetch failures — skipping remaining tables (likely CORS). Will fall back to Synapse.');
-                    SyncStatusFeed.warn('Record endpoint unreachable (CORS/network) — falling back to Synapse room replay');
-                    recordFetchAborted = true;
-                } else {
-                    console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
-                    SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
-                }
+                failedTables++;
+                console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
+                SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
             }
         }
 
+        var hydrationComplete = totalRecords > 0 && failedTables === 0;
+
         updateLoadingOverlay('Sync complete', totalRecords.toLocaleString() + ' records downloaded', 100, webhookTables.length, totalFields, totalRecords, '');
         updateStatus('Webhook hydration complete: ' + totalRecords + ' records', true, 100, null);
-        SyncStatusFeed.success('Webhook hydration complete: ' + totalRecords + ' records across ' + webhookTables.length + ' tables');
+        SyncStatusFeed.success('Webhook hydration complete: ' + totalRecords + ' records across ' + webhookTables.length + ' tables' + (failedTables > 0 ? ' (' + failedTables + ' tables failed)' : ''));
 
         SyncHistory.record({
             type: 'full',
-            result: totalRecords > 0 ? 'success' : 'no-change',
+            result: hydrationComplete ? 'success' : (totalRecords > 0 ? 'partial' : 'no-change'),
             eventsFound: totalRecords,
-            detail: 'Webhook hydration: ' + totalRecords + ' records from ' + webhookTables.length + ' tables' + (recordFetchAborted ? ' (record fetch aborted — CORS/network)' : '')
+            detail: 'Webhook hydration: ' + totalRecords + ' records from ' + webhookTables.length + ' tables' + (failedTables > 0 ? ' (' + failedTables + ' tables failed)' : '')
         });
 
-        return totalRecords > 0;
+        return hydrationComplete;
     } catch (err) {
         console.error('[WebhookHydration] Failed:', err);
         SyncStatusFeed.error('Webhook hydration failed: ' + err.message);
@@ -10894,18 +10881,26 @@ async function init() {
 
     hideAuthScreen();
 
-    // Check if records actually exist — tables may have been saved by a
-    // previous failed hydration while records were never loaded (e.g. the
-    // /api/records endpoints returned 500).  In that case we need to retry.
+    // Check if records actually exist AND previous hydration completed fully.
+    // Tables may have been saved by a partial hydration (some tables got
+    // records, others failed).  The lastWebhookSync cursor is only set when
+    // hydration succeeds for ALL tables, so its absence means we must retry.
     var hasRecords = false;
+    var hydrationWasComplete = false;
     if (tables.length > 0) {
         try {
             var recordCount = await getCurrentRecordsCount();
             hasRecords = recordCount > 0;
         } catch (e) { /* treat as no records */ }
+        if (hasRecords) {
+            try {
+                var lastSync = await getSyncMeta('lastWebhookSync');
+                hydrationWasComplete = !!lastSync;
+            } catch (e) { /* treat as incomplete */ }
+        }
     }
 
-    if (tables.length > 0 && hasRecords) {
+    if (tables.length > 0 && hasRecords && hydrationWasComplete) {
         // Local data exists with actual records — render it
         updateStatus('Found ' + tables.length + ' tables', false, null, 'Loading data...');
         await renderSidebar(true);
@@ -10916,9 +10911,15 @@ async function init() {
             await showTable(firstTable);
         }
     } else {
-        // Missing tables OR records — need hydration (retry on every load
-        // until it succeeds so transient API failures don't strand the user).
-        if (tables.length > 0) {
+        // Missing tables, records, or previous hydration was incomplete —
+        // need hydration (retry on every load until it fully succeeds so
+        // transient API failures don't strand the user with partial data).
+        if (tables.length > 0 && hasRecords) {
+            console.log('[init] Tables and records exist but hydration was incomplete — retrying');
+            SyncStatusFeed.info('Previous hydration incomplete — retrying...');
+            // Render table sidebar immediately for better UX while hydrating
+            await renderSidebar(true);
+        } else if (tables.length > 0) {
             console.log('[init] Tables exist but no records — retrying hydration');
             SyncStatusFeed.info('Records missing — retrying hydration...');
             // Render table sidebar immediately for better UX while hydrating
