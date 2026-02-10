@@ -15,6 +15,8 @@ var AminoData = (function() {
     var DB_NAME = 'amino';
     var DB_VERSION = 1;
     var DEFAULT_POLL_INTERVAL = 15000; // 15 seconds
+    var SYNAPSE_SALT_PREFIX = 'amino-local-encrypt:';
+    var ENCRYPTION_ALGORITHM = 'aes-gcm-256';
 
     // ============ Internal State (memory only) ============
     var _db = null;
@@ -81,6 +83,133 @@ var AminoData = (function() {
             ciphertext
         );
         return new TextDecoder().decode(decrypted);
+    }
+
+    // ============ Synapse-Derived Encryption ============
+
+    // Derive encryption key from Synapse password + userId (deterministic salt).
+    // This ties the encryption directly to the authenticated Synapse user —
+    // different users get different keys, and re-login regenerates the same key.
+    async function deriveSynapseKey(password, userId) {
+        var encoder = new TextEncoder();
+        var salt = encoder.encode(SYNAPSE_SALT_PREFIX + userId);
+        return deriveKey(password, salt);
+    }
+
+    // ============ Base64 <-> ArrayBuffer Helpers ============
+
+    function arrayBufferToBase64(buffer) {
+        var bytes = new Uint8Array(buffer);
+        var binary = '';
+        for (var i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+        var binary = atob(base64);
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
+    // ============ Matrix Event Payload Encryption ============
+
+    // Encrypt record fields for inclusion in Matrix events.
+    // Returns a JSON-safe object with the ciphertext as base64.
+    async function encryptEventPayload(fields) {
+        if (!_cryptoKey) throw new Error('Encryption key not initialized');
+        var plaintext = JSON.stringify(fields);
+        var encryptedBuffer = await encrypt(_cryptoKey, plaintext);
+        return {
+            _encrypted: true,
+            _algorithm: ENCRYPTION_ALGORITHM,
+            _userId: _userId,
+            _ciphertext: arrayBufferToBase64(encryptedBuffer)
+        };
+    }
+
+    // Decrypt an encrypted event payload back to a fields object.
+    async function decryptEventPayload(encryptedContent) {
+        if (!_cryptoKey) throw new Error('Encryption key not initialized');
+        var buffer = base64ToArrayBuffer(encryptedContent._ciphertext);
+        return JSON.parse(await decrypt(_cryptoKey, buffer));
+    }
+
+    // Check whether an event content object is encrypted.
+    function isEncryptedPayload(content) {
+        return content && content._encrypted === true && typeof content._ciphertext === 'string';
+    }
+
+    // ============ Encryption Verification Token ============
+
+    // Create a verification token so we can detect if the derived key changes
+    // (e.g. user changed their Synapse password). The token is the encryption
+    // of a known plaintext with the current key.
+    var VERIFICATION_PLAINTEXT = 'amino-encryption-verify';
+
+    async function createVerificationToken(key) {
+        var encrypted = await encrypt(key, VERIFICATION_PLAINTEXT);
+        return arrayBufferToBase64(encrypted);
+    }
+
+    async function verifyEncryptionKey(key, token) {
+        try {
+            var buffer = base64ToArrayBuffer(token);
+            var decrypted = await decrypt(key, buffer);
+            return decrypted === VERIFICATION_PLAINTEXT;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // ============ Encryption Migration ============
+
+    // Re-encrypt all IndexedDB records from oldKey to newKey.
+    async function migrateEncryptionKey(oldKey, newKey) {
+        var tx = _db.transaction('records', 'readonly');
+        var store = tx.objectStore('records');
+        var allRecords = await idbGetAll(store);
+
+        if (allRecords.length === 0) return 0;
+
+        // Verify oldKey can decrypt the data
+        try {
+            await decrypt(oldKey, allRecords[0].fields);
+        } catch (e) {
+            // Old key doesn't work — check if data is already on the new key
+            try {
+                await decrypt(newKey, allRecords[0].fields);
+                console.log('[AminoData] Data already encrypted with new key, no migration needed');
+                return 0;
+            } catch (e2) {
+                console.warn('[AminoData] Neither key decrypts existing data — re-hydration required');
+                return -1;
+            }
+        }
+
+        console.log('[AminoData] Migrating', allRecords.length, 'records to Synapse-derived encryption');
+        var BATCH_SIZE = 200;
+        var migrated = 0;
+        for (var b = 0; b < allRecords.length; b += BATCH_SIZE) {
+            var batch = allRecords.slice(b, b + BATCH_SIZE);
+            var writeTx = _db.transaction('records', 'readwrite');
+            var writeStore = writeTx.objectStore('records');
+
+            for (var i = 0; i < batch.length; i++) {
+                var entry = batch[i];
+                var plaintext = await decrypt(oldKey, entry.fields);
+                entry.fields = await encrypt(newKey, plaintext);
+                await idbPut(writeStore, entry);
+                migrated++;
+            }
+            await idbTxDone(writeTx);
+        }
+        console.log('[AminoData] Migration complete:', migrated, 'records re-encrypted');
+        return migrated;
     }
 
     // ============ Database ============
@@ -168,8 +297,9 @@ var AminoData = (function() {
 
         // Use query-param auth by default to avoid CORS preflight.
         // The Authorization header triggers an OPTIONS preflight that n8n
-        // may not handle; passing the token as a query parameter makes the
-        // request "simple" and skips the preflight entirely.
+        // webhook nodes (with responseMode=responseNode) don't handle
+        // correctly for cross-origin requests. Query-param auth makes this
+        // a "simple request" — no preflight needed.
         var separator = path.indexOf('?') === -1 ? '?' : '&';
         var url = WEBHOOK_BASE_URL + path + separator + 'access_token=' + encodeURIComponent(_accessToken);
 
@@ -374,7 +504,26 @@ var AminoData = (function() {
     // Apply a law.firm.record.mutate event to a record in IndexedDB
     async function applyMutateEvent(event, roomId) {
         var content = event.content;
-        if (!content || !content.recordId) return;
+        if (!content) return;
+
+        // Handle encrypted event payloads — decrypt before processing
+        if (isEncryptedPayload(content)) {
+            try {
+                var decryptedFields = await decryptEventPayload(content);
+                // Reconstruct content with decrypted fields
+                content = {
+                    recordId: content.recordId,
+                    tableId: content.tableId,
+                    op: content.op || 'ALT',
+                    fields: decryptedFields
+                };
+            } catch (err) {
+                console.warn('[AminoData] Could not decrypt event payload (may be encrypted for another user):', err.message);
+                return;
+            }
+        }
+
+        if (!content.recordId) return;
 
         var recordId = content.recordId;
         var tableId = _roomTableMap[roomId];
@@ -603,6 +752,35 @@ var AminoData = (function() {
         }
     }
 
+    // ============ Encrypted Record Writing ============
+
+    // Send an encrypted law.firm.record.mutate event to a Matrix room.
+    // The fields are encrypted with the current user's Synapse-derived key
+    // so they appear as ciphertext in the Synapse database.
+    async function sendEncryptedRecord(roomId, recordId, fields, op) {
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
+            throw new Error('MatrixClient not available or not logged in');
+        }
+        if (!_cryptoKey) {
+            throw new Error('Encryption key not initialized');
+        }
+
+        var encPayload = await encryptEventPayload(fields);
+        encPayload.recordId = recordId;
+        encPayload.op = op || 'ALT';
+
+        return MatrixClient.sendEvent(roomId, 'law.firm.record.mutate', encPayload);
+    }
+
+    // Send an encrypted record to a specific table room (lookup room from tableId).
+    async function sendEncryptedTableRecord(tableId, recordId, fields, op) {
+        var roomId = _tableRoomMap[tableId];
+        if (!roomId) {
+            throw new Error('No Matrix room mapped for table: ' + tableId);
+        }
+        return sendEncryptedRecord(roomId, recordId, fields, op);
+    }
+
     // ============ Polling ============
 
     function startPolling(intervalMs) {
@@ -706,28 +884,55 @@ var AminoData = (function() {
         // Open database
         _db = await openDatabase();
 
-        // Get or create salt
+        // Derive the Synapse-derived encryption key (deterministic salt from userId)
+        _cryptoKey = await deriveSynapseKey(password, userId);
+
+        // Check for existing encryption state and migrate if necessary
         var cryptoTx = _db.transaction('crypto', 'readonly');
         var saltEntry = await idbGet(cryptoTx.objectStore('crypto'), 'salt');
-        var salt;
+        var verifyEntry = await idbGet(cryptoTx.objectStore('crypto'), 'verify');
 
-        if (!saltEntry) {
-            salt = crypto.getRandomValues(new Uint8Array(16));
-            var writeTx = _db.transaction('crypto', 'readwrite');
-            await idbPut(writeTx.objectStore('crypto'), { key: 'salt', value: salt });
-            await idbTxDone(writeTx);
-        } else {
-            salt = new Uint8Array(saltEntry.value);
+        if (saltEntry && saltEntry.value !== 'synapse-derived') {
+            // Legacy random salt exists — migrate to Synapse-derived key
+            console.log('[AminoData] Detected legacy random salt, migrating to Synapse-derived encryption');
+            var oldSalt = new Uint8Array(saltEntry.value);
+            var oldKey = await deriveKey(password, oldSalt);
+            var migrated = await migrateEncryptionKey(oldKey, _cryptoKey);
+
+            if (migrated === -1) {
+                // Neither key works — clear stale data and re-hydrate
+                console.warn('[AminoData] Clearing stale encrypted data for re-hydration');
+                var clearTx = _db.transaction(['records', 'sync'], 'readwrite');
+                clearTx.objectStore('records').clear();
+                clearTx.objectStore('sync').clear();
+                await idbTxDone(clearTx);
+            }
+        } else if (verifyEntry) {
+            // Synapse-derived key already in use — verify it still matches
+            var keyValid = await verifyEncryptionKey(_cryptoKey, verifyEntry.value);
+            if (!keyValid) {
+                // Password changed — data needs re-encryption or re-hydration
+                console.warn('[AminoData] Synapse password changed — clearing local data for re-hydration');
+                var clearTx2 = _db.transaction(['records', 'sync'], 'readwrite');
+                clearTx2.objectStore('records').clear();
+                clearTx2.objectStore('sync').clear();
+                await idbTxDone(clearTx2);
+            }
         }
 
-        // Derive encryption key
-        _cryptoKey = await deriveKey(password, salt);
+        // Store Synapse-derived marker and verification token
+        var verifyToken = await createVerificationToken(_cryptoKey);
+        var metaTx = _db.transaction('crypto', 'readwrite');
+        var metaStore = metaTx.objectStore('crypto');
+        await idbPut(metaStore, { key: 'salt', value: 'synapse-derived', userId: userId });
+        await idbPut(metaStore, { key: 'verify', value: verifyToken });
+        await idbTxDone(metaTx);
 
         // Load table list from API
         await fetchAndStoreTables();
 
         _initialized = true;
-        console.log('[AminoData] Initialized with', _tables.length, 'tables');
+        console.log('[AminoData] Initialized with', _tables.length, 'tables (Synapse-derived encryption)');
 
         return _tables;
     }
@@ -892,6 +1097,15 @@ var AminoData = (function() {
         stopPolling: stopPolling,
         startMatrixSync: startMatrixSync,
         stopMatrixSync: stopMatrixSync,
+
+        // Encrypted record writing (fields encrypted in Matrix events)
+        sendEncryptedRecord: sendEncryptedRecord,
+        sendEncryptedTableRecord: sendEncryptedTableRecord,
+
+        // Event payload encryption utilities
+        encryptEventPayload: encryptEventPayload,
+        decryptEventPayload: decryptEventPayload,
+        isEncryptedPayload: isEncryptedPayload,
 
         // Session lifecycle
         setAccessToken: setAccessToken,
