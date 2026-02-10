@@ -1,8 +1,10 @@
 // ============================================================================
 // Amino Client Data Layer
 // Hydrates current state from n8n webhook API endpoints, stores data in
-// IndexedDB encrypted at rest (AES-GCM), and keeps data in sync via polling.
-// Matrix rooms serve as the changelog; this layer handles state hydration.
+// IndexedDB encrypted at rest (AES-GCM), and keeps data in sync via Matrix
+// realtime sync or HTTP polling fallback. Builds a tableId <-> matrixRoomId
+// lookup map from /api/tables, joins Matrix rooms, and applies incoming
+// law.firm.record.mutate events (ALT/INS/NUL) to IndexedDB records.
 // ============================================================================
 
 var AminoData = (function() {
@@ -25,6 +27,10 @@ var AminoData = (function() {
     var _pollInterval = null;
     var _tableIds = [];
     var _tables = [];
+    var _tableRoomMap = {}; // tableId -> matrixRoomId
+    var _roomTableMap = {}; // matrixRoomId -> tableId (reverse lookup)
+    var _matrixSyncRunning = false;
+    var _matrixSyncAbort = null;
     var _initialized = false;
 
     // ============ Domain Validation ============
@@ -210,6 +216,19 @@ var AminoData = (function() {
 
         _tables = tables;
         _tableIds = tables.map(function(t) { return t.table_id; });
+
+        // Build tableId <-> matrixRoomId lookup maps
+        _tableRoomMap = {};
+        _roomTableMap = {};
+        for (var j = 0; j < tables.length; j++) {
+            var t = tables[j];
+            if (t.matrix_room_id) {
+                _tableRoomMap[t.table_id] = t.matrix_room_id;
+                _roomTableMap[t.matrix_room_id] = t.table_id;
+            }
+        }
+        console.log('[AminoData] Built table-room map:', Object.keys(_tableRoomMap).length, 'mappings');
+
         return tables;
     }
 
@@ -304,6 +323,266 @@ var AminoData = (function() {
         await idbTxDone(updateTx);
 
         return records.length;
+    }
+
+    // ============ Matrix Realtime Sync ============
+
+    // Join all Matrix rooms that correspond to tables in the table-room map
+    async function joinTableRooms() {
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
+            console.warn('[AminoData] MatrixClient not available or not logged in, skipping room join');
+            return [];
+        }
+
+        var roomIds = Object.values(_tableRoomMap);
+        var joined = [];
+        for (var i = 0; i < roomIds.length; i++) {
+            try {
+                await MatrixClient.joinRoom(roomIds[i]);
+                joined.push(roomIds[i]);
+            } catch (err) {
+                // Already joined is fine; log others
+                if (err.errcode !== 'M_FORBIDDEN') {
+                    console.warn('[AminoData] Could not join room', roomIds[i], ':', err.message);
+                }
+                // If already a member, still count as joined
+                joined.push(roomIds[i]);
+            }
+        }
+        console.log('[AminoData] Joined', joined.length, 'table rooms');
+        return joined;
+    }
+
+    // Apply a law.firm.record.mutate event to a record in IndexedDB
+    async function applyMutateEvent(event, roomId) {
+        var content = event.content;
+        if (!content || !content.recordId) return;
+
+        var recordId = content.recordId;
+        var tableId = _roomTableMap[roomId];
+
+        // Fallback: derive tableId from the set field (strip airtable: prefix)
+        if (!tableId && content.set) {
+            tableId = content.set.replace(/^airtable:/, '');
+        }
+        if (!tableId) {
+            console.warn('[AminoData] Cannot determine tableId for mutate event in room', roomId);
+            return;
+        }
+
+        // Read existing record from IndexedDB
+        var tx = _db.transaction('records', 'readonly');
+        var existing = await idbGet(tx.objectStore('records'), recordId);
+
+        var fields;
+        if (existing) {
+            // Decrypt existing fields
+            fields = JSON.parse(await decrypt(_cryptoKey, existing.fields));
+        } else {
+            fields = {};
+        }
+
+        // Apply field-level operations from the payload
+        var payload = content.payload || content;
+        var fieldOps = payload.fields || {};
+
+        // ALT — merge altered fields over existing values
+        if (fieldOps.ALT) {
+            var altKeys = Object.keys(fieldOps.ALT);
+            for (var a = 0; a < altKeys.length; a++) {
+                fields[altKeys[a]] = fieldOps.ALT[altKeys[a]];
+            }
+        }
+
+        // INS — insert new fields
+        if (fieldOps.INS) {
+            var insKeys = Object.keys(fieldOps.INS);
+            for (var n = 0; n < insKeys.length; n++) {
+                fields[insKeys[n]] = fieldOps.INS[insKeys[n]];
+            }
+        }
+
+        // NUL — remove (nullify) fields
+        if (fieldOps.NUL) {
+            var nulFields = Array.isArray(fieldOps.NUL) ? fieldOps.NUL : Object.keys(fieldOps.NUL);
+            for (var d = 0; d < nulFields.length; d++) {
+                delete fields[nulFields[d]];
+            }
+        }
+
+        // If no structured field ops, check for flat op/fields at top level
+        // (handles simpler event formats: { recordId, op, fields: { key: val } })
+        if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
+            var op = content.op;
+            var flatFields = content.fields;
+            if (op === 'ALT' || op === 'INS') {
+                var fKeys = Object.keys(flatFields);
+                for (var f = 0; f < fKeys.length; f++) {
+                    fields[fKeys[f]] = flatFields[fKeys[f]];
+                }
+            } else if (op === 'NUL') {
+                var removeKeys = Array.isArray(flatFields) ? flatFields : Object.keys(flatFields);
+                for (var r = 0; r < removeKeys.length; r++) {
+                    delete fields[removeKeys[r]];
+                }
+            }
+        }
+
+        // Encrypt and write back
+        var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(fields));
+        var writeTx = _db.transaction('records', 'readwrite');
+        await idbPut(writeTx.objectStore('records'), {
+            id: recordId,
+            tableId: tableId,
+            tableName: (existing && existing.tableName) || tableId,
+            fields: encryptedFields,
+            lastSynced: new Date().toISOString()
+        });
+        await idbTxDone(writeTx);
+
+        // Emit sync event so UI can react
+        window.dispatchEvent(new CustomEvent('amino:record-update', {
+            detail: { recordId: recordId, tableId: tableId, source: 'matrix' }
+        }));
+    }
+
+    // Process timeline events from a Matrix /sync response
+    function processMatrixSyncResponse(syncData) {
+        if (!syncData || !syncData.rooms || !syncData.rooms.join) return 0;
+
+        var updated = 0;
+        var joinedRooms = syncData.rooms.join;
+        var roomIds = Object.keys(joinedRooms);
+
+        for (var i = 0; i < roomIds.length; i++) {
+            var roomId = roomIds[i];
+            var room = joinedRooms[roomId];
+
+            // Only process rooms we care about (rooms in our table-room map)
+            if (!_roomTableMap[roomId]) continue;
+
+            if (room.timeline && room.timeline.events) {
+                var events = room.timeline.events;
+                for (var e = 0; e < events.length; e++) {
+                    var event = events[e];
+                    if (event.type === 'law.firm.record.mutate') {
+                        applyMutateEvent(event, roomId);
+                        updated++;
+                    }
+                }
+            }
+        }
+        return updated;
+    }
+
+    // Build a sync filter scoped to only the rooms we care about
+    function buildSyncFilter() {
+        var roomIds = Object.values(_tableRoomMap);
+        return {
+            room: {
+                rooms: roomIds,
+                timeline: {
+                    types: ['law.firm.record.mutate'],
+                    limit: 100
+                },
+                state: { lazy_load_members: true, types: [] },
+                ephemeral: { types: [] },
+                account_data: { types: [] }
+            },
+            presence: { types: [] },
+            account_data: { types: [] }
+        };
+    }
+
+    // Start long-poll Matrix sync loop
+    async function startMatrixSync() {
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
+            console.warn('[AminoData] MatrixClient not available, falling back to HTTP polling');
+            return false;
+        }
+
+        if (Object.keys(_tableRoomMap).length === 0) {
+            console.warn('[AminoData] No table-room mappings, falling back to HTTP polling');
+            return false;
+        }
+
+        // Join rooms first
+        await joinTableRooms();
+
+        _matrixSyncRunning = true;
+        console.log('[AminoData] Starting Matrix realtime sync for', Object.keys(_tableRoomMap).length, 'tables');
+
+        // Run sync loop in the background
+        _runSyncLoop();
+        return true;
+    }
+
+    async function _runSyncLoop() {
+        var syncToken = null;
+        var filter = JSON.stringify(buildSyncFilter());
+        var homeserverUrl = MatrixClient.getHomeserverUrl();
+
+        while (_matrixSyncRunning) {
+            try {
+                var params = {
+                    filter: filter,
+                    timeout: '30000' // 30-second long poll
+                };
+                if (syncToken) {
+                    params.since = syncToken;
+                }
+
+                // Build URL manually to use the data layer's own fetch
+                // (MatrixClient._request is private, so we call the CS API directly)
+                var url = homeserverUrl + '/_matrix/client/v3/sync?' + new URLSearchParams(params).toString();
+
+                var controller = new AbortController();
+                _matrixSyncAbort = controller;
+
+                var response = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + MatrixClient.getAccessToken() },
+                    signal: controller.signal
+                });
+
+                if (!response.ok) {
+                    if (response.status === 429) {
+                        // Rate limited — back off
+                        var retryData = await response.json().catch(function() { return {}; });
+                        var delay = (retryData.retry_after_ms || 5000);
+                        console.warn('[AminoData] Matrix sync rate-limited, waiting', delay, 'ms');
+                        await new Promise(function(r) { setTimeout(r, delay); });
+                        continue;
+                    }
+                    throw new Error('Sync failed: ' + response.status);
+                }
+
+                var data = await response.json();
+                syncToken = data.next_batch;
+
+                var updatedCount = processMatrixSyncResponse(data);
+                if (updatedCount > 0) {
+                    window.dispatchEvent(new CustomEvent('amino:sync', {
+                        detail: { source: 'matrix', updatedCount: updatedCount }
+                    }));
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    // Intentionally stopped
+                    break;
+                }
+                console.error('[AminoData] Matrix sync error:', err);
+                // Back off on errors
+                await new Promise(function(r) { setTimeout(r, 5000); });
+            }
+        }
+    }
+
+    function stopMatrixSync() {
+        _matrixSyncRunning = false;
+        if (_matrixSyncAbort) {
+            _matrixSyncAbort.abort();
+            _matrixSyncAbort = null;
+        }
     }
 
     // ============ Polling ============
@@ -471,17 +750,33 @@ var AminoData = (function() {
         options = options || {};
         var pollInterval = options.pollInterval || DEFAULT_POLL_INTERVAL;
         var onProgress = options.onProgress || null;
+        var useMatrixSync = options.useMatrixSync !== false; // default true
 
         var tables = await init(accessToken, userId, password);
         var totalRecords = await hydrateAll(onProgress);
 
-        // Start polling for live updates
-        startPolling(pollInterval);
+        // Prefer Matrix realtime sync; fall back to HTTP polling
+        var matrixSyncStarted = false;
+        if (useMatrixSync) {
+            try {
+                matrixSyncStarted = await startMatrixSync();
+            } catch (err) {
+                console.warn('[AminoData] Matrix sync failed to start:', err);
+            }
+        }
+
+        if (!matrixSyncStarted) {
+            console.log('[AminoData] Using HTTP polling for updates');
+            startPolling(pollInterval);
+        }
 
         return {
             tables: tables,
             totalRecords: totalRecords,
-            stopPolling: stopPolling
+            tableRoomMap: getTableRoomMap(),
+            usingMatrixSync: matrixSyncStarted,
+            stopPolling: stopPolling,
+            stopMatrixSync: stopMatrixSync
         };
     }
 
@@ -498,9 +793,12 @@ var AminoData = (function() {
 
     function logout(clearData) {
         stopPolling();
+        stopMatrixSync();
         _cryptoKey = null;
         _accessToken = null;
         _userId = null;
+        _tableRoomMap = {};
+        _roomTableMap = {};
         _initialized = false;
 
         if (clearData && _db) {
@@ -543,6 +841,22 @@ var AminoData = (function() {
         return _tableIds.slice();
     }
 
+    function getTableRoomMap() {
+        return Object.assign({}, _tableRoomMap); // Return copy
+    }
+
+    function getRoomForTable(tableId) {
+        return _tableRoomMap[tableId] || null;
+    }
+
+    function getTableForRoom(roomId) {
+        return _roomTableMap[roomId] || null;
+    }
+
+    function isMatrixSyncActive() {
+        return _matrixSyncRunning;
+    }
+
     // ============ Public API ============
 
     return {
@@ -563,6 +877,8 @@ var AminoData = (function() {
         syncTable: syncTable,
         startPolling: startPolling,
         stopPolling: stopPolling,
+        startMatrixSync: startMatrixSync,
+        stopMatrixSync: stopMatrixSync,
 
         // Session lifecycle
         setAccessToken: setAccessToken,
@@ -573,6 +889,10 @@ var AminoData = (function() {
         isInitialized: isInitialized,
         getTableList: getTableList,
         getTableIds: getTableIds,
+        getTableRoomMap: getTableRoomMap,
+        getRoomForTable: getRoomForTable,
+        getTableForRoom: getTableForRoom,
+        isMatrixSyncActive: isMatrixSyncActive,
 
         // Validation
         isAllowedUser: isAllowedUser,

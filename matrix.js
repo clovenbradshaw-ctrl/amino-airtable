@@ -205,6 +205,10 @@ var MatrixClient = (function() {
         return _homeserverUrl;
     }
 
+    function getAccessToken() {
+        return _accessToken;
+    }
+
     // ============ Session Persistence ============
 
     function _saveSession() {
@@ -911,6 +915,7 @@ var MatrixClient = (function() {
         isLoggedIn: isLoggedIn,
         getUserId: getUserId,
         getHomeserverUrl: getHomeserverUrl,
+        getAccessToken: getAccessToken,
         restoreSession: restoreSession,
         setSession: setSession,
 
