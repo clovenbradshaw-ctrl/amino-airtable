@@ -645,7 +645,11 @@ var AminoData = (function() {
             eventId: event.event_id || null,
             sender: event.sender || null,
             timestamp: event.origin_server_ts || Date.now(),
-            fieldOps: fieldOps
+            fieldOps: fieldOps,
+            // Metadata from event payload
+            source: content.source || null,
+            sourceTimestamp: content.sourceTimestamp || null,
+            actor: (payload && payload._a) || null
         };
         // Include flat ops if that was the format used
         if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
@@ -1089,6 +1093,146 @@ var AminoData = (function() {
         });
     }
 
+    // ============ Record Mutation History ============
+
+    // Fetch the full mutation history for a single record from its table's
+    // Matrix room. Paginates forward (oldest-first) through all
+    // law.firm.record.mutate events, filters by recordId client-side,
+    // decrypts encrypted payloads, and returns an array of mutation objects
+    // in chronological order. Each mutation includes extracted metadata
+    // (source, sourceTimestamp, actor) from the event payload.
+    //
+    // Options:
+    //   maxPages  — safety cap on pagination rounds (default 50)
+    //   pageSize  — events per /messages request (default 100)
+    //   rebuildState — if true, also return reconstructed field state (default false)
+    //
+    // Returns: { mutations: [...], state?: {...} }
+    async function getRecordMutationHistory(tableId, recordId, options) {
+        options = options || {};
+        var maxPages = options.maxPages || 50;
+        var pageSize = options.pageSize || 100;
+        var rebuildState = options.rebuildState || false;
+
+        var roomId = _tableRoomMap[tableId];
+        if (!roomId) {
+            throw new Error('No Matrix room mapped for table: ' + tableId);
+        }
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
+            throw new Error('MatrixClient not available or not logged in');
+        }
+
+        var mutations = [];
+        var paginationToken = null;
+
+        for (var page = 0; page < maxPages; page++) {
+            var opts = {
+                dir: 'f', // forward — oldest first (chronological)
+                limit: pageSize,
+                filter: { types: ['law.firm.record.mutate'] }
+            };
+            if (paginationToken) opts.from = paginationToken;
+
+            var response = await MatrixClient.getRoomMessages(roomId, opts);
+            if (!response || !response.chunk) break;
+
+            var chunk = response.chunk;
+            for (var i = 0; i < chunk.length; i++) {
+                var evt = chunk[i];
+                if (!evt.content) continue;
+
+                var content = evt.content;
+
+                // Match by recordId
+                if (content.recordId !== recordId) continue;
+
+                // Decrypt encrypted payloads
+                if (isEncryptedPayload(content)) {
+                    try {
+                        var decryptedFields = await decryptEventPayload(content);
+                        content = {
+                            recordId: content.recordId,
+                            tableId: content.tableId,
+                            op: content.op || 'ALT',
+                            payload: content.payload,
+                            set: content.set,
+                            source: content.source,
+                            sourceTimestamp: content.sourceTimestamp,
+                            fields: decryptedFields
+                        };
+                    } catch (decErr) {
+                        console.warn('[AminoData] Could not decrypt history event:', decErr.message);
+                        continue;
+                    }
+                }
+
+                // Extract metadata from payload and top-level fields
+                var payload = content.payload || {};
+                var mutation = {
+                    eventId: evt.event_id || null,
+                    sender: evt.sender || null,
+                    timestamp: evt.origin_server_ts || null,
+                    recordId: recordId,
+                    op: content.op || 'ALT',
+                    source: content.source || null,
+                    sourceTimestamp: content.sourceTimestamp || null,
+                    actor: payload._a || null,
+                    formatVersion: payload._f || null,
+                    set: content.set || (payload._set ? payload._set : null),
+                    fieldOps: payload.fields || {}
+                };
+
+                // Handle flat format: { recordId, op, fields: { key: val } }
+                if (!mutation.fieldOps.ALT && !mutation.fieldOps.INS && !mutation.fieldOps.NUL && content.op && content.fields) {
+                    var flatOp = content.op;
+                    if (flatOp === 'INS' || flatOp === 'ALT') {
+                        mutation.fieldOps = {};
+                        mutation.fieldOps[flatOp] = content.fields;
+                    } else if (flatOp === 'NUL') {
+                        mutation.fieldOps = { NUL: content.fields };
+                    }
+                }
+
+                mutations.push(mutation);
+            }
+
+            // Check if there are more pages
+            if (!response.end || chunk.length < pageSize) break;
+            paginationToken = response.end;
+        }
+
+        var result = { mutations: mutations };
+
+        // Optionally reconstruct the current state by replaying mutations
+        if (rebuildState) {
+            var state = {};
+            for (var m = 0; m < mutations.length; m++) {
+                var ops = mutations[m].fieldOps;
+                if (ops.INS) {
+                    var insKeys = Object.keys(ops.INS);
+                    for (var a = 0; a < insKeys.length; a++) {
+                        state[insKeys[a]] = ops.INS[insKeys[a]];
+                    }
+                }
+                if (ops.ALT) {
+                    var altKeys = Object.keys(ops.ALT);
+                    for (var b = 0; b < altKeys.length; b++) {
+                        state[altKeys[b]] = ops.ALT[altKeys[b]];
+                    }
+                }
+                if (ops.NUL) {
+                    var nulFields = Array.isArray(ops.NUL) ? ops.NUL : Object.keys(ops.NUL);
+                    for (var c = 0; c < nulFields.length; c++) {
+                        delete state[nulFields[c]];
+                    }
+                }
+            }
+            result.state = state;
+        }
+
+        return result;
+    }
+
     // ============ State Getters ============
 
     function isInitialized() {
@@ -1134,6 +1278,7 @@ var AminoData = (function() {
         getRecordDirect: getRecordDirect,
         searchRecords: searchRecords,
         getTables: getTables,
+        getRecordMutationHistory: getRecordMutationHistory,
 
         // Sync
         syncTable: syncTable,
