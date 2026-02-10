@@ -372,7 +372,7 @@ var AminoData = (function() {
     // ============ Table Operations ============
 
     async function fetchAndStoreTables() {
-        var data = await apiFetch('/api/tables');
+        var data = await apiFetch('/amino-tables');
         var tables = data.tables || [];
 
         var tx = _db.transaction('tables', 'readwrite');
@@ -428,7 +428,7 @@ var AminoData = (function() {
 
     async function hydrateTable(tableId) {
         console.log('[AminoData] Hydrating table:', tableId);
-        var data = await apiFetch('/api/records/' + encodeURIComponent(tableId));
+        var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
         var records = data.records || [];
 
         // Write records in batches to avoid holding a single long transaction
@@ -465,8 +465,8 @@ var AminoData = (function() {
         }
 
         var data = await apiFetch(
-            '/api/records/' + encodeURIComponent(tableId) +
-            '/since/' + encodeURIComponent(since)
+            '/amino-records-since?tableId=' + encodeURIComponent(tableId) +
+            '&since=' + encodeURIComponent(since)
         );
         var records = data.records || [];
 
@@ -887,7 +887,7 @@ var AminoData = (function() {
 
     async function getRecordDirect(recordId) {
         // Fetch a single record directly from the API (bypasses local cache)
-        var data = await apiFetch('/api/record/' + encodeURIComponent(recordId));
+        var data = await apiFetch('/amino-record?recordId=' + encodeURIComponent(recordId));
         return data.record || null;
     }
 
