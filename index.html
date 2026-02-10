@@ -348,6 +348,10 @@
         .table-icon.type-collection { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
         .table-icon.type-reference { background: rgba(16, 185, 129, 0.2); color: #10b981; }
         .table-icon.type-dev { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+        .table-icon.type-room { background: rgba(99, 102, 241, 0.2); color: #6366f1; }
+
+        /* Room meta (room ID shown under name) */
+        .room-meta { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; opacity: 0.7; }
 
         /* Count Bar */
         .count-bar-wrapper { display: flex; align-items: center; gap: 6px; min-width: 54px; justify-content: flex-end; }
@@ -3402,6 +3406,11 @@ var TABLE_TYPE_CONFIG = {
         color: '#6b7280',
         label: 'Dev / Testing',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>'
+    },
+    room: {
+        color: '#6366f1',
+        label: 'Rooms',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
     }
 };
 
@@ -3410,6 +3419,7 @@ var SIDEBAR_STATE = {
     pinnedTables: [],
     recentTables: [],
     expandedSections: {
+        rooms: true,
         primary: true,
         pinned: true,
         recent: true,
@@ -7793,6 +7803,55 @@ async function renderSidebar(forceRefresh) {
         syncStatusWrapper.appendChild(syncStatusDiv);
         tableList.appendChild(syncStatusWrapper);
 
+        // Rooms Section (Matrix/Synapse rooms)
+        var discoveredRooms = (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms) ? SynapseSync.tableRooms : [];
+        if (discoveredRooms.length > 0) {
+            var roomConfig = TABLE_TYPE_CONFIG.room;
+            tableList.appendChild(renderSectionHeader('rooms', 'Rooms', roomConfig.icon, roomConfig.color, discoveredRooms.length));
+
+            if (SIDEBAR_STATE.expandedSections.rooms) {
+                discoveredRooms.forEach(function(room) {
+                    var roomWrapper = document.createElement('div');
+                    roomWrapper.className = 'table-wrapper';
+                    roomWrapper.setAttribute('data-table-id', room.tableId);
+                    roomWrapper.setAttribute('data-room-id', room.roomId);
+
+                    var isActive = room.tableId === currentTable;
+                    var roomDiv = document.createElement('div');
+                    roomDiv.className = 'table-item room-item' + (isActive ? ' active' : '');
+                    if (isActive) {
+                        roomDiv.style.cssText = '--active-color: ' + roomConfig.color + ';';
+                        roomDiv.style.setProperty('--type-color', roomConfig.color);
+                    }
+
+                    var roomCount = tableCounts[room.tableId] || 0;
+                    var roomBarWidth = Math.round(getCountBarWidth(roomCount, maxCount) * 20);
+
+                    roomDiv.innerHTML =
+                        '<span class="table-icon type-room">' + roomConfig.icon + '</span>' +
+                        '<div style="flex: 1; min-width: 0;">' +
+                            '<span class="table-name">' + esc(room.name) + '</span>' +
+                            '<div class="room-meta">' + esc(room.roomId) + '</div>' +
+                        '</div>' +
+                        '<span class="count-bar-wrapper">' +
+                            '<span class="count-bar" style="width: ' + roomBarWidth + 'px; background: ' + roomConfig.color + ';"></span>' +
+                            '<span class="count-value" style="color: ' + roomConfig.color + ';">' + formatRecordCount(roomCount) + '</span>' +
+                        '</span>';
+
+                    roomDiv.onclick = (function(tableId) {
+                        return function() { selectTableView(tableId, '_default'); };
+                    })(room.tableId);
+
+                    roomWrapper.appendChild(roomDiv);
+                    tableList.appendChild(roomWrapper);
+                });
+            }
+
+            var roomsDivider = document.createElement('div');
+            roomsDivider.className = 'sidebar-divider';
+            tableList.appendChild(roomsDivider);
+        }
+
         // Pinned Section
         var pinnedTables = tables.filter(t => SIDEBAR_STATE.pinnedTables.includes(t.tableId));
         if (pinnedTables.length > 0) {
@@ -9843,6 +9902,11 @@ var SynapseSync = {
         // Discover table rooms if not already done
         if (this.tableRooms.length === 0) {
             await this.discoverTableRooms();
+            // Re-render sidebar so Rooms section appears
+            if (this.tableRooms.length > 0) {
+                invalidateSidebarCache();
+                renderSidebar(true);
+            }
         }
 
         if (this.tableRooms.length === 0) {
