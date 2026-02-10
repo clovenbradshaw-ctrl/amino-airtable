@@ -607,6 +607,274 @@
         -2752,
         2960
       ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "PATCH",
+        "path": "amino-write",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "923e4dab-18df-4d77-8fcd-825a46da560c",
+      "name": "PATCH /write",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3408,
+        5456
+      ],
+      "webhookId": "amino-write"
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = $('PATCH /write').first().json;\n\nconst tableId = webhook.body.tableId;\nconst recordId = webhook.body.recordId;\nconst fields = webhook.body.fields;\nconst matrixUserId = webhook.body.matrixUserId || 'unknown';\n\nif (!tableId || !recordId) {\n  return [{ json: { _error: true, message: 'tableId and recordId are required' } }];\n}\n\nif (!fields || !Object.keys(fields).length) {\n  return [{ json: { _error: true, message: 'No fields provided' } }];\n}\n\nreturn [{\n  json: {\n    tableId,\n    recordId,\n    fields,\n    matrixUserId,\n    airtableUrl: `https://api.airtable.com/v0/app1tsUyKa7F3sy0D/${encodeURIComponent(tableId)}/${recordId}`,\n    airtableBody: JSON.stringify({ fields })\n  }\n}];"
+      },
+      "id": "fb6d8bb1-25b5-433b-81bf-57692976a2fa",
+      "name": "Prepare Write",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2736,
+        5360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "no-error",
+              "leftValue": "={{ $json._error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "abef0982-e725-4847-8150-a7537548dced",
+      "name": "Has Fields?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2512,
+        5360
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: $json.message }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "7c968c0f-1c29-48a4-872d-416d0a267dc3",
+      "name": "400 Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2288,
+        5456
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Prepare Write').first().json.airtableUrl }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Prepare Write').first().json.airtableBody }}",
+        "options": {}
+      },
+      "id": "89ef80eb-7966-4785-a4ee-a07926f7dce1",
+      "name": "Write to Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2288,
+        5264
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "Iu5gTUPvdBG4iwcH",
+          "name": "Airtable June 12 2025"
+        }
+      },
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-id",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d1f8570f-9dbd-4660-a0b5-c9d0bb5c73d1",
+      "name": "Airtable OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2064,
+        5264
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'airtable_write_failed', detail: $json }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "2fec5e77-99a0-4767-bed1-ea022602c4ae",
+      "name": "502 Airtable Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1840,
+        5360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const EXCLUDED_FIELDS = new Set([\n  'Last Xano Sync', 'Gcal Last Modified', 'Last Modified', 'Last Modified Time',\n  'Processing Stage', 'Push', 'Calendar Event ID', 'Calendar Event Link',\n  'Magic Link', 'Box shared link', 'box_shared_link', 'Box button', 'box button',\n  'amino button', 'EAD Stage Ref Lookup', 'EAD ID Ref Lookup', 'EAD Front Notes',\n  'EAD Manager', 'EAD Category', 'EAD Link'\n]);\n\nconst EXCLUDED_PATTERNS = [\n  'Ref Lookup', 'Magic Link', 'Gcal', 'Calendar Event', 'box_shared', 'Box shared',\n  'Last Modified', 'lastMod', 'Processing Stage', 'Rollup', 'Lookup', 'Formula'\n];\n\nconst shouldSkip = (field) =>\n  EXCLUDED_FIELDS.has(field) || EXCLUDED_PATTERNS.some(p => field.includes(p));\n\nconst cleanValue = (val) => {\n  if (val == null) return null;\n  if (typeof val === 'string') return val.trim() === '' ? null : val;\n  if (Array.isArray(val)) {\n    const c = val.map(cleanValue).filter(v => v != null);\n    return c.length ? c : null;\n  }\n  if (typeof val === 'object') {\n    const out = {};\n    for (const [k, v] of Object.entries(val)) {\n      if (['url', 'thumbnails', 'size', 'type', 'width', 'height'].includes(k)) continue;\n      const c = cleanValue(v);\n      if (c != null) out[k] = c;\n    }\n    return Object.keys(out).length ? out : null;\n  }\n  return val;\n};\n\nconst generateUUID = () =>\n  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {\n    const r = Math.random() * 16 | 0;\n    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);\n  });\n\nconst airtableRecord = $input.first().json;\nconst prep = $('Prepare Write').first().json;\nconst { tableId, recordId, matrixUserId } = prep;\n\nconst rawFields = airtableRecord.fields || {};\nconst cleanedSnapshot = {};\nfor (const [field, value] of Object.entries(rawFields)) {\n  if (shouldSkip(field)) continue;\n  const cleaned = cleanValue(value);\n  if (cleaned != null) cleanedSnapshot[field] = cleaned;\n}\n\nconst changedFields = prep.fields;\nconst payload = {\n  _f: 'v1',\n  _set: airtableRecord.fields?.['Table Name'] || '',\n  _a: matrixUserId,\n  fields: {\n    ALT: changedFields\n  }\n};\n\nconst uuid = generateUUID();\nconst cleanedSnapshotHex = Buffer.from(JSON.stringify(cleanedSnapshot)).toString('hex');\n\nreturn [{\n  json: {\n    uuid,\n    recordId,\n    tableId,\n    cleanedSnapshot,\n    cleanedSnapshotHex,\n    matrixUserId,\n    payload,\n    eventContent: {\n      recordId,\n      op: 'ALT',\n      payload,\n      set: `airtable:${tableId}`,\n      source: 'client_write',\n      sourceTimestamp: Date.now(),\n      actor: matrixUserId\n    }\n  }\n}];"
+      },
+      "id": "6568e023-b8c6-4547-bcbf-fef2b0c7f81b",
+      "name": "Build Sync Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1840,
+        5168
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT matrix_room_id FROM amino.table_registry WHERE table_id = '{{ $json.tableId }}'",
+        "options": {}
+      },
+      "id": "76c4655a-7160-4d1a-b863-7972553f62d6",
+      "name": "Get Room ID",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1616,
+        5168
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $('Build Sync Payload').first().json;\nconst roomRow = $input.first().json;\nconst matrixRoomId = roomRow?.matrix_room_id || null;\n\nreturn [{\n  json: {\n    ...payload,\n    matrixRoomId\n  }\n}];"
+      },
+      "id": "32c86587-dcd1-4986-9e95-e572625f0d06",
+      "name": "Merge Room ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1392,
+        5168
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://app.aminoimmigration.com/_matrix/client/v3/rooms/{{ encodeURIComponent($json.matrixRoomId) }}/send/law.firm.record.mutate/{{ $json.uuid }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.eventContent) }}",
+        "options": {}
+      },
+      "id": "5cbd17a1-33e1-40ef-85fb-88f90a96731a",
+      "name": "Send to Matrix1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1168,
+        5168
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8smzU1ors4so56Qb",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO amino.current_state\n  (record_id, table_id, table_name, fields, matrix_room_id, last_event_id, event_count)\nVALUES (\n  '{{ $('Build Sync Payload').first().json.recordId }}',\n  '{{ $('Build Sync Payload').first().json.tableId }}',\n  '',\n  convert_from(decode('{{ $('Build Sync Payload').first().json.cleanedSnapshotHex }}', 'hex'), 'UTF8')::jsonb,\n  '{{ $('Merge Room ID').first().json.matrixRoomId }}',\n  '{{ $('Build Sync Payload').first().json.uuid }}',\n  1\n)\nON CONFLICT (record_id) DO UPDATE SET\n  fields = EXCLUDED.fields,\n  matrix_room_id = EXCLUDED.matrix_room_id,\n  last_synced_at = now(),\n  last_event_id = EXCLUDED.last_event_id,\n  event_count = amino.current_state.event_count + 1;",
+        "options": {}
+      },
+      "id": "b0fe8da3-156b-4fd9-b19c-1dfb566fd43b",
+      "name": "Update Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -944,
+        5168
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, recordId: $('Build Sync Payload').first().json.recordId, tableId: $('Build Sync Payload').first().json.tableId, uuid: $('Build Sync Payload').first().json.uuid, fields: $('Build Sync Payload').first().json.cleanedSnapshot, synced: { airtable: true, postgres: true, matrix: true } }) }}",
+        "options": {}
+      },
+      "id": "1b600cea-7e16-407f-b192-ac4fe82346f2",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -720,
+        5168
+      ]
     }
   ],
   "connections": {
@@ -808,6 +1076,130 @@
         [
           {
             "node": "Respond Records Since",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH /write": {
+      "main": [
+        [
+          {
+            "node": "Prepare Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Write": {
+      "main": [
+        [
+          {
+            "node": "Has Fields?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Fields?": {
+      "main": [
+        [
+          {
+            "node": "Write to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "400 Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Airtable OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable OK?": {
+      "main": [
+        [
+          {
+            "node": "Build Sync Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "502 Airtable Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Sync Payload": {
+      "main": [
+        [
+          {
+            "node": "Get Room ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Room ID": {
+      "main": [
+        [
+          {
+            "node": "Merge Room ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Room ID": {
+      "main": [
+        [
+          {
+            "node": "Send to Matrix1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Matrix1": {
+      "main": [
+        [
+          {
+            "node": "Update Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Postgres": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
             "type": "main",
             "index": 0
           }
