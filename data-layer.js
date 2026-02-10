@@ -637,6 +637,24 @@ var AminoData = (function() {
         window.dispatchEvent(new CustomEvent('amino:record-update', {
             detail: { recordId: recordId, tableId: tableId, source: 'matrix' }
         }));
+
+        // Emit detailed mutation event for field history tracking
+        var mutationDetail = {
+            recordId: recordId,
+            tableId: tableId,
+            eventId: event.event_id || null,
+            sender: event.sender || null,
+            timestamp: event.origin_server_ts || Date.now(),
+            fieldOps: fieldOps
+        };
+        // Include flat ops if that was the format used
+        if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
+            mutationDetail.flatOp = content.op;
+            mutationDetail.flatFields = content.fields;
+        }
+        window.dispatchEvent(new CustomEvent('amino:record-mutate', {
+            detail: mutationDetail
+        }));
     }
 
     // Process timeline events from a Matrix /sync response
