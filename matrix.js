@@ -875,6 +875,17 @@ var MatrixClient = (function() {
         });
     }
 
+    // Paginate through law.firm.record.mutate events in a room (forward/chronological)
+    async function getRecordMutateMessages(roomId, opts) {
+        opts = opts || {};
+        return getRoomMessages(roomId, {
+            dir: opts.dir || 'f',
+            limit: opts.limit || 100,
+            from: opts.from || undefined,
+            filter: { types: [EVENT_TYPES.RECORD_MUTATE] }
+        });
+    }
+
     // Get joined rooms (via API, not just cache)
     async function getJoinedRoomsFromServer() {
         return _requestWithRetry('GET', '/joined_rooms');
@@ -1004,6 +1015,7 @@ var MatrixClient = (function() {
         // EO Event helpers (law.firm.schema.object)
         getVaultMetadata: getVaultMetadata,
         getSchemaObjectMessages: getSchemaObjectMessages,
+        getRecordMutateMessages: getRecordMutateMessages,
         getJoinedRoomsFromServer: getJoinedRoomsFromServer,
 
         // Events
