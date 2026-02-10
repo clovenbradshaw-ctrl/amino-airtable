@@ -2409,6 +2409,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@msgpack/msgpack@3.1.2/dist.umd/msgpack.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
     <script src="matrix.js"></script>
+    <script src="data-layer.js"></script>
 
     <script>
 // ============ Theme Management ============
@@ -6676,6 +6677,11 @@ async function trySynapseLogin() {
             throw new Error(data.error || 'Login failed');
         }
 
+        // Validate user domain before proceeding
+        if (!AminoData.isAllowedUser(data.user_id)) {
+            throw new Error('Your account domain is not authorized. Allowed domains: ' + AminoData.ALLOWED_DOMAINS.join(', '));
+        }
+
         _saveSynapseSession({
             accessToken: data.access_token,
             userId: data.user_id,
@@ -6718,6 +6724,14 @@ async function trySynapseLogin() {
         encryptionKey = derivedKey;
         encryptionEnabled = true;
         await saveSessionKey(encryptionKey);
+
+        // Initialize the n8n webhook data layer (derives its own encryption key from password)
+        try {
+            await AminoData.init(data.access_token, data.user_id, password);
+            console.log('[Synapse] AminoData layer initialized with', AminoData.getTableList().length, 'tables');
+        } catch (dataLayerErr) {
+            console.warn('[Synapse] AminoData layer init failed (non-fatal):', dataLayerErr);
+        }
 
         // Password no longer needed
         password = null;
@@ -6925,6 +6939,8 @@ function logout() {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = null;
     SynapseSync.stop();
+    // Stop n8n webhook data layer polling and clear its encryption key
+    AminoData.logout(false); // Keep encrypted data in IndexedDB for next session
     // Close stale IndexedDB connection
     if (db) {
         try { db.close(); } catch (e) { /* ignore */ }
@@ -10335,6 +10351,20 @@ async function init() {
 
     // Start Synapse real-time sync (long-poll /sync for room events)
     SynapseSync.start();
+
+    // Start n8n webhook data layer hydration and polling (if initialized during login)
+    if (AminoData.isInitialized()) {
+        try {
+            var hydrationCount = await AminoData.hydrateAll(function(progress) {
+                console.log('[AminoData] Hydrated table ' + (progress.tableIndex + 1) + '/' + progress.tableCount +
+                    ' (' + progress.tableName + '): ' + progress.recordCount + ' records');
+            });
+            console.log('[AminoData] Hydration complete:', hydrationCount, 'total records');
+            AminoData.startPolling();
+        } catch (dataErr) {
+            console.warn('[AminoData] Hydration/polling failed (non-fatal):', dataErr);
+        }
+    }
 }
 
 // ============ Field History Modal ============
@@ -16350,6 +16380,14 @@ document.addEventListener('keydown', function(e) {
 document.getElementById('unlock-password').onkeydown = (e) => { if (e.key === 'Enter') unlockWithPassword(); };
 document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('setup-password-confirm').focus(); };
 document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
+
+// Handle AminoData auth expiry — stop polling, prompt re-login
+window.addEventListener('amino:auth-expired', function() {
+    console.warn('[AminoData] Access token expired — stopping data layer polling');
+    AminoData.logout(false);
+    // The main Synapse session may still be valid; only force re-login
+    // if the Matrix session is also expired
+});
 
 // Initialize: Synapse login is the gate — everything derives from it
 (async function() {
