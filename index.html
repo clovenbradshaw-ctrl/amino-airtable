@@ -6845,13 +6845,9 @@ async function trySynapseLogin() {
         encryptionEnabled = true;
         await saveSessionKey(encryptionKey);
 
-        // Initialize the n8n webhook data layer (derives its own encryption key from password)
-        try {
-            await AminoData.init(data.access_token, data.user_id, password);
-            console.log('[Synapse] AminoData layer initialized with', AminoData.getTableList().length, 'tables');
-        } catch (dataLayerErr) {
-            console.warn('[Synapse] AminoData layer init failed (non-fatal):', dataLayerErr);
-        }
+        // NOTE: AminoData layer is not used for the main hydration flow —
+        // hydrateFromWebhooks() handles fetching from n8n directly.
+        // Skipping AminoData.init() here to avoid a redundant /api/tables call.
 
         // Password no longer needed
         password = null;
@@ -10701,8 +10697,19 @@ async function init() {
 
     hideAuthScreen();
 
+    // Check if records actually exist — tables may have been saved by a
+    // previous failed hydration while records were never loaded (e.g. the
+    // /api/records endpoints returned 500).  In that case we need to retry.
+    var hasRecords = false;
     if (tables.length > 0) {
-        // Local data exists — render it
+        try {
+            var recordCount = await getCurrentRecordsCount();
+            hasRecords = recordCount > 0;
+        } catch (e) { /* treat as no records */ }
+    }
+
+    if (tables.length > 0 && hasRecords) {
+        // Local data exists with actual records — render it
         updateStatus('Found ' + tables.length + ' tables', false, null, 'Loading data...');
         await renderSidebar(true);
 
@@ -10712,7 +10719,15 @@ async function init() {
             await showTable(firstTable);
         }
     } else {
-        // No local data — show loading overlay and hydrate
+        // Missing tables OR records — need hydration (retry on every load
+        // until it succeeds so transient API failures don't strand the user).
+        if (tables.length > 0) {
+            console.log('[init] Tables exist but no records — retrying hydration');
+            SyncStatusFeed.info('Records missing — retrying hydration...');
+            // Render table sidebar immediately for better UX while hydrating
+            await renderSidebar(true);
+        }
+
         showLoadingOverlay();
 
         // Try webhook API first (faster, direct REST), fall back to Synapse room replay
