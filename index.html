@@ -1591,9 +1591,86 @@
         #room-manager .rm-client-row .rm-room-info {
             font-size: 11px; color: var(--text-muted); margin-left: auto;
         }
+
+        /* ===== Toast Notifications ===== */
+        #toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 8px;
+            pointer-events: none;
+        }
+        .toast {
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-family: var(--font-family);
+            color: #fff;
+            background: var(--gray-700);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            opacity: 0;
+            transform: translateY(12px);
+            animation: toast-in 0.25s ease forwards;
+            max-width: 340px;
+        }
+        .toast.removing {
+            animation: toast-out 0.2s ease forwards;
+        }
+        .toast.toast-saving {
+            background: var(--gray-600);
+        }
+        .toast.toast-success {
+            background: #166534;
+        }
+        .toast.toast-error {
+            background: #991b1b;
+        }
+        .toast.toast-info {
+            background: var(--gray-600);
+        }
+        .toast .toast-spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: toast-spin 0.6s linear infinite;
+        }
+        .toast .toast-dismiss {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.6);
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            padding: 0 0 0 8px;
+            margin-left: auto;
+        }
+        .toast .toast-dismiss:hover {
+            color: #fff;
+        }
+        @keyframes toast-in {
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes toast-out {
+            to { opacity: 0; transform: translateY(12px); }
+        }
+        @keyframes toast-spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+
     <!-- Encryption Unlock Screen -->
     <div id="unlock-screen" class="hidden">
         <!-- Setup Mode (first time) -->
@@ -13016,17 +13093,7 @@ async function commitProfileFieldEdit(fieldId, newValue) {
         return;
     }
 
-    // Update in-memory data
-    if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
-        window.IN_MEMORY_DATA[tableId][recordId][fieldKey] = newValue;
-    }
-
-    // Update record and save to IndexedDB
-    if (!record.fields) record.fields = {};
-    record.fields[fieldKey] = newValue;
-    await saveDataRecord(record);
-
-    // Save field history
+    // Save field history locally (optimistic — before server call)
     await saveFieldHistory([{
         tableId: tableId,
         recordId: recordId,
@@ -13038,15 +13105,20 @@ async function commitProfileFieldEdit(fieldId, newValue) {
         newValue: newValue
     }]);
 
-    // Note: Field edits are local-only. Data flows one way: Airtable → n8n → Matrix.
-    // To persist changes, edit the record in Airtable directly.
+    // Build the field changes payload using the field key (name or id)
+    var fieldChanges = {};
+    fieldChanges[fieldKey] = newValue;
 
-    // Re-render profile
-    renderRecordProfile();
-
-    // Re-render table if the same table is showing
-    if (tableId === currentTable) {
-        renderTable();
+    // Use editRecord for optimistic write + server sync.
+    // editRecord handles IndexedDB update, API call, rollback, and
+    // dispatches amino:record-updated which re-renders the UI.
+    try {
+        await editRecord(tableId, recordId, fieldChanges);
+    } catch (err) {
+        console.error('[WriteAPI] Edit failed for', recordId, fieldKey, err);
+        // editRecord already rolled back local state and showed error toast.
+        // Re-render profile to reflect the rollback.
+        renderRecordProfile();
     }
 }
 
@@ -13054,6 +13126,190 @@ function cancelProfileFieldEdit() {
     profileEditingFieldId = null;
     renderRecordProfile();
 }
+
+// ============ Toast Notifications ============
+
+function showToast(type, message, durationMs) {
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+
+    if (durationMs === undefined) {
+        durationMs = type === 'error' ? 0 : (type === 'saving' ? 2000 : 3000);
+    }
+
+    var toast = document.createElement('div');
+    toast.className = 'toast toast-' + type;
+
+    if (type === 'saving') {
+        toast.innerHTML = '<div class="toast-spinner"></div>';
+    }
+
+    var span = document.createElement('span');
+    span.textContent = message;
+    toast.appendChild(span);
+
+    if (type === 'error' || durationMs === 0) {
+        var btn = document.createElement('button');
+        btn.className = 'toast-dismiss';
+        btn.innerHTML = '&times;';
+        btn.onclick = function() { dismissToast(toast); };
+        toast.appendChild(btn);
+    }
+
+    container.appendChild(toast);
+
+    if (durationMs > 0) {
+        setTimeout(function() { dismissToast(toast); }, durationMs);
+    }
+
+    return toast;
+}
+
+function dismissToast(toast) {
+    if (!toast || toast.classList.contains('removing')) return;
+    toast.classList.add('removing');
+    toast.addEventListener('animationend', function() {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+    });
+    // Fallback removal
+    setTimeout(function() {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+}
+
+// ============ Write API — editRecord ============
+
+var WRITE_API_BASE = 'https://n8n.intelechia.com/webhook/api/record';
+
+async function editRecord(tableId, recordId, fieldChanges) {
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken) {
+        throw new Error('Not authenticated — cannot save to server');
+    }
+
+    // ── Stage 1: Optimistic local update ──────────────────
+    var previousRecord = await getRecord(tableId, recordId);
+    if (!previousRecord) {
+        throw new Error('Record not found in local store');
+    }
+    var previousFields = previousRecord.fields || {};
+    var optimisticFields = {};
+    for (var k in previousFields) {
+        optimisticFields[k] = previousFields[k];
+    }
+    for (var k2 in fieldChanges) {
+        optimisticFields[k2] = fieldChanges[k2];
+    }
+
+    // Write optimistic state to IndexedDB immediately
+    await saveDataRecord({
+        tableId: tableId,
+        recordId: recordId,
+        fields: optimisticFields
+    });
+
+    // Update in-memory data if present
+    if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
+        for (var k3 in fieldChanges) {
+            window.IN_MEMORY_DATA[tableId][recordId][k3] = fieldChanges[k3];
+        }
+    }
+
+    // Dispatch optimistic UI update
+    window.dispatchEvent(new CustomEvent('amino:record-updated', {
+        detail: { recordId: recordId, tableId: tableId, fields: optimisticFields, optimistic: true }
+    }));
+
+    // Toast: saving
+    var savingToast = showToast('saving', 'Saving...');
+
+    try {
+        // ── Stage 2: Write to server ──────────────────────────
+        var response = await fetch(
+            WRITE_API_BASE + '/' + encodeURIComponent(tableId) + '/' + encodeURIComponent(recordId),
+            {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': 'Bearer ' + session.accessToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ fields: fieldChanges })
+            }
+        );
+
+        // Dismiss the saving toast
+        dismissToast(savingToast);
+
+        if (!response.ok) {
+            throw new Error('Server returned ' + response.status);
+        }
+
+        var result = await response.json();
+
+        // ── Stage 3: Confirm with canonical data ──────────────
+        if (result.fields) {
+            await saveDataRecord({
+                tableId: tableId,
+                recordId: recordId,
+                fields: result.fields
+            });
+
+            // Update in-memory data with canonical snapshot
+            if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
+                window.IN_MEMORY_DATA[tableId][recordId] = result.fields;
+            }
+
+            // Dispatch canonical UI update
+            window.dispatchEvent(new CustomEvent('amino:record-updated', {
+                detail: { recordId: recordId, tableId: tableId, fields: result.fields, optimistic: false }
+            }));
+        }
+
+        showToast('success', 'Saved \u2713');
+        return result;
+
+    } catch (err) {
+        // Dismiss saving toast if still visible
+        dismissToast(savingToast);
+
+        // ── Stage 4: Rollback on failure ──────────────────────
+        await saveDataRecord({
+            tableId: tableId,
+            recordId: recordId,
+            fields: previousFields
+        });
+
+        // Rollback in-memory data
+        if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
+            window.IN_MEMORY_DATA[tableId][recordId] = previousFields;
+        }
+
+        // Dispatch rollback UI update
+        window.dispatchEvent(new CustomEvent('amino:record-updated', {
+            detail: { recordId: recordId, tableId: tableId, fields: previousFields, optimistic: false, rolledBack: true }
+        }));
+
+        showToast('error', 'Save failed \u2014 please try again');
+        throw err;
+    }
+}
+
+// ============ Record Update Event Listener ============
+
+window.addEventListener('amino:record-updated', function(e) {
+    var detail = e.detail;
+    if (!detail || !detail.tableId || !detail.recordId) return;
+
+    // Re-render the record profile if it's showing this record
+    if (profileCurrentTableId === detail.tableId && profileCurrentRecordId === detail.recordId) {
+        renderRecordProfile();
+    }
+
+    // Re-render the table grid if showing the same table
+    if (currentTable === detail.tableId) {
+        renderTable();
+    }
+});
 
 // Navigation between records
 function updateProfileNavigation() {
