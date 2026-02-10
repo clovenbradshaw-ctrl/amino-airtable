@@ -2,7 +2,7 @@
   "nodes": [
     {
       "parameters": {
-        "path": "api/tables",
+        "path": "amino-tables",
         "responseMode": "responseNode",
         "options": {
           "allowedOrigins": "*",
@@ -154,7 +154,7 @@
     },
     {
       "parameters": {
-        "path": "api/records/:tableId",
+        "path": "amino-records",
         "responseMode": "responseNode",
         "options": {
           "allowedOrigins": "*",
@@ -162,7 +162,7 @@
         }
       },
       "id": "80fc1eae-b21c-41d5-9ced-a3dce9c0fb44",
-      "name": "GET /records/:tableId",
+      "name": "GET /records",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
@@ -236,7 +236,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/:tableId').first().json.params.tableId }}' AND table_name != '' ORDER BY last_synced_at DESC;",
+        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records').first().json.query.tableId }}' AND table_name != '' ORDER BY last_synced_at DESC;",
         "options": {}
       },
       "id": "1a68cfce-a311-4454-b844-a279f15974c8",
@@ -258,7 +258,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/:tableId').first().json.params.tableId, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records').first().json.query.tableId, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
         "options": {
           "responseHeaders": {
             "entries": [
@@ -306,7 +306,7 @@
     },
     {
       "parameters": {
-        "path": "api/record/:recordId",
+        "path": "amino-record",
         "responseMode": "responseNode",
         "options": {
           "allowedOrigins": "*",
@@ -314,7 +314,7 @@
         }
       },
       "id": "1ec1395a-b9ff-4568-82bb-7714bc04bb4f",
-      "name": "GET /record/:recordId",
+      "name": "GET /record",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
@@ -388,7 +388,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_id, table_name, fields, matrix_room_id, last_synced_at, event_count FROM amino.current_state WHERE record_id = '{{ $('GET /record/:recordId').first().json.params.recordId }}';",
+        "query": "=SELECT record_id, table_id, table_name, fields, matrix_room_id, last_synced_at, event_count FROM amino.current_state WHERE record_id = '{{ $('GET /record').first().json.query.recordId }}';",
         "options": {}
       },
       "id": "0f81372b-3c87-4259-825e-4764eb2575b7",
@@ -458,7 +458,7 @@
     },
     {
       "parameters": {
-        "path": "api/records/:tableId/since/:since",
+        "path": "amino-records-since",
         "responseMode": "responseNode",
         "options": {
           "allowedOrigins": "*",
@@ -540,7 +540,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/since').first().json.params.tableId }}' AND table_name != '' AND last_synced_at > '{{ $('GET /records/since').first().json.params.since }}'::timestamptz ORDER BY last_synced_at DESC;",
+        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/since').first().json.query.tableId }}' AND table_name != '' AND last_synced_at > '{{ $('GET /records/since').first().json.query.since }}'::timestamptz ORDER BY last_synced_at DESC;",
         "options": {}
       },
       "id": "3711a41a-650e-49a2-a836-e36695d0693a",
@@ -562,7 +562,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/since').first().json.params.tableId, since: $('GET /records/since').first().json.params.since, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/since').first().json.query.tableId, since: $('GET /records/since').first().json.query.since, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
         "options": {
           "responseHeaders": {
             "entries": [
@@ -661,7 +661,7 @@
         ]
       ]
     },
-    "GET /records/:tableId": {
+    "GET /records": {
       "main": [
         [
           {
@@ -712,7 +712,7 @@
         ]
       ]
     },
-    "GET /record/:recordId": {
+    "GET /record": {
       "main": [
         [
           {
@@ -815,6 +815,7 @@
       ]
     }
   },
+  "active": true,
   "pinData": {},
   "meta": {
     "templateCredsSetupCompleted": true,
