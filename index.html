@@ -3332,6 +3332,10 @@ var currentPage = 0;
 var currentRecordIds = [];
 var totalRecords = 0;
 var lastEventTimestamp = null; // ISO timestamp of last synced event
+
+// All joined Matrix rooms (discovered via /sync)
+// Structure: [{ roomId, name, isSpace }]
+var MATRIX_ROOMS = [];
 var pollInterval = null;
 var navVersion = 0; // Navigation guard to prevent race conditions when rapidly switching views
 
@@ -7803,20 +7807,22 @@ async function renderSidebar(forceRefresh) {
         syncStatusWrapper.appendChild(syncStatusDiv);
         tableList.appendChild(syncStatusWrapper);
 
-        // Rooms Section (Matrix/Synapse rooms)
-        var discoveredRooms = (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms) ? SynapseSync.tableRooms : [];
-        if (discoveredRooms.length > 0) {
+        // Rooms Section (all joined Matrix rooms)
+        var allRooms = MATRIX_ROOMS || [];
+        if (allRooms.length > 0) {
             var roomConfig = TABLE_TYPE_CONFIG.room;
-            tableList.appendChild(renderSectionHeader('rooms', 'Rooms', roomConfig.icon, roomConfig.color, discoveredRooms.length));
+            var spaceIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+
+            tableList.appendChild(renderSectionHeader('rooms', 'Rooms', roomConfig.icon, roomConfig.color, allRooms.length));
 
             if (SIDEBAR_STATE.expandedSections.rooms) {
-                discoveredRooms.forEach(function(room) {
+                allRooms.forEach(function(room) {
                     var roomWrapper = document.createElement('div');
                     roomWrapper.className = 'table-wrapper';
-                    roomWrapper.setAttribute('data-table-id', room.tableId);
+                    roomWrapper.setAttribute('data-table-id', '_room_' + room.roomId);
                     roomWrapper.setAttribute('data-room-id', room.roomId);
 
-                    var isActive = room.tableId === currentTable;
+                    var isActive = currentTable === '_room_' + room.roomId;
                     var roomDiv = document.createElement('div');
                     roomDiv.className = 'table-item room-item' + (isActive ? ' active' : '');
                     if (isActive) {
@@ -7824,23 +7830,29 @@ async function renderSidebar(forceRefresh) {
                         roomDiv.style.setProperty('--type-color', roomConfig.color);
                     }
 
-                    var roomCount = tableCounts[room.tableId] || 0;
-                    var roomBarWidth = Math.round(getCountBarWidth(roomCount, maxCount) * 20);
+                    var icon = room.isSpace ? spaceIcon : roomConfig.icon;
+                    var typeClass = room.isSpace ? 'type-reference' : 'type-room';
 
                     roomDiv.innerHTML =
-                        '<span class="table-icon type-room">' + roomConfig.icon + '</span>' +
+                        '<span class="table-icon ' + typeClass + '">' + icon + '</span>' +
                         '<div style="flex: 1; min-width: 0;">' +
                             '<span class="table-name">' + esc(room.name) + '</span>' +
                             '<div class="room-meta">' + esc(room.roomId) + '</div>' +
                         '</div>' +
-                        '<span class="count-bar-wrapper">' +
-                            '<span class="count-bar" style="width: ' + roomBarWidth + 'px; background: ' + roomConfig.color + ';"></span>' +
-                            '<span class="count-value" style="color: ' + roomConfig.color + ';">' + formatRecordCount(roomCount) + '</span>' +
-                        '</span>';
+                        (room.isSpace ? '<span style="font-size: 10px; color: var(--text-muted); padding: 1px 6px; border-radius: 8px; background: var(--bg-tertiary);">space</span>' : '');
 
-                    roomDiv.onclick = (function(tableId) {
-                        return function() { selectTableView(tableId, '_default'); };
-                    })(room.tableId);
+                    roomDiv.onclick = (function(r) {
+                        return function() {
+                            // Find matching table if this room maps to one
+                            var tableRooms = (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms) ? SynapseSync.tableRooms : [];
+                            var match = tableRooms.find(function(tr) { return tr.roomId === r.roomId; });
+                            if (match) {
+                                selectTableView(match.tableId, '_default');
+                            } else {
+                                console.log('[Rooms] Clicked room:', r.roomId, r.name);
+                            }
+                        };
+                    })(room);
 
                     roomWrapper.appendChild(roomDiv);
                     tableList.appendChild(roomWrapper);
@@ -9796,6 +9808,74 @@ function formatSyncTimestamp(ts) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time;
 }
 
+// ============ Room Discovery (All Joined Rooms) ============
+
+// Fetches ALL joined Matrix rooms with their names via a single /sync call.
+// Populates the global MATRIX_ROOMS array for sidebar display.
+async function discoverAllRooms() {
+    try {
+        var session = _loadSynapseSession();
+        if (!session || !session.accessToken) return [];
+
+        var filter = JSON.stringify({
+            room: {
+                state: { types: ['m.room.name', 'm.room.create'] },
+                timeline: { limit: 0 },
+                ephemeral: { types: [] },
+                account_data: { types: [] }
+            },
+            account_data: { types: [] },
+            presence: { types: [] }
+        });
+
+        var syncRes = await fetch(
+            SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=0&filter=' + encodeURIComponent(filter),
+            { headers: { 'Authorization': 'Bearer ' + session.accessToken } }
+        );
+        if (!syncRes.ok) {
+            console.error('[discoverAllRooms] Sync failed:', syncRes.status);
+            return [];
+        }
+        var syncData = await syncRes.json();
+
+        var rooms = [];
+        var joinRooms = (syncData.rooms && syncData.rooms.join) || {};
+
+        for (var roomId in joinRooms) {
+            var roomData = joinRooms[roomId];
+            var stateEvents = (roomData.state && roomData.state.events) || [];
+
+            var name = roomId;
+            var isSpace = false;
+
+            for (var i = 0; i < stateEvents.length; i++) {
+                var evt = stateEvents[i];
+                if (evt.type === 'm.room.name' && evt.content && evt.content.name) {
+                    name = evt.content.name;
+                }
+                if (evt.type === 'm.room.create' && evt.content && evt.content.type === 'm.space') {
+                    isSpace = true;
+                }
+            }
+
+            rooms.push({ roomId: roomId, name: name, isSpace: isSpace });
+        }
+
+        // Sort: spaces first, then alphabetically by name
+        rooms.sort(function(a, b) {
+            if (a.isSpace !== b.isSpace) return a.isSpace ? -1 : 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        MATRIX_ROOMS = rooms;
+        console.log('[discoverAllRooms] Found ' + rooms.length + ' rooms (' + rooms.filter(function(r) { return r.isSpace; }).length + ' spaces)');
+        return rooms;
+    } catch (err) {
+        console.error('[discoverAllRooms] Failed:', err);
+        return [];
+    }
+}
+
 // ============ Synapse Sync ============
 
 // SynapseSync: real-time sync from Matrix room timelines via /sync long-poll
@@ -9902,11 +9982,6 @@ var SynapseSync = {
         // Discover table rooms if not already done
         if (this.tableRooms.length === 0) {
             await this.discoverTableRooms();
-            // Re-render sidebar so Rooms section appears
-            if (this.tableRooms.length > 0) {
-                invalidateSidebarCache();
-                renderSidebar(true);
-            }
         }
 
         if (this.tableRooms.length === 0) {
@@ -10282,6 +10357,13 @@ async function init() {
     }
 
     hideAuthScreen();
+
+    // Discover all joined Matrix rooms (for sidebar display)
+    try {
+        await discoverAllRooms();
+    } catch (e) {
+        console.warn('[init] Room discovery failed:', e);
+    }
 
     if (tables.length > 0) {
         // Local data exists — render it
