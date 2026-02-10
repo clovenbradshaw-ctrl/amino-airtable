@@ -6677,11 +6677,6 @@ async function trySynapseLogin() {
             throw new Error(data.error || 'Login failed');
         }
 
-        // Validate user domain before proceeding
-        if (!AminoData.isAllowedUser(data.user_id)) {
-            throw new Error('Your account domain is not authorized. Allowed domains: ' + AminoData.ALLOWED_DOMAINS.join(', '));
-        }
-
         _saveSynapseSession({
             accessToken: data.access_token,
             userId: data.user_id,
