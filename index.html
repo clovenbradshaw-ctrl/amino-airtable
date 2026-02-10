@@ -1667,11 +1667,237 @@
         @keyframes toast-spin {
             to { transform: rotate(360deg); }
         }
+
+        /* ===== Pending Edits Indicator ===== */
+        .pending-edits-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            user-select: none;
+        }
+        .pending-edits-badge.has-pending {
+            background: rgba(245, 158, 11, 0.18);
+            color: #fbbf24;
+        }
+        .pending-edits-badge.has-pending:hover {
+            background: rgba(245, 158, 11, 0.28);
+        }
+        .pending-edits-badge.all-synced {
+            background: rgba(34, 197, 94, 0.12);
+            color: #4ade80;
+        }
+        .pending-edits-badge .badge-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        .pending-edits-badge.has-pending .badge-dot {
+            animation: pending-pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pending-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Table row pending indicator */
+        tr.has-pending-edit {
+            position: relative;
+        }
+        tr.has-pending-edit td:first-child::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: #f59e0b;
+            border-radius: 0 2px 2px 0;
+        }
+
+        /* Profile field pending indicator */
+        .profile-field-value.field-pending {
+            position: relative;
+            border-left: 3px solid #f59e0b;
+            padding-left: 8px;
+        }
+        .field-pending-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: #f59e0b;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-left: 6px;
+        }
+
+        /* ===== Pending Edits Panel ===== */
+        #pending-edits-panel {
+            display: none;
+            position: fixed;
+            bottom: 60px;
+            right: 24px;
+            width: 420px;
+            max-height: 480px;
+            background: var(--bg-secondary, #1e1e1e);
+            border: 1px solid var(--border-primary, #333);
+            border-radius: var(--radius-lg, 8px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            z-index: 9999;
+            overflow: hidden;
+            font-family: var(--font-family);
+        }
+        #pending-edits-panel.visible {
+            display: flex;
+            flex-direction: column;
+        }
+        .pe-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-primary, #333);
+        }
+        .pe-panel-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary, #e0e0e0);
+            margin: 0;
+        }
+        .pe-panel-close {
+            background: none;
+            border: none;
+            color: var(--text-muted, #666);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .pe-panel-close:hover {
+            color: var(--text-primary);
+            background: var(--bg-hover, #2a2a2a);
+        }
+        .pe-panel-body {
+            overflow-y: auto;
+            flex: 1;
+            padding: 8px 0;
+        }
+        .pe-panel-empty {
+            padding: 32px 16px;
+            text-align: center;
+            color: var(--text-muted, #666);
+            font-size: 13px;
+        }
+        .pe-edit-item {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-primary, #262626);
+        }
+        .pe-edit-item:last-child {
+            border-bottom: none;
+        }
+        .pe-edit-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .pe-edit-record {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary, #e0e0e0);
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .pe-edit-time {
+            font-size: 11px;
+            color: var(--text-muted, #666);
+        }
+        .pe-edit-fields {
+            font-size: 11px;
+            color: var(--text-secondary, #aaa);
+            margin-bottom: 8px;
+        }
+        .pe-dest-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 3px;
+        }
+        .pe-dest-label {
+            font-size: 11px;
+            color: var(--text-muted, #888);
+            width: 72px;
+            flex-shrink: 0;
+        }
+        .pe-dest-status {
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .pe-dest-status.confirmed {
+            color: #4ade80;
+        }
+        .pe-dest-status.pending {
+            color: #fbbf24;
+        }
+        .pe-dest-status.error {
+            color: #f87171;
+        }
+        .pe-edit-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .pe-edit-actions button {
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 4px;
+            border: 1px solid var(--border-primary, #333);
+            background: var(--bg-tertiary, #262626);
+            color: var(--text-secondary, #bbb);
+            cursor: pointer;
+        }
+        .pe-edit-actions button:hover {
+            background: var(--bg-hover, #333);
+            color: var(--text-primary);
+        }
+        .pe-edit-actions button.pe-retry-btn {
+            border-color: #f59e0b;
+            color: #fbbf24;
+        }
+        .pe-edit-actions button.pe-discard-btn {
+            border-color: #ef4444;
+            color: #f87171;
+        }
+
+        /* Light theme overrides */
+        html.light-theme .pending-edits-badge.has-pending { background: rgba(217, 119, 6, 0.12); color: #b45309; }
+        html.light-theme .pending-edits-badge.all-synced { background: rgba(22, 163, 74, 0.12); color: #15803d; }
+        html.light-theme tr.has-pending-edit td:first-child::before { background: #d97706; }
+        html.light-theme .profile-field-value.field-pending { border-left-color: #d97706; }
+        html.light-theme .field-pending-label { color: #d97706; }
     </style>
 </head>
 <body>
     <!-- Toast Notification Container -->
     <div id="toast-container"></div>
+
+    <!-- Pending Edits Panel (hidden by default, toggled by badge click) -->
+    <div id="pending-edits-panel">
+        <div class="pe-panel-header">
+            <h3>Pending Edits</h3>
+            <button class="pe-panel-close" onclick="togglePendingEditsPanel()">&times;</button>
+        </div>
+        <div class="pe-panel-body" id="pe-panel-body">
+            <div class="pe-panel-empty">No pending edits</div>
+        </div>
+    </div>
 
     <!-- Encryption Unlock Screen -->
     <div id="unlock-screen" class="hidden">
@@ -2151,6 +2377,10 @@
                     <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
                 </div>
                 <span id="status-detail" style="color: #999; font-size: 11px;"></span>
+                <span class="pending-edits-badge all-synced" id="pending-edits-badge" onclick="togglePendingEditsPanel()" title="Pending edits">
+                    <span class="badge-dot"></span>
+                    <span id="pending-edits-count">0 pending</span>
+                </span>
                 <div class="sync-toggle-wrapper">
                     <button class="sync-feed-btn" id="sync-feed-btn" onclick="SyncStatusFeed.toggle()" title="View sync activity log">[log]</button>
                 </div>
@@ -2619,7 +2849,7 @@ function renderTabBar() {
 // Legacy Xano API variables (deprecated — kept as null for backward compatibility)
 var API = null;
 var DB_NAME = 'amino';
-var DB_VERSION = 8;
+var DB_VERSION = 9;
 var PAGE_SIZE = 100;
 var N8N_WEBHOOK_BASE = 'https://n8n.intelechia.com/webhook';
 
@@ -4286,6 +4516,14 @@ function openDB() {
                 sharedViewStore.createIndex('by_owner', 'ownerId');
                 sharedViewStore.createIndex('by_sharing', 'sharing');
             }
+
+            // Pending edits: local edits awaiting confirmation from all destinations
+            if (!db.objectStoreNames.contains('pendingEdits')) {
+                var pendingStore = db.createObjectStore('pendingEdits', { keyPath: 'editId' });
+                pendingStore.createIndex('by_record', ['tableId', 'recordId']);
+                pendingStore.createIndex('by_table', 'tableId');
+                pendingStore.createIndex('by_status', 'status');
+            }
         };
     });
 }
@@ -4963,14 +5201,11 @@ async function saveBatch(tables, fields, views, dataRecords) {
 
 function clearAllData() {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory', 'events'], 'readwrite');
-        tx.objectStore('data').clear();
-        tx.objectStore('tables').clear();
-        tx.objectStore('fields').clear();
-        tx.objectStore('views').clear();
-        tx.objectStore('sync').clear();
-        tx.objectStore('fieldHistory').clear();
-        tx.objectStore('events').clear();
+        var stores = ['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory', 'events'];
+        // Include pendingEdits if store exists
+        if (db.objectStoreNames.contains('pendingEdits')) stores.push('pendingEdits');
+        var tx = db.transaction(stores, 'readwrite');
+        stores.forEach(function(name) { tx.objectStore(name).clear(); });
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
@@ -9561,6 +9796,9 @@ async function renderTable() {
         document.getElementById('pagination').style.display = '';
         updatePagination();
     }
+
+    // Highlight rows with pending local edits
+    markPendingEditRows();
 }
 
 // Group records by a field value
@@ -10897,6 +11135,9 @@ async function init() {
 
     // Start Synapse real-time sync (long-poll /sync for room events)
     SynapseSync.start();
+
+    // Restore any pending edits from previous session
+    initPendingEdits();
 }
 
 // ============ Field History Modal ============
@@ -13190,6 +13431,42 @@ async function renderRecordProfile() {
     if (profileConfigureMode) {
         body.classList.add('configure-mode');
     }
+
+    // Mark fields with pending edits
+    _markProfilePendingFields();
+}
+
+// Highlight fields in the profile that have unsaved pending edits
+async function _markProfilePendingFields() {
+    if (!profileCurrentTableId || !profileCurrentRecordId) return;
+    var pendingEdits = await PendingEdits.getForRecord(profileCurrentTableId, profileCurrentRecordId);
+    if (pendingEdits.length === 0) return;
+
+    // Collect all pending field keys
+    var pendingFieldKeys = {};
+    pendingEdits.forEach(function(edit) {
+        Object.keys(edit.fieldChanges || {}).forEach(function(key) {
+            pendingFieldKeys[key] = edit;
+        });
+    });
+
+    // Mark matching field value elements
+    var fieldValues = document.querySelectorAll('#profile-body .profile-field-value[data-edit-field-id]');
+    for (var i = 0; i < fieldValues.length; i++) {
+        var el = fieldValues[i];
+        var fieldId = el.getAttribute('data-edit-field-id');
+        if (pendingFieldKeys[fieldId]) {
+            el.classList.add('field-pending');
+            // Add label after the field name
+            var nameEl = el.previousElementSibling;
+            if (nameEl && nameEl.classList.contains('profile-field-name') && !nameEl.querySelector('.field-pending-label')) {
+                var label = document.createElement('span');
+                label.className = 'field-pending-label';
+                label.textContent = PendingEdits.getOverallLabel(pendingFieldKeys[fieldId]);
+                nameEl.appendChild(label);
+            }
+        }
+    }
 }
 
 // Toggle configure mode
@@ -13595,14 +13872,13 @@ async function commitProfileFieldEdit(fieldId, newValue) {
     fieldChanges[fieldKey] = newValue;
 
     // Use editRecord for optimistic write + server sync.
-    // editRecord handles IndexedDB update, API call, rollback, and
-    // dispatches amino:record-updated which re-renders the UI.
+    // editRecord persists the edit locally in pendingEdits and dispatches
+    // amino:record-updated which re-renders the UI. On server failure,
+    // the edit stays local and auto-retries — no rollback needed.
     try {
         await editRecord(tableId, recordId, fieldChanges);
     } catch (err) {
         console.error('[WriteAPI] Edit failed for', recordId, fieldKey, err);
-        // editRecord already rolled back local state and showed error toast.
-        // Re-render profile to reflect the rollback.
         renderRecordProfile();
     }
 }
@@ -13611,6 +13887,435 @@ function cancelProfileFieldEdit() {
     profileEditingFieldId = null;
     renderRecordProfile();
 }
+
+// ============ Pending Edits Persistence ============
+// Tracks local edits until confirmed synced to all 3 destinations:
+// Airtable (via n8n webhook), Backup DB (via n8n), and Matrix.
+
+var PendingEdits = (function() {
+    'use strict';
+
+    var RETRY_DELAYS = [2000, 4000, 8000, 16000]; // exponential backoff
+    var MAX_RETRIES = 4;
+
+    // In-memory cache of pending edits for fast UI reads
+    var _cache = null; // editId -> edit object
+    var _retryTimers = {}; // editId -> timeout handle
+
+    function _generateId() {
+        return 'pe_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+    }
+
+    // ── IndexedDB Operations ──
+
+    function _getStore(mode) {
+        var tx = db.transaction('pendingEdits', mode || 'readonly');
+        return { store: tx.objectStore('pendingEdits'), tx: tx };
+    }
+
+    function _put(edit) {
+        return new Promise(function(resolve, reject) {
+            var ref = _getStore('readwrite');
+            var req = ref.store.put(edit);
+            ref.tx.oncomplete = function() { resolve(); };
+            ref.tx.onerror = function() { reject(ref.tx.error); };
+        });
+    }
+
+    function _delete(editId) {
+        return new Promise(function(resolve, reject) {
+            var ref = _getStore('readwrite');
+            ref.store.delete(editId);
+            ref.tx.oncomplete = function() { resolve(); };
+            ref.tx.onerror = function() { reject(ref.tx.error); };
+        });
+    }
+
+    function _getAll() {
+        return new Promise(function(resolve, reject) {
+            var ref = _getStore('readonly');
+            var req = ref.store.getAll();
+            req.onsuccess = function() { resolve(req.result || []); };
+            req.onerror = function() { reject(req.error); };
+        });
+    }
+
+    // ── Cache Management ──
+
+    async function _ensureCache() {
+        if (_cache) return;
+        _cache = {};
+        try {
+            var all = await _getAll();
+            all.forEach(function(edit) { _cache[edit.editId] = edit; });
+        } catch (e) {
+            console.warn('[PendingEdits] Failed to load cache:', e);
+            _cache = {};
+        }
+    }
+
+    // ── Public API ──
+
+    // Save a new pending edit. Returns the edit object.
+    async function save(tableId, recordId, fieldChanges, previousFields) {
+        await _ensureCache();
+
+        var edit = {
+            editId: _generateId(),
+            tableId: tableId,
+            recordId: recordId,
+            fieldChanges: fieldChanges,
+            previousFields: previousFields,
+            status: 'pending', // pending | syncing | partial | confirmed | failed
+            createdAt: Date.now(),
+            retryCount: 0,
+            // Track each destination independently
+            destinations: {
+                airtable: { confirmed: false, lastAttempt: null, error: null },
+                backupDb:  { confirmed: false, lastAttempt: null, error: null },
+                matrix:    { confirmed: false, lastAttempt: null, error: null }
+            }
+        };
+
+        await _put(edit);
+        _cache[edit.editId] = edit;
+        _emitChange();
+        return edit;
+    }
+
+    // Mark a specific destination as confirmed for an edit.
+    // If all 3 destinations are confirmed, removes the edit entirely.
+    async function confirmDestination(editId, destination) {
+        await _ensureCache();
+        var edit = _cache[editId];
+        if (!edit) return null;
+
+        if (edit.destinations[destination]) {
+            edit.destinations[destination].confirmed = true;
+            edit.destinations[destination].error = null;
+        }
+
+        // Check if all destinations confirmed
+        var allConfirmed = edit.destinations.airtable.confirmed &&
+                           edit.destinations.backupDb.confirmed &&
+                           edit.destinations.matrix.confirmed;
+
+        if (allConfirmed) {
+            edit.status = 'confirmed';
+            await _delete(editId);
+            delete _cache[editId];
+            _clearRetryTimer(editId);
+        } else {
+            edit.status = 'partial';
+            await _put(edit);
+        }
+
+        _emitChange();
+        return edit;
+    }
+
+    // Confirm all destinations at once (used when server returns success for all)
+    async function confirmAll(editId) {
+        await _ensureCache();
+        var edit = _cache[editId];
+        if (!edit) return null;
+
+        edit.destinations.airtable.confirmed = true;
+        edit.destinations.backupDb.confirmed = true;
+        edit.destinations.matrix.confirmed = true;
+        edit.status = 'confirmed';
+
+        await _delete(editId);
+        delete _cache[editId];
+        _clearRetryTimer(editId);
+        _emitChange();
+        return edit;
+    }
+
+    // Mark an edit as failed with error info
+    async function markFailed(editId, error, destination) {
+        await _ensureCache();
+        var edit = _cache[editId];
+        if (!edit) return null;
+
+        edit.status = 'failed';
+        if (destination && edit.destinations[destination]) {
+            edit.destinations[destination].error = error || 'Unknown error';
+            edit.destinations[destination].lastAttempt = Date.now();
+        }
+
+        await _put(edit);
+        _emitChange();
+        return edit;
+    }
+
+    // Mark edit as currently syncing
+    async function markSyncing(editId) {
+        await _ensureCache();
+        var edit = _cache[editId];
+        if (!edit) return null;
+
+        edit.status = 'syncing';
+        edit.retryCount = (edit.retryCount || 0) + 1;
+        await _put(edit);
+        _emitChange();
+        return edit;
+    }
+
+    // Get all pending edits (from cache)
+    async function getAll() {
+        await _ensureCache();
+        var edits = [];
+        for (var id in _cache) {
+            edits.push(_cache[id]);
+        }
+        // Sort by creation time, newest first
+        edits.sort(function(a, b) { return b.createdAt - a.createdAt; });
+        return edits;
+    }
+
+    // Get pending edits for a specific record
+    async function getForRecord(tableId, recordId) {
+        await _ensureCache();
+        var edits = [];
+        for (var id in _cache) {
+            var e = _cache[id];
+            if (e.tableId === tableId && e.recordId === recordId) {
+                edits.push(e);
+            }
+        }
+        return edits;
+    }
+
+    // Get count of pending (unconfirmed) edits
+    async function count() {
+        await _ensureCache();
+        return Object.keys(_cache).length;
+    }
+
+    // Check if a specific record has pending edits
+    async function hasPending(tableId, recordId) {
+        await _ensureCache();
+        for (var id in _cache) {
+            var e = _cache[id];
+            if (e.tableId === tableId && e.recordId === recordId) return true;
+        }
+        return false;
+    }
+
+    // Retry a failed edit
+    async function retry(editId) {
+        await _ensureCache();
+        var edit = _cache[editId];
+        if (!edit) return;
+
+        // Re-send via the write API
+        await markSyncing(editId);
+        try {
+            await _sendToServer(edit);
+        } catch (err) {
+            console.error('[PendingEdits] Retry failed for', editId, err);
+            await markFailed(editId, err.message);
+            _scheduleRetry(editId);
+        }
+    }
+
+    // Discard a pending edit (user explicitly cancels)
+    async function discard(editId) {
+        await _ensureCache();
+        var edit = _cache[editId];
+        if (!edit) return;
+
+        // Rollback local data to previous state
+        try {
+            await saveDataRecord({
+                tableId: edit.tableId,
+                recordId: edit.recordId,
+                fields: edit.previousFields
+            });
+            if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[edit.tableId] && window.IN_MEMORY_DATA[edit.tableId][edit.recordId]) {
+                window.IN_MEMORY_DATA[edit.tableId][edit.recordId] = edit.previousFields;
+            }
+            window.dispatchEvent(new CustomEvent('amino:record-updated', {
+                detail: { recordId: edit.recordId, tableId: edit.tableId, fields: edit.previousFields, optimistic: false, rolledBack: true }
+            }));
+        } catch (e) {
+            console.warn('[PendingEdits] Rollback failed during discard:', e);
+        }
+
+        await _delete(editId);
+        delete _cache[editId];
+        _clearRetryTimer(editId);
+        _emitChange();
+    }
+
+    // ── Server Communication ──
+
+    async function _sendToServer(edit) {
+        var session = _loadSynapseSession();
+        if (!session || !session.accessToken) {
+            throw new Error('Not authenticated');
+        }
+
+        var writeUrl = WRITE_API_BASE + '/' + encodeURIComponent(edit.tableId) + '/' + encodeURIComponent(edit.recordId);
+        var writeBody = JSON.stringify({ fields: edit.fieldChanges });
+        var response;
+
+        try {
+            response = await fetch(
+                writeUrl + '?access_token=' + encodeURIComponent(session.accessToken),
+                { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: writeBody }
+            );
+        } catch (patchErr) {
+            response = await fetch(writeUrl, {
+                method: 'PATCH',
+                headers: { 'Authorization': 'Bearer ' + session.accessToken, 'Content-Type': 'application/json' },
+                body: writeBody
+            });
+        }
+
+        if (!response.ok) {
+            throw new Error('Server returned ' + response.status);
+        }
+
+        var result = await response.json();
+
+        // Server accepted — confirm airtable & backupDb (n8n handles both)
+        await confirmDestination(edit.editId, 'airtable');
+        await confirmDestination(edit.editId, 'backupDb');
+
+        // Update local record with canonical data
+        if (result.fields) {
+            await saveDataRecord({ tableId: edit.tableId, recordId: edit.recordId, fields: result.fields });
+            if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[edit.tableId] && window.IN_MEMORY_DATA[edit.tableId][edit.recordId]) {
+                window.IN_MEMORY_DATA[edit.tableId][edit.recordId] = result.fields;
+            }
+            window.dispatchEvent(new CustomEvent('amino:record-updated', {
+                detail: { recordId: edit.recordId, tableId: edit.tableId, fields: result.fields, optimistic: false }
+            }));
+        }
+
+        return result;
+    }
+
+    // ── Retry Scheduling ──
+
+    function _scheduleRetry(editId) {
+        _clearRetryTimer(editId);
+        var edit = _cache[editId];
+        if (!edit || edit.retryCount >= MAX_RETRIES) return;
+
+        var delay = RETRY_DELAYS[Math.min(edit.retryCount, RETRY_DELAYS.length - 1)];
+        _retryTimers[editId] = setTimeout(function() {
+            retry(editId);
+        }, delay);
+    }
+
+    function _clearRetryTimer(editId) {
+        if (_retryTimers[editId]) {
+            clearTimeout(_retryTimers[editId]);
+            delete _retryTimers[editId];
+        }
+    }
+
+    // ── Matrix Confirmation ──
+    // Called when we see our own mutation echoed back via Matrix /sync
+    async function confirmMatrixForRecord(tableId, recordId) {
+        await _ensureCache();
+        for (var id in _cache) {
+            var e = _cache[id];
+            if (e.tableId === tableId && e.recordId === recordId) {
+                await confirmDestination(id, 'matrix');
+            }
+        }
+    }
+
+    // ── Startup: Restore & Retry ──
+
+    async function restoreOnLoad() {
+        await _ensureCache();
+        var editIds = Object.keys(_cache);
+        if (editIds.length === 0) return;
+
+        console.log('[PendingEdits] Restoring', editIds.length, 'pending edits');
+        _emitChange();
+
+        // Re-apply optimistic fields for pending edits and schedule retries for failed ones
+        for (var i = 0; i < editIds.length; i++) {
+            var edit = _cache[editIds[i]];
+
+            // Re-apply optimistic local state
+            try {
+                var existing = await getRecord(edit.tableId, edit.recordId);
+                if (existing) {
+                    var merged = {};
+                    var existingFields = existing.fields || {};
+                    for (var fk in existingFields) merged[fk] = existingFields[fk];
+                    for (var ck in edit.fieldChanges) merged[ck] = edit.fieldChanges[ck];
+                    await saveDataRecord({ tableId: edit.tableId, recordId: edit.recordId, fields: merged });
+                }
+            } catch (e) {
+                console.warn('[PendingEdits] Failed to re-apply edit', edit.editId, e);
+            }
+
+            // Schedule retry for failed/pending edits that haven't confirmed server-side
+            if (!edit.destinations.airtable.confirmed || !edit.destinations.backupDb.confirmed) {
+                if (edit.status === 'failed' || edit.status === 'pending') {
+                    _scheduleRetry(edit.editId);
+                }
+            }
+        }
+    }
+
+    // ── Change Events ──
+
+    function _emitChange() {
+        window.dispatchEvent(new CustomEvent('amino:pending-edits-changed', {
+            detail: { count: Object.keys(_cache || {}).length }
+        }));
+    }
+
+    // ── Helpers for rendering ──
+
+    function getDestinationStatus(edit) {
+        var d = edit.destinations;
+        return {
+            airtable: d.airtable.confirmed ? 'confirmed' : (d.airtable.error ? 'error' : 'pending'),
+            backupDb: d.backupDb.confirmed ? 'confirmed' : (d.backupDb.error ? 'error' : 'pending'),
+            matrix: d.matrix.confirmed ? 'confirmed' : (d.matrix.error ? 'error' : 'pending')
+        };
+    }
+
+    function getOverallLabel(edit) {
+        if (edit.status === 'confirmed') return 'Synced';
+        if (edit.status === 'syncing') return 'Syncing...';
+        if (edit.status === 'failed') return 'Failed';
+        var confirmed = 0;
+        if (edit.destinations.airtable.confirmed) confirmed++;
+        if (edit.destinations.backupDb.confirmed) confirmed++;
+        if (edit.destinations.matrix.confirmed) confirmed++;
+        if (confirmed > 0) return confirmed + '/3 synced';
+        return 'Pending';
+    }
+
+    return {
+        save: save,
+        confirmDestination: confirmDestination,
+        confirmAll: confirmAll,
+        markFailed: markFailed,
+        markSyncing: markSyncing,
+        getAll: getAll,
+        getForRecord: getForRecord,
+        count: count,
+        hasPending: hasPending,
+        retry: retry,
+        discard: discard,
+        confirmMatrixForRecord: confirmMatrixForRecord,
+        restoreOnLoad: restoreOnLoad,
+        getDestinationStatus: getDestinationStatus,
+        getOverallLabel: getOverallLabel
+    };
+})();
 
 // ============ Toast Notifications ============
 
@@ -13663,6 +14368,8 @@ function dismissToast(toast) {
 }
 
 // ============ Write API — editRecord ============
+// Edits are persisted locally in IndexedDB (pendingEdits store) and remain
+// visible until confirmed synced to Airtable, the backup DB, and Matrix.
 
 var WRITE_API_BASE = 'https://n8n.intelechia.com/webhook/api/record';
 
@@ -13700,18 +14407,21 @@ async function editRecord(tableId, recordId, fieldChanges) {
         }
     }
 
+    // ── Stage 2: Persist as pending edit ──────────────────
+    var pendingEdit = await PendingEdits.save(tableId, recordId, fieldChanges, previousFields);
+
     // Dispatch optimistic UI update
     window.dispatchEvent(new CustomEvent('amino:record-updated', {
-        detail: { recordId: recordId, tableId: tableId, fields: optimisticFields, optimistic: true }
+        detail: { recordId: recordId, tableId: tableId, fields: optimisticFields, optimistic: true, editId: pendingEdit.editId }
     }));
 
     // Toast: saving
     var savingToast = showToast('saving', 'Saving...');
 
     try {
-        // ── Stage 2: Write to server ──────────────────────────
-        // Try with query-param auth first to avoid CORS preflight, then
-        // fall back to Authorization header if that fails.
+        // ── Stage 3: Write to server (n8n -> Airtable + backup DB) ──
+        await PendingEdits.markSyncing(pendingEdit.editId);
+
         var writeUrl = WRITE_API_BASE + '/' + encodeURIComponent(tableId) + '/' + encodeURIComponent(recordId);
         var writeBody = JSON.stringify({ fields: fieldChanges });
         var response;
@@ -13726,7 +14436,6 @@ async function editRecord(tableId, recordId, fieldChanges) {
                 }
             );
         } catch (patchErr) {
-            // CORS preflight failure — retry with header auth
             console.warn('[editRecord] Query-param PATCH failed (' + patchErr.message + '), retrying with header auth');
             response = await fetch(writeUrl, {
                 method: 'PATCH',
@@ -13738,7 +14447,6 @@ async function editRecord(tableId, recordId, fieldChanges) {
             });
         }
 
-        // Dismiss the saving toast
         dismissToast(savingToast);
 
         if (!response.ok) {
@@ -13747,7 +14455,10 @@ async function editRecord(tableId, recordId, fieldChanges) {
 
         var result = await response.json();
 
-        // ── Stage 3: Confirm with canonical data ──────────────
+        // ── Stage 4: Server confirmed — mark Airtable & backup DB done ──
+        await PendingEdits.confirmDestination(pendingEdit.editId, 'airtable');
+        await PendingEdits.confirmDestination(pendingEdit.editId, 'backupDb');
+
         if (result.fields) {
             await saveDataRecord({
                 tableId: tableId,
@@ -13755,43 +14466,37 @@ async function editRecord(tableId, recordId, fieldChanges) {
                 fields: result.fields
             });
 
-            // Update in-memory data with canonical snapshot
             if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
                 window.IN_MEMORY_DATA[tableId][recordId] = result.fields;
             }
 
-            // Dispatch canonical UI update
             window.dispatchEvent(new CustomEvent('amino:record-updated', {
                 detail: { recordId: recordId, tableId: tableId, fields: result.fields, optimistic: false }
             }));
         }
 
-        showToast('success', 'Saved \u2713');
+        // Matrix confirmation will come via /sync echo — pending badge stays
+        // until Matrix confirms too. Show partial success toast.
+        var pendingCount = await PendingEdits.count();
+        if (pendingCount > 0) {
+            showToast('info', 'Saved — awaiting full sync (' + pendingCount + ' pending)', 3000);
+        } else {
+            showToast('success', 'Saved \u2713');
+        }
         return result;
 
     } catch (err) {
-        // Dismiss saving toast if still visible
         dismissToast(savingToast);
 
-        // ── Stage 4: Rollback on failure ──────────────────────
-        await saveDataRecord({
-            tableId: tableId,
-            recordId: recordId,
-            fields: previousFields
-        });
+        // ── Stage 5: Server failed — keep edit pending for retry ──
+        // DO NOT rollback local data. The edit is saved in pendingEdits store
+        // and stays visible. User can retry or discard from the pending edits panel.
+        await PendingEdits.markFailed(pendingEdit.editId, err.message);
 
-        // Rollback in-memory data
-        if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
-            window.IN_MEMORY_DATA[tableId][recordId] = previousFields;
-        }
+        showToast('error', 'Save failed — edit preserved locally. Retrying...', 5000);
 
-        // Dispatch rollback UI update
-        window.dispatchEvent(new CustomEvent('amino:record-updated', {
-            detail: { recordId: recordId, tableId: tableId, fields: previousFields, optimistic: false, rolledBack: true }
-        }));
-
-        showToast('error', 'Save failed \u2014 please try again');
-        throw err;
+        // Don't throw — the edit is persisted and will auto-retry
+        console.error('[editRecord] Server write failed, edit preserved:', pendingEdit.editId, err);
     }
 }
 
@@ -13811,6 +14516,167 @@ window.addEventListener('amino:record-updated', function(e) {
         renderTable();
     }
 });
+
+// ============ Pending Edits UI ============
+
+// Update the badge in the status bar
+async function updatePendingEditsBadge() {
+    var badge = document.getElementById('pending-edits-badge');
+    var countEl = document.getElementById('pending-edits-count');
+    if (!badge || !countEl) return;
+
+    var count = await PendingEdits.count();
+    if (count > 0) {
+        badge.className = 'pending-edits-badge has-pending';
+        countEl.textContent = count + ' pending';
+        badge.title = count + ' edit' + (count > 1 ? 's' : '') + ' awaiting sync confirmation';
+    } else {
+        badge.className = 'pending-edits-badge all-synced';
+        countEl.textContent = 'Synced';
+        badge.title = 'All edits confirmed';
+    }
+}
+
+// Toggle the pending edits panel
+function togglePendingEditsPanel() {
+    var panel = document.getElementById('pending-edits-panel');
+    if (!panel) return;
+    var isVisible = panel.classList.contains('visible');
+    if (isVisible) {
+        panel.classList.remove('visible');
+    } else {
+        panel.classList.add('visible');
+        renderPendingEditsPanel();
+    }
+}
+
+// Render the panel content
+async function renderPendingEditsPanel() {
+    var body = document.getElementById('pe-panel-body');
+    if (!body) return;
+
+    var edits = await PendingEdits.getAll();
+    if (edits.length === 0) {
+        body.innerHTML = '<div class="pe-panel-empty">No pending edits — all synced</div>';
+        return;
+    }
+
+    var html = '';
+    for (var i = 0; i < edits.length; i++) {
+        var edit = edits[i];
+        var dest = PendingEdits.getDestinationStatus(edit);
+        var label = PendingEdits.getOverallLabel(edit);
+        var fieldNames = Object.keys(edit.fieldChanges || {});
+        var fieldSummary = fieldNames.length > 2
+            ? fieldNames.slice(0, 2).join(', ') + ' +' + (fieldNames.length - 2) + ' more'
+            : fieldNames.join(', ');
+        var ago = _timeAgo(edit.createdAt);
+
+        html += '<div class="pe-edit-item" data-edit-id="' + esc(edit.editId) + '">';
+        html += '<div class="pe-edit-header">';
+        html += '<span class="pe-edit-record" title="' + esc(edit.recordId) + '">' + esc(edit.recordId) + '</span>';
+        html += '<span class="pe-edit-time">' + esc(ago) + '</span>';
+        html += '</div>';
+        html += '<div class="pe-edit-fields">Fields: ' + esc(fieldSummary) + '</div>';
+
+        // Destination statuses
+        html += '<div class="pe-dest-row"><span class="pe-dest-label">Airtable</span>';
+        html += '<span class="pe-dest-status ' + dest.airtable + '">' + _destIcon(dest.airtable) + '</span></div>';
+        html += '<div class="pe-dest-row"><span class="pe-dest-label">Backup DB</span>';
+        html += '<span class="pe-dest-status ' + dest.backupDb + '">' + _destIcon(dest.backupDb) + '</span></div>';
+        html += '<div class="pe-dest-row"><span class="pe-dest-label">Matrix</span>';
+        html += '<span class="pe-dest-status ' + dest.matrix + '">' + _destIcon(dest.matrix) + '</span></div>';
+
+        // Action buttons
+        html += '<div class="pe-edit-actions">';
+        if (edit.status === 'failed') {
+            html += '<button class="pe-retry-btn" onclick="retryPendingEdit(\'' + esc(edit.editId) + '\')">Retry</button>';
+        }
+        html += '<button class="pe-discard-btn" onclick="discardPendingEdit(\'' + esc(edit.editId) + '\')">Discard</button>';
+        html += '</div>';
+
+        html += '</div>';
+    }
+
+    body.innerHTML = html;
+}
+
+function _destIcon(status) {
+    if (status === 'confirmed') return '\u2714 Confirmed';
+    if (status === 'error') return '\u2716 Failed';
+    return '\u2022 Pending';
+}
+
+function _timeAgo(timestamp) {
+    var diff = Date.now() - timestamp;
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+    if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+    return Math.floor(diff / 86400000) + 'd ago';
+}
+
+async function retryPendingEdit(editId) {
+    showToast('saving', 'Retrying...');
+    await PendingEdits.retry(editId);
+    renderPendingEditsPanel();
+}
+
+async function discardPendingEdit(editId) {
+    await PendingEdits.discard(editId);
+    renderPendingEditsPanel();
+    showToast('info', 'Edit discarded');
+}
+
+// Listen for pending edits changes to update badge & panel
+window.addEventListener('amino:pending-edits-changed', function() {
+    updatePendingEditsBadge();
+    // If panel is open, refresh it
+    var panel = document.getElementById('pending-edits-panel');
+    if (panel && panel.classList.contains('visible')) {
+        renderPendingEditsPanel();
+    }
+});
+
+// Mark table rows that have pending edits (called after renderTable)
+async function markPendingEditRows() {
+    if (!currentTable) return;
+    var rows = document.querySelectorAll('#table tbody tr[data-record-id]');
+    for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var recordId = row.getAttribute('data-record-id');
+        if (recordId && await PendingEdits.hasPending(currentTable, recordId)) {
+            row.classList.add('has-pending-edit');
+        }
+    }
+}
+
+// ── Matrix sync confirmation: when data-layer.js echoes our mutation back ──
+// data-layer.js dispatches 'amino:record-update' (no 'd') with source:'matrix'
+window.addEventListener('amino:record-update', function(e) {
+    var detail = e.detail;
+    if (!detail || detail.source !== 'matrix') return;
+    if (detail.tableId && detail.recordId) {
+        PendingEdits.confirmMatrixForRecord(detail.tableId, detail.recordId);
+    }
+});
+
+// Also listen for data-layer amino:sync events that contain matrix updates
+window.addEventListener('amino:sync', function(e) {
+    var detail = e.detail;
+    if (!detail || detail.source !== 'matrix') return;
+    // Matrix sync confirmed some records — badge will auto-update via 'amino:pending-edits-changed'
+    updatePendingEditsBadge();
+});
+
+// ── Restore pending edits and update badge on app initialization ──
+async function initPendingEdits() {
+    try {
+        await PendingEdits.restoreOnLoad();
+        await updatePendingEditsBadge();
+    } catch (e) {
+        console.warn('[PendingEdits] Init failed:', e);
+    }
+}
 
 // Navigation between records
 function updateProfileNavigation() {
