@@ -10354,44 +10354,72 @@ async function webhookFetch(path) {
     var session = _loadSynapseSession();
     if (!session || !session.accessToken) throw new Error('No Synapse session');
 
-    // Primary: query-param auth — avoids CORS preflight entirely
-    var separator = path.indexOf('?') === -1 ? '?' : '&';
-    var url = N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(session.accessToken);
+    var MAX_RETRIES = 2;
+    var lastErr = null;
 
-    try {
-        var response = await fetch(url);
-    } catch (fetchErr) {
-        // Network / CORS failure on the simple request — try header auth
-        // as a last resort (will trigger OPTIONS preflight).
-        console.warn('[webhookFetch] Query-param fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
-        try {
-            response = await fetch(N8N_WEBHOOK_BASE + path, {
-                headers: { 'Authorization': 'Bearer ' + session.accessToken }
-            });
-        } catch (headerErr) {
-            throw new Error('Webhook unreachable (CORS/network): ' + headerErr.message);
+    for (var attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+            // Exponential backoff: 1s, 3s
+            var delay = attempt === 1 ? 1000 : 3000;
+            console.log('[webhookFetch] Retry ' + attempt + '/' + MAX_RETRIES + ' for ' + path + ' (waiting ' + delay + 'ms)');
+            await new Promise(function(r) { setTimeout(r, delay); });
         }
-    }
 
-    if (response.status === 401) {
-        // Query-param token may not have been picked up — retry with header
-        console.warn('[webhookFetch] 401 with query-param auth, retrying with header auth for ' + path);
+        // Primary: query-param auth — avoids CORS preflight entirely
+        var separator = path.indexOf('?') === -1 ? '?' : '&';
+        var url = N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(session.accessToken);
+
+        var response;
         try {
-            response = await fetch(N8N_WEBHOOK_BASE + path, {
-                headers: { 'Authorization': 'Bearer ' + session.accessToken }
-            });
-        } catch (headerErr) {
-            throw new Error('Webhook auth retry failed (CORS/network): ' + headerErr.message);
+            response = await fetch(url);
+        } catch (fetchErr) {
+            // Network / CORS failure on the simple request — try header auth
+            // as a last resort (will trigger OPTIONS preflight).
+            console.warn('[webhookFetch] Query-param fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
+            try {
+                response = await fetch(N8N_WEBHOOK_BASE + path, {
+                    headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                });
+            } catch (headerErr) {
+                lastErr = new Error('Webhook unreachable (CORS/network): ' + headerErr.message);
+                continue;
+            }
         }
+
         if (response.status === 401) {
-            throw new Error('Webhook auth failed (Synapse token rejected)');
+            // Query-param token may not have been picked up — retry with header
+            console.warn('[webhookFetch] 401 with query-param auth, retrying with header auth for ' + path);
+            try {
+                response = await fetch(N8N_WEBHOOK_BASE + path, {
+                    headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                });
+            } catch (headerErr) {
+                throw new Error('Webhook auth retry failed (CORS/network): ' + headerErr.message);
+            }
+            if (response.status === 401) {
+                throw new Error('Webhook auth failed (Synapse token rejected)');
+            }
         }
+
+        // Retry on 5xx server errors (transient failures, n8n overload, etc.)
+        if (response.status >= 500) {
+            var errBody = '';
+            try { errBody = await response.text(); } catch (e) {}
+            console.warn('[webhookFetch] Server error ' + response.status + ' for ' + path + (errBody ? ' — body: ' + errBody.substring(0, 200) : ''));
+            lastErr = new Error('Webhook API error: ' + response.status + (errBody ? ' (' + errBody.substring(0, 100) + ')' : ''));
+            continue;
+        }
+
+        if (!response.ok) {
+            var errBody2 = '';
+            try { errBody2 = await response.text(); } catch (e) {}
+            throw new Error('Webhook API error: ' + response.status + (errBody2 ? ' (' + errBody2.substring(0, 100) + ')' : ''));
+        }
+        return response.json();
     }
 
-    if (!response.ok) {
-        throw new Error('Webhook API error: ' + response.status);
-    }
-    return response.json();
+    // All retries exhausted
+    throw lastErr || new Error('Webhook API failed after ' + (MAX_RETRIES + 1) + ' attempts');
 }
 
 // hydrateFromWebhooks: fetch current state from n8n webhook API and store in main app IndexedDB
