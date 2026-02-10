@@ -4,7 +4,7 @@
 // IndexedDB encrypted at rest (AES-GCM), and keeps data in sync via Matrix
 // realtime sync or HTTP polling fallback. Builds a tableId <-> matrixRoomId
 // lookup map from /api/tables, joins Matrix rooms, and applies incoming
-// law.firm.record.mutate events (ALT/INS/NUL) to IndexedDB records.
+// law.firm.record.mutate and law.firm.schema.object events (ALT/INS/NUL) to IndexedDB records.
 // ============================================================================
 
 var AminoData = (function() {
@@ -521,10 +521,16 @@ var AminoData = (function() {
         return joined;
     }
 
-    // Apply a law.firm.record.mutate event to a record in IndexedDB
+    // Apply a law.firm.record.mutate or law.firm.schema.object event to a record in IndexedDB
     async function applyMutateEvent(event, roomId) {
         var content = event.content;
         if (!content) return;
+
+        // Skip metadata records (table/field/view definitions) — only process data records
+        var payloadSet = content.payload && content.payload._set;
+        if (payloadSet === 'table' || payloadSet === 'field' || payloadSet === 'view' || payloadSet === 'viewConfig' || payloadSet === 'tableSettings') {
+            return;
+        }
 
         // Handle encrypted event payloads — decrypt before processing
         if (isEncryptedPayload(content)) {
@@ -652,7 +658,7 @@ var AminoData = (function() {
                 var events = room.timeline.events;
                 for (var e = 0; e < events.length; e++) {
                     var event = events[e];
-                    if (event.type === 'law.firm.record.mutate') {
+                    if (event.type === 'law.firm.record.mutate' || event.type === 'law.firm.schema.object') {
                         applyMutateEvent(event, roomId);
                         updated++;
                     }
@@ -669,7 +675,7 @@ var AminoData = (function() {
             room: {
                 rooms: roomIds,
                 timeline: {
-                    types: ['law.firm.record.mutate'],
+                    types: ['law.firm.record.mutate', 'law.firm.schema.object'],
                     limit: 100
                 },
                 state: { lazy_load_members: true, types: [] },

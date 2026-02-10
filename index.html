@@ -9931,7 +9931,7 @@ function formatSyncTimestamp(ts) {
 // ============ Synapse Sync ============
 
 // SynapseSync: real-time sync from Matrix room timelines via /sync long-poll
-// Each Airtable table has its own room. Events are law.firm.record.mutate.
+// Each Airtable table has its own room. Events are law.firm.schema.object + law.firm.record.mutate.
 var SynapseSync = {
     running: false,
     since: null,
@@ -10068,13 +10068,13 @@ var SynapseSync = {
 
                 var roomIds = this.tableRooms.map(function(r) { return r.roomId; });
 
-                // Build sync filter: listen for law.firm.schema.object timeline events
-                // and schema state events (table/field metadata + vault metadata)
+                // Build sync filter: listen for law.firm.schema.object AND law.firm.record.mutate
+                // timeline events, plus schema state events (table/field metadata + vault metadata)
                 var filter = JSON.stringify({
                     room: {
                         rooms: roomIds,
                         timeline: {
-                            types: ['law.firm.schema.object'],
+                            types: ['law.firm.schema.object', 'law.firm.record.mutate'],
                             limit: 100
                         },
                         state: {
@@ -10113,7 +10113,8 @@ var SynapseSync = {
         }
     },
 
-    // Convert a law.firm.schema.object Matrix event to the synthetic format processEvents expects
+    // Convert a law.firm.schema.object or law.firm.record.mutate Matrix event
+    // to the synthetic format processEvents expects.
     _convertSchemaObjectEvent: function(tevt, fallbackTableId) {
         var c = tevt.content;
         if (!c || !c.recordId) return null;
@@ -10122,6 +10123,10 @@ var SynapseSync = {
         // Extract table ID from the 'set' field (e.g. "airtable:tblXXX")
         if (c.set) {
             evtTableId = c.set.replace('airtable:', '');
+        }
+        // law.firm.record.mutate events may carry tableId directly
+        if (!evtTableId && c.tableId) {
+            evtTableId = c.tableId;
         }
 
         var syntheticEvent = {
@@ -10139,6 +10144,7 @@ var SynapseSync = {
         }
 
         // Handle case where event has flat fields + op but no EO-structured payload
+        // (covers both law.firm.schema.object and law.firm.record.mutate flat formats)
         if (c.op && c.fields && !c.payload) {
             syntheticEvent.payload = { fields: {} };
             if (c.op === 'INS') {
@@ -10149,6 +10155,10 @@ var SynapseSync = {
                 syntheticEvent.payload.fields.NUL = Array.isArray(c.fields) ? c.fields : Object.keys(c.fields);
             }
         }
+
+        // Handle law.firm.record.mutate structured payload format
+        // where fields are at content.payload.fields.ALT / .INS / .NUL
+        // (already handled above via c.payload passthrough)
 
         return syntheticEvent;
     },
@@ -10183,11 +10193,11 @@ var SynapseSync = {
                 }
             }
 
-            // Process timeline events (law.firm.schema.object record mutations)
+            // Process timeline events (law.firm.schema.object + law.firm.record.mutate)
             var timelineEvents = roomData.timeline && roomData.timeline.events ? roomData.timeline.events : [];
             for (var j = 0; j < timelineEvents.length; j++) {
                 var tevt = timelineEvents[j];
-                if (tevt.type === 'law.firm.schema.object' && tevt.content) {
+                if ((tevt.type === 'law.firm.schema.object' || tevt.type === 'law.firm.record.mutate') && tevt.content) {
                     var syntheticEvent = this._convertSchemaObjectEvent(tevt, tableId);
                     if (!syntheticEvent) continue;
 
@@ -10213,7 +10223,7 @@ var SynapseSync = {
 };
 
 // hydrateFromSynapse: full initial hydration from Synapse table rooms
-// Replays all law.firm.schema.object events to build local state (~3-5 min one-time)
+// Replays all law.firm.schema.object + law.firm.record.mutate events to build local state
 async function hydrateFromSynapse() {
     try {
         var session = _loadSynapseSession();
@@ -10268,14 +10278,14 @@ async function hydrateFromSynapse() {
                 console.warn('[Hydration] State read failed for ' + tr.name + ':', stateErr);
             }
 
-            // 2. Paginate full timeline for law.firm.schema.object events
+            // 2. Paginate full timeline for law.firm.schema.object + law.firm.record.mutate events
             var from = null;
             var roomEvents = 0;
             while (true) {
                 try {
                     var msgUrl = SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(tr.roomId) + '/messages?dir=f&limit=100';
                     if (from) msgUrl += '&from=' + encodeURIComponent(from);
-                    msgUrl += '&filter=' + encodeURIComponent(JSON.stringify({ types: ['law.firm.schema.object'] }));
+                    msgUrl += '&filter=' + encodeURIComponent(JSON.stringify({ types: ['law.firm.schema.object', 'law.firm.record.mutate'] }));
 
                     var msgRes = await fetch(msgUrl, {
                         headers: { 'Authorization': 'Bearer ' + session.accessToken }
@@ -10286,10 +10296,10 @@ async function hydrateFromSynapse() {
                     var chunk = msgData.chunk || [];
                     if (chunk.length === 0) break;
 
-                    // Process each event using the shared converter
+                    // Process each event using the shared converter (handles both event types)
                     for (var j = 0; j < chunk.length; j++) {
                         var mevt = chunk[j];
-                        if (mevt.type === 'law.firm.schema.object' && mevt.content) {
+                        if ((mevt.type === 'law.firm.schema.object' || mevt.type === 'law.firm.record.mutate') && mevt.content) {
                             var synEvent = SynapseSync._convertSchemaObjectEvent(mevt, tr.tableId);
                             if (!synEvent) continue;
 
