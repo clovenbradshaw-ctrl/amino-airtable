@@ -2618,6 +2618,7 @@ var API = null;
 var DB_NAME = 'aminostream';
 var DB_VERSION = 8;
 var PAGE_SIZE = 100;
+var N8N_WEBHOOK_BASE = 'https://n8n.intelechia.com/webhook';
 
 var API_KEY = null; // No longer used — auth is via Matrix Bearer token
 var SET_FILTER = null;
@@ -4058,16 +4059,52 @@ var SyncHistory = {
         this.notify();
     },
 
-    // Poll for new events — now handled by SynapseSync long-poll /sync.
-    // This method is kept as a no-op for backward compatibility with UI that calls it.
+    // Poll for new events via n8n webhook API (incremental sync)
     async pollForUpdates() {
-        // Synapse /sync long-poll handles real-time updates — no separate polling needed.
-        this.record({
-            type: 'poll',
-            result: 'no-change',
-            eventsFound: 0,
-            detail: 'Updates delivered via Matrix /sync (real-time)'
-        });
+        var startTime = Date.now();
+        try {
+            var updated = await webhookIncrementalSync();
+            var duration = Date.now() - startTime;
+
+            if (updated > 0) {
+                this.consecutiveFailures = 0;
+                this.record({
+                    type: 'poll',
+                    result: 'success',
+                    eventsFound: updated,
+                    duration: duration,
+                    detail: 'Webhook poll: ' + updated + ' records updated'
+                });
+                // Re-render current view
+                if (currentTable) {
+                    await showTable(currentTable, true);
+                }
+                await renderSidebar(false);
+            } else {
+                this.record({
+                    type: 'poll',
+                    result: 'no-change',
+                    eventsFound: 0,
+                    duration: duration,
+                    detail: 'Webhook poll: no changes'
+                });
+            }
+
+            if (this.isPolling) this.scheduleNextPoll();
+        } catch (err) {
+            var duration = Date.now() - startTime;
+            this.consecutiveFailures++;
+            this.currentPollInterval = this.getBackoffInterval();
+            this.record({
+                type: 'poll',
+                result: 'error',
+                eventsFound: 0,
+                duration: duration,
+                error: err.message,
+                detail: 'Webhook poll failed: ' + err.message
+            });
+            if (this.isPolling) this.scheduleNextPoll();
+        }
     },
 
     // Schedule the next poll using setTimeout (allows dynamic interval changes)
@@ -4082,21 +4119,23 @@ var SyncHistory = {
 
     // Start background polling
     startPolling() {
-        if (this.pollInterval) return;
+        if (this.isPolling) return;
+        this.isPolling = true;
         this.consecutiveFailures = 0;
         this.currentPollInterval = this.POLL_INTERVAL;
         this.scheduleNextPoll();
-        this.record({ type: 'poll', result: 'no-change', detail: 'Background polling started (' + (this.POLL_INTERVAL / 1000) + 's interval)' });
+        this.record({ type: 'poll', result: 'no-change', detail: 'Webhook polling started (' + (this.POLL_INTERVAL / 1000) + 's interval)' });
     },
 
     // Stop background polling
     stopPolling() {
+        this.isPolling = false;
         if (this.pollInterval) {
             clearTimeout(this.pollInterval);
             this.pollInterval = null;
             this.consecutiveFailures = 0;
             this.currentPollInterval = this.POLL_INTERVAL;
-            this.record({ type: 'poll', result: 'no-change', detail: 'Background polling stopped' });
+            this.record({ type: 'poll', result: 'no-change', detail: 'Webhook polling stopped' });
         }
     },
 
@@ -4121,7 +4160,7 @@ var SyncHistory = {
             errorCount: errors.length,
             lastSyncTime: lastSync ? lastSync.timestamp : null,
             lastPollTime: lastPoll ? lastPoll.timestamp : null,
-            isPolling: !!this.pollInterval
+            isPolling: this.isPolling
         };
     },
 
@@ -9781,12 +9820,12 @@ async function renderSyncStatusView() {
 
     // Polling controls
     html += '<div class="sync-status-section">';
-    html += '<h3><span class="section-dot ' + (SyncHistory.pollInterval ? (SyncHistory.consecutiveFailures > 0 ? 'red' : 'green') : 'amber') + '"></span>Database Polling</h3>';
+    html += '<h3><span class="section-dot ' + (SyncHistory.isPolling ? (SyncHistory.consecutiveFailures > 0 ? 'red' : 'green') : 'amber') + '"></span>Database Polling</h3>';
     html += '<div class="sync-poll-controls">';
-    html += '<button class="btn-poll primary" onclick="SyncHistory.pollForUpdates()" ' + (SyncHistory.isPolling ? 'disabled' : '') + '>';
+    html += '<button class="btn-poll primary" onclick="SyncHistory.pollForUpdates(); renderSyncStatusView();">';
     html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>';
     html += 'Poll Now</button>';
-    if (SyncHistory.pollInterval) {
+    if (SyncHistory.isPolling) {
         html += '<button class="btn-poll" onclick="SyncHistory.stopPolling(); renderSyncStatusView();">Stop Auto-Poll</button>';
         if (SyncHistory.consecutiveFailures > 0) {
             html += '<span style="font-size: 12px; color: #ef4444;">Backing off: ' + Math.round(SyncHistory.currentPollInterval / 1000) + 's interval (' + SyncHistory.consecutiveFailures + ' consecutive failure' + (SyncHistory.consecutiveFailures > 1 ? 's' : '') + ')</span>';
@@ -10299,6 +10338,233 @@ async function hydrateFromSynapse() {
     }
 }
 
+// ============ Webhook Hydration ============
+
+// Fetch from n8n webhook API using the Synapse access token
+async function webhookFetch(path) {
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken) throw new Error('No Synapse session');
+
+    var response = await fetch(N8N_WEBHOOK_BASE + path, {
+        headers: { 'Authorization': 'Bearer ' + session.accessToken }
+    });
+
+    if (response.status === 401) {
+        throw new Error('Webhook auth failed (Synapse token rejected)');
+    }
+    if (!response.ok) {
+        throw new Error('Webhook API error: ' + response.status);
+    }
+    return response.json();
+}
+
+// hydrateFromWebhooks: fetch current state from n8n webhook API and store in main app IndexedDB
+async function hydrateFromWebhooks() {
+    try {
+        var session = _loadSynapseSession();
+        if (!session || !session.accessToken) {
+            console.warn('[WebhookHydration] No Synapse session — cannot hydrate');
+            return false;
+        }
+
+        console.log('[WebhookHydration] Starting hydration from n8n webhook API');
+        SyncStatusFeed.log('Hydrating from webhook API...');
+
+        // 1. Fetch table list
+        updateStatus('Fetching tables from webhook API...', false, 0, null);
+        var tablesData = await webhookFetch('/api/tables');
+        var webhookTables = tablesData.tables || [];
+
+        if (webhookTables.length === 0) {
+            console.log('[WebhookHydration] No tables returned from webhook API');
+            SyncStatusFeed.warn('Webhook API returned 0 tables');
+            return false;
+        }
+
+        console.log('[WebhookHydration] Found ' + webhookTables.length + ' tables');
+        SyncStatusFeed.info('Found ' + webhookTables.length + ' tables via webhook API');
+
+        var totalRecords = 0;
+        var totalFields = 0;
+
+        updateLoadingOverlay('Downloading from API...', 'Found ' + webhookTables.length + ' tables', 0, webhookTables.length, 0, 0, null);
+
+        // 2. For each table, fetch records and store in main app IndexedDB
+        for (var idx = 0; idx < webhookTables.length; idx++) {
+            var wt = webhookTables[idx];
+            var tableId = wt.table_id;
+            var tableName = wt.table_name || tableId;
+            var progressPct = Math.round((idx / webhookTables.length) * 100);
+
+            updateStatus('Downloading ' + tableName + '...', false, progressPct, 'Table ' + (idx + 1) + ' of ' + webhookTables.length);
+            updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, null);
+
+            // Save table metadata
+            await saveTable({ tableId: tableId, tableName: tableName });
+            META_TABLES[tableId] = { tableId: tableId, tableName: tableName };
+
+            // Fetch records for this table
+            try {
+                var recordsData = await webhookFetch('/api/records/' + encodeURIComponent(tableId));
+                var records = recordsData.records || [];
+
+                if (records.length > 0) {
+                    // Process records in batches to avoid blocking
+                    var BATCH = 200;
+                    for (var b = 0; b < records.length; b += BATCH) {
+                        var batch = records.slice(b, b + BATCH);
+                        var dataRecords = [];
+                        var fieldsToSave = [];
+
+                        for (var r = 0; r < batch.length; r++) {
+                            var rec = batch[r];
+                            var fields = rec.fields;
+                            if (!fields || typeof fields !== 'object') continue;
+
+                            // If fields is a string (JSON from postgres), parse it
+                            if (typeof fields === 'string') {
+                                try { fields = JSON.parse(fields); } catch (e) { continue; }
+                            }
+
+                            // Auto-discover field metadata from record data
+                            if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+                            var fieldIds = Object.keys(fields);
+                            for (var fi = 0; fi < fieldIds.length; fi++) {
+                                var fid = fieldIds[fi];
+                                if (!META_FIELDS[tableId][fid]) {
+                                    var fieldMeta = {
+                                        tableId: tableId,
+                                        fieldId: fid,
+                                        fieldName: fid,
+                                        fieldType: inferFieldType(fields[fid]),
+                                        _placeholder: true
+                                    };
+                                    META_FIELDS[tableId][fid] = fieldMeta;
+                                    fieldsToSave.push(fieldMeta);
+                                    totalFields++;
+                                }
+                            }
+
+                            dataRecords.push({
+                                tableId: tableId,
+                                recordId: rec.id,
+                                fields: fields
+                            });
+                        }
+
+                        // Save field metadata
+                        for (var fs = 0; fs < fieldsToSave.length; fs++) {
+                            await saveField(fieldsToSave[fs]);
+                        }
+
+                        // Save data records (uses main app's encryption)
+                        if (dataRecords.length > 0) {
+                            await saveBatch([], [], [], dataRecords);
+                        }
+
+                        totalRecords += dataRecords.length;
+                    }
+                }
+
+                console.log('[WebhookHydration] ' + tableName + ': ' + records.length + ' records');
+                updateLoadingOverlay('Downloading ' + tableName + '...', records.length + ' records', progressPct, webhookTables.length, totalFields, totalRecords, null);
+
+            } catch (recErr) {
+                console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
+                SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
+            }
+        }
+
+        updateLoadingOverlay('Sync complete', totalRecords + ' records downloaded', 100, webhookTables.length, totalFields, totalRecords, null);
+        updateStatus('Webhook hydration complete: ' + totalRecords + ' records', true, 100, null);
+        SyncStatusFeed.success('Webhook hydration complete: ' + totalRecords + ' records across ' + webhookTables.length + ' tables');
+
+        SyncHistory.record({
+            type: 'full',
+            result: totalRecords > 0 ? 'success' : 'no-change',
+            eventsFound: totalRecords,
+            detail: 'Webhook hydration: ' + totalRecords + ' records from ' + webhookTables.length + ' tables'
+        });
+
+        return totalRecords > 0;
+    } catch (err) {
+        console.error('[WebhookHydration] Failed:', err);
+        SyncStatusFeed.error('Webhook hydration failed: ' + err.message);
+        return false;
+    }
+}
+
+// Incremental sync from webhooks — fetch records updated since last webhook sync
+async function webhookIncrementalSync() {
+    try {
+        var session = _loadSynapseSession();
+        if (!session || !session.accessToken) return 0;
+
+        // Get the last webhook sync timestamp
+        var lastWebhookSync = null;
+        try {
+            lastWebhookSync = await getSyncMeta('lastWebhookSync');
+        } catch (e) {}
+
+        if (!lastWebhookSync) {
+            // No previous webhook sync — do a full hydration instead
+            return 0;
+        }
+
+        var tablesData = await webhookFetch('/api/tables');
+        var tables = tablesData.tables || [];
+        var totalUpdated = 0;
+
+        for (var i = 0; i < tables.length; i++) {
+            var tableId = tables[i].table_id;
+            try {
+                var data = await webhookFetch(
+                    '/api/records/' + encodeURIComponent(tableId) +
+                    '/since/' + encodeURIComponent(lastWebhookSync)
+                );
+                var records = data.records || [];
+                if (records.length === 0) continue;
+
+                var dataRecords = [];
+                for (var r = 0; r < records.length; r++) {
+                    var rec = records[r];
+                    var fields = rec.fields;
+                    if (!fields || typeof fields !== 'object') continue;
+                    if (typeof fields === 'string') {
+                        try { fields = JSON.parse(fields); } catch (e) { continue; }
+                    }
+                    dataRecords.push({
+                        tableId: tableId,
+                        recordId: rec.id,
+                        fields: fields
+                    });
+                }
+
+                if (dataRecords.length > 0) {
+                    await saveBatch([], [], [], dataRecords);
+                    totalUpdated += dataRecords.length;
+                }
+            } catch (tableErr) {
+                console.warn('[WebhookSync] Failed to sync table ' + tableId + ':', tableErr);
+            }
+        }
+
+        // Update sync cursor
+        await setSyncMeta('lastWebhookSync', new Date().toISOString());
+
+        if (totalUpdated > 0) {
+            window.dispatchEvent(new CustomEvent('amino:record-updated', {
+                detail: { source: 'webhook-poll', count: totalUpdated }
+            }));
+        }
+
+        return totalUpdated;
+    } catch (err) {
+        console.error('[WebhookSync] Incremental sync failed:', err);
+        return 0;
+    }
+}
+
 // ============ Init ============
 
 async function init() {
@@ -10382,10 +10648,29 @@ async function init() {
             await showTable(firstTable);
         }
     } else {
-        // No local data — show loading overlay and hydrate from Synapse rooms
+        // No local data — show loading overlay and hydrate
         showLoadingOverlay();
-        updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
-        var hydrated = await hydrateFromSynapse();
+
+        // Try webhook API first (faster, direct REST), fall back to Synapse room replay
+        var hydrated = false;
+        try {
+            updateLoadingOverlay('Connecting to API...', 'Fetching tables...', 0, 0, 0, 0, null);
+            hydrated = await hydrateFromWebhooks();
+            if (hydrated) {
+                // Save webhook sync cursor so future incremental syncs work
+                await setSyncMeta('lastWebhookSync', new Date().toISOString());
+            }
+        } catch (webhookErr) {
+            console.warn('[init] Webhook hydration failed, trying Synapse rooms:', webhookErr);
+            SyncStatusFeed.warn('Webhook hydration failed: ' + webhookErr.message + ' — trying Synapse rooms');
+        }
+
+        if (!hydrated) {
+            // Fall back to Synapse room replay
+            updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
+            hydrated = await hydrateFromSynapse();
+        }
+
         hideLoadingOverlay();
 
         if (hydrated) {
@@ -10409,8 +10694,8 @@ async function init() {
                 await showTable(firstTable);
             }
         } else {
-            // No data from Synapse either — show empty state
-            updateStatus('No data available — waiting for Synapse sync', true, null, null);
+            // No data from either source — show empty state
+            updateStatus('No data available — waiting for sync', true, null, null);
             await renderSidebar(true);
         }
     }
@@ -10423,20 +10708,6 @@ async function init() {
 
     // Start Synapse real-time sync (long-poll /sync for room events)
     SynapseSync.start();
-
-    // Start n8n webhook data layer hydration and polling (if initialized during login)
-    if (AminoData.isInitialized()) {
-        try {
-            var hydrationCount = await AminoData.hydrateAll(function(progress) {
-                console.log('[AminoData] Hydrated table ' + (progress.tableIndex + 1) + '/' + progress.tableCount +
-                    ' (' + progress.tableName + '): ' + progress.recordCount + ' records');
-            });
-            console.log('[AminoData] Hydration complete:', hydrationCount, 'total records');
-            AminoData.startPolling();
-        } catch (dataErr) {
-            console.warn('[AminoData] Hydration/polling failed (non-fatal):', dataErr);
-        }
-    }
 }
 
 // ============ Field History Modal ============
