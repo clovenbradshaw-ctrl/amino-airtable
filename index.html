@@ -680,6 +680,65 @@
             background: rgba(59, 130, 246, 0.06);
         }
 
+        /* Formula / computed field cells (read-only) */
+        td.cell-formula { cursor: default; color: var(--text-secondary); }
+        td.cell-formula:hover { background: rgba(124, 58, 237, 0.06); outline: none; }
+        td.cell-formula:hover::after { display: none; }
+        td.cell-formula.cell-focused {
+            outline: 2px solid rgba(124, 58, 237, 0.5); outline-offset: -2px;
+            background: rgba(124, 58, 237, 0.06);
+        }
+
+        /* Formula icon in column headers */
+        th .formula-icon {
+            display: inline-flex; align-items: center; margin-left: 4px;
+            color: var(--text-muted); vertical-align: middle;
+        }
+        th .formula-icon svg { width: 12px; height: 12px; }
+
+        /* Formula badge on profile field cards */
+        .profile-field-name .formula-badge {
+            font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+            color: #a78bfa; background: rgba(124, 58, 237, 0.2);
+            padding: 1px 5px; border-radius: 3px; margin-left: auto; cursor: pointer;
+        }
+        .profile-field-name .formula-badge:hover { background: rgba(124, 58, 237, 0.35); }
+        html.light-theme .profile-field-name .formula-badge { color: #7c3aed; background: rgba(124, 58, 237, 0.12); }
+        html.light-theme .profile-field-name .formula-badge:hover { background: rgba(124, 58, 237, 0.22); }
+
+        /* Formula field value in profile (read-only look) */
+        .profile-field-value.formula-readonly { cursor: default; }
+        .profile-field-value.formula-readonly:hover { background: none; }
+
+        /* Formula info popover */
+        .formula-info-popover {
+            position: fixed; z-index: 10000;
+            background: var(--bg-elevated); border: 1px solid var(--border-secondary);
+            border-radius: var(--radius-lg); padding: 14px 16px;
+            box-shadow: var(--shadow-lg); min-width: 240px; max-width: 400px;
+        }
+        .formula-info-popover .formula-info-header {
+            font-size: 11px; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .formula-info-popover .formula-info-header svg { width: 14px; height: 14px; color: #a78bfa; }
+        .formula-info-popover .formula-info-type {
+            font-size: 12px; color: #a78bfa; background: rgba(124, 58, 237, 0.15);
+            padding: 2px 8px; border-radius: var(--radius-sm); display: inline-block; margin-bottom: 8px;
+        }
+        .formula-info-popover .formula-info-expression {
+            font-family: var(--font-mono); font-size: 12px; color: var(--text-primary);
+            background: var(--bg-primary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm); padding: 8px 10px; white-space: pre-wrap;
+            word-break: break-word; max-height: 200px; overflow-y: auto;
+        }
+        .formula-info-popover .formula-info-note {
+            font-size: 11px; color: var(--text-muted); margin-top: 8px;
+        }
+        html.light-theme .formula-info-popover .formula-info-header svg { color: #7c3aed; }
+        html.light-theme .formula-info-popover .formula-info-type { color: #7c3aed; background: rgba(124, 58, 237, 0.1); }
+
         /* Pagination */
         .pagination {
             padding: 12px 20px; border-top: 1px solid var(--border-primary);
@@ -9600,11 +9659,19 @@ async function renderTable() {
     // Build table with draggable headers
     var html = '<thead><tr><th style="width: 70px; cursor: default;">Actions</th>';
     colList.forEach((col, idx) => {
+        var colField = fields[col];
+        var colIsComputed = colField && isComputedFieldType(colField.fieldType);
+        var colTitle = esc(col) + (colIsComputed ? ' (' + computedFieldLabel(colField.fieldType) + ')' : '');
         html += '<th draggable="true" data-field-id="' + esc(col) + '" data-field-index="' + idx + '" ' +
                 'ondragstart="handleColumnDragStart(event)" ondragover="handleColumnDragOver(event)" ' +
                 'ondrop="handleColumnDrop(event)" ondragend="handleColumnDragEnd(event)" ' +
                 'oncontextmenu="showColumnContextMenu(event, \'' + esc(col) + '\')" ' +
-                'title="' + esc(col) + '">' + esc(colNames[col]) + '</th>';
+                'title="' + colTitle + '">' + esc(colNames[col]);
+        if (colIsComputed) {
+            html += '<span class="formula-icon" title="' + esc(computedFieldLabel(colField.fieldType)) + '">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2H4a1 1 0 0 0-1 1v5"/><path d="M15 2h5a1 1 0 0 1 1 1v5"/><path d="M20 15v5a1 1 0 0 1-1 1h-5"/><path d="M4 15v5a1 1 0 0 0 1 1h5"/><path d="m9 12 2 2 4-4"/></svg></span>';
+        }
+        html += '</th>';
     });
     html += '</tr></thead><tbody>';
 
@@ -9638,7 +9705,13 @@ async function renderTable() {
                 colList.forEach(col => {
                     var value = row[col];
                     if (value === undefined) value = row[colNames[col]];
-                    html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
+                    var cellField = fields[col];
+                    var cellIsComputed = cellField && isComputedFieldType(cellField.fieldType);
+                    if (cellIsComputed) {
+                        html += '<td class="cell-formula" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + esc(computedFieldLabel(cellField.fieldType)) + ' — click for info">' + formatCell(value) + '</td>';
+                    } else {
+                        html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
+                    }
                 });
                 html += '</tr>';
             });
@@ -9656,7 +9729,13 @@ async function renderTable() {
             colList.forEach(col => {
                 var value = row[col];
                 if (value === undefined) value = row[colNames[col]];
-                html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
+                var cellField = fields[col];
+                var cellIsComputed = cellField && isComputedFieldType(cellField.fieldType);
+                if (cellIsComputed) {
+                    html += '<td class="cell-formula" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + esc(computedFieldLabel(cellField.fieldType)) + ' — click for info">' + formatCell(value) + '</td>';
+                } else {
+                    html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
+                }
             });
             html += '</tr>';
         });
@@ -12996,14 +13075,25 @@ async function renderRecordProfile() {
             }
 
             html += '<div class="profile-field-card" data-field-id="' + esc(fieldId) + '" data-block-index="' + blockIndex + '" data-field-index="' + fieldIndex + '" draggable="true" ondragstart="handleFieldDragStart(event)" ondragover="handleFieldDragOver(event)" ondragleave="handleFieldDragLeave(event)" ondrop="handleFieldDrop(event)">';
+            var pfIsComputed = field && isComputedFieldType(field.fieldType);
             html += '<div class="profile-field-name">';
             html += '<span class="field-drag-handle">&#8942;&#8942;</span>';
             html += esc(fieldName);
+            if (pfIsComputed) {
+                html += '<span class="formula-badge" onclick="event.stopPropagation(); showFormulaInfoPopover(this, META_FIELDS[\'' + esc(profileCurrentTableId) + '\'][\'' + esc(fieldId) + '\'])" title="Click to see formula details">' + esc(computedFieldLabel(field.fieldType)) + '</span>';
+            }
             if (profileConfigureMode) {
                 html += '<button style="margin-left: auto; background: none; border: none; color: #ccc; cursor: pointer; font-size: 12px;" onclick="removeFieldFromBlock(' + blockIndex + ', ' + fieldIndex + ')">&times;</button>';
             }
             html += '</div>';
-            if (isEmpty) {
+            if (pfIsComputed) {
+                // Formula fields: show value as read-only, click shows info popover
+                if (isEmpty) {
+                    html += '<div class="profile-field-value empty formula-readonly" data-edit-field-id="' + esc(fieldId) + '">—</div>';
+                } else {
+                    html += '<div class="profile-field-value formula-readonly" data-edit-field-id="' + esc(fieldId) + '">' + formatCell(value) + '</div>';
+                }
+            } else if (isEmpty) {
                 html += '<div class="profile-field-value empty" data-edit-field-id="' + esc(fieldId) + '" onclick="startProfileFieldEdit(this)">—</div>';
             } else {
                 html += '<div class="profile-field-value" data-edit-field-id="' + esc(fieldId) + '" onclick="startProfileFieldEdit(this)">' + formatCell(value) + '</div>';
@@ -13296,6 +13386,10 @@ async function startProfileFieldEdit(element) {
 
     var fieldId = element.dataset.editFieldId;
     if (!fieldId) return;
+
+    // Don't edit formula/computed fields
+    var pfField = META_FIELDS[profileCurrentTableId]?.[fieldId];
+    if (pfField && isComputedFieldType(pfField.fieldType)) return;
 
     profileEditingFieldId = fieldId;
 
@@ -14116,6 +14210,125 @@ function handleRowDblClick(event, tableId, recordId) {
     openRecordProfile(tableId, recordId);
 }
 
+// ============ Computed / Formula Field Detection ============
+
+// Airtable field types that are computed (read-only, not user-editable)
+var COMPUTED_FIELD_TYPES = ['formula', 'rollup', 'lookup', 'count', 'autoNumber', 'createdTime', 'lastModifiedTime', 'createdBy', 'lastModifiedBy'];
+
+function isComputedFieldType(fieldType) {
+    return COMPUTED_FIELD_TYPES.indexOf(fieldType) !== -1;
+}
+
+// Get a human-readable label for a computed field type
+function computedFieldLabel(fieldType) {
+    var labels = { formula: 'Formula', rollup: 'Rollup', lookup: 'Lookup', count: 'Count', autoNumber: 'Auto Number', createdTime: 'Created Time', lastModifiedTime: 'Modified Time', createdBy: 'Created By', lastModifiedBy: 'Modified By' };
+    return labels[fieldType] || fieldType;
+}
+
+// Show a formula/computed info popover next to a target element
+var _formulaInfoPopover = null;
+function showFormulaInfoPopover(targetEl, field) {
+    closeFormulaInfoPopover();
+    var fieldType = field?.fieldType || 'formula';
+    var label = computedFieldLabel(fieldType);
+    var expression = field?.options?.formula || field?.options?.expression || null;
+    var referencedFieldIds = field?.options?.referencedFieldIds || null;
+    var result = field?.options?.result || null;
+
+    var popover = document.createElement('div');
+    popover.className = 'formula-info-popover';
+
+    var html = '<div class="formula-info-header">';
+    html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
+    html += 'Computed Field</div>';
+    html += '<div class="formula-info-type">' + esc(label) + '</div>';
+
+    if (expression) {
+        html += '<div class="formula-info-expression">' + esc(expression) + '</div>';
+    } else if (fieldType === 'rollup' && field?.options?.recordLinkFieldId) {
+        var rollupDesc = 'Rollup of field via linked records';
+        if (field.options.fieldIdInLinkedTable) {
+            var linkedTableFields = null;
+            // Try to resolve the referenced field name
+            for (var tid in META_FIELDS) {
+                if (META_FIELDS[tid][field.options.fieldIdInLinkedTable]) {
+                    var linkedField = META_FIELDS[tid][field.options.fieldIdInLinkedTable];
+                    rollupDesc = 'Rollup of "' + (linkedField.fieldName || field.options.fieldIdInLinkedTable) + '"';
+                    break;
+                }
+            }
+        }
+        if (field.options.result?.type) rollupDesc += ' → ' + field.options.result.type;
+        html += '<div class="formula-info-expression">' + esc(rollupDesc) + '</div>';
+    } else if (fieldType === 'lookup' && field?.options?.recordLinkFieldId) {
+        var lookupDesc = 'Looks up values from linked records';
+        if (field.options.fieldIdInLinkedTable) {
+            for (var tid in META_FIELDS) {
+                if (META_FIELDS[tid][field.options.fieldIdInLinkedTable]) {
+                    var linkedField = META_FIELDS[tid][field.options.fieldIdInLinkedTable];
+                    lookupDesc = 'Lookup of "' + (linkedField.fieldName || field.options.fieldIdInLinkedTable) + '"';
+                    break;
+                }
+            }
+        }
+        html += '<div class="formula-info-expression">' + esc(lookupDesc) + '</div>';
+    } else if (fieldType === 'count') {
+        html += '<div class="formula-info-expression">Counts linked records</div>';
+    }
+
+    html += '<div class="formula-info-note">This field is computed automatically and cannot be edited directly.</div>';
+
+    popover.innerHTML = html;
+
+    var rect = targetEl.getBoundingClientRect();
+    document.body.appendChild(popover);
+
+    // Position below the target, clamped to viewport
+    var popRect = popover.getBoundingClientRect();
+    var top = rect.bottom + 6;
+    var left = rect.left;
+    if (top + popRect.height > window.innerHeight - 10) top = rect.top - popRect.height - 6;
+    if (left + popRect.width > window.innerWidth - 10) left = window.innerWidth - popRect.width - 10;
+    if (left < 10) left = 10;
+    popover.style.top = top + 'px';
+    popover.style.left = left + 'px';
+
+    _formulaInfoPopover = popover;
+    setTimeout(function() {
+        document.addEventListener('click', _closeFormulaInfoOnOutsideClick);
+        document.addEventListener('keydown', _closeFormulaInfoOnEscape);
+    }, 0);
+}
+
+function _closeFormulaInfoOnOutsideClick(event) {
+    if (_formulaInfoPopover && !_formulaInfoPopover.contains(event.target)) {
+        closeFormulaInfoPopover();
+    }
+}
+function _closeFormulaInfoOnEscape(event) {
+    if (event.key === 'Escape') closeFormulaInfoPopover();
+}
+function closeFormulaInfoPopover() {
+    if (_formulaInfoPopover) {
+        _formulaInfoPopover.remove();
+        _formulaInfoPopover = null;
+    }
+    document.removeEventListener('click', _closeFormulaInfoOnOutsideClick);
+    document.removeEventListener('keydown', _closeFormulaInfoOnEscape);
+}
+
+// Handle click on a formula/computed cell in the grid — show info popover
+function handleFormulaCellClick(event, td) {
+    if (event.target.closest('a')) return; // Allow link clicks
+    event.stopPropagation();
+    var fieldId = td.dataset.fieldId;
+    var tableId = td.closest('tr')?.dataset.tableId || currentTable;
+    var field = META_FIELDS[tableId]?.[fieldId];
+    if (field) {
+        showFormulaInfoPopover(td, field);
+    }
+}
+
 // ============ Inline Cell Editing (Grid) ============
 
 var _inlineEditingCell = null; // Currently editing cell element
@@ -14125,6 +14338,9 @@ var _inlineEditCommitExplicit = false; // True when commit triggered by Enter/Ta
 function startInlineCellEdit(event, td) {
     // Don't start edit if clicking a link, button, or already in an input
     if (event.target.closest('button, a, input, select, textarea')) return;
+
+    // Don't edit formula/computed fields
+    if (td.classList.contains('cell-formula')) return;
 
     // Already editing this cell
     if (td.classList.contains('inline-editing')) return;
@@ -14138,6 +14354,10 @@ function startInlineCellEdit(event, td) {
     var recordId = td.dataset.recordId;
     var tableId = td.closest('tr')?.dataset.tableId || currentTable;
     if (!fieldId || !recordId || !tableId) return;
+
+    // Double-check field metadata for computed types
+    var fieldMeta = META_FIELDS[tableId]?.[fieldId];
+    if (fieldMeta && isComputedFieldType(fieldMeta.fieldType)) return;
 
     // Get field metadata and current value
     var field = META_FIELDS[tableId]?.[fieldId];
@@ -14314,8 +14534,12 @@ function startInlineCellEdit(event, td) {
 
 // Move focus to adjacent editable cell (for Tab navigation)
 function moveToAdjacentCell(td, backwards) {
+    // Walk siblings to find the next editable (non-formula) cell
     var nextTd = backwards ? td.previousElementSibling : td.nextElementSibling;
-    if (nextTd && nextTd.classList.contains('inline-editable')) {
+    while (nextTd && !nextTd.classList.contains('inline-editable')) {
+        nextTd = backwards ? nextTd.previousElementSibling : nextTd.nextElementSibling;
+    }
+    if (nextTd) {
         startInlineCellEdit({ target: nextTd, stopPropagation: function(){} }, nextTd);
         return;
     }
@@ -14457,7 +14681,7 @@ function setFocusedCell(td) {
 }
 
 document.addEventListener('click', function(e) {
-    var cell = e.target.closest('td.inline-editable');
+    var cell = e.target.closest('td.inline-editable, td.cell-formula');
     if (cell) {
         setFocusedCell(cell);
     }
@@ -14480,9 +14704,13 @@ document.addEventListener('keydown', function(e) {
     if (!table) return;
 
     if (e.key === 'Enter' || e.key === 'F2') {
-        // Start editing the focused cell
         e.preventDefault();
-        startInlineCellEdit({ target: _focusedCell, stopPropagation: function(){} }, _focusedCell);
+        // For formula cells, show info popover instead of editing
+        if (_focusedCell.classList.contains('cell-formula')) {
+            handleFormulaCellClick({ target: _focusedCell, stopPropagation: function(){} }, _focusedCell);
+        } else {
+            startInlineCellEdit({ target: _focusedCell, stopPropagation: function(){} }, _focusedCell);
+        }
         return;
     }
 
@@ -14491,7 +14719,8 @@ document.addEventListener('keydown', function(e) {
         var row = _focusedCell.closest('tr');
         if (!row) return;
 
-        var cellsInRow = Array.from(row.querySelectorAll('td.inline-editable'));
+        // Include both editable and formula cells in keyboard navigation
+        var cellsInRow = Array.from(row.querySelectorAll('td.inline-editable, td.cell-formula'));
         var colIdx = cellsInRow.indexOf(_focusedCell);
 
         if (e.key === 'ArrowRight') {
@@ -14506,7 +14735,7 @@ document.addEventListener('keydown', function(e) {
             var nextRow = row.nextElementSibling;
             while (nextRow && nextRow.classList.contains('group-header-row')) nextRow = nextRow.nextElementSibling;
             if (nextRow) {
-                var nextCells = nextRow.querySelectorAll('td.inline-editable');
+                var nextCells = nextRow.querySelectorAll('td.inline-editable, td.cell-formula');
                 if (nextCells[colIdx]) setFocusedCell(nextCells[colIdx]);
                 else if (nextCells.length > 0) setFocusedCell(nextCells[nextCells.length - 1]);
             }
@@ -14514,7 +14743,7 @@ document.addEventListener('keydown', function(e) {
             var prevRow = row.previousElementSibling;
             while (prevRow && prevRow.classList.contains('group-header-row')) prevRow = prevRow.previousElementSibling;
             if (prevRow) {
-                var prevCells = prevRow.querySelectorAll('td.inline-editable');
+                var prevCells = prevRow.querySelectorAll('td.inline-editable, td.cell-formula');
                 if (prevCells[colIdx]) setFocusedCell(prevCells[colIdx]);
                 else if (prevCells.length > 0) setFocusedCell(prevCells[prevCells.length - 1]);
             }
