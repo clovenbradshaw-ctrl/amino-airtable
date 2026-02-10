@@ -1097,6 +1097,146 @@ var AminoData = (function() {
 
     // Fetch the full mutation history for a single record from its table's
     // Matrix room. Paginates forward (oldest-first) through all
+    // Fetch a changelog of all mutations across all rooms (tables).
+    // Paginates through law.firm.record.mutate events in each room
+    // backwards (newest first), merges across rooms, and returns
+    // a unified list sorted by timestamp descending.
+    //
+    // Options:
+    //   limit           — max entries to return (default 50)
+    //   paginationTokens — object { roomId: token } from previous call for continuation
+    //   tableFilter     — optional tableId to filter to a single table
+    //
+    // Returns: { entries: [...], paginationTokens: { roomId: token }, hasMore: boolean }
+    async function getRoomChangelog(options) {
+        options = options || {};
+        var limit = options.limit || 50;
+        var prevTokens = options.paginationTokens || {};
+        var tableFilter = options.tableFilter || null;
+
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
+            throw new Error('MatrixClient not available or not logged in');
+        }
+
+        var roomIds = Object.keys(_roomTableMap);
+        if (tableFilter) {
+            var filterRoom = _tableRoomMap[tableFilter];
+            if (!filterRoom) throw new Error('No Matrix room for table: ' + tableFilter);
+            roomIds = [filterRoom];
+        }
+
+        // Fetch a page from each room (backwards — newest first)
+        var perRoomEntries = [];
+        var nextTokens = {};
+        var anyHasMore = false;
+
+        for (var r = 0; r < roomIds.length; r++) {
+            var roomId = roomIds[r];
+            var tableId = _roomTableMap[roomId];
+            var fromToken = prevTokens[roomId] || undefined;
+
+            // If this room's token is 'exhausted', skip it
+            if (fromToken === 'exhausted') {
+                nextTokens[roomId] = 'exhausted';
+                continue;
+            }
+
+            try {
+                var msgOpts = {
+                    dir: 'b', // backwards — newest first
+                    limit: limit,
+                    filter: { types: ['law.firm.record.mutate'] }
+                };
+                if (fromToken) msgOpts.from = fromToken;
+
+                var response = await MatrixClient.getRoomMessages(roomId, msgOpts);
+                if (!response || !response.chunk) {
+                    nextTokens[roomId] = 'exhausted';
+                    continue;
+                }
+
+                var chunk = response.chunk;
+                for (var i = 0; i < chunk.length; i++) {
+                    var evt = chunk[i];
+                    if (!evt.content) continue;
+
+                    var content = evt.content;
+
+                    // Decrypt if needed
+                    if (isEncryptedPayload(content)) {
+                        try {
+                            var decryptedFields = await decryptEventPayload(content);
+                            content = {
+                                recordId: content.recordId,
+                                tableId: content.tableId,
+                                op: content.op || 'ALT',
+                                payload: content.payload,
+                                set: content.set,
+                                source: content.source,
+                                sourceTimestamp: content.sourceTimestamp,
+                                fields: decryptedFields
+                            };
+                        } catch (decErr) {
+                            continue; // skip entries we can't decrypt
+                        }
+                    }
+
+                    var payload = content.payload || {};
+                    var fieldOps = payload.fields || {};
+
+                    // Handle flat format
+                    if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
+                        fieldOps = {};
+                        if (content.op === 'INS' || content.op === 'ALT') {
+                            fieldOps[content.op] = content.fields;
+                        } else if (content.op === 'NUL') {
+                            fieldOps.NUL = content.fields;
+                        }
+                    }
+
+                    perRoomEntries.push({
+                        eventId: evt.event_id || null,
+                        sender: evt.sender || null,
+                        timestamp: evt.origin_server_ts || null,
+                        tableId: tableId,
+                        recordId: content.recordId || null,
+                        op: content.op || 'ALT',
+                        source: content.source || null,
+                        sourceTimestamp: content.sourceTimestamp || null,
+                        actor: payload._a || null,
+                        fieldOps: fieldOps
+                    });
+                }
+
+                // Update pagination token
+                if (response.end && chunk.length >= limit) {
+                    nextTokens[roomId] = response.end;
+                    anyHasMore = true;
+                } else {
+                    nextTokens[roomId] = 'exhausted';
+                }
+            } catch (err) {
+                console.warn('[AminoData] Error fetching changelog for room', roomId, err.message);
+                nextTokens[roomId] = prevTokens[roomId] || 'exhausted';
+            }
+        }
+
+        // Sort all entries by timestamp descending (newest first)
+        perRoomEntries.sort(function(a, b) {
+            return (b.timestamp || 0) - (a.timestamp || 0);
+        });
+
+        // Cap to requested limit
+        var entries = perRoomEntries.slice(0, limit);
+        if (perRoomEntries.length > limit) anyHasMore = true;
+
+        return {
+            entries: entries,
+            paginationTokens: nextTokens,
+            hasMore: anyHasMore
+        };
+    }
+
     // law.firm.record.mutate events, filters by recordId client-side,
     // decrypts encrypted payloads, and returns an array of mutation objects
     // in chronological order. Each mutation includes extracted metadata
@@ -1279,6 +1419,7 @@ var AminoData = (function() {
         searchRecords: searchRecords,
         getTables: getTables,
         getRecordMutationHistory: getRecordMutationHistory,
+        getRoomChangelog: getRoomChangelog,
 
         // Sync
         syncTable: syncTable,
