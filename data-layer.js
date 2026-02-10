@@ -14,9 +14,6 @@ var AminoData = (function() {
     var DB_VERSION = 1;
     var DEFAULT_POLL_INTERVAL = 15000; // 15 seconds
 
-    // Allowed email domains for authentication
-    var ALLOWED_DOMAINS = ['rklacylaw.com', 'aminoimmigration.com', 'asiloymas.com'];
-
     // ============ Internal State (memory only) ============
     var _db = null;
     var _cryptoKey = null;
@@ -26,16 +23,6 @@ var AminoData = (function() {
     var _tableIds = [];
     var _tables = [];
     var _initialized = false;
-
-    // ============ Domain Validation ============
-
-    function isAllowedUser(userId) {
-        // Matrix user IDs are like @username:domain.com
-        if (!userId) return false;
-        var domain = userId.split(':')[1];
-        if (!domain) return false;
-        return ALLOWED_DOMAINS.indexOf(domain) !== -1;
-    }
 
     // ============ Encryption ============
 
@@ -403,11 +390,6 @@ var AminoData = (function() {
             throw new Error('accessToken, userId, and password are required');
         }
 
-        // Validate user domain
-        if (!isAllowedUser(userId)) {
-            throw new Error('User domain not authorized. Allowed domains: ' + ALLOWED_DOMAINS.join(', '));
-        }
-
         _accessToken = accessToken;
         _userId = userId;
 
@@ -574,11 +556,7 @@ var AminoData = (function() {
         getTableList: getTableList,
         getTableIds: getTableIds,
 
-        // Validation
-        isAllowedUser: isAllowedUser,
-
         // Constants (read-only access)
-        WEBHOOK_BASE_URL: WEBHOOK_BASE_URL,
-        ALLOWED_DOMAINS: ALLOWED_DOMAINS
+        WEBHOOK_BASE_URL: WEBHOOK_BASE_URL
     };
 })();
