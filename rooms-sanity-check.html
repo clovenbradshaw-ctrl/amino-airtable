@@ -68,7 +68,7 @@
         color: var(--text);
         border: 1px solid var(--border);
     }
-    .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+    .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
     .status {
         display: inline-block;
         padding: 2px 8px;
@@ -124,6 +124,7 @@
         gap: 16px;
         font-size: 12px;
         color: var(--text-muted);
+        flex-wrap: wrap;
     }
     .room-card-stats span strong { color: var(--text); }
     .collapsible { cursor: pointer; user-select: none; }
@@ -194,7 +195,7 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none !important; }
-    .tab-bar { display: flex; gap: 4px; margin-bottom: 12px; }
+    .tab-bar { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
     .tab {
         padding: 6px 14px;
         font-size: 12px;
@@ -216,7 +217,7 @@
 <body>
 
 <h1>Rooms Sanity Check</h1>
-<p class="subtitle">Inspect Matrix rooms, table mappings, and stored data for the Amino system.</p>
+<p class="subtitle">Inspect Matrix rooms, table mappings, and locally stored data for the Amino system.</p>
 
 <!-- Login Panel -->
 <div class="panel" id="login-panel">
@@ -226,7 +227,9 @@
     <label for="username">Username</label>
     <input type="text" id="username" placeholder="admin">
     <label for="password">Password</label>
-    <input type="password" id="password" placeholder="password">
+    <input type="password" id="password" placeholder="Matrix login password">
+    <label for="enc-password">Encryption Password <span class="mono">(local unlock password — leave blank to try session key)</span></label>
+    <input type="password" id="enc-password" placeholder="Local encryption password (if different from Matrix password)">
     <div class="btn-row">
         <button id="btn-login" onclick="doLogin()">Login &amp; Run Check</button>
         <button class="secondary" id="btn-restore" onclick="doRestore()">Restore Session</button>
@@ -254,6 +257,7 @@
         </div>
         <div class="panel">
             <h2>Table-Room Mapping</h2>
+            <p class="subtitle" style="margin-bottom: 8px;">Derived from <code>law.firm.vault.metadata</code> state events in each room.</p>
             <div id="table-room-map"></div>
         </div>
     </div>
@@ -270,7 +274,7 @@
     <div id="tab-table-rooms" class="tab-content hidden">
         <div class="panel">
             <h2>Table Rooms Detail</h2>
-            <p class="subtitle" style="margin-bottom: 12px;">Rooms mapped to Airtable tables with recent event data.</p>
+            <p class="subtitle" style="margin-bottom: 12px;">Rooms mapped to Airtable tables with state and recent timeline events.</p>
             <div id="table-rooms-detail"></div>
         </div>
     </div>
@@ -279,19 +283,28 @@
     <div id="tab-data" class="tab-content hidden">
         <div class="panel">
             <h2>IndexedDB Records</h2>
-            <p class="subtitle" style="margin-bottom: 12px;">Decrypted records stored locally per table.</p>
+            <p class="subtitle" style="margin-bottom: 12px;">Records stored locally in the <code>amino</code> database (v8 schema).</p>
             <div id="idb-data"></div>
         </div>
     </div>
 </div>
 
-<!-- Load the project modules -->
+<!-- Only load matrix.js — we access IndexedDB directly -->
 <script src="matrix.js"></script>
-<script src="data-layer.js"></script>
 
 <script>
 (function() {
     'use strict';
+
+    // ============ Constants ============
+    var DB_NAME = 'amino';
+    var ENCRYPTION_CONFIG_KEY = 'amino_encryption_config';
+    var SESSION_KEY_STORAGE = 'amino_session_key';
+
+    // ============ State ============
+    var _db = null;           // IndexedDB handle
+    var _encKey = null;       // CryptoKey for decrypting stored data
+    var _encEnabled = false;  // Whether data in IDB is encrypted
 
     // ============ Logging ============
     var logEl = null;
@@ -305,16 +318,180 @@
         logEl.scrollTop = logEl.scrollHeight;
     }
 
+    // ============ Crypto Helpers (match main app) ============
+
+    function arrayBufferToBase64(buffer) {
+        var bytes = new Uint8Array(buffer);
+        var binary = '';
+        for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+        var binary = atob(base64);
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+    }
+
+    async function deriveKeyFromPassword(password, salt) {
+        var enc = new TextEncoder();
+        var keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits', 'deriveKey']);
+        return crypto.subtle.deriveKey(
+            { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+            keyMaterial,
+            { name: 'AES-GCM', length: 256 },
+            true,
+            ['encrypt', 'decrypt']
+        );
+    }
+
+    async function decryptData(encryptedBase64, key) {
+        var combined = base64ToArrayBuffer(encryptedBase64);
+        var iv = combined.slice(0, 12);
+        var encryptedData = combined.slice(12);
+        var decryptedBuffer = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, encryptedData);
+        return JSON.parse(new TextDecoder().decode(decryptedBuffer));
+    }
+
+    // Try to load session key from sessionStorage (survives refresh within same tab)
+    async function loadSessionKey() {
+        var stored = sessionStorage.getItem(SESSION_KEY_STORAGE);
+        if (!stored) return null;
+        try {
+            var raw = base64ToArrayBuffer(stored);
+            return await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+        } catch (e) { return null; }
+    }
+
+    // Initialize encryption: try session key, then password-derived key
+    async function initEncryption(encPassword) {
+        var config = null;
+        try {
+            var cfgStr = localStorage.getItem(ENCRYPTION_CONFIG_KEY);
+            if (cfgStr) config = JSON.parse(cfgStr);
+        } catch (e) {}
+
+        if (!config) {
+            log('No encryption config found in localStorage — data may be unencrypted.', 'warn');
+            _encEnabled = false;
+            return;
+        }
+
+        // Try session key first (fastest — no password needed)
+        var sessionKey = await loadSessionKey();
+        if (sessionKey) {
+            try {
+                await decryptData(config.verificationToken, sessionKey);
+                _encKey = sessionKey;
+                _encEnabled = true;
+                log('Encryption key restored from session.', 'ok');
+                return;
+            } catch (e) {
+                log('Session key did not verify — trying password.', 'warn');
+            }
+        }
+
+        // Derive from password
+        if (!encPassword) {
+            log('No encryption password provided and no valid session key. Data will show as encrypted blobs.', 'warn');
+            _encEnabled = false;
+            return;
+        }
+
+        try {
+            var salt = base64ToArrayBuffer(config.salt);
+            _encKey = await deriveKeyFromPassword(encPassword, salt);
+            // Verify
+            await decryptData(config.verificationToken, _encKey);
+            _encEnabled = true;
+            log('Encryption key derived from password.', 'ok');
+        } catch (e) {
+            log('Encryption password did not verify: ' + e.message, 'err');
+            _encEnabled = false;
+            _encKey = null;
+        }
+    }
+
+    // Decrypt a stored data record (has _encryptedFields instead of fields)
+    async function decryptRecord(record) {
+        if (!record) return record;
+        if (!record._encryptedFields) return record; // not encrypted
+        if (!_encEnabled || !_encKey) return record;  // can't decrypt
+        try {
+            var decrypted = Object.assign({}, record);
+            decrypted.fields = await decryptData(record._encryptedFields, _encKey);
+            delete decrypted._encryptedFields;
+            return decrypted;
+        } catch (e) {
+            return record; // return as-is
+        }
+    }
+
+    // Decrypt a stored event (has _encryptedPayload instead of payload)
+    async function decryptEvent(event) {
+        if (!event) return event;
+        if (!event._encryptedPayload) return event;
+        if (!_encEnabled || !_encKey) return event;
+        try {
+            var decrypted = Object.assign({}, event);
+            decrypted.payload = await decryptData(event._encryptedPayload, _encKey);
+            delete decrypted._encryptedPayload;
+            return decrypted;
+        } catch (e) {
+            return event;
+        }
+    }
+
+    // ============ IndexedDB Helpers ============
+
+    function openDB() {
+        return new Promise(function(resolve, reject) {
+            // Open WITHOUT specifying version — opens whatever version exists
+            var req = indexedDB.open(DB_NAME);
+            req.onsuccess = function() { resolve(req.result); };
+            req.onerror = function() { reject(req.error); };
+            // If onupgradeneeded fires it means the DB doesn't exist yet — that's fine
+            req.onupgradeneeded = function(e) {
+                // Don't create stores — just let it open at version 1 empty
+            };
+        });
+    }
+
+    function idbGetAll(store) {
+        return new Promise(function(resolve, reject) {
+            var req = store.getAll();
+            req.onsuccess = function() { resolve(req.result || []); };
+            req.onerror = function() { reject(req.error); };
+        });
+    }
+
+    function idbGetAllFromIndex(store, indexName, query) {
+        return new Promise(function(resolve, reject) {
+            var index = store.index(indexName);
+            var req = query !== undefined ? index.getAll(query) : index.getAll();
+            req.onsuccess = function() { resolve(req.result || []); };
+            req.onerror = function() { reject(req.error); };
+        });
+    }
+
+    function idbCount(store) {
+        return new Promise(function(resolve, reject) {
+            var req = store.count();
+            req.onsuccess = function() { resolve(req.result); };
+            req.onerror = function() { reject(req.error); };
+        });
+    }
+
+    function hasStore(db, name) {
+        return db.objectStoreNames.contains(name);
+    }
+
     // ============ Tab Navigation ============
     window.showTab = function(tabName) {
-        document.querySelectorAll('.tab-content').forEach(function(el) {
-            el.classList.add('hidden');
-        });
-        document.querySelectorAll('.tab').forEach(function(el) {
-            el.classList.remove('active');
-        });
+        document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.add('hidden'); });
+        document.querySelectorAll('.tab').forEach(function(el) { el.classList.remove('active'); });
         document.getElementById('tab-' + tabName).classList.remove('hidden');
-        // Mark active tab
         var tabs = document.querySelectorAll('.tab');
         var tabNames = ['overview', 'rooms', 'table-rooms', 'data'];
         for (var i = 0; i < tabNames.length; i++) {
@@ -337,7 +514,7 @@
         var password = document.getElementById('password').value;
 
         if (!hsUrl || !username || !password) {
-            log('All fields are required.', 'err');
+            log('Homeserver URL, username, and password are required.', 'err');
             return;
         }
 
@@ -350,16 +527,11 @@
             var session = await MatrixClient.login(hsUrl, username, password);
             log('Logged in as ' + session.userId, 'ok');
 
-            log('Initializing data layer (deriving encryption key)...');
-            await AminoData.init(session.accessToken, session.userId, password);
-            log('Data layer initialized with ' + AminoData.getTableIds().length + ' tables', 'ok');
-
             log('Running initial sync to populate room cache...');
             await MatrixClient.initialSync();
             log('Sync complete. Joined rooms: ' + MatrixClient.getJoinedRooms().length, 'ok');
 
-            log('Running sanity check...');
-            await runSanityCheck(password);
+            await prepareAndRun();
         } catch (err) {
             log('Error: ' + err.message, 'err');
             console.error(err);
@@ -377,28 +549,16 @@
         try {
             var restored = MatrixClient.restoreSession();
             if (!restored) {
-                log('No saved session found. Please log in.', 'warn');
+                log('No saved Matrix session found. Please log in.', 'warn');
                 return;
             }
             log('Session restored for ' + MatrixClient.getUserId(), 'ok');
-
-            // Still need password for encryption key
-            var password = document.getElementById('password').value;
-            if (!password) {
-                log('Password required to derive encryption key (enter it above).', 'warn');
-                return;
-            }
-
-            log('Initializing data layer...');
-            await AminoData.init(MatrixClient.getAccessToken(), MatrixClient.getUserId(), password);
-            log('Data layer initialized with ' + AminoData.getTableIds().length + ' tables', 'ok');
 
             log('Running initial sync...');
             await MatrixClient.initialSync();
             log('Sync complete. Joined rooms: ' + MatrixClient.getJoinedRooms().length, 'ok');
 
-            log('Running sanity check...');
-            await runSanityCheck(password);
+            await prepareAndRun();
         } catch (err) {
             log('Error: ' + err.message, 'err');
             console.error(err);
@@ -408,28 +568,88 @@
         }
     };
 
+    async function prepareAndRun() {
+        // Open IndexedDB
+        log('Opening IndexedDB "amino"...');
+        try {
+            _db = await openDB();
+            var storeNames = Array.from(_db.objectStoreNames);
+            log('DB v' + _db.version + ' opened. Stores: ' + storeNames.join(', '), 'ok');
+        } catch (e) {
+            log('Could not open IndexedDB: ' + e.message + ' — continuing without local data.', 'warn');
+            _db = null;
+        }
+
+        // Init encryption
+        var encPassword = document.getElementById('enc-password').value || document.getElementById('password').value;
+        await initEncryption(encPassword);
+
+        log('Running sanity check...');
+        await runSanityCheck();
+    }
+
     // ============ Sanity Check ============
-    async function runSanityCheck(password) {
+    async function runSanityCheck() {
         document.getElementById('results').style.display = 'block';
 
         var userId = MatrixClient.getUserId();
         var hsUrl = MatrixClient.getHomeserverUrl();
         var joinedRoomIds = MatrixClient.getJoinedRooms();
-        var tableRoomMap = AminoData.getTableRoomMap();
-        var tables = AminoData.getTableList();
-        var tableIds = AminoData.getTableIds();
-
-        // Reverse map: roomId -> tableId
-        var roomTableMap = {};
-        Object.keys(tableRoomMap).forEach(function(tId) {
-            roomTableMap[tableRoomMap[tId]] = tId;
-        });
 
         // ---- Session Info ----
         document.getElementById('session-info').innerHTML =
             '<strong>Session:</strong> ' + esc(userId) +
             ' &nbsp; <span class="status status-ok">Connected</span>' +
-            ' &nbsp; <span class="mono">' + esc(hsUrl) + '</span>';
+            ' &nbsp; <span class="mono">' + esc(hsUrl) + '</span>' +
+            (_db ? ' &nbsp; <span class="status status-info">IDB v' + _db.version + '</span>' : ' &nbsp; <span class="status status-warn">No IDB</span>') +
+            (_encEnabled ? ' &nbsp; <span class="status status-ok">Decryption OK</span>' : ' &nbsp; <span class="status status-warn">No Decryption</span>');
+
+        // ---- Build table-room map from IDB tables store ----
+        var tableRoomMap = {};  // tableId -> roomId
+        var roomTableMap = {};  // roomId -> tableId
+        var tablesFromIDB = [];
+
+        if (_db && hasStore(_db, 'tables')) {
+            try {
+                var tx = _db.transaction('tables', 'readonly');
+                tablesFromIDB = await idbGetAll(tx.objectStore('tables'));
+                log('Found ' + tablesFromIDB.length + ' tables in IDB.', 'ok');
+            } catch (e) {
+                log('Could not read tables store: ' + e.message, 'warn');
+            }
+        }
+
+        // Also probe rooms for vault.metadata state to build the mapping
+        log('Probing rooms for vault.metadata state events...');
+        var vaultRooms = [];
+        for (var vi = 0; vi < joinedRoomIds.length; vi++) {
+            var rId = joinedRoomIds[vi];
+            if (MatrixClient.isSpace(rId)) continue;
+            var vaultMeta = MatrixClient.getCachedStateEvent(rId, 'law.firm.vault.metadata', '');
+            if (vaultMeta && vaultMeta.content && vaultMeta.content.airtable_table_id) {
+                var tableId = vaultMeta.content.airtable_table_id;
+                tableRoomMap[tableId] = rId;
+                roomTableMap[rId] = tableId;
+                vaultRooms.push({
+                    roomId: rId,
+                    tableId: tableId,
+                    tableName: vaultMeta.content.table_name || tableId,
+                    meta: vaultMeta.content
+                });
+            }
+        }
+
+        // Supplement from IDB tables that have matrix_room_id
+        for (var ti = 0; ti < tablesFromIDB.length; ti++) {
+            var tbl = tablesFromIDB[ti];
+            var tId = tbl.tableId || tbl.table_id;
+            var tRoom = tbl.matrixRoomId || tbl.matrix_room_id;
+            if (tId && tRoom && !tableRoomMap[tId]) {
+                tableRoomMap[tId] = tRoom;
+                roomTableMap[tRoom] = tId;
+            }
+        }
+        log('Table-room mappings: ' + Object.keys(tableRoomMap).length, 'ok');
 
         // ---- Classify rooms ----
         var spaces = [];
@@ -437,31 +657,57 @@
         var otherRooms = [];
 
         for (var i = 0; i < joinedRoomIds.length; i++) {
-            var rId = joinedRoomIds[i];
-            var rName = MatrixClient.getRoomName(rId);
-            var isSp = MatrixClient.isSpace(rId);
-            var mappedTable = roomTableMap[rId] || null;
+            var rid = joinedRoomIds[i];
+            var rName = MatrixClient.getRoomName(rid);
+            var isSp = MatrixClient.isSpace(rid);
+            var mappedTable = roomTableMap[rid] || null;
+            var mappedTableName = null;
 
-            var info = {
-                roomId: rId,
-                name: rName,
-                isSpace: isSp,
-                mappedTableId: mappedTable,
-                mappedTableName: null
-            };
-
+            // Try to get table name from vault rooms or IDB
             if (mappedTable) {
-                for (var t = 0; t < tables.length; t++) {
-                    if (tables[t].table_id === mappedTable) {
-                        info.mappedTableName = tables[t].table_name;
+                for (var vr = 0; vr < vaultRooms.length; vr++) {
+                    if (vaultRooms[vr].tableId === mappedTable) {
+                        mappedTableName = vaultRooms[vr].tableName;
                         break;
+                    }
+                }
+                if (!mappedTableName) {
+                    for (var ti2 = 0; ti2 < tablesFromIDB.length; ti2++) {
+                        var t = tablesFromIDB[ti2];
+                        if ((t.tableId || t.table_id) === mappedTable) {
+                            mappedTableName = t.tableName || t.table_name || mappedTable;
+                            break;
+                        }
                     }
                 }
             }
 
+            var info = {
+                roomId: rid,
+                name: rName,
+                isSpace: isSp,
+                mappedTableId: mappedTable,
+                mappedTableName: mappedTableName
+            };
+
             if (isSp) spaces.push(info);
             else if (mappedTable) tableRooms.push(info);
             else otherRooms.push(info);
+        }
+
+        // ---- IDB store counts ----
+        var storeCounts = {};
+        if (_db) {
+            var storeNames = ['data', 'tables', 'fields', 'views', 'events', 'snapshot', 'fieldHistory'];
+            for (var si = 0; si < storeNames.length; si++) {
+                var sn = storeNames[si];
+                if (hasStore(_db, sn)) {
+                    try {
+                        var ctx = _db.transaction(sn, 'readonly');
+                        storeCounts[sn] = await idbCount(ctx.objectStore(sn));
+                    } catch (e) { storeCounts[sn] = '?'; }
+                }
+            }
         }
 
         // ---- Summary Grid ----
@@ -470,27 +716,43 @@
         summaryHtml += summaryCard(spaces.length, 'Spaces');
         summaryHtml += summaryCard(tableRooms.length, 'Table Rooms');
         summaryHtml += summaryCard(otherRooms.length, 'Other Rooms');
-        summaryHtml += summaryCard(tables.length, 'Registered Tables');
-        summaryHtml += summaryCard(Object.keys(tableRoomMap).length, 'Table-Room Mappings');
+        summaryHtml += summaryCard(Object.keys(tableRoomMap).length, 'Table Mappings');
+        if (storeCounts.data !== undefined) summaryHtml += summaryCard(storeCounts.data, 'IDB Data Records');
+        if (storeCounts.events !== undefined) summaryHtml += summaryCard(storeCounts.events, 'IDB Events');
+        if (storeCounts.fields !== undefined) summaryHtml += summaryCard(storeCounts.fields, 'IDB Fields');
+        if (storeCounts.snapshot !== undefined) summaryHtml += summaryCard(storeCounts.snapshot, 'IDB Snapshots');
         document.getElementById('summary-grid').innerHTML = summaryHtml;
 
         // ---- Table-Room Mapping ----
+        var allTableIds = Object.keys(tableRoomMap);
+        // Also include IDB tables that might not have a room
+        for (var idbti = 0; idbti < tablesFromIDB.length; idbti++) {
+            var idbTid = tablesFromIDB[idbti].tableId || tablesFromIDB[idbti].table_id;
+            if (idbTid && allTableIds.indexOf(idbTid) === -1) allTableIds.push(idbTid);
+        }
+
         var mapHtml = '<table><tr><th>Table Name</th><th>Table ID</th><th>Room ID</th><th>Status</th></tr>';
-        for (var m = 0; m < tables.length; m++) {
-            var tbl = tables[m];
-            var roomId = tableRoomMap[tbl.table_id];
-            var inJoined = roomId ? joinedRoomIds.indexOf(roomId) !== -1 : false;
-            var statusHtml = '';
-            if (!roomId) {
-                statusHtml = '<span class="status status-err">No Room</span>';
-            } else if (inJoined) {
-                statusHtml = '<span class="status status-ok">Joined</span>';
-            } else {
-                statusHtml = '<span class="status status-warn">Not Joined</span>';
+        for (var m = 0; m < allTableIds.length; m++) {
+            var mTid = allTableIds[m];
+            var mRoomId = tableRoomMap[mTid] || null;
+            var mName = mTid;
+            // Resolve name
+            for (var vr2 = 0; vr2 < vaultRooms.length; vr2++) {
+                if (vaultRooms[vr2].tableId === mTid) { mName = vaultRooms[vr2].tableName; break; }
             }
-            mapHtml += '<tr><td>' + esc(tbl.table_name || '—') + '</td>' +
-                '<td class="mono">' + esc(tbl.table_id) + '</td>' +
-                '<td class="mono">' + esc(roomId || '—') + '</td>' +
+            for (var idbti2 = 0; idbti2 < tablesFromIDB.length; idbti2++) {
+                var it = tablesFromIDB[idbti2];
+                if ((it.tableId || it.table_id) === mTid) { mName = it.tableName || it.table_name || mName; break; }
+            }
+            var inJoined = mRoomId ? joinedRoomIds.indexOf(mRoomId) !== -1 : false;
+            var statusHtml = '';
+            if (!mRoomId) statusHtml = '<span class="status status-err">No Room</span>';
+            else if (inJoined) statusHtml = '<span class="status status-ok">Joined</span>';
+            else statusHtml = '<span class="status status-warn">Not Joined</span>';
+
+            mapHtml += '<tr><td>' + esc(mName) + '</td>' +
+                '<td class="mono">' + esc(mTid) + '</td>' +
+                '<td class="mono">' + esc(mRoomId || '—') + '</td>' +
                 '<td>' + statusHtml + '</td></tr>';
         }
         mapHtml += '</table>';
@@ -514,72 +776,105 @@
         }
         document.getElementById('rooms-list').innerHTML = roomsHtml || '<p class="mono">No rooms found.</p>';
 
-        // ---- Table Rooms Detail (with events) ----
+        // ---- Table Rooms Detail ----
         log('Fetching room data for ' + tableRooms.length + ' table rooms...');
         var detailHtml = '';
         for (var d = 0; d < tableRooms.length; d++) {
-            var tr = tableRooms[d];
-            detailHtml += await buildTableRoomDetail(tr, d);
+            detailHtml += await buildTableRoomDetail(tableRooms[d], d);
         }
         document.getElementById('table-rooms-detail').innerHTML = detailHtml || '<p class="mono">No table rooms found.</p>';
         log('Table room details loaded.', 'ok');
 
         // ---- IndexedDB Stored Data ----
-        log('Reading stored records from IndexedDB...');
+        log('Reading stored data from IndexedDB...');
         var dataHtml = '';
-        var totalRecords = 0;
-        for (var s = 0; s < tableIds.length; s++) {
-            var tId = tableIds[s];
-            var tName = '—';
-            for (var tn = 0; tn < tables.length; tn++) {
-                if (tables[tn].table_id === tId) { tName = tables[tn].table_name; break; }
-            }
+
+        if (_db && hasStore(_db, 'data')) {
+            // Get unique tableIds from the data store
+            var dataTableIds = [];
             try {
-                var records = await AminoData.getTableRecords(tId);
-                totalRecords += records.length;
-                var collapseId = 'idb-' + s;
-                dataHtml += '<div class="room-card">';
-                dataHtml += '<div class="room-card-header">';
-                dataHtml += '<span class="room-card-title">' + esc(tName) + '</span>';
-                dataHtml += '<span class="status status-info">' + records.length + ' records</span>';
-                dataHtml += '</div>';
-                dataHtml += '<div class="room-card-id">' + esc(tId) + '</div>';
+                var dtx = _db.transaction('data', 'readonly');
+                var allData = await idbGetAll(dtx.objectStore('data'));
+                log('Read ' + allData.length + ' records from IDB data store.', 'ok');
 
-                if (records.length > 0) {
-                    dataHtml += '<h3 class="collapsible" onclick="toggleCollapse(\'' + collapseId + '\')">Sample Records (first 5)</h3>';
-                    dataHtml += '<div class="collapse-content" id="' + collapseId + '">';
+                // Group by tableId
+                var byTable = {};
+                for (var di = 0; di < allData.length; di++) {
+                    var rec = allData[di];
+                    var tKey = rec.tableId || 'unknown';
+                    if (!byTable[tKey]) byTable[tKey] = [];
+                    byTable[tKey].push(rec);
+                }
 
-                    // Show up to 5 records
-                    var sample = records.slice(0, 5);
-                    for (var sr = 0; sr < sample.length; sr++) {
-                        dataHtml += '<div style="margin-bottom: 8px;">';
-                        dataHtml += '<strong class="mono">' + esc(sample[sr].id) + '</strong>';
-                        dataHtml += '<pre class="json">' + esc(JSON.stringify(sample[sr].fields, null, 2)) + '</pre>';
-                        dataHtml += '</div>';
+                var tableKeys = Object.keys(byTable);
+                for (var tk = 0; tk < tableKeys.length; tk++) {
+                    var tkId = tableKeys[tk];
+                    var recs = byTable[tkId];
+                    var tName = tkId;
+                    // Resolve name
+                    for (var vr3 = 0; vr3 < vaultRooms.length; vr3++) {
+                        if (vaultRooms[vr3].tableId === tkId) { tName = vaultRooms[vr3].tableName; break; }
                     }
-                    if (records.length > 5) {
-                        dataHtml += '<p class="mono" style="color:var(--text-muted);">... and ' + (records.length - 5) + ' more records</p>';
+                    for (var idbti3 = 0; idbti3 < tablesFromIDB.length; idbti3++) {
+                        var it2 = tablesFromIDB[idbti3];
+                        if ((it2.tableId || it2.table_id) === tkId) { tName = it2.tableName || it2.table_name || tName; break; }
+                    }
+
+                    var collapseId = 'idb-' + tk;
+                    dataHtml += '<div class="room-card">';
+                    dataHtml += '<div class="room-card-header">';
+                    dataHtml += '<span class="room-card-title">' + esc(tName) + '</span>';
+                    dataHtml += '<span class="status status-info">' + recs.length + ' records</span>';
+                    if (recs[0] && recs[0]._encryptedFields) {
+                        dataHtml += _encEnabled ?
+                            ' <span class="status status-ok">Decryptable</span>' :
+                            ' <span class="status status-warn">Encrypted</span>';
+                    }
+                    dataHtml += '</div>';
+                    dataHtml += '<div class="room-card-id">' + esc(tkId) + '</div>';
+
+                    if (recs.length > 0) {
+                        dataHtml += '<h3 class="collapsible" onclick="toggleCollapse(\'' + collapseId + '\')">Sample Records (first 5)</h3>';
+                        dataHtml += '<div class="collapse-content" id="' + collapseId + '">';
+                        var sample = recs.slice(0, 5);
+                        for (var sr = 0; sr < sample.length; sr++) {
+                            var decRec = await decryptRecord(sample[sr]);
+                            dataHtml += '<div style="margin-bottom: 8px;">';
+                            dataHtml += '<strong class="mono">' + esc(decRec.recordId || decRec.id || '?') + '</strong>';
+                            if (decRec.fields) {
+                                dataHtml += '<pre class="json">' + esc(JSON.stringify(decRec.fields, null, 2)) + '</pre>';
+                            } else if (decRec._encryptedFields) {
+                                dataHtml += '<pre class="json" style="color:var(--yellow);">[Encrypted — provide encryption password to decrypt]</pre>';
+                            } else {
+                                dataHtml += '<pre class="json">' + esc(JSON.stringify(decRec, null, 2)) + '</pre>';
+                            }
+                            dataHtml += '</div>';
+                        }
+                        if (recs.length > 5) {
+                            dataHtml += '<p class="mono" style="color:var(--text-muted);">... and ' + (recs.length - 5) + ' more records</p>';
+                        }
+                        dataHtml += '</div>';
                     }
                     dataHtml += '</div>';
                 }
-                dataHtml += '</div>';
-            } catch (err) {
-                dataHtml += '<div class="room-card">';
-                dataHtml += '<div class="room-card-header">';
-                dataHtml += '<span class="room-card-title">' + esc(tName) + '</span>';
-                dataHtml += '<span class="status status-err">Error</span>';
-                dataHtml += '</div>';
-                dataHtml += '<p class="mono" style="color:var(--red);">' + esc(err.message) + '</p>';
-                dataHtml += '</div>';
+            } catch (e) {
+                dataHtml += '<p class="mono" style="color:var(--red);">Error reading data store: ' + esc(e.message) + '</p>';
+                log('Error reading data store: ' + e.message, 'err');
             }
+        } else if (_db) {
+            dataHtml = '<p class="mono">No "data" store found in this database version.</p>';
+        } else {
+            dataHtml = '<p class="mono">IndexedDB not available.</p>';
         }
 
-        // Update the summary with total IDB records
-        summaryHtml += summaryCard(totalRecords, 'IndexedDB Records');
-        document.getElementById('summary-grid').innerHTML = summaryHtml;
+        // Also show IDB tables metadata
+        if (tablesFromIDB.length > 0) {
+            dataHtml += '<h2 style="margin-top: 16px;">IDB Tables Metadata</h2>';
+            dataHtml += '<pre class="json">' + esc(JSON.stringify(tablesFromIDB, null, 2)) + '</pre>';
+        }
 
-        document.getElementById('idb-data').innerHTML = dataHtml || '<p class="mono">No data in IndexedDB. Run hydration first.</p>';
-        log('Sanity check complete. ' + totalRecords + ' total records in IndexedDB.', 'ok');
+        document.getElementById('idb-data').innerHTML = dataHtml;
+        log('Sanity check complete.', 'ok');
     }
 
     // ---- Build detail card for a single table room ----
@@ -595,7 +890,7 @@
         try {
             var state = await MatrixClient.getRoomState(roomInfo.roomId);
 
-            // Classify state events
+            // Classify state events by type
             var stateByType = {};
             for (var i = 0; i < state.length; i++) {
                 var evtType = state[i].type;
@@ -611,7 +906,6 @@
             }
             html += '</div>';
 
-            // Show state event summary
             var stateCollapseId = 'state-' + idx;
             html += '<h3 class="collapsible" onclick="toggleCollapse(\'' + stateCollapseId + '\')">State Events</h3>';
             html += '<div class="collapse-content" id="' + stateCollapseId + '">';
