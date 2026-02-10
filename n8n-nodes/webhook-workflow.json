@@ -84,7 +84,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT table_id, table_name, matrix_room_id, COUNT() as record_count FROM amino.current_state WHERE table_name != '' GROUP BY table_id, table_name, matrix_room_id ORDER BY table_name;",
+        "query": "SELECT tr.table_id, tr.table_name, tr.matrix_room_id, COALESCE(cs.record_count, 0) as record_count FROM amino.table_registry tr LEFT JOIN (SELECT table_id, COUNT(*) as record_count FROM amino.current_state GROUP BY table_id) cs ON tr.table_id = cs.table_id ORDER BY tr.table_name;",
         "options": {}
       },
       "id": "28ad85e8-e96a-450f-902a-e1d419024164",
@@ -236,7 +236,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records').first().json.query.tableId }}' AND table_name != '' ORDER BY last_synced_at DESC;",
+        "query": "=SELECT cs.record_id, cs.fields, cs.last_synced_at, tr.table_name, tr.matrix_room_id FROM amino.current_state cs JOIN amino.table_registry tr ON cs.table_id = tr.table_id WHERE cs.table_id = '{{ $('GET /records').first().json.query.tableId }}' ORDER BY cs.last_synced_at DESC;",
         "options": {}
       },
       "id": "1a68cfce-a311-4454-b844-a279f15974c8",
@@ -258,7 +258,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records').first().json.query.tableId, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records').first().json.query.tableId, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at, matrixRoomId: i.json.matrix_room_id })) }) }}",
         "options": {
           "responseHeaders": {
             "entries": [
@@ -388,7 +388,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_id, table_name, fields, matrix_room_id, last_synced_at, event_count FROM amino.current_state WHERE record_id = '{{ $('GET /record').first().json.query.recordId }}';",
+        "query": "=SELECT cs.record_id, cs.table_id, tr.table_name, cs.fields, tr.matrix_room_id, cs.last_synced_at, cs.event_count FROM amino.current_state cs JOIN amino.table_registry tr ON cs.table_id = tr.table_id WHERE cs.record_id = '{{ $('GET /record').first().json.query.recordId }}';",
         "options": {}
       },
       "id": "0f81372b-3c87-4259-825e-4764eb2575b7",
@@ -540,7 +540,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/since').first().json.query.tableId }}' AND table_name != '' AND last_synced_at > '{{ $('GET /records/since').first().json.query.since }}'::timestamptz ORDER BY last_synced_at DESC;",
+        "query": "=SELECT cs.record_id, tr.table_name, cs.fields, cs.last_synced_at FROM amino.current_state cs JOIN amino.table_registry tr ON cs.table_id = tr.table_id WHERE cs.table_id = '{{ $('GET /records/since').first().json.query.tableId }}' AND cs.last_synced_at > '{{ $('GET /records/since').first().json.query.since }}'::timestamptz ORDER BY cs.last_synced_at DESC;",
         "options": {}
       },
       "id": "3711a41a-650e-49a2-a836-e36695d0693a",
