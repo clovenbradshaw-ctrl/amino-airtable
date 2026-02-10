@@ -645,6 +645,20 @@
         .cell-bool.true { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
         .cell-bool.false { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 
+        /* Inline Cell Editing */
+        td.inline-editable { cursor: text; }
+        td.inline-editable:hover:not(.inline-editing) { background: rgba(59, 130, 246, 0.08); outline: 1px solid rgba(59, 130, 246, 0.25); outline-offset: -1px; }
+        td.inline-editing { padding: 0; overflow: visible; white-space: normal; }
+        td.inline-editing .inline-edit-input {
+            width: 100%; background: var(--bg-primary); color: var(--text-primary);
+            border: 2px solid var(--primary-500); border-radius: 0;
+            padding: 6px 11px; font-size: 13px; font-family: inherit;
+            outline: none; box-sizing: border-box; resize: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            min-height: 34px;
+        }
+        td.inline-editing .inline-edit-checkbox { margin: 8px 12px; width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary-500); }
+
         /* Pagination */
         .pagination {
             padding: 12px 20px; border-top: 1px solid var(--border-primary);
@@ -9465,14 +9479,14 @@ async function renderTable() {
             // Group data rows
             groupRecords.forEach(rid => {
                 var row = recordMap[rid] || {};
-                html += '<tr class="group-row" data-group-id="' + groupId + '" data-record-id="' + esc(rid) + '" onclick="handleRowClick(event, \'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" style="cursor: pointer;">';
+                html += '<tr class="group-row" data-group-id="' + groupId + '" data-record-id="' + esc(rid) + '" data-table-id="' + esc(currentTable) + '" ondblclick="handleRowDblClick(event, \'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" style="cursor: default;">';
                 html += '<td><button class="history-btn" onclick="event.stopPropagation(); openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
                 html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
                 html += 'History</button></td>';
                 colList.forEach(col => {
                     var value = row[col];
                     if (value === undefined) value = row[colNames[col]];
-                    html += '<td>' + formatCell(value) + '</td>';
+                    html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
                 });
                 html += '</tr>';
             });
@@ -9483,14 +9497,14 @@ async function renderTable() {
         // Standard flat rendering
         displayRecordIds.forEach(rid => {
             var row = recordMap[rid] || {};
-            html += '<tr data-record-id="' + esc(rid) + '" onclick="handleRowClick(event, \'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" style="cursor: pointer;">';
+            html += '<tr data-record-id="' + esc(rid) + '" data-table-id="' + esc(currentTable) + '" ondblclick="handleRowDblClick(event, \'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" style="cursor: default;">';
             html += '<td><button class="history-btn" onclick="event.stopPropagation(); openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
             html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
             html += 'History</button></td>';
             colList.forEach(col => {
                 var value = row[col];
                 if (value === undefined) value = row[colNames[col]];
-                html += '<td>' + formatCell(value) + '</td>';
+                html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
             });
             html += '</tr>';
         });
@@ -13592,7 +13606,7 @@ function dismissToast(toast) {
 
 // ============ Write API — editRecord ============
 
-var WRITE_API_BASE = 'https://n8n.intelechia.com/webhook/api/record';
+var WRITE_API_BASE = 'https://n8n.intelechia.com/webhook/amino-write';
 
 async function editRecord(tableId, recordId, fieldChanges) {
     var session = _loadSynapseSession();
@@ -13638,10 +13652,9 @@ async function editRecord(tableId, recordId, fieldChanges) {
 
     try {
         // ── Stage 2: Write to server ──────────────────────────
-        // Try with query-param auth first to avoid CORS preflight, then
-        // fall back to Authorization header if that fails.
-        var writeUrl = WRITE_API_BASE + '/' + encodeURIComponent(tableId) + '/' + encodeURIComponent(recordId);
-        var writeBody = JSON.stringify({ fields: fieldChanges });
+        // Flat endpoint: PATCH /webhook/amino-write with {tableId, recordId, fields} in body
+        var writeUrl = WRITE_API_BASE;
+        var writeBody = JSON.stringify({ tableId: tableId, recordId: recordId, fields: fieldChanges });
         var response;
 
         try {
@@ -13728,6 +13741,9 @@ async function editRecord(tableId, recordId, fieldChanges) {
 window.addEventListener('amino:record-updated', function(e) {
     var detail = e.detail;
     if (!detail || !detail.tableId || !detail.recordId) return;
+
+    // Clear inline editing cell before re-render to avoid stale DOM
+    _inlineEditingCell = null;
 
     // Re-render the record profile if it's showing this record
     if (profileCurrentTableId === detail.tableId && profileCurrentRecordId === detail.recordId) {
@@ -14004,6 +14020,195 @@ function handleRowClick(event, tableId, recordId) {
         return;
     }
     openRecordProfile(tableId, recordId);
+}
+
+// Double-click opens the record profile panel (modal on right)
+function handleRowDblClick(event, tableId, recordId) {
+    if (event.target.closest('button, a, input, select, textarea')) return;
+    // Cancel any pending inline edit on this cell
+    var cell = event.target.closest('td.inline-editable');
+    if (cell && cell.classList.contains('inline-editing')) {
+        cancelInlineCellEdit(cell);
+    }
+    openRecordProfile(tableId, recordId);
+}
+
+// ============ Inline Cell Editing (Grid) ============
+
+var _inlineEditingCell = null; // Currently editing cell element
+
+function startInlineCellEdit(event, td) {
+    // Don't start edit if clicking a link, button, or already in an input
+    if (event.target.closest('button, a, input, select, textarea')) return;
+
+    // Already editing this cell
+    if (td.classList.contains('inline-editing')) return;
+
+    // Close any other inline edit first
+    if (_inlineEditingCell && _inlineEditingCell !== td) {
+        commitInlineCellEdit(_inlineEditingCell);
+    }
+
+    var fieldId = td.dataset.fieldId;
+    var recordId = td.dataset.recordId;
+    var tableId = td.closest('tr')?.dataset.tableId || currentTable;
+    if (!fieldId || !recordId || !tableId) return;
+
+    // Get field metadata and current value
+    var field = META_FIELDS[tableId]?.[fieldId];
+    var fieldType = field?.fieldType || 'text';
+    var recordData = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) ? window.IN_MEMORY_DATA[tableId][recordId] : null;
+    var currentValue;
+    if (recordData) {
+        currentValue = recordData[fieldId];
+        if (currentValue === undefined && field?.fieldName) currentValue = recordData[field.fieldName];
+    }
+
+    _inlineEditingCell = td;
+    td.classList.add('inline-editing');
+    td._inlineOriginalHTML = td.innerHTML;
+    td._inlineFieldId = fieldId;
+    td._inlineRecordId = recordId;
+    td._inlineTableId = tableId;
+    td._inlineOriginalValue = currentValue;
+
+    var input;
+    if (fieldType === 'checkbox' || typeof currentValue === 'boolean') {
+        input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = !!currentValue;
+        input.className = 'inline-edit-checkbox';
+        input.onchange = function() {
+            commitInlineCellEdit(td, input.checked);
+        };
+    } else if (Array.isArray(currentValue) || (typeof currentValue === 'object' && currentValue !== null)) {
+        input = document.createElement('textarea');
+        input.className = 'inline-edit-input';
+        input.value = currentValue != null ? JSON.stringify(currentValue, null, 2) : '';
+        input.rows = 3;
+    } else {
+        var strValue = currentValue != null ? String(currentValue) : '';
+        input = document.createElement('input');
+        input.type = (fieldType === 'number' || typeof currentValue === 'number') ? 'number' : 'text';
+        input.className = 'inline-edit-input';
+        input.value = strValue;
+    }
+
+    if (input.type !== 'checkbox') {
+        input.onkeydown = function(e) {
+            if (e.key === 'Enter' && !e.shiftKey && input.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                e.stopPropagation();
+                commitInlineCellEdit(td);
+            } else if (e.key === 'Escape') {
+                e.stopPropagation();
+                cancelInlineCellEdit(td);
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                e.stopPropagation();
+                commitInlineCellEdit(td);
+                // Move to adjacent cell
+                var nextTd = e.shiftKey ? td.previousElementSibling : td.nextElementSibling;
+                if (nextTd && nextTd.classList.contains('inline-editable')) {
+                    startInlineCellEdit({ target: nextTd, stopPropagation: function(){} }, nextTd);
+                }
+            }
+        };
+        input.onblur = function() {
+            setTimeout(function() {
+                if (_inlineEditingCell === td) {
+                    commitInlineCellEdit(td);
+                }
+            }, 150);
+        };
+    }
+
+    // Prevent double-click from bubbling to row
+    input.ondblclick = function(e) { e.stopPropagation(); };
+
+    td.innerHTML = '';
+    td.appendChild(input);
+    input.focus();
+    if (input.select) input.select();
+}
+
+function parseInlineCellValue(strValue, originalValue, fieldType) {
+    if (strValue === '') return '';
+    if (typeof originalValue === 'number' || fieldType === 'number') {
+        var num = Number(strValue);
+        if (!isNaN(num)) return num;
+    }
+    if (Array.isArray(originalValue) || (typeof originalValue === 'object' && originalValue !== null)) {
+        try { return JSON.parse(strValue); } catch (e) { return strValue; }
+    }
+    return strValue;
+}
+
+async function commitInlineCellEdit(td, explicitValue) {
+    if (!td || !td.classList.contains('inline-editing')) return;
+
+    var fieldId = td._inlineFieldId;
+    var recordId = td._inlineRecordId;
+    var tableId = td._inlineTableId;
+    var originalValue = td._inlineOriginalValue;
+
+    // Get the new value from the input
+    var inputEl = td.querySelector('input, textarea');
+    var newValue;
+    if (explicitValue !== undefined) {
+        newValue = explicitValue;
+    } else if (inputEl) {
+        if (inputEl.type === 'checkbox') {
+            newValue = inputEl.checked;
+        } else {
+            var field = META_FIELDS[tableId]?.[fieldId];
+            var fieldType = field?.fieldType || 'text';
+            newValue = parseInlineCellValue(inputEl.value, originalValue, fieldType);
+        }
+    } else {
+        // No input found — just restore
+        cancelInlineCellEdit(td);
+        return;
+    }
+
+    // Clean up cell state
+    td.classList.remove('inline-editing');
+    _inlineEditingCell = null;
+
+    // Check if value changed
+    if (JSON.stringify(originalValue) === JSON.stringify(newValue)) {
+        // No change — restore display
+        td.innerHTML = td._inlineOriginalHTML;
+        return;
+    }
+
+    // Show the new value immediately (optimistic)
+    td.innerHTML = formatCell(newValue);
+
+    // Determine the field key used in the record (fieldId or fieldName)
+    var field = META_FIELDS[tableId]?.[fieldId];
+    var fieldKey = fieldId;
+    var recordData = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) ? window.IN_MEMORY_DATA[tableId][recordId] : null;
+    if (recordData && recordData[fieldId] === undefined && field?.fieldName && recordData[field.fieldName] !== undefined) {
+        fieldKey = field.fieldName;
+    }
+
+    var fieldChanges = {};
+    fieldChanges[fieldKey] = newValue;
+
+    try {
+        await editRecord(tableId, recordId, fieldChanges);
+    } catch (err) {
+        console.error('[InlineEdit] Edit failed for', recordId, fieldKey, err);
+        // editRecord already rolled back + showed error toast; table will re-render via event
+    }
+}
+
+function cancelInlineCellEdit(td) {
+    if (!td) return;
+    td.classList.remove('inline-editing');
+    td.innerHTML = td._inlineOriginalHTML || '';
+    if (_inlineEditingCell === td) _inlineEditingCell = null;
 }
 
 // Keyboard navigation for profile
