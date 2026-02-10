@@ -5513,6 +5513,9 @@ var UserPreferences = (function() {
                 await _saveLocal();
                 return true;
             }
+            // Account data doesn't exist yet on server (first login);
+            // initialize with current prefs so future loads don't 404
+            await _saveRemote();
         } catch (e) {
             console.warn('[UserPreferences] Failed to load remote prefs:', e);
         }
@@ -5689,7 +5692,13 @@ var SharedViews = (function() {
         if (!MatrixClient.isLoggedIn()) return null;
         try {
             var data = await MatrixClient.getAccountData(ACCOUNT_DATA_TYPE);
-            return data && data.views ? data.views : null;
+            if (data) {
+                return data.views ? data.views : null;
+            }
+            // Account data doesn't exist yet on server (first login);
+            // initialize with empty views so future loads don't 404
+            await _syncPrivateViewsToRemote([]);
+            return null;
         } catch (e) {
             console.warn('[SharedViews] Failed to load private views from remote:', e);
             return null;
