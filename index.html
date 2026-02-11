@@ -273,6 +273,65 @@
         .sidebar-logo svg { width: 14px; height: 14px; color: #fff; }
         .sidebar-header h2 { color: var(--text-primary); font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 
+        /* Mode Toggle - Collapsible Provider/Client Switcher */
+        .mode-toggle {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            margin-left: auto;
+        }
+        .mode-toggle-icon {
+            width: 30px; height: 30px;
+            border-radius: var(--radius-md);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            color: var(--text-muted);
+        }
+        .mode-toggle-icon:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border-secondary); }
+        .mode-toggle-icon svg { width: 14px; height: 14px; }
+        .mode-toggle-icon.active { border-color: var(--primary-500); color: var(--primary-400); background: rgba(59,130,246,0.1); }
+        .mode-toggle-options {
+            position: absolute;
+            top: 0;
+            right: 0;
+            display: flex;
+            gap: 2px;
+            padding: 3px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.9) translateX(4px);
+            transform-origin: right center;
+            transition: opacity 0.15s ease, transform 0.15s ease;
+            z-index: 10;
+            white-space: nowrap;
+        }
+        .mode-toggle.expanded .mode-toggle-options {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1) translateX(0);
+        }
+        .mode-toggle.expanded .mode-toggle-icon { opacity: 0; pointer-events: none; }
+        .mode-toggle-opt {
+            display: flex; align-items: center; gap: 6px;
+            padding: 5px 10px;
+            border-radius: var(--radius-md);
+            font-size: 12px; font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            border: none; background: none;
+        }
+        .mode-toggle-opt:hover { color: var(--text-primary); background: var(--bg-hover); }
+        .mode-toggle-opt.selected { background: var(--bg-primary); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+        .mode-toggle-opt svg { width: 13px; height: 13px; flex-shrink: 0; }
+
         /* Sidebar Search */
         .sidebar-search { position: relative; }
         .sidebar-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
@@ -2136,6 +2195,27 @@
                     </svg>
                 </div>
                 <h2>Amino Viewer</h2>
+                <div class="mode-toggle" id="mode-toggle">
+                    <div class="mode-toggle-icon" id="mode-toggle-icon" onclick="toggleModeExpand()" title="Switch view mode">
+                        <svg id="mode-toggle-collapsed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 3h4a2 2 0 0 1 2 2v2H2V5a2 2 0 0 1 2-2h4"/><path d="M12 3v4"/>
+                        </svg>
+                    </div>
+                    <div class="mode-toggle-options" id="mode-toggle-options">
+                        <button class="mode-toggle-opt selected" data-mode="provider" onclick="selectViewMode('provider')">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 3h4a2 2 0 0 1 2 2v2H2V5a2 2 0 0 1 2-2h4"/><path d="M12 3v4"/>
+                            </svg>
+                            Provider
+                        </button>
+                        <button class="mode-toggle-opt" data-mode="client" onclick="selectViewMode('client')">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                            </svg>
+                            Client
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="sidebar-search">
                 <span class="sidebar-search-icon">
@@ -2719,6 +2799,65 @@ function toggleTheme() {
     if (icon) icon.textContent = isLight ? '\u263E' : '\u2606';
     if (label) label.textContent = isLight ? 'Dark Mode' : 'Light Mode';
 }
+
+// ============ Mode Toggle (Collapsible Provider/Client Switcher) ============
+var currentViewMode = localStorage.getItem('amino_view_mode') || 'provider';
+
+function toggleModeExpand() {
+    var container = document.getElementById('mode-toggle');
+    if (!container) return;
+    container.classList.add('expanded');
+    // Close when clicking outside
+    setTimeout(function() {
+        document.addEventListener('click', closeModeToggle);
+    }, 0);
+}
+
+function closeModeToggle(e) {
+    var container = document.getElementById('mode-toggle');
+    if (!container) return;
+    if (!container.contains(e.target)) {
+        container.classList.remove('expanded');
+        document.removeEventListener('click', closeModeToggle);
+    }
+}
+
+function selectViewMode(mode) {
+    currentViewMode = mode;
+    localStorage.setItem('amino_view_mode', mode);
+
+    // Update button states
+    var opts = document.querySelectorAll('.mode-toggle-opt');
+    opts.forEach(function(opt) {
+        opt.classList.toggle('selected', opt.getAttribute('data-mode') === mode);
+    });
+
+    // Update the collapsed icon to reflect selected mode
+    var iconEl = document.getElementById('mode-toggle-collapsed-icon');
+    if (iconEl) {
+        if (mode === 'client') {
+            iconEl.innerHTML = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
+        } else {
+            iconEl.innerHTML = '<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 3h4a2 2 0 0 1 2 2v2H2V5a2 2 0 0 1 2-2h4"/><path d="M12 3v4"/>';
+        }
+    }
+
+    // Collapse after selection
+    var container = document.getElementById('mode-toggle');
+    if (container) container.classList.remove('expanded');
+    document.removeEventListener('click', closeModeToggle);
+}
+
+// Initialize mode toggle state on load
+(function() {
+    var saved = localStorage.getItem('amino_view_mode') || 'provider';
+    // Defer to after DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() { selectViewMode(saved); });
+    } else {
+        selectViewMode(saved);
+    }
+})();
 
 // ============ Tab Bar Management ============
 var openTabs = []; // { id, tableId, tableName, viewId, viewName, icon }
