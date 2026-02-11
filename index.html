@@ -2290,6 +2290,12 @@
         .pit-field-name { width: 180px; flex-shrink: 0; font-weight: 500; color: var(--text-primary); font-size: 13px; }
         .pit-field-value { flex: 1; font-size: 13px; color: var(--text-secondary); word-break: break-word; }
         .pit-empty-state { padding: 40px 20px; text-align: center; color: var(--text-muted); }
+        .pit-record-actions { padding: 12px 16px; border-top: 1px solid var(--border-primary); display: flex; gap: 8px; justify-content: flex-end; }
+        .pit-revert-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: none; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer; background: rgba(245, 158, 11, 0.15); color: #fbbf24; transition: background 0.15s; }
+        .pit-revert-btn:hover { background: rgba(245, 158, 11, 0.3); }
+        .pit-revert-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pit-revert-confirm { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .pit-revert-confirm:hover { background: rgba(239, 68, 68, 0.3); }
 
         /* Events View Controls */
         .events-controls { padding: 12px 20px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -5032,10 +5038,10 @@ var META_VIEWS = {};
 // Human-readable names for entity/event types
 var ENTITY_TYPE_NAMES = {
     'data': 'Data',
-    'INS': 'Insert',
-    'ALT': 'Alter',
-    'NUL': 'Nullify',
-    'SYN': 'Sync',
+    'INS': 'INS',
+    'ALT': 'ALT',
+    'NUL': 'NUL',
+    'SYN': 'SYN',
     'table': 'Table',
     'field': 'Field',
     'view': 'View',
@@ -15440,6 +15446,8 @@ async function skipSetupAndUploadAmoFile() {
 
 // ============ Point in Time View ============
 
+var _pitRevertState = null; // Stores reconstructed state for revert
+
 async function viewRecordAtPointInTime(eventId, recordId, set) {
     var overlay = document.getElementById('pit-modal-overlay');
     var body = document.getElementById('pit-modal-body');
@@ -15545,12 +15553,25 @@ async function viewRecordAtPointInTime(eventId, recordId, set) {
         }
 
         html += '</div>'; // .pit-record-fields
+
+        // Revert action
+        html += '<div class="pit-record-actions">';
+        html += '<button class="pit-revert-btn" onclick="revertRecordToPointInTime()" title="Revert this record to the state shown above">';
+        html += '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2v5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 7A6.5 6.5 0 1 1 3 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+        html += 'Revert to This State';
+        html += '</button>';
+        html += '</div>';
+
         html += '</div>'; // .pit-record-card
+
+        // Store state for revert
+        _pitRevertState = { tableId: tableId, recordId: recordId, fields: recordState, eventId: eventId };
 
         body.innerHTML = html;
 
     } catch (err) {
         console.error('Error viewing record at point in time:', err);
+        _pitRevertState = null;
         body.innerHTML = '<div class="pit-empty-state"><h3>Error</h3><p>' + esc(err.message) + '</p></div>';
     }
 }
@@ -15558,6 +15579,40 @@ async function viewRecordAtPointInTime(eventId, recordId, set) {
 function closePitModal(event) {
     if (event && event.target !== event.currentTarget) return;
     document.getElementById('pit-modal-overlay').classList.remove('open');
+    _pitRevertState = null;
+}
+
+async function revertRecordToPointInTime() {
+    if (!_pitRevertState) return;
+
+    var state = _pitRevertState;
+    var btn = document.querySelector('.pit-revert-btn');
+
+    // Two-click confirmation
+    if (!btn.classList.contains('pit-revert-confirm')) {
+        btn.classList.add('pit-revert-confirm');
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.5" r="0.75" fill="currentColor"/><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/></svg> Confirm Revert?';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Reverting...';
+
+    try {
+        await editRecord(state.tableId, state.recordId, state.fields);
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Reverted';
+        btn.style.background = 'rgba(34, 197, 94, 0.15)';
+        btn.style.color = '#4ade80';
+        _pitRevertState = null;
+        setTimeout(function() { closePitModal(); }, 1200);
+    } catch (err) {
+        console.error('Error reverting record:', err);
+        btn.disabled = false;
+        btn.classList.remove('pit-revert-confirm');
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2v5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 7A6.5 6.5 0 1 1 3 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Revert Failed - Retry';
+        btn.style.background = 'rgba(239, 68, 68, 0.15)';
+        btn.style.color = '#f87171';
+    }
 }
 
 function goToRecordInTable(tableId, recordId) {
