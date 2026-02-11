@@ -58,8 +58,10 @@ var MatrixClient = (function() {
         DEFAULT: 0
     };
 
-    // Users that are always treated as admins regardless of room power levels
+    // Users that are always treated as admins regardless of room power levels.
+    // This is a fallback; the authoritative list should come from law.firm.org.config.adminUsers
     var ADMIN_USERNAMES = ['admin'];
+    var _orgAdminUsers = null; // Set from org config: full MXIDs (e.g., ['@admin:amino.im'])
 
     // ============ HTTP Helpers ============
 
@@ -597,8 +599,43 @@ var MatrixClient = (function() {
 
     function _isHardcodedAdmin() {
         if (!_userId) return false;
+        // Check org config admin list first (full MXIDs)
+        if (_orgAdminUsers && _orgAdminUsers.indexOf(_userId) !== -1) return true;
+        // Fallback to hardcoded localpart list
         var localpart = _userId.split(':')[0].replace(/^@/, '');
         return ADMIN_USERNAMES.indexOf(localpart) !== -1;
+    }
+
+    // Set the authoritative admin user list from org config
+    function setOrgAdminUsers(adminMxids) {
+        _orgAdminUsers = Array.isArray(adminMxids) ? adminMxids : null;
+    }
+
+    // Check if a saved session exists in localStorage (for offline unlock detection)
+    function hasSavedSession() {
+        try {
+            var stored = localStorage.getItem(CONFIG_KEY);
+            var session = sessionStorage.getItem(SESSION_KEY);
+            if (session) {
+                var parsed = JSON.parse(session);
+                return !!(parsed.userId && parsed.homeserverUrl);
+            }
+            return false;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Get saved userId without restoring the full session
+    function getSavedUserId() {
+        try {
+            var stored = sessionStorage.getItem(SESSION_KEY);
+            if (stored) {
+                var parsed = JSON.parse(stored);
+                return parsed.userId || null;
+            }
+        } catch (e) { /* ignore */ }
+        return null;
     }
 
     async function detectUserRole(orgSpaceId) {
@@ -1114,7 +1151,12 @@ var MatrixClient = (function() {
         detectUserRole: detectUserRole,
         getUserPowerLevel: getUserPowerLevel,
         isHardcodedAdmin: _isHardcodedAdmin,
+        setOrgAdminUsers: setOrgAdminUsers,
         ADMIN_USERNAMES: ADMIN_USERNAMES,
+
+        // Session helpers (offline)
+        hasSavedSession: hasSavedSession,
+        getSavedUserId: getSavedUserId,
 
         // User management
         getProfile: getProfile,
