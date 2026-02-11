@@ -25572,7 +25572,7 @@ async function loadSettingsUsers() {
         }
 
         // Get members of the org space
-        var members = await MatrixClient.getRoomMembers(_settingsOrgSpaceId);
+        var members = await MatrixClient.getRoomMembers(_settingsOrgSpaceId, { memberships: ['join', 'invite'] });
 
         // Also include users that are in any table room but not yet joined to the org
         // space (for example, users provisioned externally or force-joined to data rooms).
