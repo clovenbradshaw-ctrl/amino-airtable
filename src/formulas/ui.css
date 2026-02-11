@@ -1,0 +1,296 @@
+/*
+ * Formula UI Styles
+ *
+ * Extends the existing cell-formula styles in index.html with:
+ * - Epistemic status dot indicators (DERIVED: formula/lookup/rollup)
+ * - Formula bar for computed cell inspection
+ * - Provenance panel for full EO-IR chain display
+ * - Operator badge styling
+ */
+
+/* ── Epistemic Status Dot Indicators ────────────────────────── */
+
+/* Base dot style — positioned in top-right of cell */
+td.cell-formula::before {
+    content: '';
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+td.cell-formula:hover::before {
+    opacity: 1;
+}
+
+/* Formula fields — purple dot */
+td.cell-formula.epistemic-dot-formula::before {
+    background-color: #c4b5fd;
+}
+
+/* Lookup fields — blue dot */
+td.cell-formula.epistemic-dot-lookup::before {
+    background-color: #93c5fd;
+}
+
+/* Rollup fields — amber dot */
+td.cell-formula.epistemic-dot-rollup::before {
+    background-color: #fcd34d;
+}
+
+/* Error state */
+.cell-formula-error {
+    color: #dc2626;
+    font-style: italic;
+    font-size: 11px;
+}
+
+/* ── Formula Bar ────────────────────────────────────────────── */
+
+.formula-bar-derived {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    background: var(--bg-elevated, #f5f3ff);
+    border-bottom: 1px solid var(--border-primary, #e9e5f5);
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    min-height: 28px;
+}
+
+.formula-bar-badge {
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.badge-formula,
+.badge-derived {
+    background: rgba(124, 58, 237, 0.15);
+    color: #7c3aed;
+}
+
+.badge-lookup {
+    background: rgba(2, 132, 199, 0.12);
+    color: #0284c7;
+}
+
+.badge-rollup {
+    background: rgba(217, 119, 6, 0.12);
+    color: #d97706;
+}
+
+.badge-given {
+    background: rgba(34, 197, 94, 0.12);
+    color: #16a34a;
+}
+
+.formula-bar-text {
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+/* Dark theme adjustments */
+html:not(.light-theme) .badge-formula,
+html:not(.light-theme) .badge-derived {
+    background: rgba(167, 139, 250, 0.2);
+    color: #a78bfa;
+}
+
+html:not(.light-theme) .badge-lookup {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+}
+
+html:not(.light-theme) .badge-rollup {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+}
+
+html:not(.light-theme) .badge-given {
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
+}
+
+/* ── Provenance Panel ───────────────────────────────────────── */
+
+.provenance-panel {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 380px;
+    background: var(--bg-elevated, #fff);
+    border-left: 1px solid var(--border-primary, #e5e7eb);
+    box-shadow: var(--shadow-lg, -4px 0 12px rgba(0, 0, 0, 0.1));
+    z-index: 9999;
+    overflow-y: auto;
+    padding: 16px;
+    display: none;
+}
+
+.provenance-panel.visible {
+    display: block;
+}
+
+.provenance-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-primary, #e5e7eb);
+}
+
+.provenance-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.provenance-section {
+    margin-bottom: 14px;
+}
+
+.provenance-section h4 {
+    margin: 0 0 6px 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted, #6b7280);
+}
+
+.provenance-section code {
+    display: block;
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    color: var(--text-primary);
+    background: var(--bg-primary, #f9fafb);
+    border: 1px solid var(--border-primary, #e5e7eb);
+    border-radius: var(--radius-sm, 4px);
+    padding: 8px 10px;
+    word-break: break-all;
+}
+
+.provenance-source-fields {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.provenance-source-fields li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.provenance-source-fields li small {
+    color: var(--text-muted, #9ca3af);
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+}
+
+.provenance-grounding {
+    margin: 0;
+    font-size: 12px;
+}
+
+.provenance-grounding dt {
+    font-weight: 600;
+    color: var(--text-muted, #6b7280);
+    margin-top: 4px;
+    float: left;
+    width: 70px;
+}
+
+.provenance-grounding dd {
+    margin-left: 78px;
+    margin-bottom: 2px;
+    color: var(--text-primary);
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    word-break: break-all;
+}
+
+/* Operator chain */
+.provenance-op-chain {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    counter-reset: op-counter;
+}
+
+.provenance-op-chain li {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 4px 0;
+    font-size: 11px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-primary, #f3f4f6);
+}
+
+.provenance-op-chain li:last-child {
+    border-bottom: none;
+}
+
+.op-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--font-mono, monospace);
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.op-des { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.op-seg { background: rgba(217, 119, 6, 0.12); color: #d97706; }
+.op-con { background: rgba(2, 132, 199, 0.12); color: #0284c7; }
+.op-alt { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
+
+.op-params {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: var(--text-muted, #9ca3af);
+    word-break: break-all;
+    flex: 1;
+}
+
+.provenance-op-chain li small {
+    color: var(--text-muted, #9ca3af);
+    font-family: var(--font-mono, monospace);
+    white-space: nowrap;
+}
+
+.provenance-empty {
+    color: var(--text-muted, #9ca3af);
+    font-size: 12px;
+    font-style: italic;
+    padding: 20px 0;
+    text-align: center;
+}
+
+/* Dark theme for operator badges */
+html:not(.light-theme) .op-des { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+html:not(.light-theme) .op-seg { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+html:not(.light-theme) .op-con { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+html:not(.light-theme) .op-alt { background: rgba(167, 139, 250, 0.2); color: #a78bfa; }
