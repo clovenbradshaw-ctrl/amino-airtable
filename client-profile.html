@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amino Client Profile</title>
+  <style>
+    :root {
+      --bg: #f0f4f8;
+      --card: #ffffff;
+      --line: #d9e0e8;
+      --text: #232120;
+      --muted: #6b7280;
+      --accent: #a77653;
+      --accent-2: #8f6243;
+      --pill: #eef2f7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .topbar {
+      display: flex;
+      gap: 10px;
+      padding: 14px 18px;
+      background: #f6f2ef;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .nav-btn {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .page {
+      padding: 12px 18px 26px;
+    }
+    .title-card {
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .title-main h1 {
+      margin: 0;
+      font-size: 28px;
+    }
+    .meta { color: var(--muted); font-size: 13px; }
+    .btn {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover { background: var(--accent-2); }
+    .btn.secondary {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    .tab-strip {
+      display: flex;
+      gap: 2px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 12px;
+    }
+    .tab {
+      padding: 9px 11px;
+      font-size: 13px;
+      cursor: pointer;
+      color: #4b5563;
+      border-bottom: 2px solid transparent;
+      border-radius: 6px 6px 0 0;
+    }
+    .tab.active {
+      color: var(--text);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-bottom: 2px solid var(--accent);
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .panel h3 {
+      margin: 0;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 18px;
+    }
+    .panel-body { padding: 10px 12px; }
+    .kv {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 8px;
+      font-size: 14px;
+      padding: 6px 0;
+      border-bottom: 1px dashed #edf0f4;
+    }
+    .kv .key { color: #4b5563; }
+    .muted { color: var(--muted); }
+    .record-pill {
+      display: inline-block;
+      font-size: 12px;
+      color: #374151;
+      background: var(--pill);
+      border: 1px solid #d7dfe8;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin: 2px 6px 2px 0;
+    }
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+    .card {
+      border: 1px solid #e3e9ef;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fff;
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 7px;
+      align-items: center;
+    }
+    .card-title { font-weight: 700; }
+    .links a {
+      color: #245aa9;
+      text-decoration: none;
+      font-size: 12px;
+      margin-right: 8px;
+    }
+    .pill-group { margin-top: 7px; }
+    .schema-drawer {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f8fafc;
+      display: none;
+      padding: 10px;
+    }
+    .schema-drawer.open { display: block; }
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      resize: vertical;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .status {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="nav-btn">Home</button>
+    <button class="nav-btn">Clients</button>
+    <button class="nav-btn">Calendar</button>
+    <button class="nav-btn">Communications</button>
+    <button class="nav-btn">New Client Event</button>
+    <button class="nav-btn">New Case Note</button>
+  </div>
+
+  <div class="page">
+    <div class="title-card">
+      <div class="title-main">
+        <h1 id="clientName">Client</h1>
+        <div class="meta" id="clientMeta">recordId: -</div>
+      </div>
+      <div class="toolbar">
+        <button class="btn" id="adminToggle">Admin: Off</button>
+        <button class="btn secondary" id="schemaToggle">Schema Editor</button>
+      </div>
+    </div>
+
+    <div class="tab-strip" id="tabStrip"></div>
+    <div id="tabContent"></div>
+
+    <div class="schema-drawer" id="schemaDrawer">
+      <div class="toolbar">
+        <button class="btn" id="saveSchema">Save Schema</button>
+        <button class="btn secondary" id="resetSchema">Reset Default</button>
+      </div>
+      <textarea id="schemaJson"></textarea>
+      <div class="status" id="schemaStatus"></div>
+    </div>
+  </div>
+
+  <script src="./data-layer.js"></script>
+  <script>
+    const STORAGE_KEYS = {
+      schema: 'amino.clientProfile.schema.v1',
+      admin: 'amino.clientProfile.admin'
+    };
+
+    const defaultSchema = {
+      tabs: [
+        { id: 'client-info', label: 'Client Info', sections: [{ type: 'fields', tableId: 'Clients', title: 'Overview', fields: ['First Name', 'Last Name', 'Office', 'Client Tags', 'Entry Status', 'Case Manager'] }, { type: 'related-list', tableId: 'Addresses', title: 'Addresses', fields: ['Address', 'Address Change Date', 'Same Address Confirmed Date'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'at-a-glance', label: 'At-a-glance', sections: [{ type: 'fields', tableId: 'Clients', title: 'At-a-glance', fields: ['SIJ Case Status', 'Merits Atty', 'Current Stage', 'Priority', 'Notes'] }] },
+        { id: 'matters', label: 'Matters', sections: [{ type: 'related-list', tableId: 'Matters', title: 'Matters', fields: ['Matter', 'Description', 'Status', 'Created_By'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }, { type: 'related-list', tableId: 'Matter Notes', title: 'Matter Notes', fields: ['Matter', 'Description', 'Activity', 'Date', 'Created_By'], foreignKeys: ['Client', 'Client Record ID', 'clientId', 'Matter Record ID'] }] },
+        { id: 'case-notes', label: 'Case Notes', sections: [{ type: 'related-list', tableId: 'Case Notes', title: 'Case Notes', fields: ['Case Note', 'Category', 'Created', 'Created_By'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'ead', label: 'EAD', sections: [{ type: 'related-list', tableId: 'EAD', title: 'EAD', fields: ['Mail Tracking # EAD', 'EAD Stage', 'EAD Received', 'EAD Sent Date', 'EAD Approval Date'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'all-activities', label: 'All Activities', sections: [{ type: 'related-list', tableId: 'Activities', title: 'All Activity Notes', fields: ['Activity', 'Description', 'Date', 'Owner'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }, { type: 'related-list', tableId: 'Hearings/Interviews', title: 'Hearings/Interviews', fields: ['Event', 'Date', 'Judge', 'Location'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'comms', label: 'Comms', sections: [{ type: 'related-list', tableId: 'Communications', title: 'Communications', fields: ['Type', 'Date', 'Summary', 'Direction'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'record-requests', label: 'Record Requests', sections: [{ type: 'related-list', tableId: 'Record Requests', title: 'Record Requests', fields: ['Request Type', 'Status', 'Requested Date', 'Received Date'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'deadlines', label: 'Deadlines', sections: [{ type: 'related-list', tableId: 'Deadlines', title: 'Deadlines', fields: ['Deadline Name', 'Due Date', 'Status', 'Assigned To'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'box', label: 'Box', sections: [{ type: 'related-list', tableId: 'Box Files', title: 'Box Files', fields: ['File Name', 'Folder', 'Status'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'related-individuals', label: 'Related Individuals', sections: [{ type: 'related-list', tableId: 'Related Individuals', title: 'Related Individuals', fields: ['Name', 'Relation', 'Phone', 'Email'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'applications', label: 'Applications', sections: [{ type: 'related-list', tableId: 'Applications', title: 'Applications', fields: ['Application Type', 'Status', 'Filed Date', 'Decision Date'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
+        { id: 'dedupe', label: 'Deduplication History', sections: [{ type: 'related-list', tableId: 'Deduplication History', title: 'Deduplication History', fields: ['Merged On', 'Source Record ID', 'Target Record ID', 'Action'], foreignKeys: ['Client', 'Client Record ID', 'clientId', 'Target Record ID', 'Source Record ID'] }] }
+      ]
+    };
+
+    const mockData = {
+      Clients: [{ recordId: 'recClient001', fields: { 'First Name': 'Robert', 'Last Name': 'Lacy', 'Office': 'Lacy, Robert Offices', 'Client Tags': ['SIJ', 'Priority'], 'Entry Status': 'Active', 'Case Manager': 'Ana Garcia', 'SIJ Case Status': 'Awaiting hearing', 'Merits Atty': 'Padilla Rivera', 'Current Stage': 'Evidence Collection', 'Priority': 'High', 'Notes': 'Client prefers Spanish calls after 2pm.' } }],
+      Addresses: [{ recordId: 'recAddr1', fields: { 'Client Record ID': 'recClient001', Address: '123 Main St, Houston TX', 'Address Change Date': '2026-01-02', 'Same Address Confirmed Date': '2026-02-05' } }],
+      Matters: [{ recordId: 'recMat1', fields: { 'Client Record ID': 'recClient001', Matter: 'SIJ Petition', Description: 'Primary SIJ filing', Status: 'In Progress', Created_By: 'Ana' } }],
+      'Matter Notes': [{ recordId: 'recMN1', fields: { 'Client Record ID': 'recClient001', Matter: 'SIJ Petition', Description: 'Collected school records', Activity: 'Records Intake', Date: '2026-02-01', Created_By: 'Ana', 'Matter Record ID': 'recMat1' } }],
+      'Case Notes': [{ recordId: 'recCN1', fields: { 'Client Record ID': 'recClient001', 'Case Note': 'Client shared updated address.', Category: 'Address', Created: '2026-02-03', Created_By: 'Case Team' } }],
+      EAD: [{ recordId: 'recEAD1', fields: { 'Client Record ID': 'recClient001', 'Mail Tracking # EAD': 'USPS-1234', 'EAD Stage': 'Mailed', 'EAD Received': '2026-01-20', 'EAD Sent Date': '2026-01-28', 'EAD Approval Date': '2026-02-10' } }],
+      Activities: [{ recordId: 'recAct1', fields: { 'Client Record ID': 'recClient001', Activity: 'Intake Call', Description: 'Completed full intake', Date: '2026-01-03', Owner: 'Ana' } }],
+      'Hearings/Interviews': [{ recordId: 'recHear1', fields: { 'Client Record ID': 'recClient001', Event: 'Master Calendar', Date: '2026-03-10', Judge: 'Ramirez', Location: 'Houston' } }],
+      Communications: [{ recordId: 'recCom1', fields: { 'Client Record ID': 'recClient001', Type: 'Phone', Date: '2026-02-05', Summary: 'Reminder call', Direction: 'Outbound' } }],
+      'Record Requests': [{ recordId: 'recRR1', fields: { 'Client Record ID': 'recClient001', 'Request Type': 'School Records', Status: 'Pending', 'Requested Date': '2026-02-01', 'Received Date': '' } }],
+      Deadlines: [{ recordId: 'recDL1', fields: { 'Client Record ID': 'recClient001', 'Deadline Name': 'I-360 filing', 'Due Date': '2026-04-15', Status: 'Open', 'Assigned To': 'Ana' } }],
+      'Box Files': [{ recordId: 'recBX1', fields: { 'Client Record ID': 'recClient001', 'File Name': 'Passport Scan.pdf', Folder: '/Robert Lacy', Status: 'Uploaded' } }],
+      'Related Individuals': [{ recordId: 'recRI1', fields: { 'Client Record ID': 'recClient001', Name: 'Maria Lacy', Relation: 'Mother', Phone: '555-1809', Email: 'maria@example.com' } }],
+      Applications: [{ recordId: 'recAPP1', fields: { 'Client Record ID': 'recClient001', 'Application Type': 'SIJ', Status: 'Drafting', 'Filed Date': '', 'Decision Date': '' } }],
+      'Deduplication History': [{ recordId: 'recDD1', fields: { 'Target Record ID': 'recClient001', 'Source Record ID': 'recClient001_dup', Action: 'Manual Merge', 'Merged On': '2026-01-10' } }]
+    };
+
+    let state = {
+      schema: loadSchema(),
+      admin: loadAdmin(),
+      activeTab: null,
+      data: {},
+      clientId: new URLSearchParams(location.search).get('clientId') || 'recClient001',
+      clientRecord: null
+    };
+
+    function loadSchema() {
+      const raw = localStorage.getItem(STORAGE_KEYS.schema);
+      if (!raw) return JSON.parse(JSON.stringify(defaultSchema));
+      try { return JSON.parse(raw); } catch { return JSON.parse(JSON.stringify(defaultSchema)); }
+    }
+
+    function loadAdmin() {
+      return localStorage.getItem(STORAGE_KEYS.admin) === 'true';
+    }
+
+    function saveAdmin(val) {
+      localStorage.setItem(STORAGE_KEYS.admin, String(val));
+    }
+
+    function normalizeTableName(name) {
+      return String(name || '').trim().toLowerCase();
+    }
+
+    function findRecordById(tableRows, recordId) {
+      return (tableRows || []).find(row => row.recordId === recordId || row.id === recordId || row.fields?.recordId === recordId);
+    }
+
+    function collectRecordIds(value) {
+      if (value == null || value === '') return [];
+      if (Array.isArray(value)) return value.flatMap(collectRecordIds);
+      if (typeof value === 'object') {
+        if (typeof value.id === 'string' && /^rec/i.test(value.id)) return [value.id];
+        return Object.values(value).flatMap(collectRecordIds);
+      }
+      if (typeof value === 'string') {
+        if (/^rec[a-z0-9]+$/i.test(value.trim())) return [value.trim()];
+      }
+      return [];
+    }
+
+    function render() {
+      document.getElementById('adminToggle').textContent = `Admin: ${state.admin ? 'On' : 'Off'}`;
+      renderHeader();
+      renderTabs();
+      renderTabContent();
+      renderSchemaEditor();
+    }
+
+    function renderHeader() {
+      const record = state.clientRecord;
+      const name = record ? `${record.fields?.['Last Name'] || ''}, ${record.fields?.['First Name'] || ''} ${record.fields?.Office || ''}`.replace(/\s+/g, ' ').trim() : 'Unknown Client';
+      document.getElementById('clientName').textContent = name;
+      document.getElementById('clientMeta').textContent = `recordId: ${state.clientId}`;
+    }
+
+    function renderTabs() {
+      const strip = document.getElementById('tabStrip');
+      if (!state.activeTab) state.activeTab = state.schema.tabs[0]?.id;
+      strip.innerHTML = state.schema.tabs.map(tab => `<button class="tab ${tab.id === state.activeTab ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('');
+      strip.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => {
+        state.activeTab = btn.dataset.tab;
+        render();
+      }));
+    }
+
+    function renderValue(val) {
+      if (Array.isArray(val)) return val.map(v => `<span class="record-pill">${String(v)}</span>`).join('');
+      if (val == null || val === '') return '<span class="muted">-</span>';
+      return String(val);
+    }
+
+    function resolveRelatedRows(section) {
+      const rows = state.data[section.tableId] || [];
+      const fkCandidates = section.foreignKeys || [];
+      return rows.filter(row => {
+        const fields = row.fields || {};
+        for (const fk of fkCandidates) {
+          const ids = collectRecordIds(fields[fk]);
+          if (ids.includes(state.clientId)) return true;
+        }
+        return Object.values(fields).some(v => collectRecordIds(v).includes(state.clientId));
+      });
+    }
+
+    function buildCrossLinks(row) {
+      const links = [];
+      const allTables = Object.entries(state.data);
+      const rowFields = row.fields || {};
+      const rowIdCandidates = new Set([row.recordId, row.id].filter(Boolean));
+
+      for (const value of Object.values(rowFields)) {
+        collectRecordIds(value).forEach(id => rowIdCandidates.add(id));
+      }
+
+      for (const [tableName, tableRows] of allTables) {
+        for (const candidate of rowIdCandidates) {
+          const matched = findRecordById(tableRows, candidate);
+          if (matched && matched !== row) {
+            links.push({ tableName, recordId: candidate });
+          }
+        }
+      }
+
+      const deduped = [];
+      const seen = new Set();
+      for (const l of links) {
+        const key = `${l.tableName}:${l.recordId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(l);
+      }
+      return deduped;
+    }
+
+    function renderSection(section) {
+      if (section.type === 'fields') {
+        const row = state.clientRecord;
+        const fieldsHtml = (section.fields || []).map(name => `<div class="kv"><div class="key">${name}</div><div>${renderValue(row?.fields?.[name])}</div></div>`).join('');
+        return `<section class="panel"><h3>${section.title}</h3><div class="panel-body">${fieldsHtml || '<span class="muted">No fields configured.</span>'}</div></section>`;
+      }
+
+      if (section.type === 'related-list') {
+        const rows = resolveRelatedRows(section);
+        const cards = rows.map(row => {
+          const titleField = section.fields?.[0];
+          const title = row.fields?.[titleField] || row.recordId;
+          const fields = (section.fields || []).slice(1).map(name => `<div class="kv"><div class="key">${name}</div><div>${renderValue(row.fields?.[name])}</div></div>`).join('');
+          const links = buildCrossLinks(row)
+            .map(link => `<a href="?clientId=${encodeURIComponent(link.recordId)}" title="Open ${link.recordId}">${link.tableName}: ${link.recordId}</a>`)
+            .join('');
+          const fkPills = collectRecordIds(row.fields).map(id => `<span class="record-pill">${id}</span>`).join('');
+          return `<article class="card"><div class="card-head"><div class="card-title">${title}</div><span class="record-pill">${row.recordId || '-'}</span></div>${fields}<div class="pill-group">${fkPills}</div><div class="links">${links || '<span class="muted">No linked records found.</span>'}</div></article>`;
+        }).join('');
+
+        return `<section class="panel"><h3>${section.title}</h3><div class="panel-body"><div class="list">${cards || '<div class="muted">No related records found for this client recordId.</div>'}</div></div></section>`;
+      }
+
+      return `<section class="panel"><h3>${section.title || 'Unknown section'}</h3><div class="panel-body muted">Unsupported section type: ${section.type}</div></section>`;
+    }
+
+    function renderTabContent() {
+      const tab = state.schema.tabs.find(t => t.id === state.activeTab) || state.schema.tabs[0];
+      const html = (tab.sections || []).map(renderSection).join('');
+      document.getElementById('tabContent').innerHTML = `<div class="layout">${html}</div>`;
+    }
+
+    function renderSchemaEditor() {
+      const drawer = document.getElementById('schemaDrawer');
+      drawer.classList.toggle('open', state.admin && drawer.dataset.open === 'true');
+      document.getElementById('schemaJson').value = JSON.stringify(state.schema, null, 2);
+    }
+
+    async function loadData() {
+      const canUseAmino = typeof AminoData !== 'undefined' && typeof AminoData.getTables === 'function';
+      if (!canUseAmino) {
+        state.data = mockData;
+        state.clientRecord = findRecordById(mockData.Clients, state.clientId) || mockData.Clients[0];
+        return;
+      }
+
+      try {
+        const tables = await AminoData.getTables();
+        const byTableName = {};
+        for (const table of tables) {
+          const tableId = table.table_id || table.id;
+          const tableName = table.table_name || table.name || tableId;
+          const rows = await AminoData.getTableRecords(tableId);
+          byTableName[tableName] = rows;
+          byTableName[tableId] = rows;
+        }
+        state.data = byTableName;
+
+        const clientTableMatch = Object.keys(byTableName).find(name => normalizeTableName(name) === 'clients') || 'Clients';
+        const clients = byTableName[clientTableMatch] || [];
+        state.clientRecord = findRecordById(clients, state.clientId) || clients[0] || null;
+      } catch (err) {
+        console.warn('Failed loading AminoData, falling back to mock data:', err);
+        state.data = mockData;
+        state.clientRecord = findRecordById(mockData.Clients, state.clientId) || mockData.Clients[0];
+      }
+    }
+
+    function wireEvents() {
+      const schemaDrawer = document.getElementById('schemaDrawer');
+      const schemaStatus = document.getElementById('schemaStatus');
+
+      document.getElementById('adminToggle').addEventListener('click', () => {
+        state.admin = !state.admin;
+        saveAdmin(state.admin);
+        if (!state.admin) schemaDrawer.dataset.open = 'false';
+        render();
+      });
+
+      document.getElementById('schemaToggle').addEventListener('click', () => {
+        if (!state.admin) {
+          schemaStatus.textContent = 'Enable Admin mode to edit schema.';
+          return;
+        }
+        schemaDrawer.dataset.open = schemaDrawer.dataset.open === 'true' ? 'false' : 'true';
+        renderSchemaEditor();
+      });
+
+      document.getElementById('saveSchema').addEventListener('click', () => {
+        if (!state.admin) return;
+        try {
+          const parsed = JSON.parse(document.getElementById('schemaJson').value);
+          if (!Array.isArray(parsed.tabs)) throw new Error('Schema must contain a tabs array.');
+          state.schema = parsed;
+          localStorage.setItem(STORAGE_KEYS.schema, JSON.stringify(parsed));
+          if (!state.schema.tabs.find(t => t.id === state.activeTab)) {
+            state.activeTab = state.schema.tabs[0]?.id;
+          }
+          schemaStatus.textContent = 'Schema saved.';
+          render();
+        } catch (err) {
+          schemaStatus.textContent = `Schema error: ${err.message}`;
+        }
+      });
+
+      document.getElementById('resetSchema').addEventListener('click', () => {
+        if (!state.admin) return;
+        state.schema = JSON.parse(JSON.stringify(defaultSchema));
+        localStorage.removeItem(STORAGE_KEYS.schema);
+        state.activeTab = state.schema.tabs[0]?.id;
+        schemaStatus.textContent = 'Schema reset to defaults.';
+        render();
+      });
+    }
+
+    (async function init() {
+      await loadData();
+      wireEvents();
+      render();
+    })();
+  </script>
+</body>
+</html>
