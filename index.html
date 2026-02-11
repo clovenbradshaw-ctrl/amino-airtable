@@ -2474,6 +2474,32 @@
         .share-user-item .user-id { font-size: 11px; color: var(--text-muted); }
         .share-view-owner { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: var(--radius-md); }
 
+        /* ===== Case Note Creation Modal ===== */
+        .case-note-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1001; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; }
+        .case-note-modal.open { opacity: 1; visibility: visible; }
+        .case-note-modal-content { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-xl); width: 560px; max-width: 94%; max-height: 85vh; display: flex; flex-direction: column; box-shadow: var(--shadow-xl); transform: translateY(20px); transition: transform 0.2s; }
+        .case-note-modal.open .case-note-modal-content { transform: translateY(0); }
+        .case-note-modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-primary); display: flex; align-items: center; justify-content: space-between; }
+        .case-note-modal-header h2 { font-size: 18px; font-weight: 600; color: var(--text-primary); margin: 0; }
+        .case-note-modal-body { flex: 1; overflow-y: auto; padding: 24px; }
+        .case-note-field { margin-bottom: 16px; }
+        .case-note-field label { display: block; font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: 6px; }
+        .case-note-field input, .case-note-field select, .case-note-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-primary); border-radius: var(--radius-md); font-size: 14px; background: var(--bg-tertiary); color: var(--text-primary); font-family: var(--font-sans); box-sizing: border-box; }
+        .case-note-field input:focus, .case-note-field select:focus, .case-note-field textarea:focus { outline: none; border-color: var(--primary-500); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+        .case-note-field textarea { min-height: 100px; resize: vertical; }
+        .case-note-field .field-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+        .case-note-row { display: flex; gap: 16px; }
+        .case-note-row .case-note-field { flex: 1; }
+        .case-note-modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-primary); display: flex; justify-content: space-between; align-items: center; background: var(--bg-tertiary); border-radius: 0 0 var(--radius-xl) var(--radius-xl); }
+        .case-note-modal-footer .case-note-status { font-size: 12px; color: var(--text-muted); }
+        .case-note-modal-footer .case-note-actions { display: flex; gap: 12px; }
+        .case-note-modal-footer button { padding: 10px 20px; border-radius: var(--radius-md); font-size: 14px; font-weight: 500; cursor: pointer; transition: all var(--transition-fast); }
+        .case-note-modal-footer .btn-cancel { background: var(--bg-secondary); border: 1px solid var(--border-primary); color: var(--text-muted); }
+        .case-note-modal-footer .btn-cancel:hover { background: var(--bg-hover); }
+        .case-note-modal-footer .btn-save { background: var(--primary-500); border: 1px solid var(--primary-500); color: #fff; }
+        .case-note-modal-footer .btn-save:hover { background: var(--primary-600); }
+        .case-note-modal-footer .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
         /* View Sharing Badge in Sidebar */
         .view-sharing-badge { font-size: 11px; margin-left: auto; flex-shrink: 0; opacity: 0.6; }
         .view-sharing-badge.shared { opacity: 0.8; color: var(--primary-400); }
@@ -4411,6 +4437,83 @@
         </div>
     </div>
 
+    <!-- Case Note Creation Modal -->
+    <div class="case-note-modal" id="case-note-modal" onclick="CaseNotesAPI.closeModal(event)">
+        <div class="case-note-modal-content" onclick="event.stopPropagation()">
+            <div class="case-note-modal-header">
+                <h2>New Case Note</h2>
+                <button class="modal-close" onclick="CaseNotesAPI.closeModal()">&times;</button>
+            </div>
+            <div class="case-note-modal-body">
+                <div class="case-note-field">
+                    <label for="cn-client">Client</label>
+                    <select id="cn-client">
+                        <option value="">Select a client...</option>
+                    </select>
+                    <div class="field-hint">Links this note to the client via their Airtable record ID</div>
+                </div>
+                <div class="case-note-field">
+                    <label for="cn-activity">Activity</label>
+                    <input type="text" id="cn-activity" placeholder="e.g., Phone Call, Meeting, Filing...">
+                </div>
+                <div class="case-note-row">
+                    <div class="case-note-field">
+                        <label for="cn-type">Type</label>
+                        <select id="cn-type">
+                            <option value="">Select type...</option>
+                            <option value="Note">Note</option>
+                            <option value="Phone Call">Phone Call</option>
+                            <option value="Email">Email</option>
+                            <option value="Meeting">Meeting</option>
+                            <option value="Filing">Filing</option>
+                            <option value="Court Appearance">Court Appearance</option>
+                            <option value="Document Review">Document Review</option>
+                            <option value="Research">Research</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="case-note-field">
+                        <label for="cn-date">Date</label>
+                        <input type="datetime-local" id="cn-date">
+                    </div>
+                </div>
+                <div class="case-note-field">
+                    <label for="cn-matter">Matter</label>
+                    <input type="text" id="cn-matter" placeholder="Matter ID or reference...">
+                </div>
+                <div class="case-note-field">
+                    <label for="cn-contact">Contact</label>
+                    <input type="text" id="cn-contact" placeholder="Contact person...">
+                </div>
+                <div class="case-note-field">
+                    <label for="cn-description">Description</label>
+                    <textarea id="cn-description" placeholder="Describe the case note details..."></textarea>
+                </div>
+                <div class="case-note-row">
+                    <div class="case-note-field">
+                        <label for="cn-due-date">Due Date</label>
+                        <input type="datetime-local" id="cn-due-date">
+                    </div>
+                    <div class="case-note-field">
+                        <label for="cn-source">Source</label>
+                        <input type="text" id="cn-source" placeholder="e.g., Portal, Phone, Email">
+                    </div>
+                </div>
+                <div class="case-note-field">
+                    <label for="cn-tags">Tags (comma-separated)</label>
+                    <input type="text" id="cn-tags" placeholder="e.g., urgent, follow-up, immigration">
+                </div>
+            </div>
+            <div class="case-note-modal-footer">
+                <span class="case-note-status" id="cn-status"></span>
+                <div class="case-note-actions">
+                    <button class="btn-cancel" onclick="CaseNotesAPI.closeModal()">Cancel</button>
+                    <button class="btn-save" id="cn-submit" onclick="CaseNotesAPI.submitNote()">Create Note</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Point in Time Modal -->
     <div class="modal-overlay" id="pit-modal-overlay" onclick="closePitModal(event)">
         <div class="modal pit-modal" onclick="event.stopPropagation()">
@@ -5788,6 +5891,7 @@ function getTableType(tableName) {
     if (name === 'client info') return 'primary';
     if (name === 'case master view') return 'primary';
     if (name === 'events') return 'primary';
+    if (name === 'case notes' || name === 'case note') return 'primary';
 
     // Events
     if (name.includes('event') && name.includes('stream')) return 'events';
@@ -10909,7 +11013,7 @@ async function renderSidebar(forceRefresh) {
     });
 
     // Sort each group alphabetically (except primary which has a fixed order)
-    var primaryOrder = ['client info', 'case master view', 'events'];
+    var primaryOrder = ['client info', 'case master view', 'events', 'case notes'];
     Object.keys(groupedTables).forEach(type => {
         if (type === 'primary') {
             groupedTables[type].sort((a, b) => {
@@ -18105,6 +18209,263 @@ async function editRecord(tableId, recordId, fieldChanges) {
     }
 }
 
+// ============ Case Notes — Creation & Client Linking ============
+// Case Notes are ingested as a regular table through the standard webhook
+// pipeline (/amino-tables, /amino-records). This module handles creation
+// of new case notes and linking them to clients via airtableId.
+
+var CaseNotesAPI = (function() {
+    'use strict';
+
+    // Resolve a table ID from META_TABLES by name pattern
+    function _resolveTableId(pattern, fallback) {
+        var tables = Object.keys(META_TABLES || {});
+        var p = (pattern || '').toLowerCase();
+        var fb = (fallback || '').toLowerCase();
+        for (var i = 0; i < tables.length; i++) {
+            var name = (META_TABLES[tables[i]].tableName || '').toLowerCase();
+            if (name === p) return tables[i];
+        }
+        for (var j = 0; j < tables.length; j++) {
+            var n = (META_TABLES[tables[j]].tableName || '').toLowerCase();
+            if (n.includes(p)) return tables[j];
+        }
+        if (fb) {
+            for (var k = 0; k < tables.length; k++) {
+                var fn = (META_TABLES[tables[k]].tableName || '').toLowerCase();
+                if (fn.includes(fb)) return tables[k];
+            }
+        }
+        return null;
+    }
+
+    function getCaseNotesTableId() {
+        return _resolveTableId('case note', 'note');
+    }
+
+    function getClientsTableId() {
+        return _resolveTableId('client info', 'client');
+    }
+
+    // Create a new case note and link to a client via client_airtable_id.
+    // Uses the same amino-write webhook as editRecord().
+    async function createCaseNote(noteData) {
+        if (!noteData || !noteData.client_airtable_id) {
+            throw new Error('client_airtable_id is required to link the case note to a client');
+        }
+
+        var session = _loadSynapseSession();
+        if (!session || !session.accessToken) {
+            throw new Error('Not authenticated');
+        }
+
+        var tableId = getCaseNotesTableId();
+        if (!tableId) {
+            throw new Error('Case Notes table not found — ensure data is synced');
+        }
+
+        // Build fields matching the Case Notes schema
+        var fields = {};
+        if (noteData.Activity) fields.Activity = noteData.Activity;
+        if (noteData.Type) fields.Type = noteData.Type;
+        if (noteData.Date) fields.Date = noteData.Date;
+        if (noteData.Description) fields.Description = noteData.Description;
+        if (noteData.Contact) fields.Contact = noteData.Contact;
+        if (noteData.matter_id) fields.matter_id = noteData.matter_id;
+        if (noteData.Due_Date) fields.Due_Date = noteData.Due_Date;
+        if (noteData.source) fields.source = noteData.source;
+        if (noteData.tags) fields.tags = noteData.tags;
+
+        // Link to client via airtable record ID
+        fields.client_airtable_id = noteData.client_airtable_id;
+        fields.Softr_Link_to_clients = noteData.client_airtable_id;
+
+        // Set creation metadata
+        var userId = session.userId || '';
+        fields.Created_By = userId.replace(/@([^:]+):.*/, '$1');
+        fields.Last_Update_By = fields.Created_By;
+
+        // POST to amino-write webhook
+        var writeBody = JSON.stringify({ tableId: tableId, fields: fields, operation: 'create' });
+        var response;
+        try {
+            response = await fetch(
+                WRITE_API_BASE + '?access_token=' + encodeURIComponent(session.accessToken),
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: writeBody }
+            );
+        } catch (fetchErr) {
+            response = await fetch(WRITE_API_BASE, {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + session.accessToken, 'Content-Type': 'application/json' },
+                body: writeBody
+            });
+        }
+
+        if (!response.ok) {
+            var errText = '';
+            try { errText = await response.text(); } catch (e) {}
+            throw new Error('Failed to create case note: ' + response.status + (errText ? ' (' + errText.substring(0, 100) + ')' : ''));
+        }
+
+        var result = await response.json();
+
+        // Store locally so it appears in the table immediately
+        if (result.recordId || result.id) {
+            var rid = result.recordId || result.id;
+            var finalFields = result.fields || fields;
+            try {
+                await saveDataRecord({ tableId: tableId, recordId: rid, fields: finalFields });
+                if (window.IN_MEMORY_DATA) {
+                    if (!window.IN_MEMORY_DATA[tableId]) window.IN_MEMORY_DATA[tableId] = {};
+                    window.IN_MEMORY_DATA[tableId][rid] = finalFields;
+                }
+                window.dispatchEvent(new CustomEvent('amino:record-updated', {
+                    detail: { recordId: rid, tableId: tableId, fields: finalFields, optimistic: false }
+                }));
+            } catch (e) { /* non-fatal */ }
+        }
+
+        return result;
+    }
+
+    // Populate the client dropdown from the existing Clients table data
+    async function _populateClientDropdown() {
+        var select = document.getElementById('cn-client');
+        if (!select) return;
+        select.innerHTML = '<option value="">Select a client...</option>';
+
+        var clientsTableId = getClientsTableId();
+        if (!clientsTableId) {
+            select.innerHTML = '<option value="">No clients table found</option>';
+            return;
+        }
+
+        // Read clients from the same data stores the rest of the app uses
+        var records = [];
+        if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[clientsTableId]) {
+            var memData = window.IN_MEMORY_DATA[clientsTableId];
+            Object.keys(memData).forEach(function(rid) {
+                records.push({ recordId: rid, fields: memData[rid] });
+            });
+        } else if (typeof db !== 'undefined' && db) {
+            try {
+                var tx = db.transaction('data', 'readonly');
+                var index = tx.objectStore('data').index('byTable');
+                var results = await new Promise(function(resolve, reject) {
+                    var req = index.getAll(clientsTableId);
+                    req.onsuccess = function() { resolve(req.result || []); };
+                    req.onerror = function() { reject(req.error); };
+                });
+                for (var i = 0; i < results.length; i++) {
+                    var rec = results[i];
+                    if (encryptionEnabled && encryptionKey && rec.encrypted) {
+                        try { rec = await decryptRecordFromStorage(rec); } catch (e) { continue; }
+                    }
+                    records.push({ recordId: rec.recordId || rec.id, fields: rec.fields || rec });
+                }
+            } catch (e) { /* non-fatal */ }
+        }
+
+        records.sort(function(a, b) {
+            var na = (a.fields['Client Name'] || a.fields['Name'] || '').toLowerCase();
+            var nb = (b.fields['Client Name'] || b.fields['Name'] || '').toLowerCase();
+            return na.localeCompare(nb);
+        });
+
+        records.forEach(function(r) {
+            var name = r.fields['Client Name'] || r.fields['Name'] || r.recordId;
+            var opt = document.createElement('option');
+            opt.value = r.recordId;
+            opt.textContent = name;
+            select.appendChild(opt);
+        });
+    }
+
+    function openModal() {
+        var modal = document.getElementById('case-note-modal');
+        if (!modal) return;
+        document.getElementById('cn-activity').value = '';
+        document.getElementById('cn-type').value = '';
+        document.getElementById('cn-date').value = new Date().toISOString().slice(0, 16);
+        document.getElementById('cn-matter').value = '';
+        document.getElementById('cn-contact').value = '';
+        document.getElementById('cn-description').value = '';
+        document.getElementById('cn-due-date').value = '';
+        document.getElementById('cn-source').value = '';
+        document.getElementById('cn-tags').value = '';
+        document.getElementById('cn-status').textContent = '';
+        document.getElementById('cn-submit').disabled = false;
+        _populateClientDropdown();
+        modal.classList.add('open');
+    }
+
+    function closeModal(event) {
+        if (event && event.target !== event.currentTarget) return;
+        var modal = document.getElementById('case-note-modal');
+        if (modal) modal.classList.remove('open');
+    }
+
+    async function submitNote() {
+        var clientId = document.getElementById('cn-client').value;
+        if (!clientId) {
+            document.getElementById('cn-status').textContent = 'Please select a client.';
+            return;
+        }
+
+        var submitBtn = document.getElementById('cn-submit');
+        var statusEl = document.getElementById('cn-status');
+        submitBtn.disabled = true;
+        statusEl.textContent = 'Creating case note...';
+
+        var dateVal = document.getElementById('cn-date').value;
+        var dueDateVal = document.getElementById('cn-due-date').value;
+        var tagsVal = document.getElementById('cn-tags').value.trim();
+
+        try {
+            await createCaseNote({
+                client_airtable_id: clientId,
+                Activity: document.getElementById('cn-activity').value.trim(),
+                Type: document.getElementById('cn-type').value,
+                Date: dateVal ? new Date(dateVal).toISOString() : new Date().toISOString(),
+                Description: document.getElementById('cn-description').value.trim(),
+                Contact: document.getElementById('cn-contact').value.trim(),
+                matter_id: document.getElementById('cn-matter').value.trim(),
+                Due_Date: dueDateVal ? new Date(dueDateVal).toISOString() : null,
+                source: document.getElementById('cn-source').value.trim() || 'Portal',
+                tags: tagsVal ? tagsVal.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : []
+            });
+            statusEl.textContent = '';
+            closeModal();
+            showToast('success', 'Case note created');
+
+            // Refresh: invalidate sidebar cache so new record count shows,
+            // and re-render current interface page or database table.
+            invalidateSidebarCache();
+            renderSidebar(true);
+            if (typeof InterfaceApp !== 'undefined' && InterfaceApp.activePage) {
+                InterfaceApp.renderPage(InterfaceApp.activePage);
+            }
+            var cnTableId = getCaseNotesTableId();
+            if (cnTableId && currentTable === cnTableId) {
+                renderTable(cnTableId);
+            }
+        } catch (err) {
+            console.error('[CaseNotesAPI] Creation failed:', err);
+            statusEl.textContent = 'Error: ' + err.message;
+            submitBtn.disabled = false;
+        }
+    }
+
+    return {
+        createCaseNote: createCaseNote,
+        getCaseNotesTableId: getCaseNotesTableId,
+        getClientsTableId: getClientsTableId,
+        openModal: openModal,
+        closeModal: closeModal,
+        submitNote: submitNote
+    };
+})();
+
 // ============ Record Update Event Listener ============
 
 window.addEventListener('amino:record-updated', function(e) {
@@ -22530,8 +22891,9 @@ var InterfaceApp = (function() {
                             { label: 'Home', icon: '\u2302', page: 'home' },
                             { label: 'Clients', icon: '\uD83D\uDCC1', page: 'clients' },
                             { label: 'Events', icon: '\uD83D\uDCC5', page: 'events' },
+                            { label: 'Case Notes', icon: '\uD83D\uDCDD', page: 'case-notes' },
                             { label: 'New Client Event', icon: '\u2795', action: 'new-event' },
-                            { label: 'New Case Note', icon: '\uD83D\uDCDD', action: 'new-note' }
+                            { label: 'New Case Note', icon: '\u2795', action: 'new-note' }
                         ]
                     },
                     {
@@ -22549,14 +22911,14 @@ var InterfaceApp = (function() {
                             fallbackTablePattern: 'note'
                         },
                         display: {
-                            titleField: 'Client Name',
-                            subtitleField: 'Subject',
-                            metaField: null,
+                            titleField: 'Activity',
+                            subtitleField: 'Description',
+                            metaField: 'Date',
                             icon: '\uD83D\uDCDD'
                         },
                         segment: {
                             op: 'SEG',
-                            sort: { field: '_createdTime', dir: 'desc' },
+                            sort: { field: 'Date', dir: 'desc' },
                             limit: 20
                         }
                     },
@@ -22746,6 +23108,94 @@ var InterfaceApp = (function() {
                         segment: {
                             op: 'SEG',
                             sort: { field: 'Hearing Date/Time', dir: 'desc' },
+                            pageSize: 50
+                        }
+                    }
+                ]
+            },
+            {
+                id: 'case-notes',
+                label: 'Case Notes',
+                icon: 'notes',
+                blocks: [
+                    {
+                        id: 'case-notes-quick-links',
+                        type: 'quick-links',
+                        items: [
+                            { label: 'Home', icon: '\u2302', page: 'home' },
+                            { label: 'Clients', icon: '\uD83D\uDCC1', page: 'clients' },
+                            { label: 'Events', icon: '\uD83D\uDCC5', page: 'events' },
+                            { label: 'Case Notes', icon: '\uD83D\uDCDD', page: 'case-notes' },
+                            { label: 'New Case Note', icon: '\u2795', action: 'new-note' }
+                        ]
+                    },
+                    {
+                        id: 'case-notes-tabs',
+                        type: 'tab-container',
+                        tabs: [
+                            {
+                                id: 'recent-notes-tab',
+                                label: 'Recent Notes',
+                                blockId: 'case-notes-recent'
+                            },
+                            {
+                                id: 'all-notes-tab',
+                                label: 'All Notes',
+                                blockId: 'case-notes-all-table'
+                            }
+                        ]
+                    },
+                    {
+                        id: 'case-notes-recent',
+                        type: 'card-list',
+                        label: 'Recent Case Notes',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'case note',
+                            fallbackTablePattern: 'note'
+                        },
+                        display: {
+                            titleField: 'Activity',
+                            subtitleField: 'Description',
+                            metaField: 'Date',
+                            icon: '\uD83D\uDCDD'
+                        },
+                        segment: {
+                            op: 'SEG',
+                            sort: { field: 'Date', dir: 'desc' },
+                            limit: 50
+                        }
+                    },
+                    {
+                        id: 'case-notes-all-table',
+                        type: 'data-table',
+                        label: 'All Case Notes',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'case note',
+                            fallbackTablePattern: 'note'
+                        },
+                        columns: [
+                            { field: 'Activity', label: 'Activity', width: 180 },
+                            { field: 'Type', label: 'Type', width: 120 },
+                            { field: 'Date', label: 'Date', width: 150 },
+                            { field: 'Description', label: 'Description', width: 280 },
+                            { field: 'Contact', label: 'Contact', width: 140 },
+                            { field: 'Client_PP_ID', label: 'Client PP ID', width: 120 },
+                            { field: 'matter_id', label: 'Matter ID', width: 120 },
+                            { field: 'Created_By', label: 'Created By', width: 120 },
+                            { field: 'Due_Date', label: 'Due Date', width: 140 },
+                            { field: 'source', label: 'Source', width: 100 },
+                            { field: 'tags', label: 'Tags', width: 160 }
+                        ],
+                        filters: [
+                            { id: 'type', label: 'Type', field: 'Type' },
+                            { id: 'source', label: 'Source', field: 'source' },
+                            { id: 'created-by', label: 'Created By', field: 'Created_By' }
+                        ],
+                        segment: {
+                            op: 'SEG',
+                            sort: { field: 'Date', dir: 'desc' },
                             pageSize: 50
                         }
                     }
@@ -23072,7 +23522,7 @@ var InterfaceApp = (function() {
             var onclick = '';
             if (item.page) onclick = 'InterfaceApp.switchPage(\'' + _esc(item.page) + '\')';
             else if (item.action === 'new-event') onclick = 'InterfaceApp._showToast(\'New event form coming soon\')';
-            else if (item.action === 'new-note') onclick = 'InterfaceApp._showToast(\'New case note form coming soon\')';
+            else if (item.action === 'new-note') onclick = 'CaseNotesAPI.openModal()';
             html += '<div class="iface-quick-link" onclick="' + onclick + '">' +
                 '<div class="iface-quick-link-icon">' + (item.icon || '?') + '</div>' +
                 '<span>' + _esc(item.label) + '</span></div>';
