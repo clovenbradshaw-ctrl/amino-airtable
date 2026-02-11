@@ -5171,6 +5171,54 @@ function getFieldHistoryForRecord(tableId, recordId, limit) {
     });
 }
 
+/**
+ * Normalize a Matrix event from either format into a consistent history entry.
+ * Works for both law.firm.schema.object and law.firm.record.mutate events.
+ */
+function normalizeHistoryEvent(matrixEvent) {
+    var content = matrixEvent.content || {};
+    if (!content.recordId) return null; // schema-level event, skip
+
+    var payload = content.payload || {};
+    var fields = payload.fields || {};
+
+    // Normalize timestamp: seconds (migration) vs milliseconds (n8n/client)
+    var ts = content.sourceTimestamp;
+    if (ts && ts < 10000000000) ts = ts * 1000;
+    var timestamp = ts || matrixEvent.origin_server_ts;
+
+    // Extract actor
+    var actor = payload._a || content.actor || matrixEvent.sender;
+
+    // Normalize field changes — both formats use the same structure
+    var changes = {
+        inserted: fields.INS || {},
+        altered: fields.ALT || {},
+        nulled: fields.NUL || []
+    };
+
+    // Handle flat format (op + content.fields without payload wrapper)
+    if (!fields.ALT && !fields.INS && !fields.NUL && content.op && content.fields) {
+        if (content.op === 'INS') changes.inserted = content.fields;
+        else if (content.op === 'ALT') changes.altered = content.fields;
+        else if (content.op === 'NUL') changes.nulled = content.fields;
+    }
+
+    var op = content.op || 'ALT';
+
+    return {
+        eventId: matrixEvent.event_id,
+        eventType: matrixEvent.type,
+        recordId: content.recordId,
+        op: op,
+        changes: changes,
+        actor: actor,
+        timestamp: timestamp,
+        source: content.source || 'unknown',
+        set: content.set || payload._set || ''
+    };
+}
+
 // Fetch and process mutation history for a specific record from Matrix.
 // Paginates forward (oldest-first) through the table's Matrix room,
 // filters by recordId client-side, decrypts encrypted payloads, and
@@ -5191,7 +5239,7 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
             var opts = {
                 dir: 'f', // forward — oldest first (chronological order)
                 limit: 100,
-                filter: { types: ['law.firm.record.mutate'] }
+                filter: { types: ['law.firm.schema.object', 'law.firm.record.mutate'] }
             };
             if (paginationToken) opts.from = paginationToken;
 
@@ -5201,10 +5249,11 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
             var chunk = response.chunk;
             for (var i = 0; i < chunk.length; i++) {
                 var evt = chunk[i];
-                if (!evt.content) continue;
+                var content = evt.content || {};
+                if (!content.recordId) continue; // skip schema-level events (field definitions, etc.)
 
                 // Filter client-side for our target record
-                if (evt.content.recordId === recordId) {
+                if (content.recordId === recordId) {
                     allEvents.push(evt);
                 }
             }
@@ -10488,7 +10537,16 @@ var SynapseSync = {
             set: 'airtable:' + evtTableId,
             recordId: c.recordId,
             operator: c.op,
-            created_at: c.sourceTimestamp ? c.sourceTimestamp * 1000 : tevt.origin_server_ts,
+            // sourceTimestamp might be seconds (migration) or milliseconds (n8n/client).
+            // Heuristic: anything below 10 billion is seconds (covers dates through 2286).
+            created_at: (function() {
+                var ts = c.sourceTimestamp;
+                if (ts) {
+                    if (ts < 10000000000) ts = ts * 1000; // seconds → milliseconds
+                    return ts;
+                }
+                return tevt.origin_server_ts;
+            })(),
             payload: c.payload || { fields: {} }
         };
 
@@ -10980,6 +11038,34 @@ async function hydrateFromWebhooks() {
             detail: 'Webhook hydration: ' + totalRecords + ' records from ' + webhookTables.length + ' tables' + (failedTables > 0 ? ' (' + failedTables + ' tables failed)' : '')
         });
 
+        // Capture a Matrix sync token so SynapseSync doesn't do a full initial sync.
+        // timeout=0 returns immediately with just the token.
+        // timeline limit=0 means we don't download any events (we already have the data from Postgres).
+        try {
+            var tokenFilter = JSON.stringify({
+                room: {
+                    timeline: { limit: 0 },
+                    state: { lazy_load_members: true }
+                },
+                presence: { types: [] }
+            });
+            var tokenRes = await fetch(
+                SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=0&filter=' +
+                encodeURIComponent(tokenFilter),
+                { headers: { 'Authorization': 'Bearer ' + session.accessToken } }
+            );
+            if (tokenRes.ok) {
+                var tokenData = await tokenRes.json();
+                if (tokenData.next_batch) {
+                    SynapseSync.since = tokenData.next_batch;
+                    await setSyncMeta('synapseSyncToken', tokenData.next_batch);
+                    console.log('[WebhookHydration] Captured sync token:', tokenData.next_batch);
+                }
+            }
+        } catch (e) {
+            console.warn('[WebhookHydration] Failed to capture sync token (non-fatal):', e.message);
+        }
+
         // Consider hydration successful if we got any records, even if some
         // tables failed. This prevents re-hydrating from scratch every page
         // load due to a single flaky table endpoint.
@@ -11245,6 +11331,17 @@ async function init() {
 
     // Start Synapse real-time sync (long-poll /sync for room events)
     SynapseSync.start();
+
+    // Poll Postgres for changes every 60 seconds via webhookIncrementalSync.
+    // This catches external Airtable edits faster than waiting for SynapseSync
+    // to pick up the n8n-written Matrix events (up to 30-minute n8n poll gap).
+    setInterval(async function() {
+        try {
+            await webhookIncrementalSync();
+        } catch (e) {
+            console.warn('[IncrementalSync] Poll failed:', e.message);
+        }
+    }, 60000);
 }
 
 // ============ Field History Modal ============
@@ -12133,7 +12230,7 @@ async function _fetchRoomChangelog(options) {
             var msgOpts = {
                 dir: 'b',
                 limit: limit,
-                filter: { types: ['law.firm.record.mutate'] }
+                filter: { types: ['law.firm.schema.object', 'law.firm.record.mutate'] }
             };
             if (fromToken) msgOpts.from = fromToken;
 
@@ -12146,9 +12243,9 @@ async function _fetchRoomChangelog(options) {
             var chunk = response.chunk;
             for (var i = 0; i < chunk.length; i++) {
                 var evt = chunk[i];
-                if (!evt.content) continue;
+                var content = evt.content || {};
+                if (!content.recordId) continue; // skip schema-level events (field definitions, etc.)
 
-                var content = evt.content;
 
                 // Decrypt if needed (gracefully skip failures)
                 if (typeof AminoData !== 'undefined' && AminoData.isEncryptedPayload(content)) {
@@ -14367,32 +14464,9 @@ async function editRecord(tableId, recordId, fieldChanges) {
             }));
         }
 
-        // ── Stage 4: Send law.firm.record.mutate event to Matrix room ──
-        // This makes the edit immediately visible in the changelog, edit
-        // history, and to other syncing clients without waiting for n8n.
-        try {
-            var editRoomId = _getRoomForTable(tableId);
-            if (editRoomId && MatrixClient.isLoggedIn()) {
-                var mutateContent = {
-                    recordId: recordId,
-                    tableId: tableId,
-                    op: 'ALT',
-                    source: 'ui',
-                    sourceTimestamp: Date.now(),
-                    payload: {
-                        _a: session.userId || MatrixClient.getUserId(),
-                        fields: { ALT: fieldChanges }
-                    }
-                };
-                MatrixClient.sendEvent(editRoomId, 'law.firm.record.mutate', mutateContent)
-                    .catch(function(matrixErr) {
-                        console.warn('[editRecord] Matrix event send failed (non-blocking):', matrixErr.message);
-                    });
-            }
-        } catch (matrixEvtErr) {
-            // Non-blocking — the webhook save already succeeded
-            console.warn('[editRecord] Could not send Matrix event:', matrixEvtErr.message);
-        }
+        // Matrix event is NOT sent from the client — n8n handles it after
+        // writing to Airtable, ensuring the event only fires on successful
+        // Airtable write and keeping Postgres current_state consistent.
 
         showToast('success', 'Saved \u2713');
         return result;
