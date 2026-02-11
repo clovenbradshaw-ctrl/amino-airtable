@@ -11717,6 +11717,9 @@ async function renderTable() {
 
     // Get columns from view configuration
     var fields = META_FIELDS[currentTable] || {};
+
+    // Compute formula column values for all displayed records
+    _applyFormulaColumns(currentTable, fields, recordMap);
     var viewId = currentView || '_default';
     var colList = getVisibleFieldsForView(currentTable, viewId);
 
@@ -16312,6 +16315,9 @@ async function renderRecordProfile() {
     var recordFields = record.fields || {};
     var fields = META_FIELDS[profileCurrentTableId] || {};
 
+    // Compute formula column values for this record
+    _applyFormulaSingleRecord(profileCurrentTableId, fields, recordFields, profileCurrentRecordId);
+
     // Get profile configuration
     var profileResult = getProfileConfig(profileCurrentTableId, viewId);
     var config = profileResult.config;
@@ -17568,6 +17574,137 @@ function readOnlyFieldLabel(field) {
 function computedFieldLabel(fieldType) {
     var labels = { formula: 'Formula', rollup: 'Rollup', lookup: 'Lookup', count: 'Count', autoNumber: 'Auto Number', createdTime: 'Created Time', lastModifiedTime: 'Modified Time', createdBy: 'Created By', lastModifiedBy: 'Modified By' };
     return labels[fieldType] || fieldType;
+}
+
+// ============ Formula Column Computation ============
+// Compute formula-type column values for every record in a recordMap.
+// Uses the formula engine exposed by src/formulas/bridge.js (ES module).
+// Called from renderTable() and renderRecordProfile() so that ALL rows
+// display computed formula values, not just rows that had values stored.
+
+var _compiledFormulaCache = {};   // tableId -> { fieldId -> { fn, deps, fieldName } }
+var _compiledFormulaCacheKey = ''; // invalidation key
+
+function _applyFormulaColumns(tableId, fields, recordMap) {
+    var engine = window._formulaEngine;
+    if (!engine) return;
+
+    // Collect formula fields for this table
+    var formulaFields = [];
+    for (var fid in fields) {
+        var f = fields[fid];
+        if (f.fieldType === 'formula' && f.options && f.options.formula) {
+            formulaFields.push(f);
+        }
+    }
+    if (formulaFields.length === 0) return;
+
+    // Build / reuse compiled formula cache per table
+    var cacheKey = tableId + ':' + formulaFields.map(function(f) { return f.fieldId; }).join(',');
+    var cached = _compiledFormulaCache[tableId];
+    if (!cached || _compiledFormulaCacheKey !== cacheKey) {
+        cached = {};
+        var compiledList = [];
+        for (var i = 0; i < formulaFields.length; i++) {
+            var f = formulaFields[i];
+            try {
+                var ast = engine.parseAirtableFormula(f.options.formula);
+                var refs = engine.collectFieldRefs(ast);
+                var fn = engine.compileFormula(ast);
+                var entry = { fieldId: f.fieldId, fieldName: f.fieldName, fn: fn, deps: refs };
+                cached[f.fieldId] = entry;
+                compiledList.push(entry);
+            } catch (e) {
+                console.warn('Formula compile error for ' + (f.fieldName || f.fieldId) + ':', e.message);
+            }
+        }
+
+        // Topological sort so dependent formulas execute after their inputs
+        var sorted = [];
+        var visited = {};
+        var visiting = {};
+        function visit(entry) {
+            if (visited[entry.fieldId]) return;
+            if (visiting[entry.fieldId]) return; // circular — skip
+            visiting[entry.fieldId] = true;
+            for (var j = 0; j < entry.deps.length; j++) {
+                var dep = entry.deps[j];
+                // dep could be a fieldId or fieldName; check both
+                var depEntry = cached[dep];
+                if (!depEntry) {
+                    // Try matching by fieldName
+                    for (var k in cached) {
+                        if (cached[k].fieldName === dep) { depEntry = cached[k]; break; }
+                    }
+                }
+                if (depEntry) visit(depEntry);
+            }
+            delete visiting[entry.fieldId];
+            visited[entry.fieldId] = true;
+            sorted.push(entry);
+        }
+        for (var i = 0; i < compiledList.length; i++) visit(compiledList[i]);
+
+        cached._sorted = sorted;
+        _compiledFormulaCache[tableId] = cached;
+        _compiledFormulaCacheKey = cacheKey;
+    }
+
+    var sorted = cached._sorted;
+    if (!sorted || sorted.length === 0) return;
+
+    // Execute every formula on every record in dependency order
+    for (var rid in recordMap) {
+        var row = recordMap[rid];
+        for (var i = 0; i < sorted.length; i++) {
+            var c = sorted[i];
+            try {
+                var value = c.fn(row, { recordId: rid });
+                if (value !== null && value !== undefined && !(value && value.__error)) {
+                    row[c.fieldId] = value;
+                    if (c.fieldName && c.fieldName !== c.fieldId) {
+                        row[c.fieldName] = value;
+                    }
+                }
+            } catch (_e) {
+                // Formula runtime error — leave cell empty
+            }
+        }
+    }
+}
+
+// Compute formula values for a single record (used by profile view).
+// Returns augmented copy of recordFields.
+function _applyFormulaSingleRecord(tableId, fields, recordFields, recordId) {
+    var engine = window._formulaEngine;
+    if (!engine) return recordFields;
+
+    // Use the same cache built by _applyFormulaColumns
+    var cached = _compiledFormulaCache[tableId];
+    if (!cached || !cached._sorted) {
+        // Build cache by running _applyFormulaColumns with a temp map
+        var tmp = {};
+        tmp[recordId] = recordFields;
+        _applyFormulaColumns(tableId, fields, tmp);
+        return tmp[recordId];
+    }
+
+    var sorted = cached._sorted;
+    for (var i = 0; i < sorted.length; i++) {
+        var c = sorted[i];
+        try {
+            var value = c.fn(recordFields, { recordId: recordId });
+            if (value !== null && value !== undefined && !(value && value.__error)) {
+                recordFields[c.fieldId] = value;
+                if (c.fieldName && c.fieldName !== c.fieldId) {
+                    recordFields[c.fieldName] = value;
+                }
+            }
+        } catch (_e) {
+            // skip
+        }
+    }
+    return recordFields;
 }
 
 // Show a formula/computed info popover next to a target element
@@ -21873,5 +22010,6 @@ window.addEventListener('amino:auth-expired', function() {
     // No valid session or need re-authentication — login screen is already visible
 })();
     </script>
+    <script type="module" src="src/formulas/bridge.js"></script>
 </body>
 </html>
