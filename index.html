@@ -24248,6 +24248,7 @@ var InterfaceApp = (function() {
                         id: 'events-agenda',
                         type: 'events-agenda',
                         label: 'Events',
+                        _hidden: true,
                         source: {
                             op: 'DES',
                             tableNamePattern: 'events',
@@ -24276,7 +24277,7 @@ var InterfaceApp = (function() {
                         id: 'events-google-calendar',
                         type: 'google-calendar',
                         label: 'Google Calendar',
-                        _hidden: true,
+                        _hidden: false,
                         config: {
                             timezone: 'America/New_York',
                             webhookUrl: 'https://n8n.intelechia.com/webhook/users',
