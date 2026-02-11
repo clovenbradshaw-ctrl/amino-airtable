@@ -1862,6 +1862,30 @@
         }
         .iface-page-tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
         .iface-page-tab.active { color: var(--primary-500); border-bottom-color: var(--primary-500); }
+        .iface-page-tab-wrap { display: inline-flex; align-items: center; gap: 4px; }
+        .iface-page-access-btn {
+            display: none;
+            border: 1px solid var(--border-primary);
+            background: transparent;
+            color: var(--text-muted);
+            border-radius: var(--radius-sm);
+            font-size: 10px;
+            line-height: 1;
+            padding: 3px 5px;
+            cursor: pointer;
+        }
+        .iface-page-access-btn.is-admin { display: inline-flex; }
+        .iface-page-access-btn:hover { color: var(--text-primary); border-color: var(--primary-500); }
+        .iface-page-access-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 6px;
+            font-size: 10px;
+            border-radius: 9999px;
+            color: var(--text-muted);
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+        }
         .iface-add-page-btn {
             padding: 4px 10px; font-size: 18px; color: var(--text-muted);
             cursor: pointer; border: none; background: none; display: none;
@@ -23522,6 +23546,7 @@ var InterfaceApp = (function() {
             var stateEvent = await MatrixClient.getStateEvent(roomId, 'law.firm.interface', 'schema');
             if (stateEvent && stateEvent.pages) {
                 _schema = stateEvent;
+                _schema.pages.forEach(function(page) { _normalizePageRoles(page); });
                 console.log('[Interface] Loaded schema from room:', roomId);
             } else {
                 _schema = JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
@@ -23752,15 +23777,68 @@ var InterfaceApp = (function() {
         return _esc(String(val));
     }
 
+
+    function _normalizePageRoles(page) {
+        if (!page) return ['all'];
+        if (!Array.isArray(page.visibleToRoles) || !page.visibleToRoles.length) {
+            page.visibleToRoles = ['all'];
+        }
+        page.visibleToRoles = page.visibleToRoles
+            .map(function(role) { return String(role || '').trim().toLowerCase(); })
+            .filter(function(role) { return role; });
+        if (!page.visibleToRoles.length) page.visibleToRoles = ['all'];
+        if (page.visibleToRoles.includes('all')) page.visibleToRoles = ['all'];
+        return page.visibleToRoles;
+    }
+
+    function _isPageVisibleToCurrentUser(page) {
+        if (_currentUserRole === 'admin') return true;
+        var roles = _normalizePageRoles(page);
+        if (roles.includes('all')) return true;
+        return roles.includes(String(_currentUserRole || '').toLowerCase());
+    }
+
+    function _getVisiblePages() {
+        if (!_schema || !_schema.pages) return [];
+        return _schema.pages.filter(function(page) {
+            return _isPageVisibleToCurrentUser(page);
+        });
+    }
+
+    function _rolesLabel(roles) {
+        if (!roles || !roles.length || roles.includes('all')) return 'All';
+        return roles.map(function(r) { return r.charAt(0).toUpperCase() + r.slice(1); }).join(', ');
+    }
+
+    function _rolePickerPrompt(existingRoles) {
+        var current = (existingRoles || ['all']).join(',');
+        var raw = prompt('Visible to roles (comma-separated: all, admin, staff, client):', current);
+        if (raw === null) return null;
+        var roles = raw.split(',').map(function(v) { return v.trim().toLowerCase(); }).filter(Boolean);
+        var allowed = { all: true, admin: true, staff: true, client: true };
+        roles = roles.filter(function(r) { return allowed[r]; });
+        if (!roles.length || roles.includes('all')) return ['all'];
+        return Array.from(new Set(roles));
+    }
+
     function _renderPageTabs() {
         var tabs = document.getElementById('iface-page-tabs');
         if (!tabs || !_schema) return;
         var html = '';
-        _schema.pages.forEach(function(page) {
+        var visiblePages = _getVisiblePages();
+        visiblePages.forEach(function(page) {
             var active = page.id === _activePage ? ' active' : '';
+            var roles = _normalizePageRoles(page);
+            var roleLabel = _rolesLabel(roles);
+            html += '<span class="iface-page-tab-wrap">';
             html += '<button class="iface-page-tab' + active + '" data-page="' + _esc(page.id) +
                 '" onclick="InterfaceApp.switchPage(\'' + _esc(page.id) + '\')">' +
                 _esc(page.label) + '</button>';
+            if (_currentUserRole === 'admin') {
+                html += '<button class="iface-page-access-btn is-admin" title="Edit page access" onclick="InterfaceApp.editPagePermissions(\'' + _esc(page.id) + '\')">⚙</button>';
+                html += '<span class="iface-page-access-pill" title="Visible to">' + _esc(roleLabel) + '</span>';
+            }
+            html += '</span>';
         });
         // Admin: add page button
         var adminClass = _currentUserRole === 'admin' ? ' is-admin' : '';
@@ -24306,11 +24384,24 @@ var InterfaceApp = (function() {
 
     async function renderPage(pageId) {
         _activePage = pageId;
-        _renderPageTabs();
         var container = document.getElementById('iface-page-container');
         if (!container || !_schema) return;
 
-        var page = _schema.pages.find(function(p) { return p.id === pageId; });
+        var visiblePages = _getVisiblePages();
+        if (!visiblePages.length) {
+            _renderPageTabs();
+            container.innerHTML = '<div class="iface-empty">No interface pages are available for your role.</div>';
+            return;
+        }
+
+        var requestedPage = _schema.pages.find(function(p) { return p.id === pageId; });
+        if (!requestedPage || !_isPageVisibleToCurrentUser(requestedPage)) {
+            _activePage = visiblePages[0].id;
+        }
+
+        _renderPageTabs();
+
+        var page = _schema.pages.find(function(p) { return p.id === _activePage; });
         if (!page) {
             container.innerHTML = '<div class="iface-empty">Page not found</div>';
             return;
@@ -24460,6 +24551,12 @@ var InterfaceApp = (function() {
     // ============ User Interactions ============
 
     function switchPage(pageId) {
+        if (!_schema) return;
+        var page = _schema.pages.find(function(p) { return p.id === pageId; });
+        if (page && !_isPageVisibleToCurrentUser(page)) {
+            _showToast('You do not have access to that page.');
+            return;
+        }
         _blockSearchState = {};
         _tablePaginationState = {};
         renderPage(pageId);
@@ -24578,15 +24675,36 @@ var InterfaceApp = (function() {
         if (_currentUserRole !== 'admin') return;
         var name = prompt('New page name:');
         if (!name) return;
-        var id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        var baseId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'page';
+        var id = baseId;
+        var counter = 2;
+        while ((_schema.pages || []).some(function(p) { return p.id === id; })) {
+            id = baseId + '-' + counter;
+            counter += 1;
+        }
+        var roles = _rolePickerPrompt(['all']);
+        if (roles === null) return;
         _schema.pages.push({
             id: id,
             label: name,
             icon: 'page',
+            visibleToRoles: roles,
             blocks: []
         });
         await saveSchema();
         switchPage(id);
+    }
+
+    async function editPagePermissions(pageId) {
+        if (_currentUserRole !== 'admin' || !_schema) return;
+        var page = _schema.pages.find(function(p) { return p.id === pageId; });
+        if (!page) return;
+        var roles = _normalizePageRoles(page);
+        var nextRoles = _rolePickerPrompt(roles);
+        if (nextRoles === null) return;
+        page.visibleToRoles = nextRoles;
+        await saveSchema();
+        renderPage(_activePage);
     }
 
     // ============ Toast ============
@@ -24606,7 +24724,8 @@ var InterfaceApp = (function() {
         _initialized = true;
 
         await loadSchema();
-        _activePage = _schema.pages.length ? _schema.pages[0].id : null;
+        var visiblePages = _getVisiblePages();
+        _activePage = visiblePages.length ? visiblePages[0].id : null;
 
         // Set admin visibility
         var editBtn = document.getElementById('iface-edit-toggle');
@@ -24655,6 +24774,7 @@ var InterfaceApp = (function() {
         toggleEditMode: toggleEditMode,
         removeBlock: removeBlock,
         addPage: addPage,
+        editPagePermissions: editPagePermissions,
         _showToast: _showToast,
         get schema() { return _schema; },
         get activePage() { return _activePage; },
