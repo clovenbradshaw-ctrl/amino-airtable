@@ -1682,6 +1682,37 @@
         .settings-invite-btn:hover { background: var(--primary-600); }
         .settings-invite-btn:disabled { background: var(--gray-600); cursor: not-allowed; }
 
+        /* Room Assignment Modal (post-invite) */
+        .room-assign-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1100; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; }
+        .room-assign-modal.open { opacity: 1; visibility: visible; }
+        .room-assign-modal .room-assign-content { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-xl); width: 90%; max-width: 520px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: var(--shadow-xl); transform: translateY(20px); transition: transform 0.2s; }
+        .room-assign-modal.open .room-assign-content { transform: translateY(0); }
+        .room-assign-header { padding: 20px 24px 12px; border-bottom: 1px solid var(--border-primary); }
+        .room-assign-header h2 { font-size: 16px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px; }
+        .room-assign-header p { font-size: 12px; color: var(--text-muted); margin: 0; }
+        .room-assign-header .room-assign-user-badge { display: inline-block; margin-top: 8px; padding: 3px 10px; background: var(--bg-tertiary); border-radius: var(--radius-sm); font-size: 12px; color: var(--primary-400); font-family: var(--font-mono); }
+        .room-assign-toolbar { padding: 10px 24px; display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--border-primary); }
+        .room-assign-toolbar button { padding: 4px 10px; font-size: 11px; border: 1px solid var(--border-primary); background: var(--bg-tertiary); color: var(--text-secondary); border-radius: var(--radius-sm); cursor: pointer; font-family: var(--font-sans); }
+        .room-assign-toolbar button:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .room-assign-toolbar .room-assign-count { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+        .room-assign-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+        .room-assign-item { display: flex; align-items: center; gap: 10px; padding: 8px 24px; cursor: pointer; transition: background var(--transition-fast); }
+        .room-assign-item:hover { background: var(--bg-hover); }
+        .room-assign-item input[type="checkbox"] { accent-color: var(--primary-500); width: 16px; height: 16px; cursor: pointer; }
+        .room-assign-item label { flex: 1; cursor: pointer; font-size: 13px; color: var(--text-primary); }
+        .room-assign-item .room-assign-id { font-size: 11px; color: var(--text-disabled); font-family: var(--font-mono); }
+        .room-assign-footer { padding: 14px 24px; border-top: 1px solid var(--border-primary); display: flex; gap: 8px; justify-content: flex-end; }
+        .room-assign-footer button { padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-family: var(--font-sans); font-weight: 500; cursor: pointer; transition: background var(--transition-fast); }
+        .room-assign-footer .room-assign-skip { background: var(--bg-tertiary); border: 1px solid var(--border-primary); color: var(--text-secondary); }
+        .room-assign-footer .room-assign-skip:hover { background: var(--bg-hover); }
+        .room-assign-footer .room-assign-confirm { background: var(--primary-500); border: none; color: #fff; }
+        .room-assign-footer .room-assign-confirm:hover { background: var(--primary-600); }
+        .room-assign-footer .room-assign-confirm:disabled { background: var(--gray-600); cursor: not-allowed; }
+        .room-assign-status { padding: 0 24px 10px; font-size: 12px; color: var(--text-muted); display: none; }
+        .room-assign-status.visible { display: block; }
+        .room-assign-internal-note { padding: 8px 24px; font-size: 11px; color: var(--success-500); background: rgba(34, 197, 94, 0.06); border-bottom: 1px solid var(--border-primary); display: none; }
+        .room-assign-internal-note.visible { display: block; }
+
         /* Login: Password Reset */
         .synapse-login-box .synapse-forgot-link {
             display: block;
@@ -4623,6 +4654,33 @@
     </div>
 
     </div><!-- /app-content-wrapper -->
+
+    <!-- Room Assignment Modal (shown after inviting a user) -->
+    <div class="room-assign-modal" id="room-assign-modal" onclick="closeRoomAssignModal(event)">
+        <div class="room-assign-content" onclick="event.stopPropagation()">
+            <div class="room-assign-header">
+                <h2>Assign Room Access</h2>
+                <p>Select which data rooms this new user should have access to.</p>
+                <span class="room-assign-user-badge" id="room-assign-user-badge"></span>
+            </div>
+            <div class="room-assign-internal-note" id="room-assign-internal-note">
+                Internal email detected -- all rooms pre-selected.
+            </div>
+            <div class="room-assign-toolbar">
+                <button onclick="roomAssignSelectAll()">Select All</button>
+                <button onclick="roomAssignDeselectAll()">Deselect All</button>
+                <span class="room-assign-count" id="room-assign-count"></span>
+            </div>
+            <div class="room-assign-list" id="room-assign-list">
+                <!-- Room checkboxes rendered dynamically -->
+            </div>
+            <div class="room-assign-status" id="room-assign-status"></div>
+            <div class="room-assign-footer">
+                <button class="room-assign-skip" onclick="closeRoomAssignModal()">Skip</button>
+                <button class="room-assign-confirm" id="room-assign-confirm-btn" onclick="confirmRoomAssignment()">Grant Access</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Room Publishing Modal -->
     <div class="room-publish-modal hidden" id="room-publish-modal" onclick="closeRoomPublishModal(event)">
@@ -23867,6 +23925,177 @@ async function kickUserFromOrg(userId) {
 
 // ============ Settings: Invite User ============
 
+// Internal email domains — users with these domains are auto-selected for all rooms
+var INTERNAL_EMAIL_DOMAINS = ['rklacy.com', 'aminoimmigration.com', 'asiloymas.com'];
+
+function _isInternalEmail(email) {
+    if (!email) return false;
+    var domain = email.toLowerCase().split('@')[1];
+    return domain && INTERNAL_EMAIL_DOMAINS.indexOf(domain) !== -1;
+}
+
+// ---- Room Assignment Modal ----
+
+var _roomAssignUserId = null;   // userId being assigned rooms
+var _roomAssignRoleLevel = 0;   // power level for the user
+
+function openRoomAssignModal(userId, email, roleLevel) {
+    _roomAssignUserId = userId;
+    _roomAssignRoleLevel = roleLevel;
+
+    var modal = document.getElementById('room-assign-modal');
+    var badge = document.getElementById('room-assign-user-badge');
+    var listEl = document.getElementById('room-assign-list');
+    var noteEl = document.getElementById('room-assign-internal-note');
+    var statusEl = document.getElementById('room-assign-status');
+    var confirmBtn = document.getElementById('room-assign-confirm-btn');
+
+    badge.textContent = userId;
+    statusEl.textContent = '';
+    statusEl.classList.remove('visible');
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Grant Access';
+
+    var isInternal = _isInternalEmail(email);
+    if (isInternal) {
+        noteEl.classList.add('visible');
+    } else {
+        noteEl.classList.remove('visible');
+    }
+
+    // Build room list from _settingsRooms (already loaded during settings init)
+    if (!_settingsRooms || _settingsRooms.length === 0) {
+        listEl.innerHTML = '<div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">No data rooms found. You can assign rooms later from the Room Access tab.</div>';
+    } else {
+        listEl.innerHTML = _settingsRooms.map(function(r, i) {
+            var checkedAttr = isInternal ? ' checked' : '';
+            return '<div class="room-assign-item">' +
+                '<input type="checkbox" id="room-assign-cb-' + i + '" data-room-id="' + escapeHtml(r.roomId) + '"' + checkedAttr + ' onchange="updateRoomAssignCount()">' +
+                '<label for="room-assign-cb-' + i + '">' + escapeHtml(r.name) + '</label>' +
+            '</div>';
+        }).join('');
+    }
+
+    updateRoomAssignCount();
+    modal.classList.add('open');
+}
+
+function closeRoomAssignModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('room-assign-modal').classList.remove('open');
+    _roomAssignUserId = null;
+}
+
+function updateRoomAssignCount() {
+    var checkboxes = document.querySelectorAll('#room-assign-list input[type="checkbox"]');
+    var checked = 0;
+    checkboxes.forEach(function(cb) { if (cb.checked) checked++; });
+    document.getElementById('room-assign-count').textContent = checked + ' of ' + checkboxes.length + ' selected';
+}
+
+function roomAssignSelectAll() {
+    document.querySelectorAll('#room-assign-list input[type="checkbox"]').forEach(function(cb) { cb.checked = true; });
+    updateRoomAssignCount();
+}
+
+function roomAssignDeselectAll() {
+    document.querySelectorAll('#room-assign-list input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+    updateRoomAssignCount();
+}
+
+async function confirmRoomAssignment() {
+    if (!_roomAssignUserId) return;
+
+    var confirmBtn = document.getElementById('room-assign-confirm-btn');
+    var statusEl = document.getElementById('room-assign-status');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Granting...';
+    statusEl.classList.add('visible');
+
+    var checkboxes = document.querySelectorAll('#room-assign-list input[type="checkbox"]:checked');
+    var selectedRoomIds = [];
+    checkboxes.forEach(function(cb) { selectedRoomIds.push(cb.getAttribute('data-room-id')); });
+
+    if (selectedRoomIds.length === 0) {
+        statusEl.textContent = 'No rooms selected.';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Grant Access';
+        return;
+    }
+
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken) {
+        statusEl.textContent = 'Not logged in.';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Grant Access';
+        return;
+    }
+
+    var joined = 0;
+    var failed = 0;
+
+    for (var i = 0; i < selectedRoomIds.length; i++) {
+        var roomId = selectedRoomIds[i];
+        statusEl.textContent = 'Joining room ' + (i + 1) + ' of ' + selectedRoomIds.length + '...';
+
+        try {
+            // Try Synapse admin force-join first
+            var encodedRoomId = encodeURIComponent(roomId);
+            var res = await fetch(
+                SYNAPSE_HOMESERVER_URL + '/_synapse/admin/v1/join/' + encodedRoomId,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + session.accessToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ user_id: _roomAssignUserId })
+                }
+            );
+
+            if (!res.ok) {
+                // Fallback to invite
+                var errData = await res.json().catch(function() { return {}; });
+                if (res.status === 403 || (errData.errcode && errData.errcode === 'M_FORBIDDEN')) {
+                    await MatrixClient.inviteUser(roomId, _roomAssignUserId);
+                    joined++;
+                    continue;
+                }
+                throw new Error(errData.error || 'HTTP ' + res.status);
+            }
+
+            // Set power level in the room
+            try {
+                await MatrixClient.setUserPowerLevel(roomId, _roomAssignUserId, _roomAssignRoleLevel);
+            } catch (plErr) {
+                console.warn('[RoomAssign] Could not set power level in room:', plErr.message);
+            }
+
+            joined++;
+        } catch (e) {
+            console.error('[RoomAssign] Failed to join room ' + roomId + ':', e);
+            failed++;
+        }
+    }
+
+    if (failed === 0) {
+        statusEl.textContent = 'Granted access to ' + joined + ' room' + (joined !== 1 ? 's' : '') + '.';
+        statusEl.style.color = 'var(--success-500)';
+        showSettingsToast('success', _roomAssignUserId + ' added to ' + joined + ' room' + (joined !== 1 ? 's' : ''));
+    } else {
+        statusEl.textContent = 'Joined ' + joined + ', failed ' + failed + ' room(s).';
+        statusEl.style.color = 'var(--warning-500)';
+        showSettingsToast('info', 'Joined ' + joined + ' rooms, ' + failed + ' failed for ' + _roomAssignUserId);
+    }
+
+    confirmBtn.textContent = 'Done';
+    // Auto-close after a short delay
+    setTimeout(function() {
+        closeRoomAssignModal();
+        statusEl.style.color = '';
+    }, 1500);
+}
+
 async function inviteNewUser() {
     var username = document.getElementById('invite-username').value.trim();
     var displayName = document.getElementById('invite-display-name').value.trim();
@@ -23979,6 +24208,10 @@ async function inviteNewUser() {
         // Reload member list
         _settingsLoaded = false;
         await loadSettingsData();
+
+        // Open room assignment modal so admin can grant data room access
+        var levelMap2 = { admin: 100, staff: 50, client: 10, default: 0 };
+        openRoomAssignModal(fullUserId, email, levelMap2[role] || 0);
 
     } catch (e) {
         console.error('[Settings] Failed to invite user:', e);
