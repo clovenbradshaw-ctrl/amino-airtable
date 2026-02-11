@@ -1728,21 +1728,278 @@
             display: none;
         }
 
-        /* Interface placeholder */
+        /* ============ Interface App ============ */
         #interface-app {
             display: none;
             flex: 1;
-            overflow-y: auto;
+            flex-direction: column;
+            overflow: hidden;
             background: var(--bg-primary);
         }
-        #interface-app.visible { display: flex; align-items: center; justify-content: center; }
-        .interface-placeholder {
-            text-align: center;
-            color: var(--text-muted);
+        #interface-app.visible { display: flex; }
+
+        /* Interface top bar */
+        .iface-topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            height: var(--header-height); min-height: var(--header-height);
+            padding: 0 20px; background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-primary);
         }
-        .interface-placeholder svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.3; }
-        .interface-placeholder h2 { font-size: 20px; color: var(--text-secondary); margin-bottom: 8px; }
-        .interface-placeholder p { font-size: 14px; }
+        .iface-topbar-left { display: flex; align-items: center; gap: 12px; }
+        .iface-topbar-logo { width: 28px; height: 28px; background: var(--primary-500); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
+        .iface-topbar-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+        .iface-topbar-right { display: flex; align-items: center; gap: 10px; }
+        .iface-edit-toggle {
+            display: none; padding: 5px 12px; font-size: 12px; font-weight: 600;
+            border: 1px solid var(--border-secondary); border-radius: var(--radius-md);
+            background: transparent; color: var(--text-secondary); cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+        .iface-edit-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .iface-edit-toggle.active { background: var(--primary-500); color: #fff; border-color: var(--primary-500); }
+        .iface-edit-toggle.is-admin { display: inline-flex; }
+        .iface-global-search {
+            width: 200px; padding: 6px 12px; font-size: 13px;
+            background: var(--bg-primary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-md); color: var(--text-primary); outline: none;
+        }
+        .iface-global-search::placeholder { color: var(--text-muted); }
+        .iface-global-search:focus { border-color: var(--primary-500); }
+
+        /* Interface page tabs (nav) */
+        .iface-page-tabs {
+            display: flex; align-items: center; gap: 0;
+            background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary);
+            padding: 0 16px; min-height: 38px; overflow-x: auto;
+        }
+        .iface-page-tab {
+            padding: 8px 16px; font-size: 13px; font-weight: 500;
+            color: var(--text-muted); cursor: pointer; border: none; background: none;
+            border-bottom: 2px solid transparent; white-space: nowrap;
+            transition: all var(--transition-fast);
+        }
+        .iface-page-tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
+        .iface-page-tab.active { color: var(--primary-500); border-bottom-color: var(--primary-500); }
+        .iface-add-page-btn {
+            padding: 4px 10px; font-size: 18px; color: var(--text-muted);
+            cursor: pointer; border: none; background: none; display: none;
+        }
+        .iface-add-page-btn.is-admin { display: inline-flex; }
+        .iface-add-page-btn:hover { color: var(--text-primary); }
+
+        /* Interface page container */
+        .iface-page-container {
+            flex: 1; overflow-y: auto; padding: 0;
+            background: #f0f4f8;
+        }
+        html.dark-theme .iface-page-container,
+        :root .iface-page-container { background: var(--bg-primary); }
+        html:not(.light-theme) .iface-page-container { background: var(--bg-primary); }
+
+        .iface-page { display: none; flex-direction: column; min-height: 100%; }
+        .iface-page.active { display: flex; }
+
+        /* Quick links grid */
+        .iface-quick-links {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 12px; padding: 20px 24px;
+        }
+        .iface-quick-link {
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            padding: 16px 8px; background: var(--bg-secondary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-lg);
+            cursor: pointer; text-decoration: none; color: var(--text-primary);
+            transition: all var(--transition-fast); font-size: 12px; font-weight: 500;
+            text-align: center;
+        }
+        .iface-quick-link:hover { background: var(--bg-hover); border-color: var(--primary-400); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+        .iface-quick-link-icon {
+            width: 40px; height: 40px; border-radius: var(--radius-md);
+            background: var(--primary-500); color: #fff;
+            display: flex; align-items: center; justify-content: center; font-size: 18px;
+        }
+
+        /* Section headers */
+        .iface-section {
+            padding: 20px 24px 8px; display: flex; align-items: center; justify-content: space-between;
+        }
+        .iface-section-title { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+        .iface-section-actions { display: flex; gap: 8px; }
+
+        /* Block containers */
+        .iface-block {
+            margin: 0 24px 16px; background: var(--bg-secondary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-lg);
+            overflow: hidden; position: relative;
+        }
+        .iface-block-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 16px; border-bottom: 1px solid var(--border-primary);
+        }
+        .iface-block-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .iface-block-search {
+            width: 180px; padding: 5px 10px; font-size: 12px;
+            background: var(--bg-primary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm); color: var(--text-primary); outline: none;
+        }
+        .iface-block-search::placeholder { color: var(--text-muted); }
+        .iface-block-search:focus { border-color: var(--primary-500); }
+        .iface-block-body { padding: 0; max-height: 400px; overflow-y: auto; }
+
+        /* Card list (for case notes, communications) */
+        .iface-card-list { display: flex; flex-direction: column; }
+        .iface-card {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 12px 16px; border-bottom: 1px solid var(--border-primary);
+            cursor: pointer; transition: background var(--transition-fast);
+        }
+        .iface-card:last-child { border-bottom: none; }
+        .iface-card:hover { background: var(--bg-hover); }
+        .iface-card-icon { width: 32px; height: 32px; border-radius: 50%; background: var(--primary-100); color: var(--primary-600); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
+        html:not(.light-theme) .iface-card-icon { background: rgba(59,130,246,0.15); color: var(--primary-400); }
+        .iface-card-content { flex: 1; min-width: 0; }
+        .iface-card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .iface-card-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .iface-card-meta { font-size: 11px; color: var(--text-disabled); margin-top: 4px; }
+
+        /* Data table */
+        .iface-table-wrapper { overflow-x: auto; }
+        .iface-table {
+            width: 100%; border-collapse: collapse; font-size: 13px;
+        }
+        .iface-table th {
+            text-align: left; padding: 8px 12px; font-weight: 600; font-size: 12px;
+            color: var(--text-muted); background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-primary); white-space: nowrap;
+            position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none;
+        }
+        .iface-table th:hover { color: var(--text-primary); }
+        .iface-table td {
+            padding: 8px 12px; border-bottom: 1px solid var(--border-primary);
+            color: var(--text-primary); white-space: nowrap; overflow: hidden;
+            text-overflow: ellipsis; max-width: 200px;
+        }
+        .iface-table tr:hover td { background: var(--bg-hover); }
+        .iface-table tr:last-child td { border-bottom: none; }
+
+        /* Status badges */
+        .iface-badge {
+            display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 600;
+            border-radius: 10px; white-space: nowrap;
+        }
+        .iface-badge-green { background: rgba(34, 197, 94, 0.15); color: var(--success-500); }
+        .iface-badge-red { background: rgba(239, 68, 68, 0.15); color: var(--danger-500); }
+        .iface-badge-yellow { background: rgba(245, 158, 11, 0.15); color: var(--warning-500); }
+        .iface-badge-blue { background: rgba(59, 130, 246, 0.15); color: var(--primary-500); }
+        .iface-badge-gray { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
+
+        /* Filters bar */
+        .iface-filters {
+            display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+            border-bottom: 1px solid var(--border-primary); flex-wrap: wrap;
+        }
+        .iface-filter-dropdown {
+            padding: 5px 10px; font-size: 12px; border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm); background: var(--bg-primary);
+            color: var(--text-primary); cursor: pointer; outline: none;
+        }
+        .iface-filter-dropdown:focus { border-color: var(--primary-500); }
+
+        /* Column layout blocks (side-by-side) */
+        .iface-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 0 24px 16px; }
+        .iface-columns .iface-block { margin: 0; }
+        .iface-columns .iface-block:first-child { border-radius: var(--radius-lg) 0 0 var(--radius-lg); border-right: none; }
+        .iface-columns .iface-block:last-child { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
+        @media (max-width: 768px) {
+            .iface-columns { grid-template-columns: 1fr; }
+            .iface-columns .iface-block { border-radius: var(--radius-lg) !important; border-right: 1px solid var(--border-primary) !important; margin-bottom: 12px; }
+        }
+
+        /* Tabs inside blocks */
+        .iface-tab-bar {
+            display: flex; gap: 0; border-bottom: 1px solid var(--border-primary);
+            background: var(--bg-secondary);
+        }
+        .iface-tab-btn {
+            padding: 10px 20px; font-size: 13px; font-weight: 500;
+            color: var(--text-muted); cursor: pointer; border: none; background: none;
+            border-bottom: 2px solid transparent;
+            transition: all var(--transition-fast);
+        }
+        .iface-tab-btn:hover { color: var(--text-secondary); }
+        .iface-tab-btn.active { color: var(--primary-500); border-bottom-color: var(--primary-500); }
+        .iface-tab-panel { display: none; }
+        .iface-tab-panel.active { display: block; }
+
+        /* Calendar / event timeline */
+        .iface-timeline { padding: 12px 16px; }
+        .iface-timeline-item {
+            display: flex; gap: 12px; padding: 10px 0;
+            border-bottom: 1px solid var(--border-primary);
+        }
+        .iface-timeline-item:last-child { border-bottom: none; }
+        .iface-timeline-time { min-width: 60px; font-size: 12px; font-weight: 600; color: var(--text-muted); padding-top: 2px; }
+        .iface-timeline-content { flex: 1; }
+        .iface-timeline-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .iface-timeline-detail { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+        .iface-timeline-badges { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+
+        /* Empty state */
+        .iface-empty {
+            padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px;
+        }
+        .iface-empty svg { width: 40px; height: 40px; opacity: 0.3; margin-bottom: 8px; }
+
+        /* Loading skeleton */
+        .iface-skeleton {
+            background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-hover) 50%, var(--bg-tertiary) 75%);
+            background-size: 200% 100%;
+            animation: iface-shimmer 1.5s infinite;
+            border-radius: var(--radius-sm); height: 14px; margin: 4px 0;
+        }
+        @keyframes iface-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Admin edit mode overlay on blocks */
+        .iface-editing .iface-block { outline: 2px dashed var(--primary-400); outline-offset: 2px; }
+        .iface-block-drag-handle {
+            display: none; position: absolute; top: 4px; right: 4px;
+            padding: 4px 8px; font-size: 11px; background: var(--primary-500);
+            color: #fff; border-radius: var(--radius-sm); cursor: grab; z-index: 2;
+        }
+        .iface-editing .iface-block-drag-handle { display: inline-flex; }
+        .iface-editing .iface-quick-link { outline: 1px dashed var(--primary-400); outline-offset: 1px; }
+
+        /* Block action buttons (admin) */
+        .iface-block-actions {
+            display: none; gap: 4px; align-items: center;
+        }
+        .iface-editing .iface-block-actions { display: flex; }
+        .iface-block-action-btn {
+            padding: 3px 8px; font-size: 11px; border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm); background: var(--bg-primary);
+            color: var(--text-muted); cursor: pointer;
+        }
+        .iface-block-action-btn:hover { color: var(--text-primary); border-color: var(--primary-500); }
+        .iface-block-action-btn.danger:hover { color: var(--danger-500); border-color: var(--danger-500); }
+
+        /* Pagination */
+        .iface-pagination {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 16px; border-top: 1px solid var(--border-primary);
+            font-size: 12px; color: var(--text-muted);
+        }
+        .iface-pagination-btns { display: flex; gap: 4px; }
+        .iface-page-btn {
+            padding: 4px 10px; font-size: 12px; border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm); background: var(--bg-primary);
+            color: var(--text-secondary); cursor: pointer;
+        }
+        .iface-page-btn:hover { border-color: var(--primary-500); }
+        .iface-page-btn:disabled { opacity: 0.4; cursor: default; }
+        .iface-page-btn:disabled:hover { border-color: var(--border-primary); }
 
         .hidden { display: none !important; }
 
@@ -3387,7 +3644,7 @@
             <h2 style="font-size: 20px; margin-bottom: 8px; color: var(--text-primary);">Amino Viewer</h2>
             <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Choose how to view your data</p>
             <button id="view-as-database-btn" style="width: 100%; padding: 14px; background: var(--primary-500); border: none; border-radius: var(--radius-md); color: #fff; font-size: 14px; cursor: pointer; font-weight: 500; margin-bottom: 10px; transition: background var(--transition-fast);">View as Database</button>
-            <button id="view-as-interface-btn" style="width: 100%; padding: 14px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-muted); font-size: 14px; cursor: pointer; font-weight: 500; transition: background var(--transition-fast);" disabled>View as Interface <span style="font-size: 11px; opacity: 0.6;">(coming soon)</span></button>
+            <button id="view-as-interface-btn" style="width: 100%; padding: 14px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-secondary); font-size: 14px; cursor: pointer; font-weight: 500; transition: background var(--transition-fast);">View as Interface</button>
         </div>
     </div>
         </div>
@@ -4212,14 +4469,26 @@
 
     </div><!-- /database-app -->
 
-    <!-- Interface Sub-App (placeholder) -->
+    <!-- Interface Sub-App -->
     <div id="interface-app">
-        <div class="interface-placeholder">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
-            </svg>
-            <h2>Interface Designer</h2>
-            <p>Custom interfaces for your data — coming soon.</p>
+        <!-- Top bar -->
+        <div class="iface-topbar">
+            <div class="iface-topbar-left">
+                <div class="iface-topbar-logo">A</div>
+                <div class="iface-topbar-title">Amino Interface</div>
+            </div>
+            <div class="iface-topbar-right">
+                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search..." oninput="InterfaceApp.onGlobalSearch(this.value)">
+                <button class="iface-edit-toggle" id="iface-edit-toggle" onclick="InterfaceApp.toggleEditMode()">Edit Layout</button>
+            </div>
+        </div>
+        <!-- Page tabs -->
+        <div class="iface-page-tabs" id="iface-page-tabs">
+            <!-- Rendered dynamically from schema -->
+        </div>
+        <!-- Page content -->
+        <div class="iface-page-container" id="iface-page-container">
+            <!-- Rendered dynamically from schema + data -->
         </div>
     </div>
 
@@ -9602,8 +9871,7 @@ function selectDatabaseView() {
 
 function selectInterfaceView() {
     hideViewSelection();
-    // Interface view — to be developed
-    // For now, fall through to database view
+    switchApp('interface');
 }
 
 function synapseLogout() {
@@ -21949,6 +22217,1119 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;');
 }
 
+// ============ Interface App Module ============
+// Renders the Softr-style interface (Home, Clients, Events) using live data
+// Schema stored in Matrix room using law.firm.interface state events (EO format)
+
+var InterfaceApp = (function() {
+    'use strict';
+
+    var _initialized = false;
+    var _editMode = false;
+    var _interfaceRoomId = null;
+    var _activePage = null;
+    var _globalSearchQuery = '';
+    var _tableDataCache = {};       // tableId -> { records: [], lastFetch: timestamp }
+    var _tablePaginationState = {}; // pageId -> { page: 0, pageSize: 50, sort: { field, dir } }
+    var _blockSearchState = {};     // blockId -> searchQuery
+
+    // ============ Default Schema (EO Format) ============
+    // The schema describes pages and their blocks using EO operators:
+    //   DES  = field description / data source binding
+    //   SEG  = segmentation (filter, sort, group, paginate)
+    //   CON  = connection (linked record traversal)
+    //   ALT  = alteration (transform display, compute)
+
+    var DEFAULT_SCHEMA = {
+        version: '1',
+        schemaType: 'law.firm.interface',
+        epistemicStatus: 'GIVEN',
+        pages: [
+            {
+                id: 'home',
+                label: 'Home',
+                icon: 'home',
+                blocks: [
+                    {
+                        id: 'home-quick-links',
+                        type: 'quick-links',
+                        items: [
+                            { label: 'Home', icon: '\u2302', page: 'home' },
+                            { label: 'Clients', icon: '\uD83D\uDCC1', page: 'clients' },
+                            { label: 'Events', icon: '\uD83D\uDCC5', page: 'events' },
+                            { label: 'New Client Event', icon: '\u2795', action: 'new-event' },
+                            { label: 'New Case Note', icon: '\uD83D\uDCDD', action: 'new-note' }
+                        ]
+                    },
+                    {
+                        id: 'home-columns',
+                        type: 'columns',
+                        children: ['home-case-notes', 'home-communications']
+                    },
+                    {
+                        id: 'home-case-notes',
+                        type: 'card-list',
+                        label: 'Latest Case Notes',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'case note',
+                            fallbackTablePattern: 'note'
+                        },
+                        display: {
+                            titleField: 'Client Name',
+                            subtitleField: 'Subject',
+                            metaField: null,
+                            icon: '\uD83D\uDCDD'
+                        },
+                        segment: {
+                            op: 'SEG',
+                            sort: { field: '_createdTime', dir: 'desc' },
+                            limit: 20
+                        }
+                    },
+                    {
+                        id: 'home-communications',
+                        type: 'card-list',
+                        label: 'Latest Communications',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'communication',
+                            fallbackTablePattern: 'message'
+                        },
+                        display: {
+                            titleField: 'Client Name',
+                            subtitleField: 'Subject',
+                            metaField: null,
+                            icon: '\uD83D\uDCE8'
+                        },
+                        segment: {
+                            op: 'SEG',
+                            sort: { field: '_createdTime', dir: 'desc' },
+                            limit: 20
+                        }
+                    },
+                    {
+                        id: 'home-hearings',
+                        type: 'timeline',
+                        label: 'Daily Hearings & Interviews',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'events',
+                            fallbackTablePattern: 'event'
+                        },
+                        display: {
+                            titleField: 'Event Title',
+                            timeField: 'Hearing Date/Time',
+                            detailFields: ['Client Name', 'ICH Attny', 'MCH Attny', 'Court/Office']
+                        },
+                        segment: {
+                            op: 'SEG',
+                            filter: { field: 'Hearing Date/Time', op: 'isToday' },
+                            sort: { field: 'Hearing Date/Time', dir: 'asc' },
+                            limit: 50
+                        }
+                    }
+                ]
+            },
+            {
+                id: 'clients',
+                label: 'Clients',
+                icon: 'clients',
+                blocks: [
+                    {
+                        id: 'clients-table',
+                        type: 'data-table',
+                        label: 'RK Lacy Law Clients',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'client info',
+                            fallbackTablePattern: 'client'
+                        },
+                        columns: [
+                            { field: 'Client Name', label: 'Client Name', width: 200 },
+                            { field: 'File Case Status (from Case Master View // Activities)', label: 'File Status', width: 100 },
+                            { field: 'A#', label: 'A#', width: 100 },
+                            { field: 'DOB & Age', label: 'DOB & Age', width: 120 },
+                            { field: 'Soonest Event (from Case Master View // Activities)', label: 'Next Event', width: 160 },
+                            { field: 'Brief Event Info Rollup (from Case Events) Rollup (from Case Master View // Activities)', label: 'Event Info', width: 200 },
+                            { field: 'ICH Atty', label: 'ICH Atty', width: 100 },
+                            { field: 'MCH Attny Options', label: 'MCH Atty', width: 100 },
+                            { field: 'Case Manager', label: 'Case Manager', width: 120 },
+                            { field: 'Country', label: 'Country', width: 100 },
+                            { field: 'Phone Number', label: 'Phone', width: 120 },
+                            { field: 'Client Email', label: 'Email', width: 180 }
+                        ],
+                        filters: [
+                            { id: 'mch', label: 'MCH', field: 'MCH Attny Options' },
+                            { id: 'ich', label: 'ICH', field: 'ICH Atty' },
+                            { id: 'cm', label: 'Case Manager', field: 'Case Manager' },
+                            { id: 'status', label: 'File Status', field: 'File Case Status (from Case Master View // Activities)' }
+                        ],
+                        segment: {
+                            op: 'SEG',
+                            sort: { field: 'Client Name', dir: 'asc' },
+                            pageSize: 50
+                        }
+                    }
+                ]
+            },
+            {
+                id: 'events',
+                label: 'Events',
+                icon: 'events',
+                blocks: [
+                    {
+                        id: 'events-quick-links',
+                        type: 'quick-links',
+                        items: [
+                            { label: 'Home', icon: '\u2302', page: 'home' },
+                            { label: 'Clients', icon: '\uD83D\uDCC1', page: 'clients' },
+                            { label: 'Events', icon: '\uD83D\uDCC5', page: 'events' },
+                            { label: 'New Event', icon: '\u2795', action: 'new-event' }
+                        ]
+                    },
+                    {
+                        id: 'events-tabs',
+                        type: 'tab-container',
+                        tabs: [
+                            {
+                                id: 'hearings-tab',
+                                label: 'Hearings & Interviews',
+                                blockId: 'events-hearings-timeline'
+                            },
+                            {
+                                id: 'client-events-tab',
+                                label: 'Client Events',
+                                blockId: 'events-client-list'
+                            },
+                            {
+                                id: 'all-events-tab',
+                                label: 'All Events',
+                                blockId: 'events-all-table'
+                            }
+                        ]
+                    },
+                    {
+                        id: 'events-hearings-timeline',
+                        type: 'timeline',
+                        label: 'Upcoming Hearings & Interviews',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'events',
+                            fallbackTablePattern: 'event'
+                        },
+                        display: {
+                            titleField: 'Event Title',
+                            timeField: 'Hearing Date/Time',
+                            detailFields: ['Client Name', 'ICH Attny', 'MCH Attny', 'Court/Office', 'Judge']
+                        },
+                        segment: {
+                            op: 'SEG',
+                            filter: { field: 'Hearing Date/Time', op: 'isFutureOrToday' },
+                            sort: { field: 'Hearing Date/Time', dir: 'asc' },
+                            limit: 100
+                        }
+                    },
+                    {
+                        id: 'events-client-list',
+                        type: 'card-list',
+                        label: 'Client Events',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'events',
+                            fallbackTablePattern: 'event'
+                        },
+                        display: {
+                            titleField: 'Event Title',
+                            subtitleField: 'Client Name',
+                            metaField: 'Hearing Date/Time',
+                            icon: '\uD83D\uDCC5'
+                        },
+                        segment: {
+                            op: 'SEG',
+                            sort: { field: 'Hearing Date/Time', dir: 'desc' },
+                            limit: 50
+                        }
+                    },
+                    {
+                        id: 'events-all-table',
+                        type: 'data-table',
+                        label: 'All Events',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'events',
+                            fallbackTablePattern: 'event'
+                        },
+                        columns: [
+                            { field: 'Event Title', label: 'Event', width: 220 },
+                            { field: 'Client Name', label: 'Client', width: 160 },
+                            { field: 'Hearing Date/Time', label: 'Date/Time', width: 160 },
+                            { field: 'ICH Attny', label: 'ICH', width: 100 },
+                            { field: 'MCH Attny', label: 'MCH', width: 100 },
+                            { field: 'Court/Office', label: 'Court/Office', width: 140 },
+                            { field: 'Judge', label: 'Judge', width: 120 }
+                        ],
+                        filters: [],
+                        segment: {
+                            op: 'SEG',
+                            sort: { field: 'Hearing Date/Time', dir: 'desc' },
+                            pageSize: 50
+                        }
+                    }
+                ]
+            }
+        ]
+    };
+
+    var _schema = null;
+
+    // ============ Schema Persistence (Matrix Room, EO Format) ============
+
+    async function _findOrCreateInterfaceRoom() {
+        if (_interfaceRoomId) return _interfaceRoomId;
+        if (!MatrixClient.isLoggedIn()) return null;
+
+        // Look for existing interface room in org space
+        var orgSpaceId = _settingsOrgSpaceId;
+        if (!orgSpaceId) {
+            try { orgSpaceId = await MatrixClient.findOrgSpace(); } catch (e) {}
+        }
+        if (orgSpaceId) {
+            var children = await MatrixClient.getSpaceChildren(orgSpaceId);
+            for (var i = 0; i < children.length; i++) {
+                var childId = children[i];
+                var roomType = MatrixClient.getCachedStateEvent(childId, 'law.firm.room.type', '');
+                if (roomType && roomType.content && roomType.content.type === 'interface') {
+                    _interfaceRoomId = childId;
+                    return _interfaceRoomId;
+                }
+            }
+        }
+
+        // Create new interface room
+        try {
+            var roomId = await MatrixClient.createRoom({
+                name: 'Interface Schema',
+                preset: 'private_chat',
+                initialState: [
+                    { type: 'm.room.history_visibility', state_key: '', content: { history_visibility: 'shared' } }
+                ]
+            });
+            // Tag as interface room
+            await MatrixClient.sendStateEvent(roomId, 'law.firm.room.type', '', {
+                type: 'interface',
+                created_by: MatrixClient.getUserId() || 'system',
+                created_at: Date.now()
+            });
+            // Add to org space if available
+            if (orgSpaceId) {
+                try {
+                    var hs = (MatrixClient.getHomeserverUrl() || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '') || 'aminoimmigration.com';
+                    await MatrixClient.sendStateEvent(orgSpaceId, 'm.space.child', roomId, { via: [hs] });
+                } catch (e) { console.warn('[Interface] Could not add room to org space:', e); }
+            }
+            _interfaceRoomId = roomId;
+            console.log('[Interface] Created interface room:', roomId);
+        } catch (e) {
+            console.error('[Interface] Failed to create interface room:', e);
+        }
+        return _interfaceRoomId;
+    }
+
+    async function loadSchema() {
+        try {
+            var roomId = await _findOrCreateInterfaceRoom();
+            if (!roomId) {
+                console.warn('[Interface] No interface room, using defaults');
+                _schema = JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+                return _schema;
+            }
+            var stateEvent = await MatrixClient.getStateEvent(roomId, 'law.firm.interface', 'schema');
+            if (stateEvent && stateEvent.pages) {
+                _schema = stateEvent;
+                console.log('[Interface] Loaded schema from room:', roomId);
+            } else {
+                _schema = JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+                // Save default schema to room
+                await saveSchema();
+            }
+        } catch (e) {
+            console.warn('[Interface] Schema load failed, using defaults:', e.message);
+            _schema = JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+        }
+        return _schema;
+    }
+
+    async function saveSchema() {
+        if (!_schema) return;
+        try {
+            var roomId = await _findOrCreateInterfaceRoom();
+            if (!roomId) { console.warn('[Interface] Cannot save schema: no room'); return; }
+            _schema.lastModified = new Date().toISOString();
+            _schema.modifiedBy = MatrixClient.getUserId() || 'unknown';
+            await MatrixClient.sendStateEvent(roomId, 'law.firm.interface', 'schema', _schema);
+            console.log('[Interface] Schema saved to room:', roomId);
+        } catch (e) {
+            console.error('[Interface] Schema save failed:', e);
+        }
+    }
+
+    // ============ Table Resolution ============
+    // Resolves a tableNamePattern from the schema to an actual table ID
+
+    function _resolveTableId(source) {
+        if (!source) return null;
+        var tables = Object.keys(META_TABLES || {});
+        var pattern = (source.tableNamePattern || '').toLowerCase();
+        var fallback = (source.fallbackTablePattern || '').toLowerCase();
+
+        // Exact match first
+        for (var i = 0; i < tables.length; i++) {
+            var name = (META_TABLES[tables[i]].tableName || '').toLowerCase();
+            if (name === pattern) return tables[i];
+        }
+        // Contains match
+        for (var j = 0; j < tables.length; j++) {
+            var n = (META_TABLES[tables[j]].tableName || '').toLowerCase();
+            if (n.includes(pattern)) return tables[j];
+        }
+        // Fallback pattern
+        if (fallback) {
+            for (var k = 0; k < tables.length; k++) {
+                var fn = (META_TABLES[tables[k]].tableName || '').toLowerCase();
+                if (fn.includes(fallback)) return tables[k];
+            }
+        }
+        return null;
+    }
+
+    // ============ Data Fetching ============
+
+    async function _getTableRecords(tableId) {
+        if (!tableId) return [];
+        var cached = _tableDataCache[tableId];
+        if (cached && (Date.now() - cached.lastFetch) < 10000) {
+            return cached.records;
+        }
+        var records = [];
+        try {
+            // Use in-memory data if available
+            if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
+                var memData = window.IN_MEMORY_DATA[tableId];
+                Object.keys(memData).forEach(function(rid) {
+                    records.push({ recordId: rid, fields: memData[rid] });
+                });
+            } else if (typeof db !== 'undefined' && db) {
+                var tx = db.transaction('data', 'readonly');
+                var store = tx.objectStore('data');
+                var index = store.index ? store.index('byTable') : null;
+                if (index) {
+                    var results = await new Promise(function(resolve, reject) {
+                        var req = index.getAll(tableId);
+                        req.onsuccess = function() { resolve(req.result || []); };
+                        req.onerror = function() { reject(req.error); };
+                    });
+                    for (var i = 0; i < results.length; i++) {
+                        var rec = results[i];
+                        if (encryptionEnabled && encryptionKey && rec.encrypted) {
+                            try {
+                                rec = await decryptRecordFromStorage(rec);
+                            } catch (e) { continue; }
+                        }
+                        records.push({ recordId: rec.recordId || rec.id, fields: rec.fields || rec });
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[Interface] Data fetch error for table', tableId, ':', e.message);
+        }
+        _tableDataCache[tableId] = { records: records, lastFetch: Date.now() };
+        return records;
+    }
+
+    // ============ Data Processing (SEG operations) ============
+
+    function _applySegment(records, segment, blockSearchQuery) {
+        if (!records || !records.length) return records;
+        var result = records.slice();
+
+        // Apply search filter
+        if (blockSearchQuery) {
+            var q = blockSearchQuery.toLowerCase();
+            result = result.filter(function(r) {
+                var fields = r.fields || {};
+                return Object.keys(fields).some(function(k) {
+                    var v = fields[k];
+                    if (v == null) return false;
+                    return String(v).toLowerCase().includes(q);
+                });
+            });
+        }
+
+        // Apply segment filter
+        if (segment && segment.filter) {
+            var f = segment.filter;
+            result = result.filter(function(r) {
+                var val = (r.fields || {})[f.field];
+                if (f.op === 'isToday') {
+                    if (!val) return false;
+                    var d = new Date(val);
+                    var now = new Date();
+                    return d.getFullYear() === now.getFullYear() &&
+                           d.getMonth() === now.getMonth() &&
+                           d.getDate() === now.getDate();
+                }
+                if (f.op === 'isFutureOrToday') {
+                    if (!val) return false;
+                    var d2 = new Date(val);
+                    var today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    return d2 >= today;
+                }
+                if (f.op === 'eq') return String(val) === String(f.value);
+                if (f.op === 'contains') return val && String(val).toLowerCase().includes(String(f.value).toLowerCase());
+                return true;
+            });
+        }
+
+        // Apply sort
+        if (segment && segment.sort) {
+            var sf = segment.sort.field;
+            var dir = segment.sort.dir === 'desc' ? -1 : 1;
+            result.sort(function(a, b) {
+                var av = (a.fields || {})[sf];
+                var bv = (b.fields || {})[sf];
+                if (av == null && bv == null) return 0;
+                if (av == null) return 1;
+                if (bv == null) return -1;
+                if (typeof av === 'string' && typeof bv === 'string') return av.localeCompare(bv) * dir;
+                return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+            });
+        }
+
+        // Apply limit
+        if (segment && segment.limit) {
+            result = result.slice(0, segment.limit);
+        }
+
+        return result;
+    }
+
+    // ============ Rendering ============
+
+    function _esc(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function _formatFieldValue(val) {
+        if (val == null) return '<span style="color:var(--text-disabled)">—</span>';
+        if (Array.isArray(val)) return _esc(val.join(', '));
+        if (typeof val === 'object') {
+            if (val.label) return _esc(val.label);
+            return _esc(JSON.stringify(val));
+        }
+        // Try to detect date strings
+        if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+            try {
+                var d = new Date(val);
+                if (!isNaN(d.getTime())) {
+                    return _esc(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+                        (val.includes('T') ? ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''));
+                }
+            } catch (e) {}
+        }
+        return _esc(String(val));
+    }
+
+    function _renderPageTabs() {
+        var tabs = document.getElementById('iface-page-tabs');
+        if (!tabs || !_schema) return;
+        var html = '';
+        _schema.pages.forEach(function(page) {
+            var active = page.id === _activePage ? ' active' : '';
+            html += '<button class="iface-page-tab' + active + '" data-page="' + _esc(page.id) +
+                '" onclick="InterfaceApp.switchPage(\'' + _esc(page.id) + '\')">' +
+                _esc(page.label) + '</button>';
+        });
+        // Admin: add page button
+        var adminClass = _currentUserRole === 'admin' ? ' is-admin' : '';
+        html += '<button class="iface-add-page-btn' + adminClass + '" onclick="InterfaceApp.addPage()" title="Add page">+</button>';
+        tabs.innerHTML = html;
+    }
+
+    function _renderQuickLinks(block) {
+        var html = '<div class="iface-quick-links">';
+        (block.items || []).forEach(function(item) {
+            var onclick = '';
+            if (item.page) onclick = 'InterfaceApp.switchPage(\'' + _esc(item.page) + '\')';
+            else if (item.action === 'new-event') onclick = 'InterfaceApp._showToast(\'New event form coming soon\')';
+            else if (item.action === 'new-note') onclick = 'InterfaceApp._showToast(\'New case note form coming soon\')';
+            html += '<div class="iface-quick-link" onclick="' + onclick + '">' +
+                '<div class="iface-quick-link-icon">' + (item.icon || '?') + '</div>' +
+                '<span>' + _esc(item.label) + '</span></div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    function _renderCardList(block, records) {
+        var display = block.display || {};
+        var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '">';
+        html += '<div class="iface-block-drag-handle">Drag</div>';
+        html += '<div class="iface-block-header">';
+        html += '<span class="iface-block-title">' + _esc(block.label || 'List') + '</span>';
+        html += '<div style="display:flex;gap:8px;align-items:center;">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<div class="iface-block-actions">';
+        html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
+        html += '</div></div></div>';
+        html += '<div class="iface-block-body"><div class="iface-card-list">';
+        if (!records || !records.length) {
+            html += '<div class="iface-empty">No records found</div>';
+        } else {
+            records.forEach(function(r) {
+                var f = r.fields || {};
+                var title = _findFieldValue(f, display.titleField) || r.recordId;
+                var subtitle = _findFieldValue(f, display.subtitleField) || '';
+                var meta = display.metaField ? _findFieldValue(f, display.metaField) : '';
+                html += '<div class="iface-card" data-record-id="' + _esc(r.recordId) + '">';
+                html += '<div class="iface-card-icon">' + (display.icon || '\uD83D\uDCCB') + '</div>';
+                html += '<div class="iface-card-content">';
+                html += '<div class="iface-card-title">' + _formatFieldValue(title) + '</div>';
+                if (subtitle) html += '<div class="iface-card-subtitle">' + _formatFieldValue(subtitle) + '</div>';
+                if (meta) html += '<div class="iface-card-meta">' + _formatFieldValue(meta) + '</div>';
+                html += '</div></div>';
+            });
+        }
+        html += '</div></div></div>';
+        return html;
+    }
+
+    function _renderTimeline(block, records) {
+        var display = block.display || {};
+        var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '">';
+        html += '<div class="iface-block-drag-handle">Drag</div>';
+        html += '<div class="iface-block-header">';
+        html += '<span class="iface-block-title">' + _esc(block.label || 'Timeline') + '</span>';
+        html += '<div style="display:flex;gap:8px;align-items:center;">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<div class="iface-block-actions">';
+        html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
+        html += '</div></div></div>';
+        html += '<div class="iface-block-body"><div class="iface-timeline">';
+        if (!records || !records.length) {
+            html += '<div class="iface-empty">No events scheduled</div>';
+        } else {
+            records.forEach(function(r) {
+                var f = r.fields || {};
+                var title = _findFieldValue(f, display.titleField) || 'Event';
+                var timeVal = _findFieldValue(f, display.timeField);
+                var timeStr = '';
+                if (timeVal) {
+                    try {
+                        var d = new Date(timeVal);
+                        if (!isNaN(d.getTime())) timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                    } catch (e) { timeStr = String(timeVal); }
+                }
+                html += '<div class="iface-timeline-item">';
+                html += '<div class="iface-timeline-time">' + _esc(timeStr || '--:--') + '</div>';
+                html += '<div class="iface-timeline-content">';
+                html += '<div class="iface-timeline-title">' + _formatFieldValue(title) + '</div>';
+                if (display.detailFields) {
+                    var details = display.detailFields.map(function(df) {
+                        var v = _findFieldValue(f, df);
+                        return v ? _esc(df) + ': ' + _formatFieldValue(v) : null;
+                    }).filter(Boolean);
+                    if (details.length) {
+                        html += '<div class="iface-timeline-detail">' + details.join(' &middot; ') + '</div>';
+                    }
+                }
+                html += '</div></div>';
+            });
+        }
+        html += '</div></div></div>';
+        return html;
+    }
+
+    function _renderDataTable(block, records, pageState) {
+        var columns = block.columns || [];
+        var filters = block.filters || [];
+        var ps = pageState || { page: 0, pageSize: block.segment && block.segment.pageSize || 50 };
+        var total = records.length;
+        var start = ps.page * ps.pageSize;
+        var pageRecords = records.slice(start, start + ps.pageSize);
+
+        var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '">';
+        html += '<div class="iface-block-drag-handle">Drag</div>';
+        html += '<div class="iface-block-header">';
+        html += '<span class="iface-block-title">' + _esc(block.label || 'Table') + ' <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(' + total + ' records)</span></span>';
+        html += '<div style="display:flex;gap:8px;align-items:center;">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<div class="iface-block-actions">';
+        html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
+        html += '</div></div></div>';
+
+        // Filters
+        if (filters.length) {
+            html += '<div class="iface-filters">';
+            filters.forEach(function(flt) {
+                html += '<select class="iface-filter-dropdown" data-filter-id="' + _esc(flt.id) + '" onchange="InterfaceApp.onFilterChange(\'' + _esc(block.id) + '\', \'' + _esc(flt.id) + '\', this.value)">';
+                html += '<option value="">' + _esc(flt.label) + '</option>';
+                // Build unique values from records
+                var vals = {};
+                records.forEach(function(r) {
+                    var v = _findFieldValue(r.fields || {}, flt.field);
+                    if (v != null && v !== '') {
+                        var sv = Array.isArray(v) ? v.join(', ') : String(v);
+                        vals[sv] = true;
+                    }
+                });
+                Object.keys(vals).sort().forEach(function(v) {
+                    html += '<option value="' + _esc(v) + '">' + _esc(v) + '</option>';
+                });
+                html += '</select>';
+            });
+            html += '</div>';
+        }
+
+        // Table
+        html += '<div class="iface-block-body"><div class="iface-table-wrapper"><table class="iface-table">';
+        html += '<thead><tr>';
+        columns.forEach(function(col) {
+            var w = col.width ? ' style="min-width:' + col.width + 'px;max-width:' + (col.width + 80) + 'px"' : '';
+            html += '<th' + w + ' onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + '</th>';
+        });
+        html += '</tr></thead><tbody>';
+        if (!pageRecords.length) {
+            html += '<tr><td colspan="' + columns.length + '" style="text-align:center;color:var(--text-muted);padding:30px;">No records</td></tr>';
+        } else {
+            pageRecords.forEach(function(r) {
+                html += '<tr data-record-id="' + _esc(r.recordId) + '">';
+                columns.forEach(function(col) {
+                    var val = _findFieldValue(r.fields || {}, col.field);
+                    html += '<td>' + _formatFieldValue(val) + '</td>';
+                });
+                html += '</tr>';
+            });
+        }
+        html += '</tbody></table></div>';
+
+        // Pagination
+        var totalPages = Math.ceil(total / ps.pageSize);
+        if (totalPages > 1) {
+            html += '<div class="iface-pagination">';
+            html += '<span>Showing ' + (start + 1) + '-' + Math.min(start + ps.pageSize, total) + ' of ' + total + '</span>';
+            html += '<div class="iface-pagination-btns">';
+            html += '<button class="iface-page-btn" onclick="InterfaceApp.onPageChange(\'' + _esc(block.id) + '\', ' + (ps.page - 1) + ')"' + (ps.page <= 0 ? ' disabled' : '') + '>&laquo; Prev</button>';
+            html += '<button class="iface-page-btn" onclick="InterfaceApp.onPageChange(\'' + _esc(block.id) + '\', ' + (ps.page + 1) + ')"' + (ps.page >= totalPages - 1 ? ' disabled' : '') + '>Next &raquo;</button>';
+            html += '</div></div>';
+        }
+
+        html += '</div></div>';
+        return html;
+    }
+
+    function _renderTabContainer(block, allBlocksMap) {
+        var tabs = block.tabs || [];
+        var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '" style="margin:0 24px 16px;">';
+        html += '<div class="iface-block-drag-handle">Drag</div>';
+        html += '<div class="iface-tab-bar">';
+        tabs.forEach(function(tab, i) {
+            var active = i === 0 ? ' active' : '';
+            html += '<button class="iface-tab-btn' + active + '" data-tab="' + _esc(tab.id) + '" onclick="InterfaceApp.switchTab(\'' + _esc(block.id) + '\', \'' + _esc(tab.id) + '\')">' + _esc(tab.label) + '</button>';
+        });
+        html += '</div>';
+        tabs.forEach(function(tab, i) {
+            var active = i === 0 ? ' active' : '';
+            html += '<div class="iface-tab-panel' + active + '" data-tab-panel="' + _esc(tab.id) + '">';
+            var childBlock = allBlocksMap[tab.blockId];
+            if (childBlock) {
+                html += '<div data-child-block="' + _esc(tab.blockId) + '"></div>';
+            } else {
+                html += '<div class="iface-empty">Tab content loading...</div>';
+            }
+            html += '</div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    // Helper: find a field value by name, using fuzzy matching
+    function _findFieldValue(fields, fieldName) {
+        if (!fields || !fieldName) return null;
+        // Exact match
+        if (fields[fieldName] !== undefined) return fields[fieldName];
+        // Case-insensitive match
+        var lower = fieldName.toLowerCase();
+        var keys = Object.keys(fields);
+        for (var i = 0; i < keys.length; i++) {
+            if (keys[i].toLowerCase() === lower) return fields[keys[i]];
+        }
+        // Partial match
+        for (var j = 0; j < keys.length; j++) {
+            if (keys[j].toLowerCase().includes(lower)) return fields[keys[j]];
+        }
+        return null;
+    }
+
+    // ============ Page Rendering ============
+
+    async function renderPage(pageId) {
+        _activePage = pageId;
+        _renderPageTabs();
+        var container = document.getElementById('iface-page-container');
+        if (!container || !_schema) return;
+
+        var page = _schema.pages.find(function(p) { return p.id === pageId; });
+        if (!page) {
+            container.innerHTML = '<div class="iface-empty">Page not found</div>';
+            return;
+        }
+
+        container.innerHTML = '<div class="iface-page active" data-page-id="' + _esc(page.id) + '"><div class="iface-empty"><div class="iface-skeleton" style="width:60%;height:20px;margin:20px auto;"></div><div class="iface-skeleton" style="width:40%;height:14px;margin:8px auto;"></div></div></div>';
+
+        // Build block map for tab containers
+        var allBlocks = _flattenBlocks(page.blocks);
+        var allBlocksMap = {};
+        allBlocks.forEach(function(b) { allBlocksMap[b.id] = b; });
+
+        // Pre-fetch all needed tables
+        var tableIds = {};
+        allBlocks.forEach(function(b) {
+            if (b.source) {
+                var tid = _resolveTableId(b.source);
+                if (tid) tableIds[tid] = true;
+            }
+        });
+        var fetchPromises = Object.keys(tableIds).map(function(tid) {
+            return _getTableRecords(tid);
+        });
+        await Promise.all(fetchPromises);
+
+        // Render blocks
+        var html = '<div class="iface-page active" data-page-id="' + _esc(page.id) + '">';
+        var editClass = _editMode ? ' iface-editing' : '';
+        html = '<div class="iface-page active' + editClass + '" data-page-id="' + _esc(page.id) + '">';
+
+        for (var i = 0; i < page.blocks.length; i++) {
+            var block = page.blocks[i];
+            html += await _renderBlock(block, allBlocksMap);
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+
+        // Render child blocks inside tab containers
+        var tabContainers = container.querySelectorAll('[data-child-block]');
+        for (var t = 0; t < tabContainers.length; t++) {
+            var childEl = tabContainers[t];
+            var childBlockId = childEl.getAttribute('data-child-block');
+            var childBlock = allBlocksMap[childBlockId];
+            if (childBlock) {
+                childEl.innerHTML = await _renderBlock(childBlock, allBlocksMap);
+            }
+        }
+    }
+
+    async function _renderBlock(block, allBlocksMap) {
+        var html = '';
+        var tableId, records, searchQ, pageState;
+
+        switch (block.type) {
+            case 'quick-links':
+                html = _renderQuickLinks(block);
+                break;
+
+            case 'columns':
+                html = '<div class="iface-columns">';
+                if (block.children) {
+                    for (var c = 0; c < block.children.length; c++) {
+                        var childBlock = allBlocksMap[block.children[c]];
+                        if (childBlock) html += await _renderBlock(childBlock, allBlocksMap);
+                    }
+                }
+                html += '</div>';
+                break;
+
+            case 'card-list':
+                tableId = _resolveTableId(block.source);
+                records = tableId ? await _getTableRecords(tableId) : [];
+                searchQ = _blockSearchState[block.id] || '';
+                records = _applySegment(records, block.segment, searchQ);
+                html = _renderCardList(block, records);
+                break;
+
+            case 'timeline':
+                tableId = _resolveTableId(block.source);
+                records = tableId ? await _getTableRecords(tableId) : [];
+                searchQ = _blockSearchState[block.id] || '';
+                records = _applySegment(records, block.segment, searchQ);
+                html = _renderTimeline(block, records);
+                break;
+
+            case 'data-table':
+                tableId = _resolveTableId(block.source);
+                records = tableId ? await _getTableRecords(tableId) : [];
+                searchQ = _blockSearchState[block.id] || '';
+                records = _applySegment(records, block.segment, searchQ);
+                pageState = _tablePaginationState[block.id] || { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
+                html = _renderDataTable(block, records, pageState);
+                break;
+
+            case 'tab-container':
+                html = _renderTabContainer(block, allBlocksMap);
+                break;
+
+            default:
+                html = '<div class="iface-block"><div class="iface-block-body"><div class="iface-empty">Unknown block type: ' + _esc(block.type) + '</div></div></div>';
+        }
+        return html;
+    }
+
+    function _flattenBlocks(blocks) {
+        var result = [];
+        (blocks || []).forEach(function(b) {
+            result.push(b);
+            if (b.children) {
+                var page = _schema.pages.find(function(p) {
+                    return p.blocks.some(function(pb) { return pb.id === b.id; });
+                });
+                if (page) {
+                    b.children.forEach(function(cid) {
+                        var cb = page.blocks.find(function(pb) { return pb.id === cid; });
+                        if (cb) result.push(cb);
+                    });
+                }
+            }
+            if (b.tabs) {
+                var page2 = _schema.pages.find(function(p) {
+                    return p.blocks.some(function(pb) { return pb.id === b.id; });
+                });
+                if (page2) {
+                    b.tabs.forEach(function(tab) {
+                        var tb = page2.blocks.find(function(pb) { return pb.id === tab.blockId; });
+                        if (tb) result.push(tb);
+                    });
+                }
+            }
+        });
+        return result;
+    }
+
+    // ============ User Interactions ============
+
+    function switchPage(pageId) {
+        _blockSearchState = {};
+        _tablePaginationState = {};
+        renderPage(pageId);
+    }
+
+    function switchTab(blockId, tabId) {
+        var block = document.querySelector('[data-block-id="' + blockId + '"]');
+        if (!block) return;
+        block.querySelectorAll('.iface-tab-btn').forEach(function(btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
+        });
+        block.querySelectorAll('.iface-tab-panel').forEach(function(panel) {
+            panel.classList.toggle('active', panel.getAttribute('data-tab-panel') === tabId);
+        });
+    }
+
+    function onBlockSearch(blockId, query) {
+        _blockSearchState[blockId] = query;
+        // Debounce re-render
+        clearTimeout(onBlockSearch._timer);
+        onBlockSearch._timer = setTimeout(function() {
+            renderPage(_activePage);
+        }, 300);
+    }
+
+    function onGlobalSearch(query) {
+        _globalSearchQuery = query;
+        // Apply as search to all blocks
+        if (_schema && _activePage) {
+            var page = _schema.pages.find(function(p) { return p.id === _activePage; });
+            if (page) {
+                page.blocks.forEach(function(b) {
+                    _blockSearchState[b.id] = query;
+                });
+            }
+        }
+        clearTimeout(onGlobalSearch._timer);
+        onGlobalSearch._timer = setTimeout(function() {
+            renderPage(_activePage);
+        }, 300);
+    }
+
+    function onFilterChange(blockId, filterId, value) {
+        // Find the block and apply filter to segment
+        if (!_schema || !_activePage) return;
+        var page = _schema.pages.find(function(p) { return p.id === _activePage; });
+        if (!page) return;
+        var block = page.blocks.find(function(b) { return b.id === blockId; });
+        if (!block || !block.filters) return;
+        var filterDef = block.filters.find(function(f) { return f.id === filterId; });
+        if (!filterDef) return;
+
+        // Store active filter in block segment
+        if (!block._activeFilters) block._activeFilters = {};
+        if (value) {
+            block._activeFilters[filterId] = { field: filterDef.field, op: 'contains', value: value };
+        } else {
+            delete block._activeFilters[filterId];
+        }
+
+        // Rebuild segment filter as compound
+        var origFilter = block.segment ? block.segment.filter : null;
+        var activeFilters = Object.values(block._activeFilters || {});
+        if (activeFilters.length) {
+            // We'll apply active filters as a search query for simplicity
+            _blockSearchState[blockId] = value;
+        } else {
+            delete _blockSearchState[blockId];
+        }
+
+        renderPage(_activePage);
+    }
+
+    function onColumnSort(blockId, fieldName) {
+        if (!_schema || !_activePage) return;
+        var page = _schema.pages.find(function(p) { return p.id === _activePage; });
+        if (!page) return;
+        var block = page.blocks.find(function(b) { return b.id === blockId; });
+        if (!block || !block.segment) return;
+        var currentSort = block.segment.sort || {};
+        if (currentSort.field === fieldName) {
+            block.segment.sort = { field: fieldName, dir: currentSort.dir === 'asc' ? 'desc' : 'asc' };
+        } else {
+            block.segment.sort = { field: fieldName, dir: 'asc' };
+        }
+        _tablePaginationState[blockId] = { page: 0, pageSize: block.segment.pageSize || 50 };
+        renderPage(_activePage);
+    }
+
+    function onPageChange(blockId, newPage) {
+        if (newPage < 0) return;
+        var ps = _tablePaginationState[blockId] || { page: 0, pageSize: 50 };
+        ps.page = newPage;
+        _tablePaginationState[blockId] = ps;
+        renderPage(_activePage);
+    }
+
+    // ============ Admin: Edit Mode ============
+
+    function toggleEditMode() {
+        if (_currentUserRole !== 'admin') return;
+        _editMode = !_editMode;
+        var btn = document.getElementById('iface-edit-toggle');
+        if (btn) btn.classList.toggle('active', _editMode);
+        renderPage(_activePage);
+    }
+
+    async function removeBlock(blockId) {
+        if (_currentUserRole !== 'admin' || !_editMode) return;
+        if (!confirm('Remove this block from the page?')) return;
+        var page = _schema.pages.find(function(p) { return p.id === _activePage; });
+        if (!page) return;
+        page.blocks = page.blocks.filter(function(b) { return b.id !== blockId; });
+        // Also remove from any column children
+        page.blocks.forEach(function(b) {
+            if (b.children) b.children = b.children.filter(function(c) { return c !== blockId; });
+            if (b.tabs) b.tabs = b.tabs.filter(function(t) { return t.blockId !== blockId; });
+        });
+        await saveSchema();
+        renderPage(_activePage);
+    }
+
+    async function addPage() {
+        if (_currentUserRole !== 'admin') return;
+        var name = prompt('New page name:');
+        if (!name) return;
+        var id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        _schema.pages.push({
+            id: id,
+            label: name,
+            icon: 'page',
+            blocks: []
+        });
+        await saveSchema();
+        switchPage(id);
+    }
+
+    // ============ Toast ============
+
+    function _showToast(msg) {
+        var toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:var(--bg-elevated);color:var(--text-primary);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:10px 16px;font-size:13px;z-index:9999;box-shadow:var(--shadow-md);';
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(function() { toast.remove(); }, 3000);
+    }
+
+    // ============ Initialization ============
+
+    async function init() {
+        if (_initialized) return;
+        _initialized = true;
+
+        await loadSchema();
+        _activePage = _schema.pages.length ? _schema.pages[0].id : null;
+
+        // Set admin visibility
+        var editBtn = document.getElementById('iface-edit-toggle');
+        if (editBtn) {
+            editBtn.classList.toggle('is-admin', _currentUserRole === 'admin');
+        }
+
+        if (_activePage) {
+            await renderPage(_activePage);
+        }
+
+        // Listen for data updates
+        window.addEventListener('amino:record-update', function() {
+            _tableDataCache = {}; // Invalidate cache
+            if (_currentApp === 'interface' && _activePage) {
+                // Debounce re-render
+                clearTimeout(init._refreshTimer);
+                init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 1000);
+            }
+        });
+        window.addEventListener('amino:sync', function() {
+            _tableDataCache = {};
+            if (_currentApp === 'interface' && _activePage) {
+                clearTimeout(init._refreshTimer);
+                init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 1000);
+            }
+        });
+
+        console.log('[Interface] Initialized with', _schema.pages.length, 'pages');
+    }
+
+    // ============ Public API ============
+
+    return {
+        init: init,
+        loadSchema: loadSchema,
+        saveSchema: saveSchema,
+        renderPage: renderPage,
+        switchPage: switchPage,
+        switchTab: switchTab,
+        onBlockSearch: onBlockSearch,
+        onGlobalSearch: onGlobalSearch,
+        onFilterChange: onFilterChange,
+        onColumnSort: onColumnSort,
+        onPageChange: onPageChange,
+        toggleEditMode: toggleEditMode,
+        removeBlock: removeBlock,
+        addPage: addPage,
+        _showToast: _showToast,
+        get schema() { return _schema; },
+        get activePage() { return _activePage; },
+        get editMode() { return _editMode; }
+    };
+})();
+
 // ============ App Navigation & Settings ============
 
 var _currentApp = 'home'; // 'home' | 'database' | 'interface' | 'settings'
@@ -21992,6 +23373,7 @@ function switchApp(appName) {
         dbApp.style.display = 'flex';
     } else if (appName === 'interface') {
         ifApp.classList.add('visible');
+        InterfaceApp.init();
     } else if (appName === 'settings') {
         stApp.classList.add('visible');
         loadSettingsData();
