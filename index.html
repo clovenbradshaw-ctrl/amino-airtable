@@ -12951,6 +12951,7 @@ async function renderTable() {
             escapedId: esc(col),
             name: colNames[col],
             field: f,
+            fieldType: f ? f.fieldType : null,
             isComputed: isComp,
             isReadOnly: isRO,
             computedLabel: isComp ? esc(computedFieldLabel(f.fieldType)) : '',
@@ -13025,11 +13026,11 @@ async function renderTable() {
                     var value = row[cm.id];
                     if (value === undefined) value = row[cm.name];
                     if (cm.isComputed) {
-                        html += '<td class="cell-formula" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + cm.computedLabel + ' — click for info">' + formatCell(value) + '</td>';
+                        html += '<td class="cell-formula" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + cm.computedLabel + ' — click for info">' + formatCell(value, cm.fieldType) + '</td>';
                     } else if (cm.isReadOnly) {
-                        html += '<td class="cell-readonly" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" title="' + cm.readOnlyLabel + ' — read-only">' + formatCell(value) + '</td>';
+                        html += '<td class="cell-readonly" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" title="' + cm.readOnlyLabel + ' — read-only">' + formatCell(value, cm.fieldType) + '</td>';
                     } else {
-                        html += '<td class="inline-editable" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
+                        html += '<td class="inline-editable" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value, cm.fieldType) + '</td>';
                     }
                 }
                 html += '</tr>';
@@ -13057,11 +13058,11 @@ async function renderTable() {
                 var value = row[cm.id];
                 if (value === undefined) value = row[cm.name];
                 if (cm.isComputed) {
-                    html += '<td class="cell-formula" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + cm.computedLabel + ' — click for info">' + formatCell(value) + '</td>';
+                    html += '<td class="cell-formula" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + cm.computedLabel + ' — click for info">' + formatCell(value, cm.fieldType) + '</td>';
                 } else if (cm.isReadOnly) {
-                    html += '<td class="cell-readonly" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" title="' + cm.readOnlyLabel + ' — read-only">' + formatCell(value) + '</td>';
+                    html += '<td class="cell-readonly" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" title="' + cm.readOnlyLabel + ' — read-only">' + formatCell(value, cm.fieldType) + '</td>';
                 } else {
-                    html += '<td class="inline-editable" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
+                    html += '<td class="inline-editable" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value, cm.fieldType) + '</td>';
                 }
             }
             html += '</tr>';
@@ -13172,13 +13173,28 @@ function toggleGroup(groupId, event) {
     }
 }
 
-function formatCell(v) {
+function formatCell(v, fieldType) {
     if (v == null || v === '') {
         return '<span class="cell-empty">—</span>';
     }
 
+    // For plain text field types, render arrays as comma-separated text, not tags
+    var isTextField = fieldType === 'singleLineText' || fieldType === 'multilineText' || fieldType === 'richText'
+        || fieldType === 'email' || fieldType === 'phoneNumber';
+
     if (Array.isArray(v)) {
         if (v.length === 0) return '<span class="cell-empty">—</span>';
+
+        if (isTextField) {
+            // Text fields: render as plain comma-separated text
+            var textItems = v.map(item => {
+                if (typeof item === 'object' && item !== null) {
+                    return item.name || item.filename || item.email || item.id || JSON.stringify(item).slice(0, 30);
+                }
+                return String(item);
+            });
+            return esc(textItems.join(', '));
+        }
 
         // Check if it's an array of objects (linked records, attachments, etc.)
         if (typeof v[0] === 'object' && v[0] !== null) {
@@ -17604,19 +17620,19 @@ async function renderRecordProfile() {
                 if (isEmpty) {
                     html += '<div class="profile-field-value empty formula-readonly" data-edit-field-id="' + esc(fieldId) + '">—</div>';
                 } else {
-                    html += '<div class="profile-field-value formula-readonly" data-edit-field-id="' + esc(fieldId) + '">' + formatCell(value) + '</div>';
+                    html += '<div class="profile-field-value formula-readonly" data-edit-field-id="' + esc(fieldId) + '">' + formatCell(value, field?.fieldType) + '</div>';
                 }
             } else if (pfIsReadOnly) {
                 // Read-only fields: show value without edit handler
                 if (isEmpty) {
                     html += '<div class="profile-field-value empty field-readonly" data-edit-field-id="' + esc(fieldId) + '">—</div>';
                 } else {
-                    html += '<div class="profile-field-value field-readonly" data-edit-field-id="' + esc(fieldId) + '">' + formatCell(value) + '</div>';
+                    html += '<div class="profile-field-value field-readonly" data-edit-field-id="' + esc(fieldId) + '">' + formatCell(value, field?.fieldType) + '</div>';
                 }
             } else if (isEmpty) {
                 html += '<div class="profile-field-value empty" data-edit-field-id="' + esc(fieldId) + '" onclick="startProfileFieldEdit(this)">—</div>';
             } else {
-                html += '<div class="profile-field-value" data-edit-field-id="' + esc(fieldId) + '" onclick="startProfileFieldEdit(this)">' + formatCell(value) + '</div>';
+                html += '<div class="profile-field-value" data-edit-field-id="' + esc(fieldId) + '" onclick="startProfileFieldEdit(this)">' + formatCell(value, field?.fieldType) + '</div>';
             }
             html += '</div>';
         });
@@ -18628,12 +18644,12 @@ window.addEventListener('amino:record-updated', function(e) {
                     var fid = cell.dataset.fieldId;
                     if (fid && detail.fields) {
                         var val = detail.fields[fid];
+                        var f = META_FIELDS[detail.tableId]?.[fid];
                         if (val === undefined) {
                             // Try field name
-                            var f = META_FIELDS[detail.tableId]?.[fid];
                             if (f?.fieldName) val = detail.fields[f.fieldName];
                         }
-                        cell.innerHTML = formatCell(val);
+                        cell.innerHTML = formatCell(val, f?.fieldType);
                     }
                 });
             }
@@ -19739,11 +19755,11 @@ async function commitInlineCellEdit(td, explicitValue) {
         return;
     }
 
-    // Show the new value immediately (optimistic)
-    td.innerHTML = formatCell(newValue);
-
     // Determine the field key used in the record (fieldId or fieldName)
     var field = META_FIELDS[tableId]?.[fieldId];
+
+    // Show the new value immediately (optimistic)
+    td.innerHTML = formatCell(newValue, field?.fieldType);
     var fieldKey = fieldId;
     var recordData = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) ? window.IN_MEMORY_DATA[tableId][recordId] : null;
     if (recordData && recordData[fieldId] === undefined && field?.fieldName && recordData[field.fieldName] !== undefined) {
@@ -21635,7 +21651,7 @@ async function renderSchemaView() {
             if (value == null || value === '') {
                 html += '<div class="schema-field-value empty">—</div>';
             } else {
-                html += '<div class="schema-field-value">' + formatCell(value) + '</div>';
+                html += '<div class="schema-field-value">' + formatCell(value, field?.fieldType) + '</div>';
             }
 
             html += '</div>';
