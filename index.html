@@ -7518,7 +7518,7 @@ function getCurrentRecordsPaginated(offset, limit, tableFilter, searchQuery) {
         var results = [];
         var skipped = 0;
         var setFilter = tableFilter || null;
-        var query = searchQuery ? searchQuery.toLowerCase() : null;
+        var searchTokens = normalizeSearchTokens(searchQuery);
 
         var req = store.openCursor();
         req.onsuccess = (e) => {
@@ -7534,11 +7534,13 @@ function getCurrentRecordsPaginated(offset, limit, tableFilter, searchQuery) {
                 }
 
                 // Apply search filter if set
-                if (query) {
-                    var matchesSearch = (rec.recordId && rec.recordId.toLowerCase().includes(query)) ||
-                                       (setVal.toLowerCase().includes(query)) ||
-                                       (JSON.stringify(rec.fields || {}).toLowerCase().includes(query));
-                    if (!matchesSearch) {
+                if (searchTokens.length) {
+                    var searchText = [
+                        rec.recordId || '',
+                        setVal,
+                        collectSearchableText(rec.fields || {})
+                    ].join(' ');
+                    if (!matchesSearchTokens(searchText, searchTokens)) {
                         cursor.continue();
                         return;
                     }
@@ -18880,6 +18882,9 @@ window.addEventListener('amino:record-updated', function(e) {
     var detail = e.detail;
     if (!detail || !detail.tableId || !detail.recordId) return;
 
+    _recordSearchDataVersion++;
+    invalidateFilterCache();
+
     // Re-render the record profile if it's showing this record
     if (profileCurrentTableId === detail.tableId && profileCurrentRecordId === detail.recordId) {
         renderRecordProfile();
@@ -20559,6 +20564,7 @@ var currentSearchQuery = '';
 
 // Original unfiltered/unsorted record IDs
 var originalRecordIds = [];
+var _recordSearchDataVersion = 0;
 
 // Get cell value from a record for filtering/sorting
 function getCellValue(record, fieldId) {
@@ -20590,6 +20596,48 @@ function valueToString(value) {
     return String(value);
 }
 
+function collectSearchableText(value) {
+    if (value == null) return '';
+    if (Array.isArray(value)) {
+        var arrayParts = [];
+        for (var i = 0; i < value.length; i++) {
+            var part = collectSearchableText(value[i]);
+            if (part) arrayParts.push(part);
+        }
+        return arrayParts.join(' ');
+    }
+    if (typeof value === 'object') {
+        var objectParts = [];
+        for (var key in value) {
+            if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+            var keyPart = collectSearchableText(key);
+            if (keyPart) objectParts.push(keyPart);
+            var valuePart = collectSearchableText(value[key]);
+            if (valuePart) objectParts.push(valuePart);
+        }
+        return objectParts.join(' ');
+    }
+    return String(value);
+}
+
+function normalizeSearchTokens(query) {
+    if (!query) return [];
+    return String(query)
+        .toLowerCase()
+        .trim()
+        .split(/\s+/)
+        .filter(function(token) { return token.length > 0; });
+}
+
+function matchesSearchTokens(text, tokens) {
+    if (!tokens || !tokens.length) return true;
+    var haystack = (text || '').toLowerCase();
+    for (var i = 0; i < tokens.length; i++) {
+        if (haystack.indexOf(tokens[i]) === -1) return false;
+    }
+    return true;
+}
+
 // Check if a record matches a single filter
 function matchesFilter(record, filter) {
     var value = getCellValue(record, filter.fieldId);
@@ -20614,11 +20662,16 @@ function matchesFilter(record, filter) {
 
 // Check if a record matches search query
 function matchesSearch(record, query) {
-    if (!query) return true;
+    var tokens = normalizeSearchTokens(query);
+    if (!tokens.length) return true;
+
+    if (matchesSearchTokens(record.recordId, tokens)) return true;
     var fields = record.fields || {};
     for (var key in fields) {
-        var strValue = valueToString(fields[key]).toLowerCase();
-        if (strValue.includes(query)) return true;
+        if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+        if (matchesSearchTokens(key, tokens)) return true;
+        var strValue = collectSearchableText(fields[key]);
+        if (matchesSearchTokens(strValue, tokens)) return true;
     }
     return false;
 }
@@ -20652,7 +20705,7 @@ function compareValues(a, b, direction) {
 var _filterCache = { key: null, result: null };
 function _filterCacheKey() {
     return currentTable + '|' + currentView + '|' + JSON.stringify(currentFilters) + '|' +
-           JSON.stringify(currentSorts) + '|' + currentSearchQuery + '|' + originalRecordIds.length;
+           JSON.stringify(currentSorts) + '|' + currentSearchQuery + '|' + originalRecordIds.length + '|' + _recordSearchDataVersion;
 }
 function invalidateFilterCache() { _filterCache.key = null; _filterCache.result = null; }
 
@@ -23956,16 +24009,19 @@ var InterfaceApp = (function() {
         if (!records || !records.length) return records;
         var result = records.slice();
 
-        // Apply search filter
-        if (blockSearchQuery) {
-            var q = blockSearchQuery.toLowerCase();
+        // Apply search filter across the full in-memory/local record payload.
+        // Tokenized "AND" search improves matching quality for multi-word queries.
+        var searchTokens = normalizeSearchTokens(blockSearchQuery);
+        if (searchTokens.length) {
             result = result.filter(function(r) {
+                if (matchesSearchTokens(r.recordId, searchTokens)) return true;
                 var fields = r.fields || {};
-                return Object.keys(fields).some(function(k) {
-                    var v = fields[k];
-                    if (v == null) return false;
-                    return String(v).toLowerCase().includes(q);
-                });
+                for (var k in fields) {
+                    if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
+                    if (matchesSearchTokens(k, searchTokens)) return true;
+                    if (matchesSearchTokens(collectSearchableText(fields[k]), searchTokens)) return true;
+                }
+                return false;
             });
         }
 
@@ -25102,6 +25158,13 @@ var InterfaceApp = (function() {
                 // Debounce re-render
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 1000);
+            }
+        });
+        window.addEventListener('amino:record-updated', function() {
+            _tableDataCache = {}; // Invalidate cache after local/matrix updates
+            if (_currentApp === 'interface' && _activePage) {
+                clearTimeout(init._refreshTimer);
+                init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 400);
             }
         });
         window.addEventListener('amino:sync', function() {
