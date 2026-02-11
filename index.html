@@ -3007,15 +3007,11 @@ function renderTabBar() {
     if (label) label.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
 }
 
-// Legacy Xano API variables (deprecated — kept as null for backward compatibility)
-var API = null;
 var DB_NAME = 'amino';
 var DB_VERSION = 8;
 var PAGE_SIZE = 100;
 var N8N_WEBHOOK_BASE = 'https://n8n.intelechia.com/webhook';
 
-var API_KEY = null; // No longer used — auth is via Matrix Bearer token
-var SET_FILTER = null;
 var db = null;
 
 // ============ Encryption Configuration ============
@@ -3024,22 +3020,6 @@ var ENCRYPTED_CREDENTIALS_KEY = 'amino_encrypted_credentials';
 var encryptionKey = null; // CryptoKey object, only kept in memory
 var encryptionEnabled = false;
 var passkeyCredentialId = null; // For WebAuthn
-
-// ============ Secure Endpoint Management (Deprecated — Xano removed) ============
-// Xano endpoints are no longer used. All data flows through Matrix Synapse.
-var ENCRYPTED_ENDPOINTS_KEY = 'amino_encrypted_endpoints';
-var XANO_POST_API = null;
-
-async function initSecureEndpoints(apiKey) {
-    // No-op: Xano endpoints removed. Auth is via Matrix Synapse token.
-    console.warn('[initSecureEndpoints] Xano removed — endpoints no longer needed');
-}
-
-function clearSecureEndpoints() {
-    API = null;
-    XANO_POST_API = null;
-    localStorage.removeItem(ENCRYPTED_ENDPOINTS_KEY);
-}
 
 // ============ Web Crypto API Utilities ============
 
@@ -7552,10 +7532,7 @@ document.getElementById('connect-api-key-input').onkeydown = (e) => { if (e.key 
 document.getElementById('connect-api-set-filter').onkeydown = (e) => { if (e.key === 'Enter') submitConnectApi(); };
 
 async function initAuthScreen() {
-    // Legacy API key auth screen — no longer used.
-    // Auth is now handled exclusively via Synapse login (trySynapseLogin).
-    // This function is kept as a no-op for backward compatibility.
-    console.warn('[initAuthScreen] Legacy API key auth removed — use Synapse login');
+    // No-op: auth is handled exclusively via Synapse login (trySynapseLogin).
 }
 
 // Silently restore Matrix session without blocking app startup
@@ -7585,8 +7562,7 @@ async function clearLocalAndReset() {
 }
 
 async function tryAuth() {
-    // Legacy API key auth — no longer used. Auth is via Synapse login.
-    console.warn('[tryAuth] Legacy API key auth removed — use Synapse login');
+    // No-op: auth is via Synapse login.
     showAuthError('API key authentication has been replaced. Please use the Synapse login.');
 }
 
@@ -7864,9 +7840,8 @@ async function skipAuthAndUploadAmo() {
     input.click();
 }
 
-// Show/hide the Connect API button based on API_KEY state
 function updateConnectApiButton() {
-    // No longer needed — Synapse auth replaces API key
+    // No-op: Synapse auth replaces API key
     var btn = document.getElementById('connect-api-btn');
     if (btn) {
         btn.style.display = 'none';
@@ -7888,8 +7863,7 @@ function hideConnectApiModal() {
 }
 
 async function submitConnectApi() {
-    // Legacy API key connection — no longer used. Auth is via Synapse login.
-    console.warn('[submitConnectApi] Legacy API key removed — use Synapse login');
+    // No-op: auth is via Synapse login.
     var errEl = document.getElementById('connect-api-error');
     if (errEl) {
         errEl.textContent = 'API key authentication has been replaced by Synapse login.';
