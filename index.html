@@ -6959,6 +6959,36 @@ function getLocalStats() {
     });
 }
 
+// ============ Safe JSON Parsing ============
+
+// Safely parse a fetch Response as JSON. If the server returns non-JSON
+// (e.g. an HTML error page from a reverse proxy), this throws a clear
+// error instead of the cryptic "Unexpected token '<'" message.
+async function safeResponseJson(response, context) {
+    var contentType = response.headers.get('content-type') || '';
+    if (contentType && !contentType.includes('application/json')) {
+        var preview = '';
+        try { preview = (await response.text()).substring(0, 120); } catch (e) {}
+        throw new Error(
+            (context ? context + ': ' : '') +
+            'Server returned ' + (contentType || 'unknown content type') +
+            ' instead of JSON (HTTP ' + response.status + ').' +
+            (preview.indexOf('<html') !== -1 || preview.indexOf('<!DOCTYPE') !== -1
+                ? ' The server may be down or the URL may be incorrect.'
+                : '')
+        );
+    }
+    try {
+        return await response.json();
+    } catch (e) {
+        throw new Error(
+            (context ? context + ': ' : '') +
+            'Invalid JSON response from server (HTTP ' + response.status + '). ' +
+            'The server may be down or misconfigured.'
+        );
+    }
+}
+
 // ============ Synapse Login ============
 
 var SYNAPSE_HOMESERVER_URL = 'https://app.aminoimmigration.com';
@@ -6993,10 +7023,20 @@ async function verifySynapseSession() {
         var response = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/account/whoami', {
             headers: { 'Authorization': 'Bearer ' + session.accessToken }
         });
-        if (response.ok) return true;
-        // Token expired or invalid
-        _clearSynapseSession();
-        return false;
+        if (!response.ok) {
+            // Token expired or invalid
+            _clearSynapseSession();
+            return false;
+        }
+        // Verify the response is actually JSON from a Matrix server,
+        // not an HTML page from a reverse proxy or misconfigured server
+        var contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            console.warn('[Synapse] Session verification returned non-JSON response (content-type: ' + contentType + '). Server may be misconfigured.');
+            _clearSynapseSession();
+            return false;
+        }
+        return true;
     } catch (e) {
         // Network error — allow offline access if session exists
         console.warn('[Synapse] Could not verify session, allowing cached session:', e);
@@ -7032,7 +7072,7 @@ async function trySynapseLogin() {
             body: JSON.stringify(body)
         });
 
-        var data = await response.json();
+        var data = await safeResponseJson(response, 'Login');
 
         if (!response.ok) {
             throw new Error(data.error || 'Login failed');
@@ -10282,7 +10322,7 @@ var SynapseSync = {
                 console.error('[SynapseSync] Discovery sync failed:', syncRes.status);
                 return [];
             }
-            var syncData = await syncRes.json();
+            var syncData = await safeResponseJson(syncRes, 'Room discovery');
 
             var tableRooms = [];
             var joinRooms = (syncData.rooms && syncData.rooms.join) || {};
@@ -10410,7 +10450,7 @@ var SynapseSync = {
                     throw new Error('Sync failed: ' + res.status);
                 }
 
-                var syncData = await res.json();
+                var syncData = await safeResponseJson(res, 'Sync');
                 await this._processSync(syncData);
 
                 this.since = syncData.next_batch;
@@ -10578,7 +10618,7 @@ async function hydrateFromSynapse() {
                     headers: { 'Authorization': 'Bearer ' + session.accessToken }
                 });
                 if (stateRes.ok) {
-                    var stateEvents = await stateRes.json();
+                    var stateEvents = await safeResponseJson(stateRes, 'Room state');
                     for (var i = 0; i < stateEvents.length; i++) {
                         var evt = stateEvents[i];
                         if (evt.type === 'law.firm.vault.metadata' && evt.content) {
@@ -10612,7 +10652,7 @@ async function hydrateFromSynapse() {
                     });
                     if (!msgRes.ok) break;
 
-                    var msgData = await msgRes.json();
+                    var msgData = await safeResponseJson(msgRes, 'Room messages');
                     var chunk = msgData.chunk || [];
                     if (chunk.length === 0) break;
 
@@ -10661,7 +10701,7 @@ async function hydrateFromSynapse() {
                 headers: { 'Authorization': 'Bearer ' + session.accessToken }
             });
             if (syncRes.ok) {
-                var syncData = await syncRes.json();
+                var syncData = await safeResponseJson(syncRes, 'Sync token');
                 SynapseSync.since = syncData.next_batch;
                 await setSyncMeta('synapseSyncToken', syncData.next_batch);
             }
@@ -10750,7 +10790,7 @@ async function webhookFetch(path) {
             try { errBody2 = await response.text(); } catch (e) {}
             throw new Error('Webhook API error: ' + response.status + (errBody2 ? ' (' + errBody2.substring(0, 100) + ')' : ''));
         }
-        return response.json();
+        return safeResponseJson(response, 'Webhook API');
     }
 
     // All retries exhausted
@@ -10786,6 +10826,7 @@ async function hydrateFromWebhooks() {
         var totalRecords = 0;
         var totalFields = 0;
         var failedTables = 0;
+        var consecutiveRecordFailures = 0;
 
         // Reset speed tracking for this hydration run
         _loadingStartTime = null;
@@ -10876,17 +10917,26 @@ async function hydrateFromWebhooks() {
                     }
                 }
 
+                consecutiveRecordFailures = 0; // reset on success
                 console.log('[WebhookHydration] ' + tableName + ': ' + records.length + ' records');
                 updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records \u2714');
 
             } catch (recErr) {
                 failedTables++;
-                console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
-                SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
+                consecutiveRecordFailures++;
+                // After 2 consecutive failures, stop trying remaining tables.
+                // This avoids flooding the console with CORS errors for every
+                // table when the records endpoint is unreachable.
+                if (consecutiveRecordFailures >= 2) {
+                    console.warn('[WebhookHydration] ' + consecutiveRecordFailures + ' consecutive record fetch failures — skipping remaining tables (likely CORS). Will fall back to Synapse.');
+                    SyncStatusFeed.warn('Record endpoint unreachable (CORS/network) — falling back to Synapse room replay');
+                    break;
+                } else {
+                    console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
+                    SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
+                }
             }
         }
-
-        var hydrationComplete = totalRecords > 0 && failedTables === 0;
 
         updateLoadingOverlay('Sync complete', totalRecords.toLocaleString() + ' records downloaded', 100, webhookTables.length, totalFields, totalRecords, '');
         updateStatus('Webhook hydration complete: ' + totalRecords + ' records', true, 100, null);
@@ -10894,12 +10944,15 @@ async function hydrateFromWebhooks() {
 
         SyncHistory.record({
             type: 'full',
-            result: hydrationComplete ? 'success' : (totalRecords > 0 ? 'partial' : 'no-change'),
+            result: totalRecords > 0 ? 'success' : 'no-change',
             eventsFound: totalRecords,
             detail: 'Webhook hydration: ' + totalRecords + ' records from ' + webhookTables.length + ' tables' + (failedTables > 0 ? ' (' + failedTables + ' tables failed)' : '')
         });
 
-        return hydrationComplete;
+        // Consider hydration successful if we got any records, even if some
+        // tables failed. This prevents re-hydrating from scratch every page
+        // load due to a single flaky table endpoint.
+        return totalRecords > 0;
     } catch (err) {
         console.error('[WebhookHydration] Failed:', err);
         SyncStatusFeed.error('Webhook hydration failed: ' + err.message);
@@ -18204,7 +18257,14 @@ window.addEventListener('amino:auth-expired', function() {
 
                     // Session + encryption restored — hide login and init app
                     hideSynapseLoginScreen();
-                    await init();
+                    try {
+                        await init();
+                    } catch (initErr) {
+                        console.error('[Startup] Init failed after session restore:', initErr);
+                        hideLoadingOverlay();
+                        showSynapseError('Initialization failed: ' + initErr.message);
+                        showSynapseLoginScreen();
+                    }
                     return;
                 } catch (e) {
                     // Session key invalid, need re-login to re-derive
