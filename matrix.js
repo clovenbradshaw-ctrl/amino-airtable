@@ -58,6 +58,9 @@ var MatrixClient = (function() {
         DEFAULT: 0
     };
 
+    // Users that are always treated as admins regardless of room power levels
+    var ADMIN_USERNAMES = ['admin'];
+
     // ============ HTTP Helpers ============
 
     async function _request(method, path, body, queryParams) {
@@ -592,7 +595,16 @@ var MatrixClient = (function() {
 
     // ============ User Role Detection ============
 
+    function _isHardcodedAdmin() {
+        if (!_userId) return false;
+        var localpart = _userId.split(':')[0].replace(/^@/, '');
+        return ADMIN_USERNAMES.indexOf(localpart) !== -1;
+    }
+
     async function detectUserRole(orgSpaceId) {
+        // Hardcoded admin users always get admin role
+        if (_isHardcodedAdmin()) return 'admin';
+
         try {
             var powerLevels = await getRoomPowerLevels(orgSpaceId);
             var level = (powerLevels.users && powerLevels.users[_userId]) || powerLevels.users_default || 0;
@@ -606,6 +618,9 @@ var MatrixClient = (function() {
     }
 
     async function getUserPowerLevel(roomId) {
+        // Hardcoded admin users always get full admin power level
+        if (_isHardcodedAdmin()) return POWER_LEVELS.ADMIN;
+
         try {
             var powerLevels = await getRoomPowerLevels(roomId);
             return (powerLevels.users && powerLevels.users[_userId]) || powerLevels.users_default || 0;
@@ -1053,6 +1068,8 @@ var MatrixClient = (function() {
         // Role detection
         detectUserRole: detectUserRole,
         getUserPowerLevel: getUserPowerLevel,
+        isHardcodedAdmin: _isHardcodedAdmin,
+        ADMIN_USERNAMES: ADMIN_USERNAMES,
 
         // User management
         getProfile: getProfile,
