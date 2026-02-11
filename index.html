@@ -14416,12 +14416,30 @@ async function webhookFetch(path) {
 }
 
 // hydrateFromWebhooks: fetch current state from n8n webhook API and store in main app IndexedDB
+function _extractWebhookCursorTimestamp(record) {
+    if (!record || typeof record !== 'object') return null;
+    var candidates = [record.lastSynced, record.updatedAt, record.updated_at, record.modifiedTime, record.modified_time, record._updatedAt];
+    for (var i = 0; i < candidates.length; i++) {
+        var value = candidates[i];
+        if (!value) continue;
+        var ts = new Date(value).getTime();
+        if (!isNaN(ts)) return ts;
+    }
+    return null;
+}
+
+function _cursorIsoWithSafetyOverlap(tsMs) {
+    if (!tsMs || isNaN(tsMs)) return null;
+    var overlapMs = 2000; // small overlap to reduce edge-window drops
+    return new Date(Math.max(0, tsMs - overlapMs)).toISOString();
+}
+
 async function hydrateFromWebhooks() {
     try {
         var session = _loadSynapseSession();
         if (!session || !session.accessToken) {
             console.warn('[WebhookHydration] No Synapse session — cannot hydrate');
-            return false;
+            return { success: false, partial: false, totalTables: 0, failedTables: 0, totalRecords: 0, nextCursor: null };
         }
 
         console.log('[WebhookHydration] Starting hydration from n8n webhook API');
@@ -14435,7 +14453,7 @@ async function hydrateFromWebhooks() {
         if (webhookTables.length === 0) {
             console.log('[WebhookHydration] No tables returned from webhook API');
             SyncStatusFeed.warn('Webhook API returned 0 tables');
-            return false;
+            return { success: false, partial: false, totalTables: 0, failedTables: 0, totalRecords: 0, nextCursor: null };
         }
 
         console.log('[WebhookHydration] Found ' + webhookTables.length + ' tables');
@@ -14458,7 +14476,8 @@ async function hydrateFromWebhooks() {
         var totalRecords = 0;
         var totalFields = 0;
         var failedTables = 0;
-        var consecutiveRecordFailures = 0;
+        var successfulTables = 0;
+        var maxCursorTimestamp = 0;
 
         // Reset speed tracking for this hydration run
         _loadingStartTime = null;
@@ -14505,6 +14524,11 @@ async function hydrateFromWebhooks() {
                                 try { fields = JSON.parse(fields); } catch (e) { continue; }
                             }
 
+                            var cursorTs = _extractWebhookCursorTimestamp(rec);
+                            if (cursorTs && cursorTs > maxCursorTimestamp) {
+                                maxCursorTimestamp = cursorTs;
+                            }
+
                             // Auto-discover field metadata from record data
                             if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
                             var fieldIds = Object.keys(fields);
@@ -14549,24 +14573,15 @@ async function hydrateFromWebhooks() {
                     }
                 }
 
-                consecutiveRecordFailures = 0; // reset on success
+                successfulTables++;
                 console.log('[WebhookHydration] ' + tableName + ': ' + records.length + ' records');
-                updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records \u2714');
+                updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records ✔');
 
             } catch (recErr) {
                 failedTables++;
-                consecutiveRecordFailures++;
-                // After 2 consecutive failures, stop trying remaining tables.
-                // This avoids flooding the console with CORS errors for every
-                // table when the records endpoint is unreachable.
-                if (consecutiveRecordFailures >= 2) {
-                    console.warn('[WebhookHydration] ' + consecutiveRecordFailures + ' consecutive record fetch failures — skipping remaining tables (likely CORS). Will fall back to Synapse.');
-                    SyncStatusFeed.warn('Record endpoint unreachable (CORS/network) — falling back to Synapse room replay');
-                    break;
-                } else {
-                    console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
-                    SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
-                }
+                console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
+                SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
+                // Continue with remaining tables so one outage does not block all data.
             }
         }
 
@@ -14609,14 +14624,22 @@ async function hydrateFromWebhooks() {
             console.warn('[WebhookHydration] Failed to capture sync token (non-fatal):', e.message);
         }
 
-        // Consider hydration successful if we got any records, even if some
-        // tables failed. This prevents re-hydrating from scratch every page
-        // load due to a single flaky table endpoint.
-        return totalRecords > 0;
+        var nextCursor = _cursorIsoWithSafetyOverlap(maxCursorTimestamp);
+        var success = successfulTables > 0;
+        var partial = failedTables > 0;
+        return {
+            success: success,
+            partial: partial,
+            totalTables: webhookTables.length,
+            successfulTables: successfulTables,
+            failedTables: failedTables,
+            totalRecords: totalRecords,
+            nextCursor: nextCursor
+        };
     } catch (err) {
         console.error('[WebhookHydration] Failed:', err);
         SyncStatusFeed.error('Webhook hydration failed: ' + err.message);
-        return false;
+        return { success: false, partial: false, totalTables: 0, successfulTables: 0, failedTables: 0, totalRecords: 0, nextCursor: null };
     }
 }
 
@@ -14640,8 +14663,9 @@ async function webhookIncrementalSync() {
         var tablesData = await webhookFetch('/amino-tables');
         var tables = tablesData.tables || [];
         var totalUpdated = 0;
+        var failedTableIds = [];
+        var maxCursorTimestamp = new Date(lastWebhookSync).getTime() || 0;
 
-        var consecutiveSyncFailures = 0;
         for (var i = 0; i < tables.length; i++) {
             var tableId = tables[i].table_id;
             try {
@@ -14650,7 +14674,6 @@ async function webhookIncrementalSync() {
                     '&since=' + encodeURIComponent(lastWebhookSync)
                 );
                 var records = data.records || [];
-                consecutiveSyncFailures = 0;
                 if (records.length === 0) continue;
 
                 var dataRecords = [];
@@ -14660,6 +14683,10 @@ async function webhookIncrementalSync() {
                     if (!fields || typeof fields !== 'object') continue;
                     if (typeof fields === 'string') {
                         try { fields = JSON.parse(fields); } catch (e) { continue; }
+                    }
+                    var cursorTs = _extractWebhookCursorTimestamp(rec);
+                    if (cursorTs && cursorTs > maxCursorTimestamp) {
+                        maxCursorTimestamp = cursorTs;
                     }
                     dataRecords.push({
                         tableId: tableId,
@@ -14673,17 +14700,19 @@ async function webhookIncrementalSync() {
                     totalUpdated += dataRecords.length;
                 }
             } catch (tableErr) {
-                consecutiveSyncFailures++;
-                if (consecutiveSyncFailures >= 2) {
-                    console.warn('[WebhookSync] ' + consecutiveSyncFailures + ' consecutive sync failures — aborting remaining tables');
-                    break;
-                }
+                failedTableIds.push(tableId);
                 console.warn('[WebhookSync] Failed to sync table ' + tableId + ':', tableErr);
+                // Continue with remaining tables; isolate failures.
             }
         }
 
-        // Update sync cursor
-        await setSyncMeta('lastWebhookSync', new Date().toISOString());
+        // Update sync cursor using source-derived high-water mark
+        var nextCursor = _cursorIsoWithSafetyOverlap(maxCursorTimestamp) || lastWebhookSync;
+        await setSyncMeta('lastWebhookSync', nextCursor);
+
+        if (failedTableIds.length > 0) {
+            SyncStatusFeed.warn('Webhook incremental sync failed for ' + failedTableIds.length + ' table' + (failedTableIds.length !== 1 ? 's' : '') + ': ' + failedTableIds.join(', '));
+        }
 
         if (totalUpdated > 0) {
             window.dispatchEvent(new CustomEvent('amino:record-updated', {
@@ -14869,19 +14898,25 @@ async function init() {
 
         // Step 1: Hydrate current record state from DB API (fast, REST)
         var hydrated = false;
+        var webhookHydration = null;
         try {
             updateLoadingOverlay('Connecting to API...', 'Fetching tables...', 0, 0, 0, 0, null);
-            hydrated = await hydrateFromWebhooks();
+            webhookHydration = await hydrateFromWebhooks();
+            hydrated = !!(webhookHydration && webhookHydration.success);
             if (hydrated) {
                 // Save webhook sync cursor so future incremental syncs work
-                await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                var hydrationCursor = webhookHydration.nextCursor || new Date().toISOString();
+                await setSyncMeta('lastWebhookSync', hydrationCursor);
+                if (webhookHydration.partial) {
+                    SyncStatusFeed.warn('Webhook hydration was partial (' + webhookHydration.failedTables + ' table' + (webhookHydration.failedTables !== 1 ? 's' : '') + ' failed) — backfilling from Synapse');
+                }
             }
         } catch (webhookErr) {
             console.warn('[init] Webhook hydration failed, trying Synapse rooms:', webhookErr);
             SyncStatusFeed.warn('Webhook hydration failed: ' + webhookErr.message + ' — trying Synapse rooms');
         }
 
-        if (!hydrated) {
+        if (!hydrated || (webhookHydration && webhookHydration.partial)) {
             // Fall back to Synapse room replay (gets both records + history)
             updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
             hydrated = await hydrateFromSynapse();
