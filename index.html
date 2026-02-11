@@ -1905,6 +1905,13 @@
         .iface-page { display: none; flex-direction: column; min-height: 100%; }
         .iface-page.active { display: flex; }
 
+        /* Client page layout tuning */
+        .iface-page[data-page-id="clients"] {
+            padding: 16px 20px 20px;
+            min-height: 0;
+            height: 100%;
+        }
+
         /* Quick links grid */
         .iface-quick-links {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -1975,6 +1982,7 @@
             flex: 1;
             flex-direction: column;
             min-height: 0;
+            margin: 0;
         }
         .iface-page[data-page-id="clients"] .iface-data-table-block .iface-block-body {
             display: flex;
