@@ -86,6 +86,16 @@ export const FORMULA_RUNTIME = {
   REPT: (s, count) => (s || '').repeat(count),
   T: (x) => typeof x === 'string' ? x : '',
   ENCODE_URL_COMPONENT: (s) => encodeURIComponent(s || ''),
+  REGEX_MATCH: (text, pattern) => {
+    const source = text ?? '';
+    const regex = new RegExp(pattern ?? '');
+    return regex.test(String(source));
+  },
+  REGEX_REPLACE: (text, pattern, replacement) => {
+    const source = String(text ?? '');
+    const regex = new RegExp(pattern ?? '', 'g');
+    return source.replace(regex, replacement ?? '');
+  },
 
   // ── Logical ───────────────────────────────────────────────────
   IF: (condition, ifTrue, ifFalse) => condition ? ifTrue : ifFalse,
@@ -100,6 +110,7 @@ export const FORMULA_RUNTIME = {
   AND: (...args) => args.flat().every(Boolean),
   OR: (...args) => args.flat().some(Boolean),
   NOT: (x) => !x,
+  ISERROR: (x) => !!(x && typeof x === 'object' && x.__error === true),
   BLANK: () => null,
   ERROR: () => { throw new Error('ERROR()'); },
   COUNT: (...args) => args.flat().filter(x => typeof x === 'number').length,
@@ -262,6 +273,17 @@ function compileNode(node) {
       if (fnName === 'RECORD_ID') return (_r, m) => m ? m.recordId : null;
       if (fnName === 'CREATED_TIME') return (_r, m) => m && m.createdTime ? new Date(m.createdTime) : null;
       if (fnName === 'LAST_MODIFIED_TIME') return (_r, m) => m && m.lastModifiedTime ? new Date(m.lastModifiedTime) : null;
+
+      if (fnName === 'ISERROR') {
+        return (r, m) => {
+          try {
+            args[0]?.(r, m);
+            return false;
+          } catch (_e) {
+            return true;
+          }
+        };
+      }
 
       const runtimeFn = FORMULA_RUNTIME[fnName];
       if (!runtimeFn) throw new Error(`Unknown function: ${fnName}`);
