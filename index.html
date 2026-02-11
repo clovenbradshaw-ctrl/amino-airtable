@@ -3239,8 +3239,6 @@ function activateTab(tabId) {
         showEventsView().finally(function() { _tabNavInProgress = false; });
     } else if (tab.tableId === '_sync_status' && typeof showSyncStatusView === 'function') {
         showSyncStatusView().finally(function() { _tabNavInProgress = false; });
-    } else if (tab.tableId === '_matrix_rooms' && typeof showMatrixRoomsView === 'function') {
-        showMatrixRoomsView().finally(function() { _tabNavInProgress = false; });
     } else if (typeof showTable === 'function') {
         showTable(tab.tableId).finally(function() { _tabNavInProgress = false; });
     } else {
@@ -4173,7 +4171,6 @@ var SIDEBAR_STATE = {
     pinnedTables: [],
     recentTables: [],
     expandedSections: {
-        rooms: true,
         primary: true,
         pinned: true,
         recent: true,
@@ -8657,7 +8654,7 @@ function filterSidebarDOM(query) {
     // When searching, show all matching items and hide non-matching
     wrappers.forEach(function(wrapper) {
         var tableId = wrapper.getAttribute('data-table-id');
-        if (tableId === '_events' || tableId === '_sync_status' || tableId === '_matrix_rooms') {
+        if (tableId === '_events' || tableId === '_sync_status') {
             // Hide special items during search, show when not searching
             wrapper.style.display = searchQuery ? 'none' : '';
             return;
@@ -8887,69 +8884,6 @@ async function renderSidebar(forceRefresh) {
         syncStatusDiv.onclick = () => showSyncStatusView();
         syncStatusWrapper.appendChild(syncStatusDiv);
         tableList.appendChild(syncStatusWrapper);
-
-        // Matrix Rooms (all joined rooms)
-        var matrixRoomsWrapper = document.createElement('div');
-        matrixRoomsWrapper.className = 'table-wrapper';
-        matrixRoomsWrapper.setAttribute('data-table-id', '_matrix_rooms');
-
-        var matrixRoomsDiv = document.createElement('div');
-        matrixRoomsDiv.className = 'table-item matrix-rooms-item' + (currentTable === '_matrix_rooms' ? ' active' : '');
-        matrixRoomsDiv.innerHTML =
-            '<span class="table-icon type-room">' + TABLE_TYPE_CONFIG.room.icon + '</span>' +
-            '<span class="table-name">Matrix Rooms</span>';
-        matrixRoomsDiv.onclick = () => showMatrixRoomsView();
-        matrixRoomsWrapper.appendChild(matrixRoomsDiv);
-        tableList.appendChild(matrixRoomsWrapper);
-
-        // Rooms Section (Matrix/Synapse rooms)
-        var discoveredRooms = (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms) ? SynapseSync.tableRooms : [];
-        if (discoveredRooms.length > 0) {
-            var roomConfig = TABLE_TYPE_CONFIG.room;
-            tableList.appendChild(renderSectionHeader('rooms', 'Rooms', roomConfig.icon, roomConfig.color, discoveredRooms.length));
-
-            if (SIDEBAR_STATE.expandedSections.rooms) {
-                discoveredRooms.forEach(function(room) {
-                    var roomWrapper = document.createElement('div');
-                    roomWrapper.className = 'table-wrapper';
-                    roomWrapper.setAttribute('data-table-id', room.tableId);
-                    roomWrapper.setAttribute('data-room-id', room.roomId);
-
-                    var isActive = room.tableId === currentTable;
-                    var roomDiv = document.createElement('div');
-                    roomDiv.className = 'table-item room-item' + (isActive ? ' active' : '');
-                    if (isActive) {
-                        roomDiv.style.cssText = '--active-color: ' + roomConfig.color + ';';
-                        roomDiv.style.setProperty('--type-color', roomConfig.color);
-                    }
-
-                    var roomCount = tableCounts[room.tableId] || 0;
-                    var roomBarWidth = Math.round(getCountBarWidth(roomCount, maxCount) * 20);
-
-                    roomDiv.innerHTML =
-                        '<span class="table-icon type-room">' + roomConfig.icon + '</span>' +
-                        '<div style="flex: 1; min-width: 0;">' +
-                            '<span class="table-name">' + esc(room.name) + '</span>' +
-                            '<div class="room-meta">' + esc(room.roomId) + '</div>' +
-                        '</div>' +
-                        '<span class="count-bar-wrapper">' +
-                            '<span class="count-bar" style="width: ' + roomBarWidth + 'px; background: ' + roomConfig.color + ';"></span>' +
-                            '<span class="count-value" style="color: ' + roomConfig.color + ';">' + formatRecordCount(roomCount) + '</span>' +
-                        '</span>';
-
-                    roomDiv.onclick = (function(tableId) {
-                        return function() { selectTableView(tableId, '_default'); };
-                    })(room.tableId);
-
-                    roomWrapper.appendChild(roomDiv);
-                    tableList.appendChild(roomWrapper);
-                });
-            }
-
-            var roomsDivider = document.createElement('div');
-            roomsDivider.className = 'sidebar-divider';
-            tableList.appendChild(roomsDivider);
-        }
 
         // Pinned Section
         var pinnedTables = tables.filter(t => SIDEBAR_STATE.pinnedTables.includes(t.tableId));
@@ -10369,7 +10303,7 @@ function renderTableHeaders() {
 async function renderTable() {
     if (!currentTable) return;
     // Skip rendering if we're in a special view (Events or Sync Status)
-    if (currentTable === '_events' || currentTable === '_sync_status' || currentTable === '_matrix_rooms') return;
+    if (currentTable === '_events' || currentTable === '_sync_status') return;
 
     var renderNav = navVersion; // Capture current nav version for stale check
 
@@ -10989,298 +10923,7 @@ function formatSyncTimestamp(ts) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time;
 }
 
-// ============ Matrix Rooms View ============
-
-// Cache for fetched rooms so re-renders don't need a fresh API call
-var _matrixRoomsCache = null;
-var _matrixRoomsFilter = 'all'; // 'all', 'spaces', 'rooms'
-var _matrixRoomsSearch = '';
-
-async function showMatrixRoomsView() {
-    var myNav = ++navVersion;
-
-    openTableInTab('_matrix_rooms', 'Matrix Rooms', '\uD83D\uDCAD');
-
-    // Clean up other view state
-    expandedPayloads.clear();
-    loadedEvents = [];
-    eventsOffset = 0;
-    isLoadingMoreEvents = false;
-    hasMoreEvents = true;
-    if (eventsScrollHandler) {
-        var evContainer = document.querySelector('.table-container');
-        if (evContainer) evContainer.removeEventListener('scroll', eventsScrollHandler);
-        eventsScrollHandler = null;
-    }
-    if (changelogScrollHandler) {
-        var evContainer2 = document.querySelector('.table-container');
-        if (evContainer2) evContainer2.removeEventListener('scroll', changelogScrollHandler);
-        changelogScrollHandler = null;
-    }
-
-    currentTable = '_matrix_rooms';
-    currentView = null;
-
-    // Update sidebar selection
-    document.querySelectorAll('.sidebar .table-item').forEach(function(el) { el.classList.remove('active', 'expanded'); });
-    document.querySelectorAll('.sidebar .table-view-item').forEach(function(el) { el.classList.remove('active'); });
-    var matrixRoomsItem = document.querySelector('.sidebar .table-item.matrix-rooms-item');
-    if (matrixRoomsItem) matrixRoomsItem.classList.add('active');
-
-    // Hide view controls
-    document.getElementById('view-controls-bar').style.display = 'none';
-    document.getElementById('title').textContent = 'Matrix Rooms';
-    document.getElementById('pagination').style.display = 'none';
-
-    var toolbarViews = document.querySelector('.toolbar-views');
-    if (toolbarViews) toolbarViews.style.display = 'none';
-
-    // Show loading state
-    var container = document.querySelector('.table-container');
-    if (container) container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading Matrix rooms...</h3></div>';
-
-    // Reset filter state for fresh load
-    _matrixRoomsFilter = 'all';
-    _matrixRoomsSearch = '';
-    _matrixRoomsCache = null;
-
-    await fetchAndRenderMatrixRooms();
-}
-
-async function fetchAndRenderMatrixRooms() {
-    var container = document.querySelector('.table-container');
-    if (!container) return;
-
-    var session = _loadSynapseSession();
-    if (!session || !session.accessToken) {
-        container.innerHTML =
-            '<div class="matrix-rooms-view">' +
-            '<div class="loading-state"><h3>Not Connected to Matrix</h3>' +
-            '<p style="color: var(--text-muted); margin-top: 8px;">Sign in to your Matrix homeserver to view rooms.</p></div></div>';
-        return;
-    }
-
-    try {
-        // Fetch all joined rooms via /sync with no since token (full state snapshot)
-        var filter = JSON.stringify({
-            room: {
-                state: {
-                    types: ['m.room.name', 'm.room.create', 'm.room.topic', 'm.room.canonical_alias', 'm.room.join_rules', 'm.space.child', 'm.space.parent'],
-                    lazy_load_members: true
-                },
-                timeline: { limit: 0 },
-                ephemeral: { types: [] },
-                account_data: { types: [] }
-            },
-            account_data: { types: [] },
-            presence: { types: [] }
-        });
-
-        var res = await fetch(
-            SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=0&filter=' + encodeURIComponent(filter),
-            { headers: { 'Authorization': 'Bearer ' + session.accessToken } }
-        );
-
-        if (!res.ok) throw new Error('Sync failed with status ' + res.status);
-        var syncData = await safeResponseJson(res, 'Matrix rooms');
-
-        var joinedRooms = (syncData.rooms && syncData.rooms.join) || {};
-        var rooms = [];
-
-        for (var roomId in joinedRooms) {
-            var roomData = joinedRooms[roomId];
-            var stateEvents = (roomData.state && roomData.state.events) || [];
-
-            var name = null;
-            var topic = null;
-            var isSpace = false;
-            var alias = null;
-            var joinRule = null;
-            var childCount = 0;
-            var creator = null;
-            var isDM = false;
-            var parentSpaces = [];
-
-            for (var i = 0; i < stateEvents.length; i++) {
-                var evt = stateEvents[i];
-                if (!evt.content) continue;
-                if (evt.type === 'm.room.name') {
-                    name = evt.content.name;
-                } else if (evt.type === 'm.room.topic') {
-                    topic = evt.content.topic;
-                } else if (evt.type === 'm.room.create') {
-                    isSpace = evt.content.type === 'm.space';
-                    creator = evt.content.creator || evt.sender;
-                    if (evt.content.is_direct) isDM = true;
-                } else if (evt.type === 'm.room.canonical_alias') {
-                    alias = evt.content.alias;
-                } else if (evt.type === 'm.room.join_rules') {
-                    joinRule = evt.content.join_rule;
-                } else if (evt.type === 'm.space.child' && evt.content.via) {
-                    childCount++;
-                } else if (evt.type === 'm.space.parent' && evt.content.via) {
-                    parentSpaces.push(evt.state_key);
-                }
-            }
-
-            rooms.push({
-                roomId: roomId,
-                name: name || alias || roomId,
-                topic: topic,
-                isSpace: isSpace,
-                isDM: isDM,
-                alias: alias,
-                joinRule: joinRule,
-                childCount: childCount,
-                creator: creator,
-                parentSpaces: parentSpaces
-            });
-        }
-
-        // Sort: spaces first, then alphabetically by name
-        rooms.sort(function(a, b) {
-            if (a.isSpace && !b.isSpace) return -1;
-            if (!a.isSpace && b.isSpace) return 1;
-            return (a.name || '').localeCompare(b.name || '');
-        });
-
-        _matrixRoomsCache = rooms;
-        renderMatrixRoomsView();
-    } catch (err) {
-        console.error('[MatrixRooms] Failed to fetch rooms:', err);
-        container.innerHTML =
-            '<div class="matrix-rooms-view">' +
-            '<div class="sync-status-header"><h2>Matrix Rooms</h2>' +
-            '<span class="sync-status-badge error">Error</span></div>' +
-            '<div class="sync-status-card"><div class="card-label">Error</div>' +
-            '<div class="card-value" style="font-size: 14px; color: var(--text-muted);">' + esc(err.message) + '</div></div></div>';
-    }
-}
-
-function renderMatrixRoomsView() {
-    var container = document.querySelector('.table-container');
-    if (!container || !_matrixRoomsCache) return;
-
-    var rooms = _matrixRoomsCache;
-    var search = _matrixRoomsSearch.toLowerCase();
-    var filter = _matrixRoomsFilter;
-
-    // Apply filters
-    var filtered = rooms.filter(function(r) {
-        if (filter === 'spaces' && !r.isSpace) return false;
-        if (filter === 'rooms' && r.isSpace) return false;
-        if (search) {
-            var haystack = ((r.name || '') + ' ' + (r.alias || '') + ' ' + (r.roomId || '') + ' ' + (r.topic || '')).toLowerCase();
-            if (haystack.indexOf(search) === -1) return false;
-        }
-        return true;
-    });
-
-    var totalSpaces = rooms.filter(function(r) { return r.isSpace; }).length;
-    var totalRegular = rooms.length - totalSpaces;
-
-    var html = '<div class="matrix-rooms-view">';
-
-    // Header
-    html += '<div class="sync-status-header">';
-    html += '<h2>Matrix Rooms</h2>';
-    html += '<span class="sync-status-badge synced">' + rooms.length + ' joined</span>';
-    html += '</div>';
-
-    // Summary cards
-    html += '<div class="sync-status-cards">';
-    html += '<div class="sync-status-card"><div class="card-label">Total Joined</div><div class="card-value">' + rooms.length + '</div></div>';
-    html += '<div class="sync-status-card"><div class="card-label">Spaces</div><div class="card-value">' + totalSpaces + '</div></div>';
-    html += '<div class="sync-status-card"><div class="card-label">Rooms</div><div class="card-value">' + totalRegular + '</div></div>';
-    html += '</div>';
-
-    // Search & filter bar
-    html += '<div class="matrix-rooms-filter">';
-    html += '<input type="text" placeholder="Search rooms..." value="' + esc(_matrixRoomsSearch) + '" oninput="_matrixRoomsSearch = this.value; renderMatrixRoomsView();" />';
-    html += '<button class="filter-btn' + (filter === 'all' ? ' active' : '') + '" onclick="_matrixRoomsFilter=\'all\'; renderMatrixRoomsView();">All</button>';
-    html += '<button class="filter-btn' + (filter === 'spaces' ? ' active' : '') + '" onclick="_matrixRoomsFilter=\'spaces\'; renderMatrixRoomsView();">Spaces</button>';
-    html += '<button class="filter-btn' + (filter === 'rooms' ? ' active' : '') + '" onclick="_matrixRoomsFilter=\'rooms\'; renderMatrixRoomsView();">Rooms</button>';
-    html += '</div>';
-
-    // Showing count
-    if (search || filter !== 'all') {
-        html += '<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Showing ' + filtered.length + ' of ' + rooms.length + '</div>';
-    }
-
-    // Room cards grid
-    html += '<div class="matrix-rooms-grid">';
-
-    for (var i = 0; i < filtered.length; i++) {
-        var r = filtered[i];
-        var typeClass = r.isSpace ? 'space' : 'room';
-        var typeLabel = r.isSpace ? 'Space' : (r.isDM ? 'DM' : 'Room');
-        var typeBadgeClass = r.isSpace ? 'space' : (r.isDM ? 'dm' : 'room');
-        var iconClass = r.isSpace ? 'space-icon' : 'room-icon';
-        var iconChar = r.isSpace ? '\uD83C\uDFE2' : (r.isDM ? '\uD83D\uDCAC' : '\uD83D\uDCAD');
-
-        html += '<div class="matrix-room-card ' + typeClass + '">';
-
-        // Header row
-        html += '<div class="matrix-room-card-header">';
-        html += '<div class="matrix-room-card-icon ' + iconClass + '">' + iconChar + '</div>';
-        html += '<span class="matrix-room-card-name" title="' + esc(r.name) + '">' + esc(r.name) + '</span>';
-        html += '<span class="matrix-room-card-type ' + typeBadgeClass + '">' + typeLabel + '</span>';
-        html += '</div>';
-
-        // Topic
-        if (r.topic) {
-            html += '<div class="matrix-room-card-topic">' + esc(r.topic) + '</div>';
-        }
-
-        // Meta info
-        html += '<div class="matrix-room-card-meta">';
-        if (r.alias) {
-            html += '<span title="Alias">' + esc(r.alias) + '</span>';
-        }
-        if (r.joinRule) {
-            html += '<span title="Join rule">' + esc(r.joinRule) + '</span>';
-        }
-        if (r.isSpace && r.childCount > 0) {
-            html += '<span title="Child rooms">' + r.childCount + ' children</span>';
-        }
-        if (r.parentSpaces.length > 0) {
-            html += '<span title="Parent spaces">' + r.parentSpaces.length + ' parent' + (r.parentSpaces.length !== 1 ? 's' : '') + '</span>';
-        }
-        if (r.creator) {
-            html += '<span title="Creator">' + esc(r.creator) + '</span>';
-        }
-        html += '</div>';
-
-        // Room ID
-        html += '<div class="matrix-room-card-id" title="' + esc(r.roomId) + '">' + esc(r.roomId) + '</div>';
-
-        html += '</div>';
-    }
-
-    if (filtered.length === 0) {
-        html += '<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">';
-        if (search || filter !== 'all') {
-            html += '<p>No rooms match your filter.</p>';
-        } else {
-            html += '<p>No rooms found.</p>';
-        }
-        html += '</div>';
-    }
-
-    html += '</div>'; // grid
-    html += '</div>'; // view
-    container.innerHTML = html;
-
-    // Re-focus search input if user was typing
-    if (search) {
-        var searchInput = container.querySelector('.matrix-rooms-filter input');
-        if (searchInput) {
-            searchInput.focus();
-            searchInput.setSelectionRange(search.length, search.length);
-        }
-    }
-}
-
+// ============ Synapse Sync ============
 // ============ Synapse Sync ============
 
 // SynapseSync: real-time sync from Matrix room timelines via /sync long-poll
@@ -11761,6 +11404,131 @@ async function hydrateFromSynapse() {
         return totalProcessed > 0;
     } catch (err) {
         console.error('[Hydration] Failed:', err);
+        return false;
+    }
+}
+
+// ============ Matrix History Backfill ============
+
+// After hydrating current record state from the DB API, replay Matrix room
+// timelines to build field-level change history.  This does NOT overwrite
+// current record data — it only writes to the fieldHistory IndexedDB store.
+async function backfillHistoryFromMatrix() {
+    try {
+        var session = _loadSynapseSession();
+        if (!session || !session.accessToken) {
+            console.warn('[HistoryBackfill] No Synapse session — skipping');
+            return false;
+        }
+
+        // Use SynapseSync.tableRooms (already populated by ensureRoomMembership)
+        var tableRooms = (SynapseSync.tableRooms || []).filter(function(tr) { return !!tr.roomId; });
+        if (tableRooms.length === 0) {
+            console.log('[HistoryBackfill] No table rooms — skipping history backfill');
+            return false;
+        }
+
+        console.log('[HistoryBackfill] Backfilling history from ' + tableRooms.length + ' Matrix rooms');
+        SyncStatusFeed.log('Backfilling field history from Matrix...');
+        updateLoadingOverlay('Backfilling history...', 'Reading ' + tableRooms.length + ' rooms', 0, tableRooms.length, 0, 0, null);
+
+        var totalEvents = 0;
+
+        for (var idx = 0; idx < tableRooms.length; idx++) {
+            var tr = tableRooms[idx];
+            var tableName = tr.name || tr.tableId;
+            var progressPct = Math.round((idx / tableRooms.length) * 100);
+            updateLoadingOverlay('Backfilling history — ' + tableName, 'Room ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, 0, totalEvents, null);
+
+            // Read schema state events (fields) for this room
+            try {
+                var stateRes = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(tr.roomId) + '/state', {
+                    headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                });
+                if (stateRes.ok) {
+                    var stateEvents = await safeResponseJson(stateRes, 'Room state');
+                    for (var si = 0; si < stateEvents.length; si++) {
+                        var sevt = stateEvents[si];
+                        if (sevt.type === 'law.firm.schema.field' && sevt.content) {
+                            var fieldMeta = {
+                                tableId: tr.tableId,
+                                fieldId: sevt.content.fieldId || sevt.content.field_id || sevt.state_key,
+                                fieldName: sevt.content.name || sevt.content.fieldName || sevt.state_key,
+                                fieldType: sevt.content.type || sevt.content.fieldType || 'unknown',
+                                options: sevt.content.options
+                            };
+                            if (!META_FIELDS[tr.tableId]) META_FIELDS[tr.tableId] = {};
+                            // Only update if currently a placeholder or missing
+                            var existing = META_FIELDS[tr.tableId][fieldMeta.fieldId];
+                            if (!existing || existing._placeholder) {
+                                META_FIELDS[tr.tableId][fieldMeta.fieldId] = fieldMeta;
+                                await saveField(fieldMeta);
+                            }
+                        }
+                    }
+                }
+            } catch (stateErr) {
+                console.warn('[HistoryBackfill] State read failed for ' + tableName + ':', stateErr);
+            }
+
+            // Paginate timeline to collect mutation events for field history
+            var from = null;
+            var roomEvents = 0;
+            while (true) {
+                try {
+                    var msgUrl = SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(tr.roomId) + '/messages?dir=f&limit=100';
+                    if (from) msgUrl += '&from=' + encodeURIComponent(from);
+                    msgUrl += '&filter=' + encodeURIComponent(JSON.stringify({ types: ['law.firm.schema.object', 'law.firm.record.mutate'] }));
+
+                    var msgRes = await fetch(msgUrl, {
+                        headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                    });
+                    if (!msgRes.ok) break;
+
+                    var msgData = await safeResponseJson(msgRes, 'Room messages');
+                    var chunk = msgData.chunk || [];
+                    if (chunk.length === 0) break;
+
+                    // Convert Matrix events to the format processEvents expects
+                    // and process them — processEvents writes field history entries
+                    var convertedEvents = [];
+                    for (var j = 0; j < chunk.length; j++) {
+                        var mevt = chunk[j];
+                        if ((mevt.type === 'law.firm.schema.object' || mevt.type === 'law.firm.record.mutate') && mevt.content) {
+                            var synEvent = SynapseSync._convertSchemaObjectEvent(mevt, tr.tableId);
+                            if (synEvent) convertedEvents.push(synEvent);
+                        }
+                    }
+
+                    if (convertedEvents.length > 0) {
+                        await processEvents(convertedEvents);
+                        roomEvents += convertedEvents.length;
+                        totalEvents += convertedEvents.length;
+                    }
+
+                    if (roomEvents % 50 === 0 && roomEvents > 0) {
+                        updateLoadingOverlay('Backfilling history — ' + tableName, 'Room ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, 0, totalEvents, roomEvents + ' events in this room...');
+                    }
+
+                    from = msgData.end;
+                    if (!from) break;
+                } catch (pageErr) {
+                    console.warn('[HistoryBackfill] Pagination error for ' + tableName + ':', pageErr);
+                    break;
+                }
+            }
+
+            if (roomEvents > 0) {
+                console.log('[HistoryBackfill] ' + tableName + ': ' + roomEvents + ' events');
+            }
+        }
+
+        SyncStatusFeed.success('History backfill complete: ' + totalEvents + ' events from ' + tableRooms.length + ' rooms');
+        console.log('[HistoryBackfill] Complete: ' + totalEvents + ' total events');
+        return totalEvents > 0;
+    } catch (err) {
+        console.error('[HistoryBackfill] Failed:', err);
+        SyncStatusFeed.error('History backfill failed: ' + err.message);
         return false;
     }
 }
@@ -12281,7 +12049,7 @@ async function init() {
 
         showLoadingOverlay();
 
-        // Try webhook API first (faster, direct REST), fall back to Synapse room replay
+        // Step 1: Hydrate current record state from DB API (fast, REST)
         var hydrated = false;
         try {
             updateLoadingOverlay('Connecting to API...', 'Fetching tables...', 0, 0, 0, 0, null);
@@ -12296,12 +12064,10 @@ async function init() {
         }
 
         if (!hydrated) {
-            // Fall back to Synapse room replay
+            // Fall back to Synapse room replay (gets both records + history)
             updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
             hydrated = await hydrateFromSynapse();
         }
-
-        hideLoadingOverlay();
 
         if (hydrated) {
             // Reload metadata after hydration
@@ -12318,16 +12084,29 @@ async function init() {
                 META_VIEWS[v.tableId][v.viewId] = v;
             });
 
+            // Render UI immediately so user can start working
             await renderSidebar(true);
             var firstTable = Object.keys(META_TABLES)[0];
             if (firstTable) {
                 await showTable(firstTable);
+            }
+
+            // Step 2: Backfill field history from Matrix room timelines.
+            // This runs after the UI is visible so the user isn't blocked.
+            try {
+                updateLoadingOverlay('Backfilling history...', 'Reading Matrix room timelines...', 0, 0, 0, 0, null);
+                await backfillHistoryFromMatrix();
+            } catch (backfillErr) {
+                console.warn('[init] History backfill failed (non-fatal):', backfillErr);
+                SyncStatusFeed.warn('History backfill failed: ' + backfillErr.message);
             }
         } else {
             // No data from either source — show empty state
             updateStatus('No data available — waiting for sync', true, null, null);
             await renderSidebar(true);
         }
+
+        hideLoadingOverlay();
     }
 
     updateStatus('Up to date', true, null, null);
