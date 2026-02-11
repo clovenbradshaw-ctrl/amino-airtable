@@ -14195,6 +14195,7 @@ var SynapseSync = {
     tableRooms: [],       // [{ tableId, roomId, name }]
     roomToTable: {},      // roomId → tableId
     _backoffMs: 1000,
+    _lastEventTime: 0,    // timestamp of last real-time event received
 
     async discoverTableRooms() {
         // Discover table rooms via a single /sync call with a state filter.
@@ -14486,6 +14487,7 @@ var SynapseSync = {
         }
 
         if (newEvents > 0) {
+            this._lastEventTime = Date.now();
             console.log('[SynapseSync] Processed ' + newEvents + ' new events');
             // Re-render current table if visible
             if (currentTable) {
@@ -15123,6 +15125,11 @@ async function hydrateFromWebhooks() {
     }
 }
 
+// Cached table list for webhookIncrementalSync — refreshed every 10 minutes
+var _webhookTablesCache = null;
+var _webhookTablesCacheTime = 0;
+var WEBHOOK_TABLES_CACHE_TTL = 600000; // 10 minutes
+
 // Incremental sync from webhooks — fetch records updated since last webhook sync
 async function webhookIncrementalSync() {
     try {
@@ -15140,8 +15147,16 @@ async function webhookIncrementalSync() {
             return 0;
         }
 
-        var tablesData = await webhookFetch('/amino-tables');
-        var tables = tablesData.tables || [];
+        // Use cached table list if fresh enough (table list rarely changes)
+        var tables;
+        if (_webhookTablesCache && (Date.now() - _webhookTablesCacheTime) < WEBHOOK_TABLES_CACHE_TTL) {
+            tables = _webhookTablesCache;
+        } else {
+            var tablesData = await webhookFetch('/amino-tables');
+            tables = tablesData.tables || [];
+            _webhookTablesCache = tables;
+            _webhookTablesCacheTime = Date.now();
+        }
         var totalUpdated = 0;
         var failedTableIds = [];
         var maxCursorTimestamp = new Date(lastWebhookSync).getTime() || 0;
@@ -15451,16 +15466,54 @@ async function init() {
     // Start Synapse real-time sync (long-poll /sync for room events)
     SynapseSync.start();
 
-    // Poll Postgres for changes every 60 seconds via webhookIncrementalSync.
+    // Poll Postgres for changes via webhookIncrementalSync.
     // This catches external Airtable edits faster than waiting for SynapseSync
     // to pick up the n8n-written Matrix events (up to 30-minute n8n poll gap).
-    setInterval(async function() {
-        try {
-            await webhookIncrementalSync();
-        } catch (e) {
-            console.warn('[IncrementalSync] Poll failed:', e.message);
+    // Polls every 5 minutes (safety-net role), pauses when tab is hidden,
+    // and skips if SynapseSync recently delivered data.
+    var WEBHOOK_POLL_INTERVAL = 300000; // 5 minutes
+    var _webhookPollTimer = null;
+
+    function _scheduleWebhookPoll() {
+        if (_webhookPollTimer) clearTimeout(_webhookPollTimer);
+        _webhookPollTimer = setTimeout(async function _webhookPollTick() {
+            _webhookPollTimer = null;
+            // Skip if tab is hidden — will resume on visibilitychange
+            if (document.hidden) return;
+            // Skip if SynapseSync delivered data in the last 4 minutes
+            // (the real-time sync is already keeping us current)
+            if (SynapseSync._lastEventTime && (Date.now() - SynapseSync._lastEventTime) < 240000) {
+                console.log('[IncrementalSync] Skipping — SynapseSync active recently');
+                _scheduleWebhookPoll();
+                return;
+            }
+            try {
+                await webhookIncrementalSync();
+            } catch (e) {
+                console.warn('[IncrementalSync] Poll failed:', e.message);
+            }
+            _scheduleWebhookPoll();
+        }, WEBHOOK_POLL_INTERVAL);
+    }
+
+    _scheduleWebhookPoll();
+
+    // Pause/resume webhook polling on tab visibility changes
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            // Tab hidden — cancel pending poll
+            if (_webhookPollTimer) {
+                clearTimeout(_webhookPollTimer);
+                _webhookPollTimer = null;
+            }
+        } else {
+            // Tab visible again — schedule next poll (won't fire immediately;
+            // the auto-sync on tab refocus already handles the immediate case)
+            if (!_webhookPollTimer) {
+                _scheduleWebhookPoll();
+            }
         }
-    }, 60000);
+    });
 
     // Drain any offline-queued edits from a previous session
     try {

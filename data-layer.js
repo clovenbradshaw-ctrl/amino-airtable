@@ -1393,14 +1393,20 @@ var AminoData = (function() {
 
     // ============ Polling ============
 
+    var _pollIntervalMs = DEFAULT_POLL_INTERVAL;
+    var _pollVisibilityHandler = null;
+
     function startPolling(intervalMs) {
-        intervalMs = intervalMs || DEFAULT_POLL_INTERVAL;
+        _pollIntervalMs = intervalMs || DEFAULT_POLL_INTERVAL;
 
         if (_pollInterval) {
             clearInterval(_pollInterval);
         }
 
         var poll = async function() {
+            // Skip if tab is hidden — will resume on visibilitychange
+            if (typeof document !== 'undefined' && document.hidden) return;
+
             for (var i = 0; i < _tableIds.length; i++) {
                 var tableId = _tableIds[i];
                 try {
@@ -1421,14 +1427,36 @@ var AminoData = (function() {
             }
         };
 
-        _pollInterval = setInterval(poll, intervalMs);
+        _pollInterval = setInterval(poll, _pollIntervalMs);
         poll(); // Run immediately on start
+
+        // Pause/resume polling on tab visibility changes
+        if (typeof document !== 'undefined' && !_pollVisibilityHandler) {
+            _pollVisibilityHandler = function() {
+                if (document.hidden) {
+                    // Tab hidden — pause polling
+                    if (_pollInterval) {
+                        clearInterval(_pollInterval);
+                        _pollInterval = null;
+                    }
+                } else if (!_pollInterval && _tableIds.length > 0) {
+                    // Tab visible again — resume polling
+                    _pollInterval = setInterval(poll, _pollIntervalMs);
+                    poll();
+                }
+            };
+            document.addEventListener('visibilitychange', _pollVisibilityHandler);
+        }
     }
 
     function stopPolling() {
         if (_pollInterval) {
             clearInterval(_pollInterval);
             _pollInterval = null;
+        }
+        if (_pollVisibilityHandler) {
+            document.removeEventListener('visibilitychange', _pollVisibilityHandler);
+            _pollVisibilityHandler = null;
         }
     }
 
