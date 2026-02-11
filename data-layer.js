@@ -726,7 +726,8 @@ var AminoData = (function() {
             // Metadata from event payload
             source: content.source || null,
             sourceTimestamp: content.sourceTimestamp || null,
-            actor: (payload && payload._a) || null
+            actor: (payload && payload._a) || null,
+            device: (payload && payload._d) || content.device || null
         };
         // Include flat ops if that was the format used
         if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
@@ -1122,6 +1123,8 @@ var AminoData = (function() {
         var encPayload = await encryptEventPayload(fields);
         encPayload.recordId = recordId;
         encPayload.op = op || 'ALT';
+        encPayload.actor = _userId;
+        encPayload.device = MatrixClient.getDeviceId() || null;
 
         return MatrixClient.sendEvent(roomId, 'law.firm.record.mutate', encPayload);
     }
@@ -1564,6 +1567,7 @@ var AminoData = (function() {
                         source: content.source || null,
                         sourceTimestamp: content.sourceTimestamp || null,
                         actor: payload._a || null,
+                        device: payload._d || content.device || null,
                         fieldOps: fieldOps
                     });
                 }
@@ -1677,6 +1681,7 @@ var AminoData = (function() {
                     source: content.source || null,
                     sourceTimestamp: content.sourceTimestamp || null,
                     actor: payload._a || null,
+                    device: payload._d || content.device || null,
                     formatVersion: payload._f || null,
                     set: content.set || (payload._set ? payload._set : null),
                     fieldOps: payload.fields || {}
