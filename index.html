@@ -22695,13 +22695,31 @@ var InterfaceApp = (function() {
         } catch (e) {
             console.warn('[Interface] Data fetch error for table', tableId, ':', e.message);
         }
+
+        // Translate field IDs to human-readable field names using META_FIELDS.
+        // IN_MEMORY_DATA stores fields keyed by field IDs (e.g. "fldAbc123"),
+        // but the interface schema references fields by name (e.g. "Client Name").
+        var fieldMeta = (typeof META_FIELDS !== 'undefined' && META_FIELDS[tableId]) ? META_FIELDS[tableId] : null;
+        if (fieldMeta) {
+            records = records.map(function(r) {
+                var rawFields = r.fields || {};
+                var translated = {};
+                Object.keys(rawFields).forEach(function(key) {
+                    var meta = fieldMeta[key];
+                    var name = (meta && meta.fieldName) ? meta.fieldName : key;
+                    translated[name] = rawFields[key];
+                });
+                return { recordId: r.recordId, fields: translated };
+            });
+        }
+
         _tableDataCache[tableId] = { records: records, lastFetch: Date.now() };
         return records;
     }
 
     // ============ Data Processing (SEG operations) ============
 
-    function _applySegment(records, segment, blockSearchQuery) {
+    function _applySegment(records, segment, blockSearchQuery, activeFilters) {
         if (!records || !records.length) return records;
         var result = records.slice();
 
@@ -22718,11 +22736,28 @@ var InterfaceApp = (function() {
             });
         }
 
+        // Apply active dropdown filters (field-specific)
+        if (activeFilters) {
+            var filterKeys = Object.keys(activeFilters);
+            for (var fi = 0; fi < filterKeys.length; fi++) {
+                var af = activeFilters[filterKeys[fi]];
+                if (!af || !af.field || !af.value) continue;
+                var afField = af.field;
+                var afValue = String(af.value).toLowerCase();
+                result = result.filter(function(r) {
+                    var val = _findFieldValue(r.fields || {}, afField);
+                    if (val == null) return false;
+                    var sv = Array.isArray(val) ? val.join(', ') : String(val);
+                    return sv.toLowerCase().includes(afValue);
+                });
+            }
+        }
+
         // Apply segment filter
         if (segment && segment.filter) {
             var f = segment.filter;
             result = result.filter(function(r) {
-                var val = (r.fields || {})[f.field];
+                var val = _findFieldValue(r.fields || {}, f.field);
                 if (f.op === 'isToday') {
                     if (!val) return false;
                     var d = new Date(val);
@@ -22749,8 +22784,8 @@ var InterfaceApp = (function() {
             var sf = segment.sort.field;
             var dir = segment.sort.dir === 'desc' ? -1 : 1;
             result.sort(function(a, b) {
-                var av = (a.fields || {})[sf];
-                var bv = (b.fields || {})[sf];
+                var av = _findFieldValue(a.fields || {}, sf);
+                var bv = _findFieldValue(b.fields || {}, sf);
                 if (av == null && bv == null) return 0;
                 if (av == null) return 1;
                 if (bv == null) return -1;
@@ -22904,7 +22939,7 @@ var InterfaceApp = (function() {
         return html;
     }
 
-    function _renderDataTable(block, records, pageState) {
+    function _renderDataTable(block, records, pageState, allRecords) {
         var columns = block.columns || [];
         var filters = block.filters || [];
         var ps = pageState || { page: 0, pageSize: block.segment && block.segment.pageSize || 50 };
@@ -22926,11 +22961,12 @@ var InterfaceApp = (function() {
         if (filters.length) {
             html += '<div class="iface-filters">';
             filters.forEach(function(flt) {
+                var activeVal = (block._activeFilters && block._activeFilters[flt.id]) ? block._activeFilters[flt.id].value : '';
                 html += '<select class="iface-filter-dropdown" data-filter-id="' + _esc(flt.id) + '" onchange="InterfaceApp.onFilterChange(\'' + _esc(block.id) + '\', \'' + _esc(flt.id) + '\', this.value)">';
                 html += '<option value="">' + _esc(flt.label) + '</option>';
-                // Build unique values from records
+                // Build unique values from ALL records (use allRecords to avoid narrowing options)
                 var vals = {};
-                records.forEach(function(r) {
+                (allRecords || records).forEach(function(r) {
                     var v = _findFieldValue(r.fields || {}, flt.field);
                     if (v != null && v !== '') {
                         var sv = Array.isArray(v) ? v.join(', ') : String(v);
@@ -22938,7 +22974,8 @@ var InterfaceApp = (function() {
                     }
                 });
                 Object.keys(vals).sort().forEach(function(v) {
-                    html += '<option value="' + _esc(v) + '">' + _esc(v) + '</option>';
+                    var sel = (v === activeVal) ? ' selected' : '';
+                    html += '<option value="' + _esc(v) + '"' + sel + '>' + _esc(v) + '</option>';
                 });
                 html += '</select>';
             });
@@ -23108,7 +23145,7 @@ var InterfaceApp = (function() {
                 tableId = _resolveTableId(block.source);
                 records = tableId ? await _getTableRecords(tableId) : [];
                 searchQ = _blockSearchState[block.id] || '';
-                records = _applySegment(records, block.segment, searchQ);
+                records = _applySegment(records, block.segment, searchQ, block._activeFilters);
                 html = _renderCardList(block, records);
                 break;
 
@@ -23116,17 +23153,17 @@ var InterfaceApp = (function() {
                 tableId = _resolveTableId(block.source);
                 records = tableId ? await _getTableRecords(tableId) : [];
                 searchQ = _blockSearchState[block.id] || '';
-                records = _applySegment(records, block.segment, searchQ);
+                records = _applySegment(records, block.segment, searchQ, block._activeFilters);
                 html = _renderTimeline(block, records);
                 break;
 
             case 'data-table':
                 tableId = _resolveTableId(block.source);
-                records = tableId ? await _getTableRecords(tableId) : [];
+                var allTableRecords = tableId ? await _getTableRecords(tableId) : [];
                 searchQ = _blockSearchState[block.id] || '';
-                records = _applySegment(records, block.segment, searchQ);
+                records = _applySegment(allTableRecords, block.segment, searchQ, block._activeFilters);
                 pageState = _tablePaginationState[block.id] || { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
-                html = _renderDataTable(block, records, pageState);
+                html = _renderDataTable(block, records, pageState, allTableRecords);
                 break;
 
             case 'tab-container':
@@ -23224,7 +23261,7 @@ var InterfaceApp = (function() {
         var filterDef = block.filters.find(function(f) { return f.id === filterId; });
         if (!filterDef) return;
 
-        // Store active filter in block segment
+        // Store active filter in block (applied via _applySegment)
         if (!block._activeFilters) block._activeFilters = {};
         if (value) {
             block._activeFilters[filterId] = { field: filterDef.field, op: 'contains', value: value };
@@ -23232,16 +23269,8 @@ var InterfaceApp = (function() {
             delete block._activeFilters[filterId];
         }
 
-        // Rebuild segment filter as compound
-        var origFilter = block.segment ? block.segment.filter : null;
-        var activeFilters = Object.values(block._activeFilters || {});
-        if (activeFilters.length) {
-            // We'll apply active filters as a search query for simplicity
-            _blockSearchState[blockId] = value;
-        } else {
-            delete _blockSearchState[blockId];
-        }
-
+        // Reset pagination when filter changes
+        _tablePaginationState[blockId] = { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
         renderPage(_activePage);
     }
 
