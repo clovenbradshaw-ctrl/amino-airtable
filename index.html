@@ -25020,23 +25020,18 @@ async function saveUserProfile() {
     statusEl.textContent = 'Saving...';
 
     try {
-        var promises = [];
-
         // Update display name if changed
         var oldName = _cachedUserProfile ? _cachedUserProfile.displayName : '';
         if (newName !== oldName) {
-            promises.push(MatrixClient.setDisplayName(newName));
+            await MatrixClient.setDisplayName(newName);
         }
 
-        // Store email in account data (Matrix 3pid binding requires email verification flow,
-        // so we store it in account data for simplicity)
+        // Persist email into both account data and Synapse user 3pid list so
+        // Matrix email password reset can discover the address.
         var oldEmail = _cachedUserProfile ? _cachedUserProfile.email : '';
         if (newEmail !== oldEmail) {
-            promises.push(MatrixClient.setAccountData('law.firm.user.email', { email: newEmail }));
-        }
-
-        if (promises.length > 0) {
-            await Promise.all(promises);
+            await MatrixClient.setAccountData('law.firm.user.email', { email: newEmail });
+            await syncUserEmailThreepid(newEmail);
         }
 
         // Update cache
@@ -25058,6 +25053,62 @@ async function saveUserProfile() {
         statusEl.textContent = 'Failed to save: ' + e.message;
     } finally {
         saveBtn.disabled = false;
+    }
+}
+
+async function syncUserEmailThreepid(email) {
+    var session = _loadSynapseSession();
+    if (!session || !session.userId || !session.accessToken) {
+        throw new Error('Not logged in.');
+    }
+
+    var userPath = SYNAPSE_HOMESERVER_URL + '/_synapse/admin/v2/users/' + encodeURIComponent(session.userId);
+    var headers = {
+        'Authorization': 'Bearer ' + session.accessToken,
+        'Content-Type': 'application/json'
+    };
+
+    // Read current threepids so we only replace the email entry and keep others.
+    var readRes = await fetch(userPath, {
+        method: 'GET',
+        headers: headers
+    });
+
+    if (!readRes.ok) {
+        if (readRes.status === 403) {
+            throw new Error('Your account does not have permission to sync email to Matrix password-reset records.');
+        }
+        var readErr = await readRes.json().catch(function() { return {}; });
+        throw new Error(readErr.error || 'Failed to load current Matrix email bindings (HTTP ' + readRes.status + ')');
+    }
+
+    var userData = await readRes.json();
+    var threepids = Array.isArray(userData.threepids) ? userData.threepids.slice() : [];
+
+    // Remove any existing email entries and add the newly requested one.
+    threepids = threepids.filter(function(item) {
+        return item && item.medium !== 'email';
+    });
+
+    if (email) {
+        threepids.push({
+            medium: 'email',
+            address: email
+        });
+    }
+
+    var writeRes = await fetch(userPath, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify({ threepids: threepids })
+    });
+
+    if (!writeRes.ok) {
+        if (writeRes.status === 403) {
+            throw new Error('Your account does not have permission to sync email to Matrix password-reset records.');
+        }
+        var writeErr = await writeRes.json().catch(function() { return {}; });
+        throw new Error(writeErr.error || 'Failed to save Matrix password-reset email (HTTP ' + writeRes.status + ')');
     }
 }
 
