@@ -2649,6 +2649,14 @@
         }
         .view-search-input:focus { outline: none; border-color: var(--primary-500); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15); width: 220px; }
         .view-search-input::placeholder { color: var(--text-muted); }
+        .search-to-filter-btn {
+            display: none; position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+            background: var(--primary-500); color: #fff; border: none; border-radius: var(--radius-xs);
+            font-size: 11px; padding: 2px 7px; cursor: pointer; white-space: nowrap;
+            line-height: 1.4; transition: background var(--transition-fast);
+        }
+        .search-to-filter-btn:hover { background: var(--primary-600); }
+        .search-to-filter-btn.visible { display: inline-block; }
 
         /* View Control Dropdowns */
         .view-control-dropdown {
@@ -4792,6 +4800,7 @@
                 <div class="view-search-wrapper">
                     <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     <input type="text" class="view-search-input" id="view-search-input" placeholder="Find in view" oninput="handleViewSearch(this.value)">
+                    <button class="search-to-filter-btn" id="search-to-filter-btn" onclick="convertSearchToFilter()" title="Save as filter">Filter</button>
                 </div>
             </div>
             <div class="status-bar">
@@ -21100,6 +21109,37 @@ function matchesSearchTokens(text, tokens) {
 
 // Check if a record matches a single filter
 function matchesFilter(record, filter) {
+    // "Any field" filter: check all fields for a match
+    if (filter.fieldId === '_any') {
+        var filterValue = (filter.value || '').toLowerCase();
+        var fields = record.fields || {};
+        for (var key in fields) {
+            if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+            var strValue = collectSearchableText(fields[key]).toLowerCase();
+            switch (filter.operator) {
+                case 'contains':
+                    if (strValue.includes(filterValue)) return true; break;
+                case 'equals':
+                    if (strValue === filterValue) return true; break;
+                case 'not_equals':
+                    break; // handled below
+                case 'is_empty':
+                    break; // not meaningful for "any field"
+                case 'is_not_empty':
+                    break; // not meaningful for "any field"
+            }
+        }
+        // For not_equals, ensure NO field equals the value
+        if (filter.operator === 'not_equals') {
+            for (var k in fields) {
+                if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
+                if (collectSearchableText(fields[k]).toLowerCase() === filterValue) return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
     var value = getCellValue(record, filter.fieldId);
     var strValue = valueToString(value).toLowerCase();
     var filterValue = (filter.value || '').toLowerCase();
@@ -21402,8 +21442,11 @@ function renderFilterDropdown(filterText) {
         html += '<div class="filter-row">';
         html += '<select onchange="updateFilter(' + i + ', \'field\', this.value)">';
 
+        // Add "Any field" option at the top
+        html += '<option value="_any"' + (filter.fieldId === '_any' ? ' selected' : '') + '>Any field</option>';
+
         // Add sorted fields to dropdown, ensuring selected field is always included
-        var selectedInList = false;
+        var selectedInList = filter.fieldId === '_any';
         for (var j = 0; j < sortedFields.length; j++) {
             var sf = sortedFields[j];
             var sel = filter.fieldId === sf.fieldId ? ' selected' : '';
@@ -21461,6 +21504,8 @@ function addFilter() {
 // Update filter
 function updateFilter(index, prop, value) {
     if (currentFilters[index]) {
+        // Map 'field' to 'fieldId' for consistency
+        if (prop === 'field') prop = 'fieldId';
         currentFilters[index][prop] = value;
         renderFilterDropdown();
         applyFilters();
@@ -21845,11 +21890,60 @@ var _viewSearchTimer = null;
 function handleViewSearch(query) {
     clearTimeout(_viewSearchTimer);
     var q = query.toLowerCase();
+    // Show/hide "Filter" button based on whether there is search text
+    var filterBtn = document.getElementById('search-to-filter-btn');
+    if (filterBtn) {
+        if (q.trim()) {
+            filterBtn.classList.add('visible');
+        } else {
+            filterBtn.classList.remove('visible');
+        }
+    }
     _viewSearchTimer = setTimeout(function() {
         currentSearchQuery = q;
         if (_urlStateBootstrapped) persistUrlState();
         renderTable();
     }, 150);
+}
+
+// Convert current search query into a persistent "Any field contains" filter
+function convertSearchToFilter() {
+    // Read directly from input in case debounce hasn't fired yet
+    var searchInput = document.getElementById('view-search-input');
+    var query = searchInput ? searchInput.value.trim().toLowerCase() : currentSearchQuery;
+    if (!query) return;
+    clearTimeout(_viewSearchTimer);
+
+    var filterData = { fieldId: '_any', operator: 'contains', value: query };
+
+    // If on default view, go through the create-view-from-default flow
+    if (isDefaultView()) {
+        promptCreateViewFromDefault('filter', filterData,
+            'To save search as a filter, please create a new view. The default view shows all records without filters.');
+        return;
+    }
+
+    // Add the filter
+    currentFilters.push(filterData);
+
+    // Clear search
+    currentSearchQuery = '';
+    var searchInput = document.getElementById('view-search-input');
+    if (searchInput) searchInput.value = '';
+    var filterBtn = document.getElementById('search-to-filter-btn');
+    if (filterBtn) filterBtn.classList.remove('visible');
+
+    // Apply and show filter dropdown
+    renderFilterDropdown();
+    applyFilters();
+
+    // Open filter dropdown so user can see the new filter
+    var dropdown = document.getElementById('filter-dropdown');
+    if (dropdown && !dropdown.classList.contains('open')) {
+        closeViewControlDropdowns();
+        dropdown.classList.add('open');
+        renderFilterDropdown();
+    }
 }
 
 // Update closeAllDropdowns to also close view control dropdowns
