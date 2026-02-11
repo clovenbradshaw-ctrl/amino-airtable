@@ -9331,15 +9331,33 @@ async function trySynapseLogin() {
 
         hideSynapseLoginScreen();
 
-        // Fresh login — clear stale local data so we always hydrate cleanly from Synapse
-        try {
-            var freshDb = await openDB();
-            db = freshDb;
-            await clearAllData();
-            db.close();
-            db = null;
-        } catch (clearErr) {
-            console.warn('[Synapse] Could not clear local data for fresh sync:', clearErr);
+        // Decide whether to keep encrypted local data or clear for re-hydration.
+        // If the same user logs back in with the same password, the derived key
+        // will match the verification token and we can reuse cached data — it's
+        // already AES-GCM-256 encrypted at rest and unreadable without the key.
+        var retainLocalData = false;
+        if (existingConfig && existingConfig.type === 'synapse'
+            && existingConfig.userId === data.user_id
+            && existingConfig.verificationToken) {
+            try {
+                await decryptData(existingConfig.verificationToken, derivedKey);
+                retainLocalData = true;
+                console.log('[Synapse] Returning user with valid key — retaining encrypted local data');
+            } catch (e) {
+                console.log('[Synapse] Key mismatch (password changed or different user) — clearing local data');
+            }
+        }
+
+        if (!retainLocalData) {
+            try {
+                var freshDb = await openDB();
+                db = freshDb;
+                await clearAllData();
+                db.close();
+                db = null;
+            } catch (clearErr) {
+                console.warn('[Synapse] Could not clear local data for fresh sync:', clearErr);
+            }
         }
 
         // Go directly to app initialization — will hydrate all rooms from Synapse
@@ -22141,6 +22159,12 @@ async function detectAndStoreUserRole() {
 function appNavLogout() {
     if (!confirm('Sign out of Amino?')) return;
     hideAppNav();
+    // Clear encryption key from memory and sessionStorage — the encrypted
+    // IndexedDB data is retained on device (AES-GCM-256, unreadable without
+    // the user's password) so the next login can skip re-hydration.
+    clearSessionKey();
+    encryptionKey = null;
+    encryptionEnabled = false;
     synapseLogout();
     location.reload();
 }
