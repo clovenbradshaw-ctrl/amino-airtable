@@ -1015,6 +1015,7 @@ var MatrixClient = (function() {
         logout: logout,
         isLoggedIn: isLoggedIn,
         getUserId: getUserId,
+        getDeviceId: function() { return _deviceId; },
         getHomeserverUrl: getHomeserverUrl,
         getAccessToken: getAccessToken,
         restoreSession: restoreSession,
