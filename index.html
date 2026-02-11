@@ -1642,6 +1642,35 @@
         .group-header-row .group-count { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-left: 8px; }
         .group-row.hidden { display: none; }
 
+        /* Color By Row Styling */
+        tr[data-color-idx] td { transition: background 0.15s; }
+        tr[data-color-idx="0"] td { background: rgba(59, 130, 246, 0.12); }
+        tr[data-color-idx="1"] td { background: rgba(16, 185, 129, 0.12); }
+        tr[data-color-idx="2"] td { background: rgba(245, 158, 11, 0.12); }
+        tr[data-color-idx="3"] td { background: rgba(239, 68, 68, 0.12); }
+        tr[data-color-idx="4"] td { background: rgba(139, 92, 246, 0.12); }
+        tr[data-color-idx="5"] td { background: rgba(236, 72, 153, 0.12); }
+        tr[data-color-idx="6"] td { background: rgba(6, 182, 212, 0.12); }
+        tr[data-color-idx="7"] td { background: rgba(249, 115, 22, 0.12); }
+        tr[data-color-idx="8"] td { background: rgba(34, 197, 94, 0.12); }
+        tr[data-color-idx="9"] td { background: rgba(168, 85, 247, 0.12); }
+        tr[data-color-idx="10"] td { background: rgba(14, 165, 233, 0.12); }
+        tr[data-color-idx="11"] td { background: rgba(251, 146, 60, 0.12); }
+        tr[data-color-idx="12"] td { background: rgba(52, 211, 153, 0.12); }
+        tr[data-color-idx="13"] td { background: rgba(244, 63, 94, 0.12); }
+        tr[data-color-idx="14"] td { background: rgba(99, 102, 241, 0.12); }
+        tr[data-color-idx="15"] td { background: rgba(217, 70, 239, 0.12); }
+        tr[data-color-idx="16"] td { background: rgba(20, 184, 166, 0.12); }
+        tr[data-color-idx="17"] td { background: rgba(234, 179, 8, 0.12); }
+        tr[data-color-idx="18"] td { background: rgba(248, 113, 113, 0.12); }
+        tr[data-color-idx="19"] td { background: rgba(96, 165, 250, 0.12); }
+        /* Color swatch dots in dropdown */
+        .color-option .color-swatch { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+        /* Record count badge next to Filter */
+        .record-count-badge { font-size: 11px; color: var(--text-muted); margin-left: 4px; font-weight: 400; }
+        .record-count-badge.filtered { color: var(--primary-400); }
+
         /* Row Height */
         .row-height-option { display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer; font-size: 13px; transition: background var(--transition-fast); color: var(--text-secondary); }
         .row-height-option:hover { background: var(--bg-hover); }
@@ -3106,6 +3135,7 @@
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                         <span>Filter</span>
                         <span class="control-count" id="filter-count" style="display: none;">0</span>
+                        <span class="record-count-badge" id="record-count-badge"></span>
                     </button>
                     <div class="view-control-dropdown filter-dropdown" id="filter-dropdown">
                         <div class="dropdown-section">
@@ -7794,24 +7824,26 @@ async function saveViewFiltersAndSorts(tableId, viewId, filters, sorts, groupBy)
         };
     }
 
-    // Store filters, sorts, and groupBy
+    // Store filters, sorts, groupBy, and colorBy
     META_VIEWS[tableId][viewId].filters = filters || [];
     META_VIEWS[tableId][viewId].sorts = sorts || [];
     META_VIEWS[tableId][viewId].groupBy = groupBy || null;
+    META_VIEWS[tableId][viewId].colorBy = currentColorBy || null;
 
     // Persist to IndexedDB
     await saveView(META_VIEWS[tableId][viewId]);
 }
 
-// Get view filters, sorts, and groupBy
+// Get view filters, sorts, groupBy, and colorBy
 function getViewFiltersAndSorts(tableId, viewId) {
-    if (!tableId || !viewId) return { filters: [], sorts: [], groupBy: null };
+    if (!tableId || !viewId) return { filters: [], sorts: [], groupBy: null, colorBy: null };
 
     var view = META_VIEWS[tableId]?.[viewId];
     return {
         filters: (view && view.filters) ? view.filters.slice() : [],
         sorts: (view && view.sorts) ? view.sorts.slice() : [],
-        groupBy: (view && view.groupBy) ? view.groupBy : null
+        groupBy: (view && view.groupBy) ? view.groupBy : null,
+        colorBy: (view && view.colorBy) ? view.colorBy : null
     };
 }
 
@@ -10458,17 +10490,19 @@ async function selectTableView(tableId, viewId) {
     // Set the current view
     currentView = viewId;
 
-    // Load and apply view filters, sorts, and groupBy
+    // Load and apply view filters, sorts, groupBy, and colorBy
     var viewConfig = getViewFiltersAndSorts(tableId, viewId);
     currentFilters = viewConfig.filters;
     currentSorts = viewConfig.sorts;
     currentGroupBy = viewConfig.groupBy;
+    currentColorBy = viewConfig.colorBy;
     currentSearchQuery = ''; // Reset search when switching views
 
-    // Update filter/sort/group button states
+    // Update filter/sort/group/color button states
     updateFilterCount();
     updateSortCount();
     updateGroupButtonState();
+    updateColorButtonState();
     var searchInput = document.getElementById('view-search-input');
     if (searchInput) searchInput.value = '';
 
@@ -10717,16 +10751,18 @@ async function showTable(tableId) {
         currentView = '_default';
     }
 
-    // Load and apply view filters, sorts, and groupBy
+    // Load and apply view filters, sorts, groupBy, and colorBy
     var viewConfig = getViewFiltersAndSorts(tableId, currentView);
     currentFilters = viewConfig.filters;
     currentSorts = viewConfig.sorts;
     currentGroupBy = viewConfig.groupBy;
+    currentColorBy = viewConfig.colorBy;
 
-    // Update filter/sort/group button states
+    // Update filter/sort/group/color button states
     updateFilterCount();
     updateSortCount();
     updateGroupButtonState();
+    updateColorButtonState();
 
     // Update the view list to highlight the active view
     updateSidebarViewActive(tableId, currentView);
@@ -10867,6 +10903,7 @@ async function renderTable() {
             : '<div class="empty-state"><h3>No records</h3><p>This table is empty</p></div>';
         tableContainer.innerHTML = emptyMsg;
         document.getElementById('pagination').style.display = 'none';
+        updateRecordCountBadge();
         return;
     }
 
@@ -10895,6 +10932,12 @@ async function renderTable() {
     colList.forEach(fid => {
         colNames[fid] = fields[fid]?.fieldName || fid;
     });
+
+    // Build color map if color-by is active
+    var colorMap = null;
+    if (currentColorBy) {
+        colorMap = buildColorMap(displayRecordIds, recordMap, currentColorBy, colNames);
+    }
 
     // Get group field name for header display
     var groupFieldName = currentGroupBy ? (fields[currentGroupBy]?.fieldName || currentGroupBy) : null;
@@ -10933,7 +10976,7 @@ async function renderTable() {
             var groupId = 'group-' + groupIndex;
 
             // Group header row
-            html += '<tr class="group-header-row" data-group-id="' + groupId + '" onclick="toggleGroup(\'' + groupId + '\')">';
+            html += '<tr class="group-header-row" data-group-id="' + groupId + '" onclick="toggleGroup(\'' + groupId + '\', event)">';
             html += '<td colspan="' + (colList.length + 1) + '">';
             html += '<span class="group-toggle">';
             html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6,9 12,15 18,9"/></svg>';
@@ -10945,7 +10988,14 @@ async function renderTable() {
             // Group data rows
             groupRecords.forEach(rid => {
                 var row = recordMap[rid] || {};
-                html += '<tr class="group-row" data-group-id="' + groupId + '" data-record-id="' + esc(rid) + '" data-table-id="' + esc(currentTable) + '" ondblclick="handleRowDblClick(event, \'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" style="cursor: default;">';
+                var colorAttr = '';
+                if (colorMap) {
+                    var cv = row[currentColorBy];
+                    if (cv === undefined && colNames) cv = row[colNames[currentColorBy]];
+                    var ck = getGroupKeyFromValue(cv);
+                    if (ck in colorMap) colorAttr = ' data-color-idx="' + colorMap[ck] + '"';
+                }
+                html += '<tr class="group-row" data-group-id="' + groupId + '" data-record-id="' + esc(rid) + '" data-table-id="' + esc(currentTable) + '"' + colorAttr + ' ondblclick="handleRowDblClick(event, \'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" style="cursor: default;">';
                 html += '<td><button class="history-btn" onclick="event.stopPropagation(); openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
                 html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
                 html += 'History</button></td>';
@@ -10972,7 +11022,14 @@ async function renderTable() {
         // Standard flat rendering
         displayRecordIds.forEach(rid => {
             var row = recordMap[rid] || {};
-            html += '<tr data-record-id="' + esc(rid) + '" data-table-id="' + esc(currentTable) + '" ondblclick="handleRowDblClick(event, \'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" style="cursor: default;">';
+            var colorAttr = '';
+            if (colorMap) {
+                var cv = row[currentColorBy];
+                if (cv === undefined && colNames) cv = row[colNames[currentColorBy]];
+                var ck = getGroupKeyFromValue(cv);
+                if (ck in colorMap) colorAttr = ' data-color-idx="' + colorMap[ck] + '"';
+            }
+            html += '<tr data-record-id="' + esc(rid) + '" data-table-id="' + esc(currentTable) + '"' + colorAttr + ' ondblclick="handleRowDblClick(event, \'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" style="cursor: default;">';
             html += '<td><button class="history-btn" onclick="event.stopPropagation(); openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
             html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
             html += 'History</button></td>';
@@ -11008,6 +11065,9 @@ async function renderTable() {
         document.getElementById('pagination').style.display = '';
         updatePagination();
     }
+
+    // Update record count badge
+    updateRecordCountBadge();
 }
 
 // Group records by a field value
@@ -11063,17 +11123,35 @@ function getGroupKeyFromValue(value) {
     return String(value);
 }
 
-// Toggle group visibility
-function toggleGroup(groupId) {
+// Toggle group visibility (Ctrl+click or Cmd+click collapses/expands ALL groups)
+function toggleGroup(groupId, event) {
     var headerRow = document.querySelector('.group-header-row[data-group-id="' + groupId + '"]');
-    var dataRows = document.querySelectorAll('.group-row[data-group-id="' + groupId + '"]');
+    var isCollapsed = headerRow.classList.contains('collapsed');
 
-    if (headerRow.classList.contains('collapsed')) {
-        headerRow.classList.remove('collapsed');
-        dataRows.forEach(row => row.classList.remove('hidden'));
+    if (event && (event.ctrlKey || event.metaKey)) {
+        // Ctrl+click: toggle ALL groups to match the opposite of clicked group's state
+        var allHeaders = document.querySelectorAll('.group-header-row');
+        allHeaders.forEach(function(h) {
+            var gid = h.getAttribute('data-group-id');
+            var rows = document.querySelectorAll('.group-row[data-group-id="' + gid + '"]');
+            if (isCollapsed) {
+                h.classList.remove('collapsed');
+                rows.forEach(function(r) { r.classList.remove('hidden'); });
+            } else {
+                h.classList.add('collapsed');
+                rows.forEach(function(r) { r.classList.add('hidden'); });
+            }
+        });
     } else {
-        headerRow.classList.add('collapsed');
-        dataRows.forEach(row => row.classList.add('hidden'));
+        // Normal click: toggle just this group
+        var dataRows = document.querySelectorAll('.group-row[data-group-id="' + groupId + '"]');
+        if (isCollapsed) {
+            headerRow.classList.remove('collapsed');
+            dataRows.forEach(function(row) { row.classList.remove('hidden'); });
+        } else {
+            headerRow.classList.add('collapsed');
+            dataRows.forEach(function(row) { row.classList.add('hidden'); });
+        }
     }
 }
 
@@ -17151,15 +17229,17 @@ async function selectView(viewId) {
     currentView = viewId;
     closeAllDropdowns();
 
-    // Load and apply view filters, sorts, and groupBy for the new view
+    // Load and apply view filters, sorts, groupBy, and colorBy for the new view
     if (currentTable) {
         var viewConfig = getViewFiltersAndSorts(currentTable, viewId);
         currentFilters = viewConfig.filters;
         currentSorts = viewConfig.sorts;
         currentGroupBy = viewConfig.groupBy;
+        currentColorBy = viewConfig.colorBy;
         updateFilterCount();
         updateSortCount();
         updateGroupButtonState();
+        updateColorButtonState();
     }
 
     // Update sidebar to reflect the new active view
@@ -17981,6 +18061,76 @@ async function setGroupBy(fieldId) {
     }
 }
 
+// Color palette: 20 visually distinct colors for row coloring
+var COLOR_PALETTE = [
+    'rgba(59, 130, 246, 0.12)',   // blue
+    'rgba(16, 185, 129, 0.12)',   // emerald
+    'rgba(245, 158, 11, 0.12)',   // amber
+    'rgba(239, 68, 68, 0.12)',    // red
+    'rgba(139, 92, 246, 0.12)',   // violet
+    'rgba(236, 72, 153, 0.12)',   // pink
+    'rgba(6, 182, 212, 0.12)',    // cyan
+    'rgba(249, 115, 22, 0.12)',   // orange
+    'rgba(34, 197, 94, 0.12)',    // green
+    'rgba(168, 85, 247, 0.12)',   // purple
+    'rgba(14, 165, 233, 0.12)',   // sky
+    'rgba(251, 146, 60, 0.12)',   // orange-light
+    'rgba(52, 211, 153, 0.12)',   // emerald-light
+    'rgba(244, 63, 94, 0.12)',    // rose
+    'rgba(99, 102, 241, 0.12)',   // indigo
+    'rgba(217, 70, 239, 0.12)',   // fuchsia
+    'rgba(20, 184, 166, 0.12)',   // teal
+    'rgba(234, 179, 8, 0.12)',    // yellow
+    'rgba(248, 113, 113, 0.12)',  // red-light
+    'rgba(96, 165, 250, 0.12)'   // blue-light
+];
+var COLOR_SWATCH_SOLID = [
+    '#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
+    '#ec4899','#06b6d4','#f97316','#22c55e','#a855f7',
+    '#0ea5e9','#fb923c','#34d399','#f43f5e','#6366f1',
+    '#d946ef','#14b8a6','#eab308','#f87171','#60a5fa'
+];
+
+// Build a value-to-color-index map for the current color field
+function buildColorMap(recordIds, recordMap, colorFieldId, colNames) {
+    var map = {};
+    var idx = 0;
+    for (var i = 0; i < recordIds.length; i++) {
+        var row = recordMap[recordIds[i]] || {};
+        var value = row[colorFieldId];
+        if (value === undefined && colNames) value = row[colNames[colorFieldId]];
+        var key = getGroupKeyFromValue(value);
+        if (!(key in map)) {
+            map[key] = idx % COLOR_PALETTE.length;
+            idx++;
+        }
+    }
+    return map;
+}
+
+function updateColorButtonState() {
+    var btn = document.getElementById('color-btn');
+    if (currentColorBy) {
+        btn.classList.add('active');
+    } else {
+        btn.classList.remove('active');
+    }
+}
+
+// Update record count badge next to filter button
+function updateRecordCountBadge() {
+    var badge = document.getElementById('record-count-badge');
+    if (!badge) return;
+    var isFiltered = currentFilters.length > 0 || currentSearchQuery;
+    if (isFiltered) {
+        badge.textContent = currentRecordIds.length.toLocaleString() + '/' + originalRecordIds.length.toLocaleString();
+        badge.className = 'record-count-badge filtered';
+    } else {
+        badge.textContent = originalRecordIds.length.toLocaleString() + ' records';
+        badge.className = 'record-count-badge';
+    }
+}
+
 // Render color dropdown
 function renderColorDropdown(filterText) {
     if (!currentTable) return;
@@ -18027,13 +18177,13 @@ function filterColorDropdown(filterText) {
 async function setColorBy(fieldId) {
     currentColorBy = fieldId;
     closeViewControlDropdowns();
-    var btn = document.getElementById('color-btn');
-    if (fieldId) {
-        btn.classList.add('active');
-    } else {
-        btn.classList.remove('active');
-    }
+    updateColorButtonState();
     await renderTable();
+    // Persist colorBy to current view
+    if (currentTable && currentView) {
+        await saveViewFiltersAndSorts(currentTable, currentView, currentFilters, currentSorts, currentGroupBy);
+        markViewDirty('colorBy', currentColorBy);
+    }
 }
 
 // Update row height dropdown selection
