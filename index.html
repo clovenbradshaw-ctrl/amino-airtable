@@ -18717,7 +18717,7 @@ var CaseNotesAPI = (function() {
                 });
                 for (var i = 0; i < results.length; i++) {
                     var rec = results[i];
-                    if (encryptionEnabled && encryptionKey && rec.encrypted) {
+                    if (encryptionEnabled && encryptionKey && (rec._encryptedFields || rec.encrypted || rec._encrypted)) {
                         try { rec = await decryptRecordFromStorage(rec); } catch (e) { continue; }
                     }
                     records.push({ recordId: rec.recordId || rec.id, fields: rec.fields || rec });
@@ -22465,7 +22465,7 @@ async function runHydration() {
                 });
                 if (rec) {
                     // Decrypt if needed
-                    if (encryptionEnabled && rec._encrypted) {
+                    if (encryptionEnabled && (rec._encryptedFields || rec._encrypted)) {
                         rec = await decryptRecordFromStorage(rec);
                     }
                     allRecords.push({
@@ -23113,7 +23113,7 @@ async function getRecordsForTableFromDB(tableId) {
             var result = [];
             for (var i = 0; i < records.length; i++) {
                 var rec = records[i];
-                if (encryptionEnabled && rec._encrypted) {
+                if (encryptionEnabled && (rec._encryptedFields || rec._encrypted)) {
                     try { rec = await decryptRecordFromStorage(rec); } catch (e) { continue; }
                 }
                 result.push({ recordId: rec.recordId, fields: rec.fields || {} });
@@ -23781,7 +23781,7 @@ var InterfaceApp = (function() {
                     });
                     for (var i = 0; i < results.length; i++) {
                         var rec = results[i];
-                        if (encryptionEnabled && encryptionKey && rec.encrypted) {
+                        if (encryptionEnabled && encryptionKey && (rec._encryptedFields || rec.encrypted || rec._encrypted)) {
                             try {
                                 rec = await decryptRecordFromStorage(rec);
                             } catch (e) { continue; }
