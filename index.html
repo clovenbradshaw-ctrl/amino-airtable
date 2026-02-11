@@ -7682,7 +7682,13 @@ async function manualAirtableSync() {
             SynapseSync.start();
         }
 
-        // 3. Brief delay for n8n to process, then show cooldown
+        // 3. After a short delay for n8n to process, poll Postgres for the
+        //    newly-synced records so the UI reflects changes promptly.
+        setTimeout(function() {
+            SyncHistory.pollForUpdates();
+        }, 5000);
+
+        // 4. Brief feedback, then show cooldown
         if (btn) btn.classList.remove('syncing');
         if (textEl) textEl.textContent = 'Triggered';
 
@@ -11753,82 +11759,97 @@ async function hydrateFromWebhooks() {
     }
 }
 
-// Incremental sync from webhooks — fetch records updated since last webhook sync
+// Incremental sync from webhooks — fetch records updated since last webhook sync.
+// Throws on persistent failures so callers (SyncHistory) can apply backoff.
+var _webhookSyncCircuitOpen = false;
+var _webhookSyncCircuitResetAt = 0;
+var WEBHOOK_SYNC_CIRCUIT_COOLDOWN = 120000; // 2 minutes after tripping
+
 async function webhookIncrementalSync() {
+    // Circuit breaker: if tripped, reject immediately until cooldown expires
+    if (_webhookSyncCircuitOpen) {
+        if (Date.now() < _webhookSyncCircuitResetAt) {
+            var remaining = Math.ceil((_webhookSyncCircuitResetAt - Date.now()) / 1000);
+            throw new Error('Webhook sync circuit open — retrying in ' + remaining + 's');
+        }
+        // Cooldown elapsed — half-open: allow one attempt through
+        console.log('[WebhookSync] Circuit half-open — attempting recovery');
+        _webhookSyncCircuitOpen = false;
+    }
+
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken) return 0;
+
+    // Get the last webhook sync timestamp
+    var lastWebhookSync = null;
     try {
-        var session = _loadSynapseSession();
-        if (!session || !session.accessToken) return 0;
+        lastWebhookSync = await getSyncMeta('lastWebhookSync');
+    } catch (e) {}
 
-        // Get the last webhook sync timestamp
-        var lastWebhookSync = null;
-        try {
-            lastWebhookSync = await getSyncMeta('lastWebhookSync');
-        } catch (e) {}
-
-        if (!lastWebhookSync) {
-            // No previous webhook sync — do a full hydration instead
-            return 0;
-        }
-
-        var tablesData = await webhookFetch('/amino-tables');
-        var tables = tablesData.tables || [];
-        var totalUpdated = 0;
-
-        var consecutiveSyncFailures = 0;
-        for (var i = 0; i < tables.length; i++) {
-            var tableId = tables[i].table_id;
-            try {
-                var data = await webhookFetch(
-                    '/amino-records-since?tableId=' + encodeURIComponent(tableId) +
-                    '&since=' + encodeURIComponent(lastWebhookSync)
-                );
-                var records = data.records || [];
-                consecutiveSyncFailures = 0;
-                if (records.length === 0) continue;
-
-                var dataRecords = [];
-                for (var r = 0; r < records.length; r++) {
-                    var rec = records[r];
-                    var fields = rec.fields;
-                    if (!fields || typeof fields !== 'object') continue;
-                    if (typeof fields === 'string') {
-                        try { fields = JSON.parse(fields); } catch (e) { continue; }
-                    }
-                    dataRecords.push({
-                        tableId: tableId,
-                        recordId: rec.id,
-                        fields: fields
-                    });
-                }
-
-                if (dataRecords.length > 0) {
-                    await saveBatch([], [], [], dataRecords);
-                    totalUpdated += dataRecords.length;
-                }
-            } catch (tableErr) {
-                consecutiveSyncFailures++;
-                if (consecutiveSyncFailures >= 2) {
-                    console.warn('[WebhookSync] ' + consecutiveSyncFailures + ' consecutive sync failures — aborting remaining tables');
-                    break;
-                }
-                console.warn('[WebhookSync] Failed to sync table ' + tableId + ':', tableErr);
-            }
-        }
-
-        // Update sync cursor
-        await setSyncMeta('lastWebhookSync', new Date().toISOString());
-
-        if (totalUpdated > 0) {
-            window.dispatchEvent(new CustomEvent('amino:record-updated', {
-                detail: { source: 'webhook-poll', count: totalUpdated }
-            }));
-        }
-
-        return totalUpdated;
-    } catch (err) {
-        console.error('[WebhookSync] Incremental sync failed:', err);
+    if (!lastWebhookSync) {
+        // No previous webhook sync — do a full hydration instead
         return 0;
     }
+
+    var tablesData = await webhookFetch('/amino-tables');
+    var tables = tablesData.tables || [];
+    var totalUpdated = 0;
+
+    var consecutiveSyncFailures = 0;
+    for (var i = 0; i < tables.length; i++) {
+        var tableId = tables[i].table_id;
+        try {
+            var data = await webhookFetch(
+                '/amino-records-since?tableId=' + encodeURIComponent(tableId) +
+                '&since=' + encodeURIComponent(lastWebhookSync)
+            );
+            var records = data.records || [];
+            consecutiveSyncFailures = 0;
+            if (records.length === 0) continue;
+
+            var dataRecords = [];
+            for (var r = 0; r < records.length; r++) {
+                var rec = records[r];
+                var fields = rec.fields;
+                if (!fields || typeof fields !== 'object') continue;
+                if (typeof fields === 'string') {
+                    try { fields = JSON.parse(fields); } catch (e) { continue; }
+                }
+                dataRecords.push({
+                    tableId: tableId,
+                    recordId: rec.id,
+                    fields: fields
+                });
+            }
+
+            if (dataRecords.length > 0) {
+                await saveBatch([], [], [], dataRecords);
+                totalUpdated += dataRecords.length;
+            }
+        } catch (tableErr) {
+            consecutiveSyncFailures++;
+            if (consecutiveSyncFailures >= 2) {
+                console.warn('[WebhookSync] ' + consecutiveSyncFailures + ' consecutive sync failures — aborting remaining tables');
+                // Trip the circuit breaker so we stop hammering a broken server
+                _webhookSyncCircuitOpen = true;
+                _webhookSyncCircuitResetAt = Date.now() + WEBHOOK_SYNC_CIRCUIT_COOLDOWN;
+                console.warn('[WebhookSync] Circuit breaker tripped — pausing webhook sync for ' + (WEBHOOK_SYNC_CIRCUIT_COOLDOWN / 1000) + 's');
+                throw new Error('Webhook API unreachable: ' + tableErr.message);
+            }
+            console.warn('[WebhookSync] Failed to sync table ' + tableId + ':', tableErr);
+        }
+    }
+
+    // Update sync cursor
+    await setSyncMeta('lastWebhookSync', new Date().toISOString());
+
+    if (totalUpdated > 0) {
+        window.dispatchEvent(new CustomEvent('amino:record-updated', {
+            detail: { source: 'webhook-poll', count: totalUpdated }
+        }));
+    }
+
+    return totalUpdated;
 }
 
 // ============ Room Membership ============
@@ -12121,16 +12142,10 @@ async function init() {
     // Start Synapse real-time sync (long-poll /sync for room events)
     SynapseSync.start();
 
-    // Poll Postgres for changes every 60 seconds via webhookIncrementalSync.
-    // This catches external Airtable edits faster than waiting for SynapseSync
-    // to pick up the n8n-written Matrix events (up to 30-minute n8n poll gap).
-    setInterval(async function() {
-        try {
-            await webhookIncrementalSync();
-        } catch (e) {
-            console.warn('[IncrementalSync] Poll failed:', e.message);
-        }
-    }, 60000);
+    // Start SyncHistory polling for incremental webhook updates.
+    // SyncHistory.pollForUpdates() calls webhookIncrementalSync() with proper
+    // exponential backoff on failures (15s base → 5min cap).
+    SyncHistory.startPolling();
 }
 
 // ============ Field History Modal ============
