@@ -495,30 +495,100 @@ var AminoData = (function() {
 
     // ============ Matrix Realtime Sync ============
 
-    // Join all Matrix rooms that correspond to tables in the table-room map
-    async function joinTableRooms() {
+    // Join all Matrix rooms that correspond to tables in the table-room map.
+    // Uses a lightweight /sync to detect which rooms the user has already joined,
+    // requests bot invites for unjoined rooms via /webhook/amino-invite, then
+    // calls /join on each. The optional onProgress callback receives
+    // { phase, joined, total, current } updates for UI feedback.
+    async function joinTableRooms(onProgress) {
         if (!MatrixClient || !MatrixClient.isLoggedIn()) {
             console.warn('[AminoData] MatrixClient not available or not logged in, skipping room join');
             return [];
         }
 
         var roomIds = Object.values(_tableRoomMap);
-        var joined = [];
-        for (var i = 0; i < roomIds.length; i++) {
-            try {
-                await MatrixClient.joinRoom(roomIds[i]);
-                joined.push(roomIds[i]);
-            } catch (err) {
-                // Already joined is fine; log others
-                if (err.errcode !== 'M_FORBIDDEN') {
-                    console.warn('[AminoData] Could not join room', roomIds[i], ':', err.message);
+        if (roomIds.length === 0) return [];
+
+        // Step 1: Lightweight /sync to discover already-joined rooms
+        var homeserverUrl = MatrixClient.getHomeserverUrl();
+        var accessToken = MatrixClient.getAccessToken();
+        var userId = MatrixClient.getUserId();
+        var joinedRoomIds = new Set();
+        try {
+            var syncFilter = JSON.stringify({
+                room: { timeline: { limit: 0 }, state: { types: [] }, ephemeral: { types: [] }, account_data: { types: [] } },
+                presence: { types: [] },
+                account_data: { types: [] }
+            });
+            var syncRes = await fetch(
+                homeserverUrl + '/_matrix/client/v3/sync?filter=' + encodeURIComponent(syncFilter) + '&timeout=0',
+                { headers: { 'Authorization': 'Bearer ' + accessToken } }
+            );
+            if (syncRes.ok) {
+                var syncData = await syncRes.json();
+                var joinRooms = (syncData.rooms && syncData.rooms.join) || {};
+                for (var rid in joinRooms) {
+                    joinedRoomIds.add(rid);
                 }
-                // If already a member, still count as joined
-                joined.push(roomIds[i]);
             }
+        } catch (syncErr) {
+            console.warn('[AminoData] Membership sync check failed, will attempt all joins:', syncErr.message);
         }
-        console.log('[AminoData] Joined', joined.length, 'table rooms');
-        return joined;
+
+        // Step 2: Identify rooms the user hasn't joined
+        var unjoinedRoomIds = roomIds.filter(function(id) { return !joinedRoomIds.has(id); });
+        console.log('[AminoData] Room membership: ' + joinedRoomIds.size + ' already joined, ' + unjoinedRoomIds.length + ' to join');
+
+        if (unjoinedRoomIds.length === 0) {
+            console.log('[AminoData] Already a member of all ' + roomIds.length + ' table rooms');
+            return roomIds;
+        }
+
+        if (onProgress) onProgress({ phase: 'inviting', joined: 0, total: unjoinedRoomIds.length, current: null });
+
+        // Step 3: Ask the bot to invite us into all rooms
+        try {
+            var inviteRes = await fetch(WEBHOOK_BASE_URL + '/amino-invite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: userId })
+            });
+            var inviteData = await inviteRes.json();
+            console.log('[AminoData] Invite response:', inviteData.message || ('invited to ' + (inviteData.roomsInvited || 0) + ' rooms'));
+        } catch (inviteErr) {
+            console.warn('[AminoData] Invite request failed:', inviteErr.message);
+            // Continue anyway — some rooms may be public / already invited
+        }
+
+        // Small delay for invites to propagate through Synapse
+        await new Promise(function(r) { setTimeout(r, 1000); });
+
+        // Step 4: Join each unjoined room
+        if (onProgress) onProgress({ phase: 'joining', joined: 0, total: unjoinedRoomIds.length, current: null });
+
+        var joined = [];
+        var failed = [];
+        for (var i = 0; i < unjoinedRoomIds.length; i++) {
+            var roomId = unjoinedRoomIds[i];
+            // Reverse-lookup table name for logging
+            var tableId = _roomTableMap[roomId];
+            try {
+                await MatrixClient.joinRoom(roomId);
+                joined.push(roomId);
+            } catch (err) {
+                console.warn('[AminoData] Failed to join room', roomId, '(table ' + tableId + '):', err.message || err.errcode);
+                failed.push(roomId);
+            }
+            if (onProgress) onProgress({ phase: 'joining', joined: joined.length, total: unjoinedRoomIds.length, current: tableId });
+        }
+
+        // Include previously-joined rooms in the result
+        var allJoined = roomIds.filter(function(id) {
+            return joinedRoomIds.has(id) || joined.indexOf(id) !== -1;
+        });
+
+        console.log('[AminoData] Room membership complete: ' + joined.length + ' newly joined, ' + failed.length + ' failed, ' + allJoined.length + ' total');
+        return allJoined;
     }
 
     // Apply a law.firm.record.mutate or law.firm.schema.object event to a record in IndexedDB
