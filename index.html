@@ -124,6 +124,12 @@
         html.light-theme .sync-status-badge.synced { background: rgba(22, 163, 74, 0.12); color: #15803d; }
         html.light-theme .sync-status-badge.syncing { background: rgba(217, 119, 6, 0.12); color: #b45309; }
         html.light-theme .sync-status-badge.error { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+        html.light-theme .sync-status-badge.queued { background: rgba(234, 88, 12, 0.12); color: #c2410c; }
+        html.light-theme .sync-result-badge.queued { background: rgba(234, 88, 12, 0.10); color: #c2410c; }
+        html.light-theme .queue-count-badge { background: rgba(234, 88, 12, 0.15); color: #c2410c; }
+        html.light-theme .sync-status-card.queue-highlight { border-color: rgba(234, 88, 12, 0.3); background: rgba(234, 88, 12, 0.04); }
+        html.light-theme .sync-status-card.queue-highlight .card-value { color: #c2410c; }
+        html.light-theme .sync-status-card.queue-highlight .card-label { color: #c2410c; }
 
         /* Sync type badges */
         html.light-theme .sync-history-table .sync-type-badge.incremental { background: rgba(37, 99, 235, 0.10); color: #2563eb; }
@@ -1990,6 +1996,7 @@
         .sync-status-badge.synced { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
         .sync-status-badge.syncing { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
         .sync-status-badge.error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .sync-status-badge.queued { background: rgba(251, 146, 60, 0.15); color: #fb923c; }
         .sync-status-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .sync-status-card { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); padding: 18px; }
         .sync-status-card .card-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px; }
@@ -2017,6 +2024,12 @@
         .sync-result-badge.success { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
         .sync-result-badge.error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
         .sync-result-badge.no-change { background: var(--bg-tertiary); color: var(--text-muted); }
+        .sync-result-badge.queued { background: rgba(251, 146, 60, 0.15); color: #fb923c; }
+        .sync-result-badge.syncing { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+        .queue-count-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: rgba(251, 146, 60, 0.2); color: #fb923c; font-size: 11px; font-weight: 700; margin-left: 6px; }
+        .sync-status-card.queue-highlight { border-color: rgba(251, 146, 60, 0.4); background: rgba(251, 146, 60, 0.05); }
+        .sync-status-card.queue-highlight .card-value { color: #fb923c; }
+        .sync-status-card.queue-highlight .card-label { color: #fb923c; }
         .sync-poll-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
         .sync-poll-controls .btn-poll { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius-lg); border: 1px solid var(--border-primary); background: var(--bg-secondary); font-size: 13px; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: all var(--transition-fast); }
         .sync-poll-controls .btn-poll:hover { background: var(--bg-hover); border-color: var(--border-secondary); }
@@ -2556,6 +2569,9 @@
         }
         .toast.toast-info {
             background: var(--gray-600);
+        }
+        .toast.toast-warning {
+            background: #92400e;
         }
         .toast .toast-spinner {
             width: 14px;
@@ -3792,7 +3808,7 @@ function renderTabBar() {
 }
 
 var DB_NAME = 'amino';
-var DB_VERSION = 8;
+var DB_VERSION = 9;
 var PAGE_SIZE = 100;
 var N8N_WEBHOOK_BASE = 'https://n8n.intelechia.com/webhook';
 
@@ -5349,6 +5365,201 @@ var SyncHistory = {
     }
 };
 
+// ============ Offline Sync Queue ============
+// Persists failed edits to IndexedDB so they survive page reloads and can be
+// retried when the network comes back. Exposes a count for the sync status UI.
+
+var OfflineSyncQueue = {
+    _draining: false,
+    _listeners: [],
+    MAX_RETRIES: 5,
+
+    // Enqueue a failed edit into the pendingEdits store
+    async enqueue(tableId, recordId, fieldChanges, errorMessage) {
+        var entry = {
+            tableId: tableId,
+            recordId: recordId,
+            fieldChanges: fieldChanges,
+            status: 'pending',      // pending | retrying | failed
+            retries: 0,
+            error: errorMessage || 'Unknown error',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+        await new Promise(function(resolve, reject) {
+            var tx = db.transaction('pendingEdits', 'readwrite');
+            tx.objectStore('pendingEdits').add(entry);
+            tx.oncomplete = function() { resolve(); };
+            tx.onerror = function() { reject(tx.error); };
+        });
+        this._notify();
+        SyncStatusFeed.warn('Edit queued offline: ' + recordId + ' — will retry when online');
+    },
+
+    // Get all pending entries
+    async getAll() {
+        return new Promise(function(resolve, reject) {
+            var tx = db.transaction('pendingEdits', 'readonly');
+            var req = tx.objectStore('pendingEdits').getAll();
+            req.onsuccess = function() { resolve(req.result || []); };
+            req.onerror = function() { reject(req.error); };
+        });
+    },
+
+    // Get count of pending entries
+    async getCount() {
+        return new Promise(function(resolve, reject) {
+            var tx = db.transaction('pendingEdits', 'readonly');
+            var req = tx.objectStore('pendingEdits').count();
+            req.onsuccess = function() { resolve(req.result || 0); };
+            req.onerror = function() { reject(req.error); };
+        });
+    },
+
+    // Remove a successfully synced entry by id
+    async remove(id) {
+        return new Promise(function(resolve, reject) {
+            var tx = db.transaction('pendingEdits', 'readwrite');
+            tx.objectStore('pendingEdits').delete(id);
+            tx.oncomplete = function() { resolve(); };
+            tx.onerror = function() { reject(tx.error); };
+        });
+    },
+
+    // Update an entry (e.g. bump retries, mark failed)
+    async _update(entry) {
+        entry.updatedAt = new Date().toISOString();
+        return new Promise(function(resolve, reject) {
+            var tx = db.transaction('pendingEdits', 'readwrite');
+            tx.objectStore('pendingEdits').put(entry);
+            tx.oncomplete = function() { resolve(); };
+            tx.onerror = function() { reject(tx.error); };
+        });
+    },
+
+    // Drain the queue: attempt to replay all pending edits
+    async drain() {
+        if (this._draining) return;
+        this._draining = true;
+
+        try {
+            var entries = await this.getAll();
+            var pending = entries.filter(function(e) { return e.status === 'pending'; });
+            if (pending.length === 0) { this._draining = false; return; }
+
+            SyncStatusFeed.info('Draining offline queue: ' + pending.length + ' edit' + (pending.length !== 1 ? 's' : '') + ' to retry');
+
+            for (var i = 0; i < pending.length; i++) {
+                var entry = pending[i];
+                entry.status = 'retrying';
+                entry.retries++;
+                await this._update(entry);
+                this._notify();
+
+                try {
+                    var session = _loadSynapseSession();
+                    if (!session || !session.accessToken) throw new Error('Not authenticated');
+
+                    var writeUrl = WRITE_API_BASE;
+                    var writeBody = JSON.stringify({
+                        tableId: entry.tableId,
+                        recordId: entry.recordId,
+                        fields: entry.fieldChanges
+                    });
+
+                    var response = await fetch(
+                        writeUrl + '?access_token=' + encodeURIComponent(session.accessToken),
+                        { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: writeBody }
+                    );
+
+                    if (!response.ok) throw new Error('Server returned ' + response.status);
+
+                    var result = await response.json();
+
+                    // Update local store with canonical data
+                    if (result.fields) {
+                        await saveDataRecord({ tableId: entry.tableId, recordId: entry.recordId, fields: result.fields });
+                        if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[entry.tableId] && window.IN_MEMORY_DATA[entry.tableId][entry.recordId]) {
+                            window.IN_MEMORY_DATA[entry.tableId][entry.recordId] = result.fields;
+                        }
+                        window.dispatchEvent(new CustomEvent('amino:record-updated', {
+                            detail: { recordId: entry.recordId, tableId: entry.tableId, fields: result.fields, optimistic: false }
+                        }));
+                    }
+
+                    // Success — remove from queue
+                    await this.remove(entry.id);
+                    SyncHistory.record({
+                        type: 'edit',
+                        result: 'success',
+                        eventsFound: Object.keys(entry.fieldChanges).length,
+                        duration: 0,
+                        detail: 'Queued edit replayed: ' + entry.recordId
+                    });
+                    SyncStatusFeed.success('Queued edit synced: ' + entry.recordId);
+
+                } catch (retryErr) {
+                    if (entry.retries >= this.MAX_RETRIES) {
+                        entry.status = 'failed';
+                        entry.error = retryErr.message;
+                        await this._update(entry);
+                        SyncStatusFeed.error('Queued edit permanently failed after ' + entry.retries + ' retries: ' + entry.recordId);
+                    } else {
+                        entry.status = 'pending';
+                        entry.error = retryErr.message;
+                        await this._update(entry);
+                    }
+                }
+                this._notify();
+            }
+        } finally {
+            this._draining = false;
+            this._notify();
+        }
+    },
+
+    // Discard a specific queued entry (user action)
+    async discard(id) {
+        await this.remove(id);
+        this._notify();
+        SyncStatusFeed.info('Queued edit discarded');
+    },
+
+    // Discard all queued entries
+    async discardAll() {
+        var entries = await this.getAll();
+        for (var i = 0; i < entries.length; i++) {
+            await this.remove(entries[i].id);
+        }
+        this._notify();
+        SyncStatusFeed.info('All queued edits discarded');
+    },
+
+    // Listener management
+    onChange(fn) {
+        this._listeners.push(fn);
+        return function() { OfflineSyncQueue._listeners = OfflineSyncQueue._listeners.filter(function(l) { return l !== fn; }); };
+    },
+
+    _notify() {
+        this._listeners.forEach(function(fn) { try { fn(); } catch(e) {} });
+    }
+};
+
+// ============ Online/Offline Detection for Queue Drain ============
+
+window.addEventListener('online', function() {
+    SyncStatusFeed.info('Network connection restored');
+    // Auto-drain offline queue when back online
+    if (db) {
+        OfflineSyncQueue.drain();
+    }
+});
+
+window.addEventListener('offline', function() {
+    SyncStatusFeed.warn('Network connection lost — edits will be queued locally');
+});
+
 // ============ Post-Hydration Auto-Poll (Deprecated) ============
 // No longer needed — Matrix /sync handles incremental updates after initial hydration.
 var PostHydrationSync = {
@@ -5449,6 +5660,14 @@ function openDB() {
                 sharedViewStore.createIndex('by_table', 'tableId');
                 sharedViewStore.createIndex('by_owner', 'ownerId');
                 sharedViewStore.createIndex('by_sharing', 'sharing');
+            }
+
+            // Pending edits: offline queue for edits that failed to sync to cloud
+            if (!db.objectStoreNames.contains('pendingEdits')) {
+                var pendingStore = db.createObjectStore('pendingEdits', { keyPath: 'id', autoIncrement: true });
+                pendingStore.createIndex('by_table', 'tableId');
+                pendingStore.createIndex('by_record', ['tableId', 'recordId']);
+                pendingStore.createIndex('by_status', 'status');
             }
         };
     });
@@ -11216,6 +11435,7 @@ async function incrementalSync() {
 // ============ Sync Status View ============
 
 var syncStatusUnsubscribe = null;
+var queueStatusUnsubscribe = null;
 
 async function showSyncStatusView() {
     // Navigation guard: increment version and capture it
@@ -11270,6 +11490,10 @@ async function showSyncStatusView() {
     syncStatusUnsubscribe = SyncHistory.onChange(() => {
         if (currentTable === '_sync_status') renderSyncStatusView();
     });
+    if (queueStatusUnsubscribe) queueStatusUnsubscribe();
+    queueStatusUnsubscribe = OfflineSyncQueue.onChange(() => {
+        if (currentTable === '_sync_status') renderSyncStatusView();
+    });
 }
 
 async function renderSyncStatusView() {
@@ -11278,10 +11502,21 @@ async function renderSyncStatusView() {
     var passiveStats = { isRunning: false, pulled: 0, verified: 0 };
     var totalEventsCount = await getRawEventsCount();
 
+    // Fetch offline queue state
+    var queueEntries = [];
+    var queueCount = 0;
+    try {
+        queueEntries = await OfflineSyncQueue.getAll();
+        queueCount = queueEntries.length;
+    } catch (e) { /* db may not be ready */ }
+
     // Determine overall sync state
     var syncState = 'synced';
     var syncLabel = 'Up to Date';
-    if (SyncHistory.isPolling) {
+    if (queueCount > 0) {
+        syncState = 'queued';
+        syncLabel = queueCount + ' Edit' + (queueCount !== 1 ? 's' : '') + ' Queued';
+    } else if (SyncHistory.isPolling) {
         syncState = 'syncing';
         syncLabel = 'Checking...';
     } else if (stats.errorCount > 0 && stats.errorCount === stats.totalSyncs + stats.totalPolls) {
@@ -11324,6 +11559,14 @@ async function renderSyncStatusView() {
     html += '<div class="card-sub">' + stats.totalFieldsEdited + ' field' + (stats.totalFieldsEdited !== 1 ? 's' : '') + ' changed' + (stats.failedEdits > 0 ? ', ' + stats.failedEdits + ' failed' : '') + '</div>';
     html += '</div>';
 
+    html += '<div class="sync-status-card' + (queueCount > 0 ? ' queue-highlight' : '') + '">';
+    html += '<div class="card-label">Offline Queue</div>';
+    html += '<div class="card-value">' + queueCount + '</div>';
+    var pendingCount = queueEntries.filter(function(e) { return e.status === 'pending'; }).length;
+    var failedCount = queueEntries.filter(function(e) { return e.status === 'failed'; }).length;
+    html += '<div class="card-sub">' + (queueCount === 0 ? 'All synced' : pendingCount + ' pending' + (failedCount > 0 ? ', ' + failedCount + ' failed' : '')) + '</div>';
+    html += '</div>';
+
     html += '<div class="sync-status-card">';
     html += '<div class="card-label">Last Sync</div>';
     html += '<div class="card-value" style="font-size: 16px;">' + (stats.lastSyncTime ? formatSyncTimestamp(stats.lastSyncTime) : 'Never') + '</div>';
@@ -11351,6 +11594,65 @@ async function renderSyncStatusView() {
         html += '<span style="font-size: 12px; color: #6b7280;">Auto-poll is off</span>';
     }
     html += '</div>';
+    html += '</div>';
+
+    // Offline sync queue section
+    html += '<div class="sync-status-section">';
+    html += '<h3><span class="section-dot ' + (queueCount > 0 ? 'amber' : 'green') + '"></span>Offline Queue';
+    if (queueCount > 0) {
+        html += ' <span class="queue-count-badge">' + queueCount + '</span>';
+    }
+    html += '</h3>';
+
+    if (queueCount === 0) {
+        html += '<div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 13px;">No pending edits. All changes are synced to the cloud.</div>';
+    } else {
+        html += '<div class="sync-poll-controls" style="margin-bottom: 12px;">';
+        html += '<button class="btn-poll primary" onclick="OfflineSyncQueue.drain().then(function() { renderSyncStatusView(); });">';
+        html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+        html += ' Retry All Now</button>';
+        html += '<button class="btn-poll" onclick="if(confirm(\'Discard all queued edits? This cannot be undone.\')) { OfflineSyncQueue.discardAll().then(function() { renderSyncStatusView(); }); }">';
+        html += 'Discard All</button>';
+        if (OfflineSyncQueue._draining) {
+            html += '<span style="font-size: 12px; color: #fbbf24;">Syncing queued edits...</span>';
+        } else if (!navigator.onLine) {
+            html += '<span style="font-size: 12px; color: #f87171;">Offline — edits will sync when connection returns</span>';
+        } else {
+            html += '<span style="font-size: 12px; color: #6b7280;">' + queueCount + ' edit' + (queueCount !== 1 ? 's' : '') + ' waiting to sync</span>';
+        }
+        html += '</div>';
+
+        html += '<table class="sync-history-table">';
+        html += '<thead><tr>';
+        html += '<th>Record</th>';
+        html += '<th>Table</th>';
+        html += '<th>Fields</th>';
+        html += '<th>Status</th>';
+        html += '<th>Retries</th>';
+        html += '<th>Queued At</th>';
+        html += '<th>Error</th>';
+        html += '<th>Actions</th>';
+        html += '</tr></thead>';
+        html += '<tbody>';
+
+        for (var qi = 0; qi < queueEntries.length; qi++) {
+            var qe = queueEntries[qi];
+            var fieldCount = qe.fieldChanges ? Object.keys(qe.fieldChanges).length : 0;
+            var statusClass = qe.status === 'failed' ? 'error' : (qe.status === 'retrying' ? 'syncing' : 'queued');
+            html += '<tr>';
+            html += '<td style="font-size: 12px; font-family: monospace; color: #9ca3af;">' + esc(qe.recordId || '') + '</td>';
+            html += '<td style="font-size: 12px; color: #6b7280;">' + esc(qe.tableId || '') + '</td>';
+            html += '<td>' + fieldCount + ' field' + (fieldCount !== 1 ? 's' : '') + '</td>';
+            html += '<td><span class="sync-result-badge ' + statusClass + '">' + esc(qe.status || 'pending') + '</span></td>';
+            html += '<td style="text-align: center;">' + (qe.retries || 0) + '</td>';
+            html += '<td style="white-space: nowrap; font-size: 12px; color: #6b7280;">' + formatSyncTimestamp(qe.createdAt) + '</td>';
+            html += '<td style="font-size: 12px; color: #f87171; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + esc(qe.error || '') + '</td>';
+            html += '<td><button class="btn-poll" style="font-size: 11px; padding: 2px 8px;" onclick="OfflineSyncQueue.discard(' + qe.id + ').then(function() { renderSyncStatusView(); });">Discard</button></td>';
+            html += '</tr>';
+        }
+
+        html += '</tbody></table>';
+    }
     html += '</div>';
 
     // Sync history table
@@ -12648,6 +12950,19 @@ async function init() {
             console.warn('[IncrementalSync] Poll failed:', e.message);
         }
     }, 60000);
+
+    // Drain any offline-queued edits from a previous session
+    try {
+        var queuedCount = await OfflineSyncQueue.getCount();
+        if (queuedCount > 0 && navigator.onLine) {
+            SyncStatusFeed.info('Found ' + queuedCount + ' queued edit' + (queuedCount !== 1 ? 's' : '') + ' from previous session — retrying');
+            OfflineSyncQueue.drain();
+        } else if (queuedCount > 0) {
+            SyncStatusFeed.warn(queuedCount + ' edit' + (queuedCount !== 1 ? 's' : '') + ' queued offline — will sync when connection returns');
+        }
+    } catch (e) {
+        console.warn('[init] Failed to check offline queue:', e);
+    }
 }
 
 // ============ Field History Modal ============
@@ -15725,16 +16040,19 @@ async function commitProfileFieldEdit(fieldId, newValue, originalValueFromInput)
     fieldChanges[fieldKey] = newValue;
 
     // Use editRecord for optimistic write + server sync.
-    // editRecord handles IndexedDB update, API call, rollback, and
+    // editRecord handles IndexedDB update, API call, offline queue, and
     // dispatches amino:record-updated which re-renders the UI.
     try {
-        await editRecord(tableId, recordId, fieldChanges);
-        // Show undo toast after successful save
-        showUndoToast(tableId, recordId, fieldId, fieldKey, oldValue);
+        var result = await editRecord(tableId, recordId, fieldChanges);
+        if (result && result.queued) {
+            // Edit was queued offline — don't show undo toast
+        } else {
+            // Show undo toast after successful save
+            showUndoToast(tableId, recordId, fieldId, fieldKey, oldValue);
+        }
     } catch (err) {
         console.error('[WriteAPI] Edit failed for', recordId, fieldKey, err);
-        // editRecord already rolled back local state and showed error toast.
-        // Re-render profile to reflect the rollback.
+        // editRecord already handled rollback/queue and showed error toast.
         renderRecordProfile();
     }
 }
@@ -15967,37 +16285,38 @@ async function editRecord(tableId, recordId, fieldChanges) {
         // Dismiss saving toast if still visible
         dismissToast(savingToast);
 
-        // ── Stage 4: Rollback on failure ──────────────────────
-        await saveDataRecord({
-            tableId: tableId,
-            recordId: recordId,
-            fields: previousFields
-        });
-
-        // Rollback in-memory data
-        if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
-            window.IN_MEMORY_DATA[tableId][recordId] = previousFields;
+        // ── Stage 4: Queue for offline retry instead of rolling back ──
+        // Keep the optimistic local data so the user sees their edit.
+        // Enqueue the edit so it can be replayed when connectivity returns.
+        try {
+            await OfflineSyncQueue.enqueue(tableId, recordId, fieldChanges, err.message);
+        } catch (queueErr) {
+            console.error('[editRecord] Failed to enqueue offline edit:', queueErr);
+            // If we can't even queue, roll back as last resort
+            await saveDataRecord({ tableId: tableId, recordId: recordId, fields: previousFields });
+            if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
+                window.IN_MEMORY_DATA[tableId][recordId] = previousFields;
+            }
+            window.dispatchEvent(new CustomEvent('amino:record-updated', {
+                detail: { recordId: recordId, tableId: tableId, fields: previousFields, optimistic: false, rolledBack: true }
+            }));
+            showToast('error', 'Save failed \u2014 please try again');
+            throw err;
         }
 
-        // Dispatch rollback UI update
-        window.dispatchEvent(new CustomEvent('amino:record-updated', {
-            detail: { recordId: recordId, tableId: tableId, fields: previousFields, optimistic: false, rolledBack: true }
-        }));
-
-        // Record failed local edit in sync history
+        // Record the queued edit in sync history
         var editDuration = Date.now() - editStartTime;
         SyncHistory.record({
             type: 'edit',
-            result: 'error',
-            eventsFound: 0,
+            result: 'queued',
+            eventsFound: changedFieldCount,
             duration: editDuration,
             error: err.message,
-            detail: 'Local edit failed: ' + recordId + ' \u2014 ' + err.message
+            detail: 'Edit queued offline: ' + recordId + ' \u2014 ' + err.message
         });
-        SyncStatusFeed.error('Edit failed: ' + recordId + ' \u2014 ' + err.message);
 
-        showToast('error', 'Save failed \u2014 please try again');
-        throw err;
+        showToast('warning', 'Saved locally \u2014 will sync when online');
+        return { queued: true, recordId: recordId, tableId: tableId };
     }
 }
 
@@ -16893,12 +17212,16 @@ async function commitInlineCellEdit(td, explicitValue) {
     _inlineEditJustCommitted = true;
 
     try {
-        await editRecord(tableId, recordId, fieldChanges);
-        // Show undo toast after successful save
-        showUndoToast(tableId, recordId, fieldId, fieldKey, originalValue);
+        var result = await editRecord(tableId, recordId, fieldChanges);
+        if (result && result.queued) {
+            // Edit was queued offline — don't show undo toast
+        } else {
+            // Show undo toast after successful save
+            showUndoToast(tableId, recordId, fieldId, fieldKey, originalValue);
+        }
     } catch (err) {
         console.error('[InlineEdit] Edit failed for', recordId, fieldKey, err);
-        // editRecord already rolled back + showed error toast; table will re-render via event
+        // editRecord already handled rollback/queue and showed error toast
         _inlineEditJustCommitted = false;
     }
 }
