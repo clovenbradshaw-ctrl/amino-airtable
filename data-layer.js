@@ -431,12 +431,193 @@ var AminoData = (function() {
         };
     }
 
+    function normalizeFieldOps(content) {
+        var payload = content.payload || content;
+        var fieldOps = payload.fields || {};
+
+        // Support flat format: { recordId, op, fields: { key: val } }
+        if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
+            fieldOps = {};
+            if (content.op === 'INS' || content.op === 'ALT') {
+                fieldOps[content.op] = content.fields;
+            } else if (content.op === 'NUL') {
+                fieldOps.NUL = content.fields;
+            }
+        }
+
+        return fieldOps;
+    }
+
+    async function deleteTableRecords(tableId) {
+        var tx = _db.transaction('records', 'readwrite');
+        var store = tx.objectStore('records');
+        var index = store.index('byTable');
+
+        await new Promise(function(resolve, reject) {
+            var request = index.openCursor(IDBKeyRange.only(tableId));
+            request.onsuccess = function(event) {
+                var cursor = event.target.result;
+                if (!cursor) {
+                    resolve();
+                    return;
+                }
+                cursor.delete();
+                cursor.continue();
+            };
+            request.onerror = function(event) {
+                reject(event.target.error);
+            };
+        });
+
+        await idbTxDone(tx);
+    }
+
+    async function rebuildTableFromRoom(tableId) {
+        var roomId = _tableRoomMap[tableId];
+        if (!roomId) throw new Error('No Matrix room mapped for table: ' + tableId);
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
+            throw new Error('Matrix client unavailable for room-based rebuild');
+        }
+
+        console.warn('[AminoData] Rebuilding table from room history:', tableId, roomId);
+
+        var recordStates = {}; // recordId -> { fields, resolved }
+        var pageSize = 200;
+        var maxPages = 1000;
+        var paginationToken = null;
+
+        for (var page = 0; page < maxPages; page++) {
+            var options = {
+                dir: 'b', // newest first
+                limit: pageSize,
+                filter: { types: ['law.firm.record.mutate'] }
+            };
+            if (paginationToken) options.from = paginationToken;
+
+            var response = await MatrixClient.getRoomMessages(roomId, options);
+            if (!response || !response.chunk || response.chunk.length === 0) break;
+
+            var chunk = response.chunk;
+            for (var i = 0; i < chunk.length; i++) {
+                var evt = chunk[i];
+                if (!evt.content || !evt.content.recordId) continue;
+
+                var content = evt.content;
+                var payloadSet = content.payload && content.payload._set;
+                if (payloadSet === 'table' || payloadSet === 'field' || payloadSet === 'view' || payloadSet === 'viewConfig' || payloadSet === 'tableSettings') {
+                    continue;
+                }
+
+                if (isEncryptedPayload(content)) {
+                    try {
+                        var decryptedFields = await decryptEventPayload(content);
+                        content = {
+                            recordId: content.recordId,
+                            tableId: content.tableId,
+                            op: content.op || 'ALT',
+                            payload: content.payload,
+                            set: content.set,
+                            fields: decryptedFields
+                        };
+                    } catch (decErr) {
+                        continue;
+                    }
+                }
+
+                var recordId = content.recordId;
+                var state = recordStates[recordId];
+                if (!state) {
+                    state = { fields: {}, resolved: {} };
+                    recordStates[recordId] = state;
+                }
+
+                var fieldOps = normalizeFieldOps(content);
+
+                if (fieldOps.NUL) {
+                    var nulFields = Array.isArray(fieldOps.NUL) ? fieldOps.NUL : Object.keys(fieldOps.NUL);
+                    for (var n = 0; n < nulFields.length; n++) {
+                        if (!state.resolved[nulFields[n]]) state.resolved[nulFields[n]] = true;
+                    }
+                }
+
+                var assignOps = ['ALT', 'INS'];
+                for (var a = 0; a < assignOps.length; a++) {
+                    var opName = assignOps[a];
+                    var opFields = fieldOps[opName];
+                    if (!opFields) continue;
+                    var keys = Object.keys(opFields);
+                    for (var k = 0; k < keys.length; k++) {
+                        var key = keys[k];
+                        if (!state.resolved[key]) {
+                            state.fields[key] = opFields[key];
+                            state.resolved[key] = true;
+                        }
+                    }
+                }
+            }
+
+            if (!response.end || chunk.length < pageSize) break;
+            paginationToken = response.end;
+        }
+
+        await deleteTableRecords(tableId);
+
+        var recordIds = Object.keys(recordStates);
+        var tableName = tableId;
+        for (var t = 0; t < _tables.length; t++) {
+            if (_tables[t].table_id === tableId) {
+                tableName = _tables[t].table_name || tableId;
+                break;
+            }
+        }
+
+        var BATCH_SIZE = 200;
+        for (var b = 0; b < recordIds.length; b += BATCH_SIZE) {
+            var batchIds = recordIds.slice(b, b + BATCH_SIZE);
+            var writeTx = _db.transaction('records', 'readwrite');
+            var writeStore = writeTx.objectStore('records');
+
+            for (var r = 0; r < batchIds.length; r++) {
+                var recId = batchIds[r];
+                var fields = recordStates[recId].fields;
+                var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(fields));
+                await idbPut(writeStore, {
+                    id: recId,
+                    tableId: tableId,
+                    tableName: tableName,
+                    fields: encryptedFields,
+                    lastSynced: new Date().toISOString()
+                });
+            }
+            await idbTxDone(writeTx);
+        }
+
+        var syncTx = _db.transaction('sync', 'readwrite');
+        await idbPut(syncTx.objectStore('sync'), {
+            tableId: tableId,
+            lastSynced: new Date().toISOString()
+        });
+        await idbTxDone(syncTx);
+
+        console.warn('[AminoData] Rebuilt', recordIds.length, 'records for table', tableId, 'from Matrix room history');
+        return recordIds.length;
+    }
+
     // ============ Hydration & Sync ============
 
     async function hydrateTable(tableId) {
         console.log('[AminoData] Hydrating table:', tableId);
-        var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
-        var records = data.records || [];
+        var records = [];
+        try {
+            var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
+            records = data.records || [];
+        } catch (err) {
+            console.warn('[AminoData] API hydrate failed for table ' + tableId + ', attempting room rebuild:', err.message || err);
+            if (_tableRoomMap[tableId] && MatrixClient && MatrixClient.isLoggedIn()) {
+                return rebuildTableFromRoom(tableId);
+            }
+            throw err;
+        }
 
         // Write records in batches to avoid holding a single long transaction
         var BATCH_SIZE = 200;
@@ -654,7 +835,9 @@ var AminoData = (function() {
 
         // Apply field-level operations from the payload
         var payload = content.payload || content;
-        var fieldOps = payload.fields || {};
+        var rawFieldOps = payload.fields || {};
+        var hadFlatOps = !rawFieldOps.ALT && !rawFieldOps.INS && !rawFieldOps.NUL && content.op && content.fields;
+        var fieldOps = normalizeFieldOps(content);
 
         // ALT — merge altered fields over existing values
         if (fieldOps.ALT) {
@@ -677,24 +860,6 @@ var AminoData = (function() {
             var nulFields = Array.isArray(fieldOps.NUL) ? fieldOps.NUL : Object.keys(fieldOps.NUL);
             for (var d = 0; d < nulFields.length; d++) {
                 delete fields[nulFields[d]];
-            }
-        }
-
-        // If no structured field ops, check for flat op/fields at top level
-        // (handles simpler event formats: { recordId, op, fields: { key: val } })
-        if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
-            var op = content.op;
-            var flatFields = content.fields;
-            if (op === 'ALT' || op === 'INS') {
-                var fKeys = Object.keys(flatFields);
-                for (var f = 0; f < fKeys.length; f++) {
-                    fields[fKeys[f]] = flatFields[fKeys[f]];
-                }
-            } else if (op === 'NUL') {
-                var removeKeys = Array.isArray(flatFields) ? flatFields : Object.keys(flatFields);
-                for (var r = 0; r < removeKeys.length; r++) {
-                    delete fields[removeKeys[r]];
-                }
             }
         }
 
@@ -730,7 +895,7 @@ var AminoData = (function() {
             device: (payload && payload._d) || content.device || null
         };
         // Include flat ops if that was the format used
-        if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
+        if (hadFlatOps) {
             mutationDetail.flatOp = content.op;
             mutationDetail.flatFields = content.fields;
         }
