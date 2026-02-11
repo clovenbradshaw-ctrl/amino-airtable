@@ -2390,6 +2390,7 @@
         /* Revamped data table */
         .iface-table-revamp {
             width: 100%; border-collapse: collapse; font-size: 13px;
+            table-layout: fixed;
         }
         .iface-table-revamp thead th {
             text-align: left; padding: 10px 16px;
@@ -23900,18 +23901,18 @@ var InterfaceApp = (function() {
                             fallbackTablePattern: 'client'
                         },
                         columns: [
-                            { field: 'Client Name', label: 'Client Name', width: 200 },
-                            { field: 'File Case Status (from Case Master View // Activities)', label: 'File Status', width: 100 },
-                            { field: 'A#', label: 'A#', width: 100 },
-                            { field: 'DOB & Age', label: 'DOB & Age', width: 120 },
-                            { field: 'Soonest Event (from Case Master View // Activities)', label: 'Next Event', width: 160 },
-                            { field: 'Brief Event Info Rollup (from Case Events) Rollup (from Case Master View // Activities)', label: 'Event Info', width: 200 },
-                            { field: 'ICH Atty', label: 'ICH Atty', width: 100 },
-                            { field: 'MCH Attny Options', label: 'MCH Atty', width: 100 },
-                            { field: 'Case Manager', label: 'Case Manager', width: 120 },
-                            { field: 'Country', label: 'Country', width: 100 },
-                            { field: 'Phone Number', label: 'Phone', width: 120 },
-                            { field: 'Client Email', label: 'Email', width: 180 }
+                            { field: 'Client Name', label: 'Client Name', width: 170 },
+                            { field: 'File Case Status (from Case Master View // Activities)', label: 'File Status', width: 80 },
+                            { field: 'A#', label: 'A#', width: 80 },
+                            { field: 'DOB & Age', label: 'DOB & Age', width: 90 },
+                            { field: 'Soonest Event (from Case Master View // Activities)', label: 'Next Event', width: 110 },
+                            { field: 'Brief Event Info Rollup (from Case Events) Rollup (from Case Master View // Activities)', label: 'Event Info', width: 150 },
+                            { field: 'ICH Atty', label: 'ICH Atty', width: 80 },
+                            { field: 'MCH Attny Options', label: 'MCH Atty', width: 80 },
+                            { field: 'Case Manager', label: 'Case Manager', width: 90 },
+                            { field: 'Country', label: 'Country', width: 80 },
+                            { field: 'Phone Number', label: 'Phone', width: 100 },
+                            { field: 'Client Email', label: 'Email', width: 140 }
                         ],
                         filters: [
                             { id: 'mch', label: 'MCH', field: 'MCH Attny Options' },
@@ -23964,7 +23965,7 @@ var InterfaceApp = (function() {
                         id: 'events-google-calendar',
                         type: 'google-calendar',
                         label: 'Google Calendar',
-                        _hidden: true,
+                        _hidden: false,
                         config: {
                             timezone: 'America/New_York',
                             webhookUrl: 'https://n8n.intelechia.com/webhook/users',
@@ -24326,7 +24327,16 @@ var InterfaceApp = (function() {
     async function _getSourceRecords(source) {
         if (!source) return [];
         if (source.apiUrl) {
-            return _getApiRecords(source);
+            var apiRecords = await _getApiRecords(source);
+            // Fall back to local table data if API returns empty (e.g. connection failure)
+            if (apiRecords.length === 0 && (source.tableNamePattern || source.fallbackTablePattern)) {
+                var fallbackTableId = _resolveTableId(source);
+                if (fallbackTableId) {
+                    var localRecords = await _getTableRecords(fallbackTableId);
+                    if (localRecords.length > 0) return localRecords;
+                }
+            }
+            return apiRecords;
         }
         var tableId = _resolveTableId(source);
         return tableId ? _getTableRecords(tableId) : [];
@@ -25059,7 +25069,7 @@ var InterfaceApp = (function() {
             if (block.segment && block.segment.sort && block.segment.sort.field === col.field) {
                 sortIndicator = block.segment.sort.dir === 'asc' ? ' \u2191' : ' \u2193';
             }
-            var w = col.width ? ' style="min-width:' + col.width + 'px;max-width:' + (col.width + 80) + 'px"' : '';
+            var w = col.width ? ' style="width:' + col.width + 'px"' : '';
             html += '<th' + w + ' onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + sortIndicator + '</th>';
         });
         html += '</tr></thead><tbody>';
@@ -25445,7 +25455,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-body"><div class="iface-table-wrapper"><table class="iface-table">';
         html += '<thead><tr>';
         columns.forEach(function(col) {
-            var w = col.width ? ' style="min-width:' + col.width + 'px;max-width:' + (col.width + 80) + 'px"' : '';
+            var w = col.width ? ' style="width:' + col.width + 'px"' : '';
             html += '<th' + w + ' onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + '</th>';
         });
         html += '</tr></thead><tbody>';
