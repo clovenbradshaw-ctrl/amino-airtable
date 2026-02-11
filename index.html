@@ -5880,6 +5880,7 @@ function getTableType(tableName) {
     if (name === 'client info') return 'primary';
     if (name === 'case master view') return 'primary';
     if (name === 'events') return 'primary';
+    if (name === 'case notes' || name === 'case note') return 'primary';
 
     // Events
     if (name.includes('event') && name.includes('stream')) return 'events';
@@ -10985,7 +10986,7 @@ async function renderSidebar(forceRefresh) {
     });
 
     // Sort each group alphabetically (except primary which has a fixed order)
-    var primaryOrder = ['client info', 'case master view', 'events'];
+    var primaryOrder = ['client info', 'case master view', 'events', 'case notes'];
     Object.keys(groupedTables).forEach(type => {
         if (type === 'primary') {
             groupedTables[type].sort((a, b) => {
@@ -18085,17 +18086,15 @@ async function editRecord(tableId, recordId, fieldChanges) {
     }
 }
 
-// ============ Case Notes API — Ingestion & Creation ============
+// ============ Case Notes — Creation & Client Linking ============
+// Case Notes are ingested as a regular table through the standard webhook
+// pipeline (/amino-tables, /amino-records). This module handles creation
+// of new case notes and linking them to clients via airtableId.
 
 var CaseNotesAPI = (function() {
     'use strict';
 
-    var CASE_NOTES_TABLE_PATTERN = 'case note';
-    var CASE_NOTES_FALLBACK_PATTERN = 'note';
-    var CLIENTS_TABLE_PATTERN = 'client info';
-    var CLIENTS_FALLBACK_PATTERN = 'client';
-
-    // Resolve the Case Notes table ID from META_TABLES
+    // Resolve a table ID from META_TABLES by name pattern
     function _resolveTableId(pattern, fallback) {
         var tables = Object.keys(META_TABLES || {});
         var p = (pattern || '').toLowerCase();
@@ -18118,97 +18117,15 @@ var CaseNotesAPI = (function() {
     }
 
     function getCaseNotesTableId() {
-        return _resolveTableId(CASE_NOTES_TABLE_PATTERN, CASE_NOTES_FALLBACK_PATTERN);
+        return _resolveTableId('case note', 'note');
     }
 
     function getClientsTableId() {
-        return _resolveTableId(CLIENTS_TABLE_PATTERN, CLIENTS_FALLBACK_PATTERN);
-    }
-
-    // Fetch case notes with optional filtering.
-    // Filters: { client_pp_id, matter_id, date_start, date_end }
-    // Returns array of { recordId, fields } objects.
-    async function fetchCaseNotes(filters) {
-        filters = filters || {};
-        var tableId = getCaseNotesTableId();
-        if (!tableId) {
-            console.warn('[CaseNotesAPI] Case Notes table not found in META_TABLES');
-            return [];
-        }
-
-        var records = [];
-        // Use in-memory data if available
-        if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
-            var memData = window.IN_MEMORY_DATA[tableId];
-            Object.keys(memData).forEach(function(rid) {
-                records.push({ recordId: rid, fields: memData[rid] });
-            });
-        } else if (typeof db !== 'undefined' && db) {
-            try {
-                var tx = db.transaction('data', 'readonly');
-                var store = tx.objectStore('data');
-                var index = store.index ? store.index('byTable') : null;
-                if (index) {
-                    var results = await new Promise(function(resolve, reject) {
-                        var req = index.getAll(tableId);
-                        req.onsuccess = function() { resolve(req.result || []); };
-                        req.onerror = function() { reject(req.error); };
-                    });
-                    for (var i = 0; i < results.length; i++) {
-                        var rec = results[i];
-                        if (encryptionEnabled && encryptionKey && rec.encrypted) {
-                            try { rec = await decryptRecordFromStorage(rec); } catch (e) { continue; }
-                        }
-                        records.push({ recordId: rec.recordId || rec.id, fields: rec.fields || rec });
-                    }
-                }
-            } catch (e) {
-                console.warn('[CaseNotesAPI] Data fetch error:', e.message);
-            }
-        }
-
-        // Apply client-side filters matching the Softr CRM API query pattern
-        if (filters.client_pp_id) {
-            var cppId = filters.client_pp_id.trim().toLowerCase();
-            records = records.filter(function(r) {
-                var v = r.fields.Client_PP_ID || r.fields.client_pp_id || '';
-                return String(v).trim().toLowerCase() === cppId;
-            });
-        }
-        if (filters.matter_id) {
-            var mId = filters.matter_id.trim().toLowerCase();
-            records = records.filter(function(r) {
-                var v = r.fields.matter_id || r.fields.Matter_ID || '';
-                return String(v).trim().toLowerCase() === mId;
-            });
-        }
-        if (filters.date_start) {
-            var dStart = new Date(filters.date_start).getTime();
-            records = records.filter(function(r) {
-                var v = r.fields.Date || r.fields.date;
-                return v && new Date(v).getTime() >= dStart;
-            });
-        }
-        if (filters.date_end) {
-            var dEnd = new Date(filters.date_end).getTime();
-            records = records.filter(function(r) {
-                var v = r.fields.Date || r.fields.date;
-                return v && new Date(v).getTime() <= dEnd;
-            });
-        }
-        if (filters.client_airtable_id) {
-            var caId = filters.client_airtable_id.trim();
-            records = records.filter(function(r) {
-                var v = r.fields.client_airtable_id || r.fields.Softr_Link_to_clients || '';
-                return String(v).trim() === caId;
-            });
-        }
-
-        return records;
+        return _resolveTableId('client info', 'client');
     }
 
     // Create a new case note and link to a client via client_airtable_id.
-    // noteData: { Activity, Type, Date, Description, Contact, matter_id, Due_Date, source, tags, client_airtable_id }
+    // Uses the same amino-write webhook as editRecord().
     async function createCaseNote(noteData) {
         if (!noteData || !noteData.client_airtable_id) {
             throw new Error('client_airtable_id is required to link the case note to a client');
@@ -18216,7 +18133,7 @@ var CaseNotesAPI = (function() {
 
         var session = _loadSynapseSession();
         if (!session || !session.accessToken) {
-            throw new Error('Not authenticated — cannot create case note');
+            throw new Error('Not authenticated');
         }
 
         var tableId = getCaseNotesTableId();
@@ -18224,7 +18141,7 @@ var CaseNotesAPI = (function() {
             throw new Error('Case Notes table not found — ensure data is synced');
         }
 
-        // Build the fields payload matching the Case Notes schema
+        // Build fields matching the Case Notes schema
         var fields = {};
         if (noteData.Activity) fields.Activity = noteData.Activity;
         if (noteData.Type) fields.Type = noteData.Type;
@@ -18236,42 +18153,27 @@ var CaseNotesAPI = (function() {
         if (noteData.source) fields.source = noteData.source;
         if (noteData.tags) fields.tags = noteData.tags;
 
-        // Link to client via airtable ID — set both link fields
+        // Link to client via airtable record ID
         fields.client_airtable_id = noteData.client_airtable_id;
         fields.Softr_Link_to_clients = noteData.client_airtable_id;
 
         // Set creation metadata
         var userId = session.userId || '';
-        var displayName = userId.replace(/@([^:]+):.*/, '$1');
-        fields.Created_By = displayName;
-        fields.Last_Update_By = displayName;
+        fields.Created_By = userId.replace(/@([^:]+):.*/, '$1');
+        fields.Last_Update_By = fields.Created_By;
 
-        // Write via the amino-write webhook (POST for new records)
-        var writeUrl = WRITE_API_BASE;
-        var writeBody = JSON.stringify({
-            tableId: tableId,
-            fields: fields,
-            operation: 'create'
-        });
-
+        // POST to amino-write webhook
+        var writeBody = JSON.stringify({ tableId: tableId, fields: fields, operation: 'create' });
         var response;
         try {
             response = await fetch(
-                writeUrl + '?access_token=' + encodeURIComponent(session.accessToken),
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: writeBody
-                }
+                WRITE_API_BASE + '?access_token=' + encodeURIComponent(session.accessToken),
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: writeBody }
             );
         } catch (fetchErr) {
-            console.warn('[CaseNotesAPI] Query-param POST failed, retrying with header auth');
-            response = await fetch(writeUrl, {
+            response = await fetch(WRITE_API_BASE, {
                 method: 'POST',
-                headers: {
-                    'Authorization': 'Bearer ' + session.accessToken,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Authorization': 'Bearer ' + session.accessToken, 'Content-Type': 'application/json' },
                 body: writeBody
             });
         }
@@ -18284,38 +18186,29 @@ var CaseNotesAPI = (function() {
 
         var result = await response.json();
 
-        // Store in local data if we got a record back
+        // Store locally so it appears in the table immediately
         if (result.recordId || result.id) {
-            var newRecordId = result.recordId || result.id;
-            var newFields = result.fields || fields;
+            var rid = result.recordId || result.id;
+            var finalFields = result.fields || fields;
             try {
-                await saveDataRecord({
-                    tableId: tableId,
-                    recordId: newRecordId,
-                    fields: newFields
-                });
+                await saveDataRecord({ tableId: tableId, recordId: rid, fields: finalFields });
                 if (window.IN_MEMORY_DATA) {
                     if (!window.IN_MEMORY_DATA[tableId]) window.IN_MEMORY_DATA[tableId] = {};
-                    window.IN_MEMORY_DATA[tableId][newRecordId] = newFields;
+                    window.IN_MEMORY_DATA[tableId][rid] = finalFields;
                 }
                 window.dispatchEvent(new CustomEvent('amino:record-updated', {
-                    detail: { recordId: newRecordId, tableId: tableId, fields: newFields, optimistic: false }
+                    detail: { recordId: rid, tableId: tableId, fields: finalFields, optimistic: false }
                 }));
-            } catch (storeErr) {
-                console.warn('[CaseNotesAPI] Local store update failed:', storeErr.message);
-            }
+            } catch (e) { /* non-fatal */ }
         }
 
-        console.log('[CaseNotesAPI] Case note created successfully:', result);
         return result;
     }
 
-    // Populate the client dropdown in the creation modal
+    // Populate the client dropdown from the existing Clients table data
     async function _populateClientDropdown() {
         var select = document.getElementById('cn-client');
         if (!select) return;
-
-        // Clear existing options except the default
         select.innerHTML = '<option value="">Select a client...</option>';
 
         var clientsTableId = getClientsTableId();
@@ -18324,6 +18217,7 @@ var CaseNotesAPI = (function() {
             return;
         }
 
+        // Read clients from the same data stores the rest of the app uses
         var records = [];
         if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[clientsTableId]) {
             var memData = window.IN_MEMORY_DATA[clientsTableId];
@@ -18333,49 +18227,40 @@ var CaseNotesAPI = (function() {
         } else if (typeof db !== 'undefined' && db) {
             try {
                 var tx = db.transaction('data', 'readonly');
-                var store = tx.objectStore('data');
-                var index = store.index ? store.index('byTable') : null;
-                if (index) {
-                    var results = await new Promise(function(resolve, reject) {
-                        var req = index.getAll(clientsTableId);
-                        req.onsuccess = function() { resolve(req.result || []); };
-                        req.onerror = function() { reject(req.error); };
-                    });
-                    for (var i = 0; i < results.length; i++) {
-                        var rec = results[i];
-                        if (encryptionEnabled && encryptionKey && rec.encrypted) {
-                            try { rec = await decryptRecordFromStorage(rec); } catch (e) { continue; }
-                        }
-                        records.push({ recordId: rec.recordId || rec.id, fields: rec.fields || rec });
+                var index = tx.objectStore('data').index('byTable');
+                var results = await new Promise(function(resolve, reject) {
+                    var req = index.getAll(clientsTableId);
+                    req.onsuccess = function() { resolve(req.result || []); };
+                    req.onerror = function() { reject(req.error); };
+                });
+                for (var i = 0; i < results.length; i++) {
+                    var rec = results[i];
+                    if (encryptionEnabled && encryptionKey && rec.encrypted) {
+                        try { rec = await decryptRecordFromStorage(rec); } catch (e) { continue; }
                     }
+                    records.push({ recordId: rec.recordId || rec.id, fields: rec.fields || rec });
                 }
-            } catch (e) {
-                console.warn('[CaseNotesAPI] Could not load clients:', e.message);
-            }
+            } catch (e) { /* non-fatal */ }
         }
 
-        // Sort by client name
         records.sort(function(a, b) {
-            var na = (a.fields['Client Name'] || a.fields['client_name'] || a.fields['Name'] || '').toLowerCase();
-            var nb = (b.fields['Client Name'] || b.fields['client_name'] || b.fields['Name'] || '').toLowerCase();
+            var na = (a.fields['Client Name'] || a.fields['Name'] || '').toLowerCase();
+            var nb = (b.fields['Client Name'] || b.fields['Name'] || '').toLowerCase();
             return na.localeCompare(nb);
         });
 
         records.forEach(function(r) {
-            var name = r.fields['Client Name'] || r.fields['client_name'] || r.fields['Name'] || r.recordId;
+            var name = r.fields['Client Name'] || r.fields['Name'] || r.recordId;
             var opt = document.createElement('option');
-            opt.value = r.recordId; // This is the airtableId used for linking
+            opt.value = r.recordId;
             opt.textContent = name;
             select.appendChild(opt);
         });
     }
 
-    // Open the case note creation modal
     function openModal() {
         var modal = document.getElementById('case-note-modal');
         if (!modal) return;
-
-        // Reset form fields
         document.getElementById('cn-activity').value = '';
         document.getElementById('cn-type').value = '';
         document.getElementById('cn-date').value = new Date().toISOString().slice(0, 16);
@@ -18387,19 +18272,16 @@ var CaseNotesAPI = (function() {
         document.getElementById('cn-tags').value = '';
         document.getElementById('cn-status').textContent = '';
         document.getElementById('cn-submit').disabled = false;
-
         _populateClientDropdown();
         modal.classList.add('open');
     }
 
-    // Close the case note creation modal
     function closeModal(event) {
         if (event && event.target !== event.currentTarget) return;
         var modal = document.getElementById('case-note-modal');
         if (modal) modal.classList.remove('open');
     }
 
-    // Submit the case note form
     async function submitNote() {
         var clientId = document.getElementById('cn-client').value;
         if (!clientId) {
@@ -18416,28 +18298,33 @@ var CaseNotesAPI = (function() {
         var dueDateVal = document.getElementById('cn-due-date').value;
         var tagsVal = document.getElementById('cn-tags').value.trim();
 
-        var noteData = {
-            client_airtable_id: clientId,
-            Activity: document.getElementById('cn-activity').value.trim(),
-            Type: document.getElementById('cn-type').value,
-            Date: dateVal ? new Date(dateVal).toISOString() : new Date().toISOString(),
-            Description: document.getElementById('cn-description').value.trim(),
-            Contact: document.getElementById('cn-contact').value.trim(),
-            matter_id: document.getElementById('cn-matter').value.trim(),
-            Due_Date: dueDateVal ? new Date(dueDateVal).toISOString() : null,
-            source: document.getElementById('cn-source').value.trim() || 'Portal',
-            tags: tagsVal ? tagsVal.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : []
-        };
-
         try {
-            await createCaseNote(noteData);
+            await createCaseNote({
+                client_airtable_id: clientId,
+                Activity: document.getElementById('cn-activity').value.trim(),
+                Type: document.getElementById('cn-type').value,
+                Date: dateVal ? new Date(dateVal).toISOString() : new Date().toISOString(),
+                Description: document.getElementById('cn-description').value.trim(),
+                Contact: document.getElementById('cn-contact').value.trim(),
+                matter_id: document.getElementById('cn-matter').value.trim(),
+                Due_Date: dueDateVal ? new Date(dueDateVal).toISOString() : null,
+                source: document.getElementById('cn-source').value.trim() || 'Portal',
+                tags: tagsVal ? tagsVal.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : []
+            });
             statusEl.textContent = '';
             closeModal();
             showToast('success', 'Case note created');
 
-            // Refresh the interface if on case notes page
+            // Refresh: invalidate sidebar cache so new record count shows,
+            // and re-render current interface page or database table.
+            invalidateSidebarCache();
+            renderSidebar(true);
             if (typeof InterfaceApp !== 'undefined' && InterfaceApp.activePage) {
                 InterfaceApp.renderPage(InterfaceApp.activePage);
+            }
+            var cnTableId = getCaseNotesTableId();
+            if (cnTableId && currentTable === cnTableId) {
+                renderTable(cnTableId);
             }
         } catch (err) {
             console.error('[CaseNotesAPI] Creation failed:', err);
@@ -18447,7 +18334,6 @@ var CaseNotesAPI = (function() {
     }
 
     return {
-        fetchCaseNotes: fetchCaseNotes,
         createCaseNote: createCaseNote,
         getCaseNotesTableId: getCaseNotesTableId,
         getClientsTableId: getClientsTableId,
@@ -22804,14 +22690,14 @@ var InterfaceApp = (function() {
                             fallbackTablePattern: 'note'
                         },
                         display: {
-                            titleField: 'Client Name',
-                            subtitleField: 'Subject',
-                            metaField: null,
+                            titleField: 'Activity',
+                            subtitleField: 'Description',
+                            metaField: 'Date',
                             icon: '\uD83D\uDCDD'
                         },
                         segment: {
                             op: 'SEG',
-                            sort: { field: '_createdTime', dir: 'desc' },
+                            sort: { field: 'Date', dir: 'desc' },
                             limit: 20
                         }
                     },
