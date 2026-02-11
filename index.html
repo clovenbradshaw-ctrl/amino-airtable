@@ -1309,6 +1309,35 @@
         .sync-activity-log .log-line.error .message { color: #f87171; }
         .sync-activity-log .log-line.warn .message { color: #fbbf24; }
         .sync-activity-log .log-empty { color: var(--text-disabled); text-align: center; padding: 20px; }
+        /* ===== Matrix Rooms View ===== */
+        .matrix-rooms-view { padding: 24px; max-width: 1200px; }
+        .matrix-rooms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+        .matrix-room-card { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); padding: 16px; transition: border-color var(--transition-fast), background var(--transition-fast); cursor: default; }
+        .matrix-room-card:hover { border-color: var(--border-secondary); background: var(--bg-hover); }
+        .matrix-room-card.space { border-left: 3px solid #8b5cf6; }
+        .matrix-room-card.room { border-left: 3px solid #6366f1; }
+        .matrix-room-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .matrix-room-card-icon { width: 32px; height: 32px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+        .matrix-room-card-icon.space-icon { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+        .matrix-room-card-icon.room-icon { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
+        .matrix-room-card-name { font-size: 13px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+        .matrix-room-card-type { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-sm); text-transform: uppercase; flex-shrink: 0; }
+        .matrix-room-card-type.space { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+        .matrix-room-card-type.room { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
+        .matrix-room-card-type.dm { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
+        .matrix-room-card-topic { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .matrix-room-card-meta { display: flex; gap: 12px; font-size: 11px; color: var(--text-disabled); flex-wrap: wrap; }
+        .matrix-room-card-meta span { display: flex; align-items: center; gap: 4px; }
+        .matrix-room-card-id { font-family: var(--font-mono); font-size: 11px; color: var(--text-disabled); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 6px; }
+        .matrix-rooms-section { margin-bottom: 20px; }
+        .matrix-rooms-section h3 { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .matrix-rooms-section h3 .section-count { font-weight: 400; color: var(--text-muted); }
+        .matrix-rooms-filter { display: flex; gap: 8px; margin-bottom: 20px; align-items: center; }
+        .matrix-rooms-filter input { flex: 1; max-width: 360px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); padding: 8px 12px; font-size: 13px; color: var(--text-primary); font-family: inherit; }
+        .matrix-rooms-filter input:focus { outline: none; border-color: var(--primary-400); }
+        .matrix-rooms-filter .filter-btn { padding: 6px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-primary); background: var(--bg-secondary); font-size: 12px; font-weight: 500; color: var(--text-muted); cursor: pointer; transition: all var(--transition-fast); }
+        .matrix-rooms-filter .filter-btn:hover { border-color: var(--border-secondary); color: var(--text-secondary); }
+        .matrix-rooms-filter .filter-btn.active { background: rgba(99, 102, 241, 0.15); color: #818cf8; border-color: rgba(99, 102, 241, 0.3); }
         /* ===== Events Table ===== */
         .events-table { min-width: 100%; border-collapse: collapse; font-size: 13px; }
         .events-table th { background: var(--bg-secondary); border-bottom: 2px solid var(--border-primary); padding: 10px 12px; text-align: left; font-weight: 500; color: var(--text-secondary); position: sticky; top: 0; z-index: 10; white-space: nowrap; }
@@ -2730,6 +2759,8 @@ function activateTab(tabId) {
         showEventsView().finally(function() { _tabNavInProgress = false; });
     } else if (tab.tableId === '_sync_status' && typeof showSyncStatusView === 'function') {
         showSyncStatusView().finally(function() { _tabNavInProgress = false; });
+    } else if (tab.tableId === '_matrix_rooms' && typeof showMatrixRoomsView === 'function') {
+        showMatrixRoomsView().finally(function() { _tabNavInProgress = false; });
     } else if (typeof showTable === 'function') {
         showTable(tab.tableId).finally(function() { _tabNavInProgress = false; });
     } else {
@@ -8055,7 +8086,7 @@ function filterSidebarDOM(query) {
     // When searching, show all matching items and hide non-matching
     wrappers.forEach(function(wrapper) {
         var tableId = wrapper.getAttribute('data-table-id');
-        if (tableId === '_events' || tableId === '_sync_status') {
+        if (tableId === '_events' || tableId === '_sync_status' || tableId === '_matrix_rooms') {
             // Hide special items during search, show when not searching
             wrapper.style.display = searchQuery ? 'none' : '';
             return;
@@ -8285,6 +8316,20 @@ async function renderSidebar(forceRefresh) {
         syncStatusDiv.onclick = () => showSyncStatusView();
         syncStatusWrapper.appendChild(syncStatusDiv);
         tableList.appendChild(syncStatusWrapper);
+
+        // Matrix Rooms (all joined rooms)
+        var matrixRoomsWrapper = document.createElement('div');
+        matrixRoomsWrapper.className = 'table-wrapper';
+        matrixRoomsWrapper.setAttribute('data-table-id', '_matrix_rooms');
+
+        var matrixRoomsDiv = document.createElement('div');
+        matrixRoomsDiv.className = 'table-item matrix-rooms-item' + (currentTable === '_matrix_rooms' ? ' active' : '');
+        matrixRoomsDiv.innerHTML =
+            '<span class="table-icon type-room">' + TABLE_TYPE_CONFIG.room.icon + '</span>' +
+            '<span class="table-name">Matrix Rooms</span>';
+        matrixRoomsDiv.onclick = () => showMatrixRoomsView();
+        matrixRoomsWrapper.appendChild(matrixRoomsDiv);
+        tableList.appendChild(matrixRoomsWrapper);
 
         // Rooms Section (Matrix/Synapse rooms)
         var discoveredRooms = (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms) ? SynapseSync.tableRooms : [];
@@ -9753,7 +9798,7 @@ function renderTableHeaders() {
 async function renderTable() {
     if (!currentTable) return;
     // Skip rendering if we're in a special view (Events or Sync Status)
-    if (currentTable === '_events' || currentTable === '_sync_status') return;
+    if (currentTable === '_events' || currentTable === '_sync_status' || currentTable === '_matrix_rooms') return;
 
     var renderNav = navVersion; // Capture current nav version for stale check
 
@@ -10355,6 +10400,298 @@ function formatSyncTimestamp(ts) {
     var time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
     if (isToday) return time;
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time;
+}
+
+// ============ Matrix Rooms View ============
+
+// Cache for fetched rooms so re-renders don't need a fresh API call
+var _matrixRoomsCache = null;
+var _matrixRoomsFilter = 'all'; // 'all', 'spaces', 'rooms'
+var _matrixRoomsSearch = '';
+
+async function showMatrixRoomsView() {
+    var myNav = ++navVersion;
+
+    openTableInTab('_matrix_rooms', 'Matrix Rooms', '\uD83D\uDCAD');
+
+    // Clean up other view state
+    expandedPayloads.clear();
+    loadedEvents = [];
+    eventsOffset = 0;
+    isLoadingMoreEvents = false;
+    hasMoreEvents = true;
+    if (eventsScrollHandler) {
+        var evContainer = document.querySelector('.table-container');
+        if (evContainer) evContainer.removeEventListener('scroll', eventsScrollHandler);
+        eventsScrollHandler = null;
+    }
+    if (changelogScrollHandler) {
+        var evContainer2 = document.querySelector('.table-container');
+        if (evContainer2) evContainer2.removeEventListener('scroll', changelogScrollHandler);
+        changelogScrollHandler = null;
+    }
+
+    currentTable = '_matrix_rooms';
+    currentView = null;
+
+    // Update sidebar selection
+    document.querySelectorAll('.sidebar .table-item').forEach(function(el) { el.classList.remove('active', 'expanded'); });
+    document.querySelectorAll('.sidebar .table-view-item').forEach(function(el) { el.classList.remove('active'); });
+    var matrixRoomsItem = document.querySelector('.sidebar .table-item.matrix-rooms-item');
+    if (matrixRoomsItem) matrixRoomsItem.classList.add('active');
+
+    // Hide view controls
+    document.getElementById('view-controls-bar').style.display = 'none';
+    document.getElementById('title').textContent = 'Matrix Rooms';
+    document.getElementById('pagination').style.display = 'none';
+
+    var toolbarViews = document.querySelector('.toolbar-views');
+    if (toolbarViews) toolbarViews.style.display = 'none';
+
+    // Show loading state
+    var container = document.querySelector('.table-container');
+    if (container) container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading Matrix rooms...</h3></div>';
+
+    // Reset filter state for fresh load
+    _matrixRoomsFilter = 'all';
+    _matrixRoomsSearch = '';
+    _matrixRoomsCache = null;
+
+    await fetchAndRenderMatrixRooms();
+}
+
+async function fetchAndRenderMatrixRooms() {
+    var container = document.querySelector('.table-container');
+    if (!container) return;
+
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken) {
+        container.innerHTML =
+            '<div class="matrix-rooms-view">' +
+            '<div class="loading-state"><h3>Not Connected to Matrix</h3>' +
+            '<p style="color: var(--text-muted); margin-top: 8px;">Sign in to your Matrix homeserver to view rooms.</p></div></div>';
+        return;
+    }
+
+    try {
+        // Fetch all joined rooms via /sync with no since token (full state snapshot)
+        var filter = JSON.stringify({
+            room: {
+                state: {
+                    types: ['m.room.name', 'm.room.create', 'm.room.topic', 'm.room.canonical_alias', 'm.room.join_rules', 'm.space.child', 'm.space.parent'],
+                    lazy_load_members: true
+                },
+                timeline: { limit: 0 },
+                ephemeral: { types: [] },
+                account_data: { types: [] }
+            },
+            account_data: { types: [] },
+            presence: { types: [] }
+        });
+
+        var res = await fetch(
+            SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=0&filter=' + encodeURIComponent(filter),
+            { headers: { 'Authorization': 'Bearer ' + session.accessToken } }
+        );
+
+        if (!res.ok) throw new Error('Sync failed with status ' + res.status);
+        var syncData = await safeResponseJson(res, 'Matrix rooms');
+
+        var joinedRooms = (syncData.rooms && syncData.rooms.join) || {};
+        var rooms = [];
+
+        for (var roomId in joinedRooms) {
+            var roomData = joinedRooms[roomId];
+            var stateEvents = (roomData.state && roomData.state.events) || [];
+
+            var name = null;
+            var topic = null;
+            var isSpace = false;
+            var alias = null;
+            var joinRule = null;
+            var childCount = 0;
+            var creator = null;
+            var isDM = false;
+            var parentSpaces = [];
+
+            for (var i = 0; i < stateEvents.length; i++) {
+                var evt = stateEvents[i];
+                if (!evt.content) continue;
+                if (evt.type === 'm.room.name') {
+                    name = evt.content.name;
+                } else if (evt.type === 'm.room.topic') {
+                    topic = evt.content.topic;
+                } else if (evt.type === 'm.room.create') {
+                    isSpace = evt.content.type === 'm.space';
+                    creator = evt.content.creator || evt.sender;
+                    if (evt.content.is_direct) isDM = true;
+                } else if (evt.type === 'm.room.canonical_alias') {
+                    alias = evt.content.alias;
+                } else if (evt.type === 'm.room.join_rules') {
+                    joinRule = evt.content.join_rule;
+                } else if (evt.type === 'm.space.child' && evt.content.via) {
+                    childCount++;
+                } else if (evt.type === 'm.space.parent' && evt.content.via) {
+                    parentSpaces.push(evt.state_key);
+                }
+            }
+
+            rooms.push({
+                roomId: roomId,
+                name: name || alias || roomId,
+                topic: topic,
+                isSpace: isSpace,
+                isDM: isDM,
+                alias: alias,
+                joinRule: joinRule,
+                childCount: childCount,
+                creator: creator,
+                parentSpaces: parentSpaces
+            });
+        }
+
+        // Sort: spaces first, then alphabetically by name
+        rooms.sort(function(a, b) {
+            if (a.isSpace && !b.isSpace) return -1;
+            if (!a.isSpace && b.isSpace) return 1;
+            return (a.name || '').localeCompare(b.name || '');
+        });
+
+        _matrixRoomsCache = rooms;
+        renderMatrixRoomsView();
+    } catch (err) {
+        console.error('[MatrixRooms] Failed to fetch rooms:', err);
+        container.innerHTML =
+            '<div class="matrix-rooms-view">' +
+            '<div class="sync-status-header"><h2>Matrix Rooms</h2>' +
+            '<span class="sync-status-badge error">Error</span></div>' +
+            '<div class="sync-status-card"><div class="card-label">Error</div>' +
+            '<div class="card-value" style="font-size: 14px; color: var(--text-muted);">' + esc(err.message) + '</div></div></div>';
+    }
+}
+
+function renderMatrixRoomsView() {
+    var container = document.querySelector('.table-container');
+    if (!container || !_matrixRoomsCache) return;
+
+    var rooms = _matrixRoomsCache;
+    var search = _matrixRoomsSearch.toLowerCase();
+    var filter = _matrixRoomsFilter;
+
+    // Apply filters
+    var filtered = rooms.filter(function(r) {
+        if (filter === 'spaces' && !r.isSpace) return false;
+        if (filter === 'rooms' && r.isSpace) return false;
+        if (search) {
+            var haystack = ((r.name || '') + ' ' + (r.alias || '') + ' ' + (r.roomId || '') + ' ' + (r.topic || '')).toLowerCase();
+            if (haystack.indexOf(search) === -1) return false;
+        }
+        return true;
+    });
+
+    var totalSpaces = rooms.filter(function(r) { return r.isSpace; }).length;
+    var totalRegular = rooms.length - totalSpaces;
+
+    var html = '<div class="matrix-rooms-view">';
+
+    // Header
+    html += '<div class="sync-status-header">';
+    html += '<h2>Matrix Rooms</h2>';
+    html += '<span class="sync-status-badge synced">' + rooms.length + ' joined</span>';
+    html += '</div>';
+
+    // Summary cards
+    html += '<div class="sync-status-cards">';
+    html += '<div class="sync-status-card"><div class="card-label">Total Joined</div><div class="card-value">' + rooms.length + '</div></div>';
+    html += '<div class="sync-status-card"><div class="card-label">Spaces</div><div class="card-value">' + totalSpaces + '</div></div>';
+    html += '<div class="sync-status-card"><div class="card-label">Rooms</div><div class="card-value">' + totalRegular + '</div></div>';
+    html += '</div>';
+
+    // Search & filter bar
+    html += '<div class="matrix-rooms-filter">';
+    html += '<input type="text" placeholder="Search rooms..." value="' + esc(_matrixRoomsSearch) + '" oninput="_matrixRoomsSearch = this.value; renderMatrixRoomsView();" />';
+    html += '<button class="filter-btn' + (filter === 'all' ? ' active' : '') + '" onclick="_matrixRoomsFilter=\'all\'; renderMatrixRoomsView();">All</button>';
+    html += '<button class="filter-btn' + (filter === 'spaces' ? ' active' : '') + '" onclick="_matrixRoomsFilter=\'spaces\'; renderMatrixRoomsView();">Spaces</button>';
+    html += '<button class="filter-btn' + (filter === 'rooms' ? ' active' : '') + '" onclick="_matrixRoomsFilter=\'rooms\'; renderMatrixRoomsView();">Rooms</button>';
+    html += '</div>';
+
+    // Showing count
+    if (search || filter !== 'all') {
+        html += '<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Showing ' + filtered.length + ' of ' + rooms.length + '</div>';
+    }
+
+    // Room cards grid
+    html += '<div class="matrix-rooms-grid">';
+
+    for (var i = 0; i < filtered.length; i++) {
+        var r = filtered[i];
+        var typeClass = r.isSpace ? 'space' : 'room';
+        var typeLabel = r.isSpace ? 'Space' : (r.isDM ? 'DM' : 'Room');
+        var typeBadgeClass = r.isSpace ? 'space' : (r.isDM ? 'dm' : 'room');
+        var iconClass = r.isSpace ? 'space-icon' : 'room-icon';
+        var iconChar = r.isSpace ? '\uD83C\uDFE2' : (r.isDM ? '\uD83D\uDCAC' : '\uD83D\uDCAD');
+
+        html += '<div class="matrix-room-card ' + typeClass + '">';
+
+        // Header row
+        html += '<div class="matrix-room-card-header">';
+        html += '<div class="matrix-room-card-icon ' + iconClass + '">' + iconChar + '</div>';
+        html += '<span class="matrix-room-card-name" title="' + esc(r.name) + '">' + esc(r.name) + '</span>';
+        html += '<span class="matrix-room-card-type ' + typeBadgeClass + '">' + typeLabel + '</span>';
+        html += '</div>';
+
+        // Topic
+        if (r.topic) {
+            html += '<div class="matrix-room-card-topic">' + esc(r.topic) + '</div>';
+        }
+
+        // Meta info
+        html += '<div class="matrix-room-card-meta">';
+        if (r.alias) {
+            html += '<span title="Alias">' + esc(r.alias) + '</span>';
+        }
+        if (r.joinRule) {
+            html += '<span title="Join rule">' + esc(r.joinRule) + '</span>';
+        }
+        if (r.isSpace && r.childCount > 0) {
+            html += '<span title="Child rooms">' + r.childCount + ' children</span>';
+        }
+        if (r.parentSpaces.length > 0) {
+            html += '<span title="Parent spaces">' + r.parentSpaces.length + ' parent' + (r.parentSpaces.length !== 1 ? 's' : '') + '</span>';
+        }
+        if (r.creator) {
+            html += '<span title="Creator">' + esc(r.creator) + '</span>';
+        }
+        html += '</div>';
+
+        // Room ID
+        html += '<div class="matrix-room-card-id" title="' + esc(r.roomId) + '">' + esc(r.roomId) + '</div>';
+
+        html += '</div>';
+    }
+
+    if (filtered.length === 0) {
+        html += '<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">';
+        if (search || filter !== 'all') {
+            html += '<p>No rooms match your filter.</p>';
+        } else {
+            html += '<p>No rooms found.</p>';
+        }
+        html += '</div>';
+    }
+
+    html += '</div>'; // grid
+    html += '</div>'; // view
+    container.innerHTML = html;
+
+    // Re-focus search input if user was typing
+    if (search) {
+        var searchInput = container.querySelector('.matrix-rooms-filter input');
+        if (searchInput) {
+            searchInput.focus();
+            searchInput.setSelectionRange(search.length, search.length);
+        }
+    }
 }
 
 // ============ Synapse Sync ============
