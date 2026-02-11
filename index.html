@@ -18251,9 +18251,28 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
     var sorted = cached._sorted;
     if (!sorted || sorted.length === 0) return;
 
+    // Build fieldId → fieldName map so formulas (which reference fields by
+    // name like {Price}) can resolve values in records keyed by field ID.
+    var _idToName = {};
+    for (var _fid in fields) {
+        var _fm = fields[_fid];
+        if (_fm.fieldName && _fm.fieldName !== _fid) {
+            _idToName[_fid] = _fm.fieldName;
+        }
+    }
+
     // Execute every formula on every record in dependency order
     for (var rid in recordMap) {
         var row = recordMap[rid];
+        // Populate bidirectional name↔id aliases so formulas can resolve refs
+        for (var _afid in _idToName) {
+            var _aname = _idToName[_afid];
+            if (row[_afid] !== undefined && row[_aname] === undefined) {
+                row[_aname] = row[_afid];
+            } else if (row[_aname] !== undefined && row[_afid] === undefined) {
+                row[_afid] = row[_aname];
+            }
+        }
         for (var i = 0; i < sorted.length; i++) {
             var c = sorted[i];
             try {
@@ -18288,6 +18307,19 @@ function _applyFormulaSingleRecord(tableId, fields, recordFields, recordId) {
     }
 
     var sorted = cached._sorted;
+
+    // Populate bidirectional name↔id aliases (same as _applyFormulaColumns)
+    for (var _fid in fields) {
+        var _fm = fields[_fid];
+        if (_fm.fieldName && _fm.fieldName !== _fid) {
+            if (recordFields[_fid] !== undefined && recordFields[_fm.fieldName] === undefined) {
+                recordFields[_fm.fieldName] = recordFields[_fid];
+            } else if (recordFields[_fm.fieldName] !== undefined && recordFields[_fid] === undefined) {
+                recordFields[_fid] = recordFields[_fm.fieldName];
+            }
+        }
+    }
+
     for (var i = 0; i < sorted.length; i++) {
         var c = sorted[i];
         try {
@@ -18305,6 +18337,20 @@ function _applyFormulaSingleRecord(tableId, fields, recordFields, recordId) {
     return recordFields;
 }
 
+// Resolve field ID references in a formula expression to human-readable names.
+// Replaces {fldXYZ} with {Pretty Name} using META_FIELDS for the given table.
+function resolveFormulaFieldNames(expression, tableId) {
+    var tableFields = tableId ? META_FIELDS[tableId] : null;
+    if (!tableFields || !expression) return expression;
+    return expression.replace(/\{([^}]+)\}/g, function(match, ref) {
+        // If ref is a field ID (exists as a key in tableFields), use its name
+        if (tableFields[ref] && tableFields[ref].fieldName && tableFields[ref].fieldName !== ref) {
+            return '{' + tableFields[ref].fieldName + '}';
+        }
+        return match;
+    });
+}
+
 // Show a formula/computed info popover next to a target element
 var _formulaInfoPopover = null;
 function showFormulaInfoPopover(targetEl, field) {
@@ -18314,6 +18360,12 @@ function showFormulaInfoPopover(targetEl, field) {
     var expression = field?.options?.formula || field?.options?.expression || null;
     var referencedFieldIds = field?.options?.referencedFieldIds || null;
     var result = field?.options?.result || null;
+    var tableId = field?.tableId || null;
+
+    // Resolve field IDs to pretty names in the expression
+    if (expression) {
+        expression = resolveFormulaFieldNames(expression, tableId);
+    }
 
     var popover = document.createElement('div');
     popover.className = 'formula-info-popover';
