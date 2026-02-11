@@ -14914,7 +14914,7 @@ var _inlineEditingCell = null; // Currently editing cell element
 var _inlineEditJustCommitted = false; // Suppress re-render right after inline commit
 var _inlineEditCommitExplicit = false; // True when commit triggered by Enter/Tab (not blur)
 
-function startInlineCellEdit(event, td) {
+async function startInlineCellEdit(event, td) {
     // Don't start edit if clicking a link, button, or already in an input
     if (event.target.closest('button, a, input, select, textarea')) return;
 
@@ -14942,6 +14942,13 @@ function startInlineCellEdit(event, td) {
     var field = META_FIELDS[tableId]?.[fieldId];
     var fieldType = field?.fieldType || 'text';
     var recordData = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) ? window.IN_MEMORY_DATA[tableId][recordId] : null;
+    // Fall back to IndexedDB when IN_MEMORY_DATA doesn't have the record
+    if (!recordData) {
+        try {
+            var dbRecord = await getRecord(tableId, recordId);
+            if (dbRecord && dbRecord.fields) recordData = dbRecord.fields;
+        } catch (e) { /* ignore, will proceed with undefined */ }
+    }
     var currentValue;
     if (recordData) {
         currentValue = recordData[fieldId];
