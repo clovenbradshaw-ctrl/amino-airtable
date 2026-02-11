@@ -23366,6 +23366,7 @@ var InterfaceApp = (function() {
                         id: 'clients-table',
                         type: 'data-table',
                         label: 'RK Lacy Law Clients',
+                        mirrorViewFields: true,
                         source: {
                             op: 'DES',
                             tableNamePattern: 'client info',
@@ -24147,8 +24148,34 @@ var InterfaceApp = (function() {
         return html;
     }
 
-    function _renderDataTable(block, records, pageState, allRecords) {
-        var columns = block.columns || [];
+    function _getMirroredColumnsFromView(tableId, block) {
+        if (!tableId || !block || !block.mirrorViewFields || typeof getVisibleFieldsForView !== 'function') return null;
+
+        var viewId = block.mirrorViewId || '_default';
+        var visibleFieldIds = getVisibleFieldsForView(tableId, viewId) || [];
+        var tableFields = (typeof META_FIELDS !== 'undefined' && META_FIELDS && META_FIELDS[tableId]) ? META_FIELDS[tableId] : {};
+        if (!visibleFieldIds.length || !tableFields) return null;
+
+        var existingCols = block.columns || [];
+        var existingByField = {};
+        existingCols.forEach(function(col) {
+            if (col && col.field) existingByField[col.field] = col;
+        });
+
+        return visibleFieldIds.map(function(fieldId) {
+            var fieldMeta = tableFields[fieldId] || {};
+            var fieldName = fieldMeta.fieldName || fieldId;
+            var existing = existingByField[fieldName] || existingByField[fieldId];
+            return {
+                field: fieldName,
+                label: (existing && existing.label) || fieldName,
+                width: (existing && existing.width) || 160
+            };
+        });
+    }
+
+    function _renderDataTable(block, records, pageState, allRecords, tableId) {
+        var columns = _getMirroredColumnsFromView(tableId, block) || block.columns || [];
         var filters = block.filters || [];
         var ps = pageState || { page: 0, pageSize: block.segment && block.segment.pageSize || 50 };
         var total = records.length;
@@ -24719,7 +24746,7 @@ var InterfaceApp = (function() {
                 searchQ = _blockSearchState[block.id] || '';
                 records = _applySegment(allTableRecords, block.segment, searchQ, block._activeFilters);
                 pageState = _tablePaginationState[block.id] || { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
-                html = _renderDataTable(block, records, pageState, allTableRecords);
+                html = _renderDataTable(block, records, pageState, allTableRecords, tableId);
                 break;
 
             case 'tab-container':
