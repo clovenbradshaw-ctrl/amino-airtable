@@ -701,11 +701,20 @@ var MatrixClient = (function() {
 
     // ============ Room Member Listing ============
 
-    async function getRoomMembers(roomId) {
+    async function getRoomMembers(roomId, options) {
+        options = options || {};
+        var memberships = Array.isArray(options.memberships) && options.memberships.length
+            ? options.memberships
+            : ['join'];
+        var allowedMemberships = {};
+        memberships.forEach(function(membership) {
+            if (membership) allowedMemberships[membership] = true;
+        });
+
         var path = '/rooms/' + encodeURIComponent(roomId) + '/members';
         var data = await _requestWithRetry('GET', path);
         return (data.chunk || []).filter(function(e) {
-            return e.content && e.content.membership === 'join';
+            return e.content && !!allowedMemberships[e.content.membership];
         }).map(function(e) {
             return {
                 userId: e.state_key,
