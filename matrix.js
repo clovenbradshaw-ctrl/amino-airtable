@@ -41,6 +41,7 @@ var MatrixClient = (function() {
         RECORD_DELETE: 'law.firm.record.delete',
         VIEW: 'law.firm.view',
         VIEW_SHARE: 'law.firm.view.share',
+        VIEW_DELETE: 'law.firm.view.delete',
         USER_PREFERENCES: 'law.firm.user.preferences',
         INTERFACE: 'law.firm.interface',
         CLIENT_MESSAGE: 'law.firm.client.message',
@@ -849,6 +850,116 @@ var MatrixClient = (function() {
         await writeRecord(portalRoomId, tableId, recordId, projected);
     }
 
+    // ============ View Deletion Helpers ============
+
+    // Delete a view by recording a NUL operation in the org space timeline
+    // and soft-deleting the state event. The full view snapshot is preserved
+    // in the timeline event so the deletion can be reversed.
+    //
+    // Parameters:
+    //   orgSpaceId   — the org space room ID
+    //   tableId      — table the view belongs to
+    //   viewId       — view identifier
+    //   viewSnapshot — full view config object to preserve for restore
+    //
+    // Returns the event_id of the deletion timeline event.
+    async function deleteView(orgSpaceId, tableId, viewId, viewSnapshot) {
+        var stateKey = tableId + '|' + viewId;
+
+        // 1. Send a timeline event recording the deletion (auditable, reversible)
+        var result = await sendEvent(orgSpaceId, EVENT_TYPES.VIEW_DELETE, {
+            tableId: tableId,
+            viewId: viewId,
+            op: 'NUL',
+            deletedBy: _userId,
+            timestamp: Date.now(),
+            viewSnapshot: viewSnapshot
+        });
+
+        // 2. Soft-delete the state event by marking it as deleted
+        //    (preserves the state key so it can be restored in-place)
+        var existing = await getStateEvent(orgSpaceId, EVENT_TYPES.VIEW_SHARE, stateKey);
+        var stateContent = existing || viewSnapshot || {};
+        stateContent._deleted = true;
+        stateContent._deletedBy = _userId;
+        stateContent._deletedAt = Date.now();
+        await sendStateEvent(orgSpaceId, EVENT_TYPES.VIEW_SHARE, stateKey, stateContent);
+
+        return result;
+    }
+
+    // Restore a previously deleted view by recording an INS operation
+    // in the org space timeline and removing the soft-delete markers
+    // from the state event.
+    //
+    // Parameters:
+    //   orgSpaceId   — the org space room ID
+    //   tableId      — table the view belongs to
+    //   viewId       — view identifier
+    //   viewSnapshot — full view config to restore (from the deletion event)
+    //
+    // Returns the event_id of the restore timeline event.
+    async function restoreView(orgSpaceId, tableId, viewId, viewSnapshot) {
+        var stateKey = tableId + '|' + viewId;
+
+        // 1. Send a timeline event recording the restoration
+        var result = await sendEvent(orgSpaceId, EVENT_TYPES.VIEW_DELETE, {
+            tableId: tableId,
+            viewId: viewId,
+            op: 'INS',
+            restoredBy: _userId,
+            timestamp: Date.now(),
+            viewSnapshot: viewSnapshot
+        });
+
+        // 2. Restore the state event by removing soft-delete markers
+        var restored = Object.assign({}, viewSnapshot);
+        delete restored._deleted;
+        delete restored._deletedBy;
+        delete restored._deletedAt;
+        await sendStateEvent(orgSpaceId, EVENT_TYPES.VIEW_SHARE, stateKey, restored);
+
+        return result;
+    }
+
+    // Fetch view deletion history from the org space timeline.
+    // Returns deletion and restoration events in reverse chronological order.
+    //
+    // Options:
+    //   limit — max events to return (default 50)
+    //   from  — pagination token from previous call
+    //
+    // Returns: { events: [...], end: paginationToken, hasMore: boolean }
+    async function getViewDeletionHistory(orgSpaceId, options) {
+        options = options || {};
+        var msgOpts = {
+            dir: 'b',
+            limit: options.limit || 50,
+            filter: { types: [EVENT_TYPES.VIEW_DELETE] }
+        };
+        if (options.from) msgOpts.from = options.from;
+
+        var response = await getRoomMessages(orgSpaceId, msgOpts);
+        if (!response || !response.chunk) {
+            return { events: [], end: null, hasMore: false };
+        }
+
+        var events = response.chunk.map(function(evt) {
+            return {
+                eventId: evt.event_id,
+                sender: evt.sender,
+                timestamp: evt.origin_server_ts,
+                content: evt.content
+            };
+        });
+
+        return {
+            events: events,
+            end: response.end || null,
+            hasMore: response.chunk.length >= (options.limit || 50)
+        };
+    }
+
     // ============ EO Event Helpers (law.firm.schema.object) ============
 
     // Get vault room metadata (maps room to Airtable table)
@@ -977,6 +1088,11 @@ var MatrixClient = (function() {
 
         // EO Event helpers
         getVaultMetadata: getVaultMetadata,
+
+        // View deletion helpers
+        deleteView: deleteView,
+        restoreView: restoreView,
+        getViewDeletionHistory: getViewDeletionHistory,
 
         // Events
         on: on,
