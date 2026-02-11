@@ -24758,28 +24758,45 @@ async function applyUrlState() {
                 eventsSetFilter = params.get('eventsSet') || '';
                 eventsSearchQuery = params.get('eventsSearch') || '';
                 await showEventsView();
-            } else if (table && META_TABLES[table]) {
-                await showTable(table);
-                if (view) {
-                    await selectTableView(table, view);
+            } else {
+                // Merge-safe fallback behavior:
+                // - If URL table is invalid/missing, preserve current table when possible.
+                // - Otherwise use the first available table so database always has a valid target.
+                var targetTable = null;
+                if (table && META_TABLES[table]) {
+                    targetTable = table;
+                } else if (currentTable && META_TABLES[currentTable]) {
+                    targetTable = currentTable;
+                } else {
+                    var firstTable = Object.keys(META_TABLES || {})[0] || null;
+                    if (firstTable) targetTable = firstTable;
                 }
 
-                var search = params.get('search');
-                currentSearchQuery = search ? search.toLowerCase() : '';
-                var searchInput = document.getElementById('view-search-input');
-                if (searchInput) searchInput.value = search || '';
+                if (targetTable) {
+                    await showTable(targetTable);
 
-                var parsedFilters = _safeParseJson(params.get('filters'), null);
-                var parsedSorts = _safeParseJson(params.get('sorts'), null);
-                if (Array.isArray(parsedFilters)) currentFilters = parsedFilters;
-                if (Array.isArray(parsedSorts)) currentSorts = parsedSorts;
+                    // Only switch view if it exists (or _default), otherwise keep current.
+                    if (view && (view === '_default' || (META_VIEWS[targetTable] && META_VIEWS[targetTable][view]))) {
+                        await selectTableView(targetTable, view);
+                    }
 
-                var page = parseInt(params.get('page') || '', 10);
-                currentPage = !isNaN(page) && page > 0 ? page - 1 : 0;
+                    var search = params.get('search');
+                    currentSearchQuery = search ? search.toLowerCase() : '';
+                    var searchInput = document.getElementById('view-search-input');
+                    if (searchInput) searchInput.value = search || '';
 
-                updateFilterCount();
-                updateSortCount();
-                await renderTable();
+                    var parsedFilters = _safeParseJson(params.get('filters'), null);
+                    var parsedSorts = _safeParseJson(params.get('sorts'), null);
+                    if (Array.isArray(parsedFilters)) currentFilters = parsedFilters;
+                    if (Array.isArray(parsedSorts)) currentSorts = parsedSorts;
+
+                    var page = parseInt(params.get('page') || '', 10);
+                    currentPage = !isNaN(page) && page > 0 ? page - 1 : 0;
+
+                    updateFilterCount();
+                    updateSortCount();
+                    await renderTable();
+                }
             }
         } else if (app === 'interface') {
             switchApp('interface', { skipUrlSync: true });
