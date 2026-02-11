@@ -18563,22 +18563,50 @@ var CaseNotesAPI = (function() {
     'use strict';
 
     // Resolve a table ID from META_TABLES by name pattern
+    function _normalizeTableName(value) {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '')
+            .replace(/s$/, '');
+    }
+
     function _resolveTableId(pattern, fallback) {
         var tables = Object.keys(META_TABLES || {});
         var p = (pattern || '').toLowerCase();
         var fb = (fallback || '').toLowerCase();
+        var pn = _normalizeTableName(pattern);
+        var fbn = _normalizeTableName(fallback);
         for (var i = 0; i < tables.length; i++) {
             var name = (META_TABLES[tables[i]].tableName || '').toLowerCase();
             if (name === p) return tables[i];
+        }
+        // Normalized exact match to handle punctuation/plurals (e.g., Case_Notes)
+        if (pn) {
+            for (var i2 = 0; i2 < tables.length; i2++) {
+                var nExact = _normalizeTableName(META_TABLES[tables[i2]].tableName || '');
+                if (nExact === pn) return tables[i2];
+            }
         }
         for (var j = 0; j < tables.length; j++) {
             var n = (META_TABLES[tables[j]].tableName || '').toLowerCase();
             if (n.includes(p)) return tables[j];
         }
+        if (pn) {
+            for (var j2 = 0; j2 < tables.length; j2++) {
+                var nContains = _normalizeTableName(META_TABLES[tables[j2]].tableName || '');
+                if (nContains.includes(pn)) return tables[j2];
+            }
+        }
         if (fb) {
             for (var k = 0; k < tables.length; k++) {
                 var fn = (META_TABLES[tables[k]].tableName || '').toLowerCase();
                 if (fn.includes(fb)) return tables[k];
+            }
+        }
+        if (fbn) {
+            for (var k2 = 0; k2 < tables.length; k2++) {
+                var fnNorm = _normalizeTableName(META_TABLES[tables[k2]].tableName || '');
+                if (fnNorm.includes(fbn)) return tables[k2];
             }
         }
         return null;
@@ -23710,27 +23738,56 @@ var InterfaceApp = (function() {
     // ============ Table Resolution ============
     // Resolves a tableNamePattern from the schema to an actual table ID
 
+    function _normalizeTableName(value) {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '')
+            .replace(/s$/, '');
+    }
+
     function _resolveTableId(source) {
         if (!source) return null;
         var tables = Object.keys(META_TABLES || {});
         var pattern = (source.tableNamePattern || '').toLowerCase();
         var fallback = (source.fallbackTablePattern || '').toLowerCase();
+        var patternNorm = _normalizeTableName(source.tableNamePattern || '');
+        var fallbackNorm = _normalizeTableName(source.fallbackTablePattern || '');
 
         // Exact match first
         for (var i = 0; i < tables.length; i++) {
             var name = (META_TABLES[tables[i]].tableName || '').toLowerCase();
             if (name === pattern) return tables[i];
         }
+        // Normalized exact match for punctuation/plural variants
+        if (patternNorm) {
+            for (var i2 = 0; i2 < tables.length; i2++) {
+                var nameNorm = _normalizeTableName(META_TABLES[tables[i2]].tableName || '');
+                if (nameNorm === patternNorm) return tables[i2];
+            }
+        }
         // Contains match
         for (var j = 0; j < tables.length; j++) {
             var n = (META_TABLES[tables[j]].tableName || '').toLowerCase();
             if (n.includes(pattern)) return tables[j];
+        }
+        // Normalized contains match
+        if (patternNorm) {
+            for (var j2 = 0; j2 < tables.length; j2++) {
+                var nNorm = _normalizeTableName(META_TABLES[tables[j2]].tableName || '');
+                if (nNorm.includes(patternNorm)) return tables[j2];
+            }
         }
         // Fallback pattern
         if (fallback) {
             for (var k = 0; k < tables.length; k++) {
                 var fn = (META_TABLES[tables[k]].tableName || '').toLowerCase();
                 if (fn.includes(fallback)) return tables[k];
+            }
+        }
+        if (fallbackNorm) {
+            for (var k2 = 0; k2 < tables.length; k2++) {
+                var fnNorm = _normalizeTableName(META_TABLES[tables[k2]].tableName || '');
+                if (fnNorm.includes(fallbackNorm)) return tables[k2];
             }
         }
         return null;
