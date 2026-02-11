@@ -1573,6 +1573,55 @@
             transform: translateX(16px);
             background: #fff;
         }
+        /* Settings: Profile form */
+        .settings-profile-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        .settings-profile-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+            min-width: 180px;
+        }
+        .settings-profile-field label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        .settings-profile-field input {
+            padding: 7px 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: var(--font-sans);
+        }
+        .settings-profile-field input:focus {
+            outline: none;
+            border-color: var(--primary-500);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        .settings-profile-save-btn {
+            padding: 7px 18px;
+            background: var(--primary-500);
+            border: none;
+            border-radius: var(--radius-sm);
+            color: #fff;
+            font-size: 13px;
+            font-family: var(--font-sans);
+            font-weight: 500;
+            cursor: pointer;
+            transition: background var(--transition-fast);
+            white-space: nowrap;
+        }
+        .settings-profile-save-btn:hover { background: var(--primary-600); }
+        .settings-profile-save-btn:disabled { background: var(--gray-600); cursor: not-allowed; }
         .settings-toast {
             padding: 10px 16px;
             border-radius: var(--radius-md);
@@ -4719,6 +4768,34 @@
 
         <!-- Preferences Tab -->
         <div id="settings-panel-preferences" style="display: none;">
+            <div class="settings-section">
+                <h2>Profile</h2>
+                <p class="settings-section-desc">Update your display name and email. These are synced to your Matrix account.</p>
+                <div id="profile-loading" style="color: var(--text-muted); font-size: 13px; padding: 8px 0;">Loading profile...</div>
+                <div id="profile-form" style="display: none;">
+                    <div class="settings-profile-row">
+                        <div class="settings-profile-field">
+                            <label for="profile-display-name">Display Name</label>
+                            <input type="text" id="profile-display-name" placeholder="e.g. John Smith" autocomplete="off">
+                        </div>
+                        <div class="settings-profile-field">
+                            <label for="profile-email">Email</label>
+                            <input type="email" id="profile-email" placeholder="e.g. john@example.com" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="settings-profile-row" style="margin-top: 4px;">
+                        <div class="settings-profile-field" style="flex: none;">
+                            <label style="visibility: hidden;">.</label>
+                            <button class="settings-profile-save-btn" id="profile-save-btn" onclick="saveUserProfile()">Save Profile</button>
+                        </div>
+                        <div id="profile-status" style="font-size: 13px; align-self: flex-end; padding-bottom: 8px;"></div>
+                    </div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">
+                        <span style="font-family: var(--font-mono); font-size: 11px;" id="profile-user-id"></span>
+                    </div>
+                </div>
+            </div>
+
             <div class="settings-section">
                 <h2>Notifications</h2>
                 <p class="settings-section-desc">Control which notifications you receive. These preferences are synced to your account.</p>
@@ -24134,18 +24211,43 @@ function switchApp(appName) {
 
 // ============ Home Page Data Population ============
 
+// Cache for the current user's Matrix profile (display name, email)
+var _cachedUserProfile = null;
+
 function populateHomePage() {
-    // Display name / avatar
+    // Display name / avatar — use cached profile if available, fall back to userId localpart
     var session = _loadSynapseSession();
     var userId = session ? session.userId : '';
-    var displayName = userId ? userId.replace(/@([^:]+):.*/, '$1') : 'User';
-    // Capitalize first letter
-    displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+    var displayName = '';
+    if (_cachedUserProfile && _cachedUserProfile.displayName) {
+        displayName = _cachedUserProfile.displayName;
+    } else {
+        displayName = userId ? userId.replace(/@([^:]+):.*/, '$1') : 'User';
+        displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+    }
     document.getElementById('home-display-name').textContent = displayName;
 
     // Avatar initials
     var initials = displayName.substring(0, 2).toUpperCase();
     document.getElementById('home-avatar').textContent = initials;
+
+    // Async: fetch real display name from Matrix profile if not cached
+    if (!_cachedUserProfile && userId && MatrixClient.isLoggedIn()) {
+        MatrixClient.getProfile(userId).then(function(profile) {
+            if (profile && profile.displayname) {
+                _cachedUserProfile = { userId: userId, displayName: profile.displayname, email: '' };
+                refreshDisplayName(profile.displayname);
+            }
+            // Also try to load email from account data
+            return MatrixClient.getAccountData('law.firm.user.email');
+        }).then(function(emailData) {
+            if (emailData && emailData.email && _cachedUserProfile) {
+                _cachedUserProfile.email = emailData.email;
+            }
+        }).catch(function(e) {
+            console.warn('[Home] Could not fetch profile:', e);
+        });
+    }
 
     // Stats: tables
     var tableCount = Object.keys(META_TABLES || {}).length;
@@ -24265,7 +24367,12 @@ function hideAppNav() {
 
 function updateAppNavUser() {
     var session = _loadSynapseSession();
-    var username = session ? session.userId : '';
+    var username = '';
+    if (_cachedUserProfile && _cachedUserProfile.displayName) {
+        username = _cachedUserProfile.displayName;
+    } else {
+        username = session ? session.userId : '';
+    }
     document.getElementById('app-nav-username').textContent = username;
     var roleEl = document.getElementById('app-nav-role');
     roleEl.textContent = _currentUserRole;
@@ -24331,6 +24438,140 @@ function initPreferencesTab() {
     if (cb) {
         cb.checked = UserPreferences.get('showOfflineSyncToasts') !== false;
     }
+    loadUserProfile();
+}
+
+async function loadUserProfile() {
+    var loadingEl = document.getElementById('profile-loading');
+    var formEl = document.getElementById('profile-form');
+    var nameInput = document.getElementById('profile-display-name');
+    var emailInput = document.getElementById('profile-email');
+    var userIdEl = document.getElementById('profile-user-id');
+
+    if (!loadingEl || !formEl) return;
+
+    // Show cached data immediately if available
+    if (_cachedUserProfile) {
+        nameInput.value = _cachedUserProfile.displayName || '';
+        emailInput.value = _cachedUserProfile.email || '';
+        userIdEl.textContent = _cachedUserProfile.userId || '';
+        loadingEl.style.display = 'none';
+        formEl.style.display = 'block';
+    }
+
+    try {
+        var userId = MatrixClient.getUserId();
+        if (!userId) {
+            loadingEl.textContent = 'Not logged in.';
+            return;
+        }
+
+        // Fetch profile, 3pids, and account-data email in parallel
+        var profilePromise = MatrixClient.getProfile(userId);
+        var threepidPromise = MatrixClient.get3pids();
+        var emailDataPromise = MatrixClient.getAccountData('law.firm.user.email');
+        var results = await Promise.all([profilePromise, threepidPromise, emailDataPromise]);
+        var profile = results[0];
+        var threepidData = results[1];
+        var emailAccountData = results[2];
+
+        var displayName = (profile && profile.displayname) || '';
+        var email = '';
+        // Prefer 3pid email (server-verified), fall back to account data
+        if (threepidData && threepidData.threepids) {
+            for (var i = 0; i < threepidData.threepids.length; i++) {
+                if (threepidData.threepids[i].medium === 'email') {
+                    email = threepidData.threepids[i].address;
+                    break;
+                }
+            }
+        }
+        if (!email && emailAccountData && emailAccountData.email) {
+            email = emailAccountData.email;
+        }
+
+        _cachedUserProfile = { userId: userId, displayName: displayName, email: email };
+
+        nameInput.value = displayName;
+        emailInput.value = email;
+        userIdEl.textContent = userId;
+        loadingEl.style.display = 'none';
+        formEl.style.display = 'block';
+    } catch (e) {
+        console.error('[Settings] Failed to load profile:', e);
+        loadingEl.textContent = 'Failed to load profile.';
+    }
+}
+
+async function saveUserProfile() {
+    var nameInput = document.getElementById('profile-display-name');
+    var emailInput = document.getElementById('profile-email');
+    var statusEl = document.getElementById('profile-status');
+    var saveBtn = document.getElementById('profile-save-btn');
+
+    var newName = nameInput.value.trim();
+    var newEmail = emailInput.value.trim();
+
+    saveBtn.disabled = true;
+    statusEl.style.color = 'var(--text-muted)';
+    statusEl.textContent = 'Saving...';
+
+    try {
+        var promises = [];
+
+        // Update display name if changed
+        var oldName = _cachedUserProfile ? _cachedUserProfile.displayName : '';
+        if (newName !== oldName) {
+            promises.push(MatrixClient.setDisplayName(newName));
+        }
+
+        // Store email in account data (Matrix 3pid binding requires email verification flow,
+        // so we store it in account data for simplicity)
+        var oldEmail = _cachedUserProfile ? _cachedUserProfile.email : '';
+        if (newEmail !== oldEmail) {
+            promises.push(MatrixClient.setAccountData('law.firm.user.email', { email: newEmail }));
+        }
+
+        if (promises.length > 0) {
+            await Promise.all(promises);
+        }
+
+        // Update cache
+        _cachedUserProfile = {
+            userId: MatrixClient.getUserId(),
+            displayName: newName,
+            email: newEmail
+        };
+
+        // Refresh display name across the app
+        refreshDisplayName(newName);
+
+        statusEl.style.color = 'var(--success-500)';
+        statusEl.textContent = 'Profile saved.';
+        setTimeout(function() { statusEl.textContent = ''; }, 3000);
+    } catch (e) {
+        console.error('[Settings] Failed to save profile:', e);
+        statusEl.style.color = 'var(--error-500)';
+        statusEl.textContent = 'Failed to save: ' + e.message;
+    } finally {
+        saveBtn.disabled = false;
+    }
+}
+
+// Update display name in the home page and sidebar
+function refreshDisplayName(displayName) {
+    if (!displayName) return;
+    var homeNameEl = document.getElementById('home-display-name');
+    if (homeNameEl) homeNameEl.textContent = displayName;
+
+    var homeAvatarEl = document.getElementById('home-avatar');
+    if (homeAvatarEl) {
+        var initials = displayName.substring(0, 2).toUpperCase();
+        homeAvatarEl.textContent = initials;
+    }
+
+    var navUsernameEl = document.getElementById('app-nav-username');
+    if (navUsernameEl) navUsernameEl.textContent = displayName;
 }
 
 function toggleOfflineSyncToasts(enabled) {
