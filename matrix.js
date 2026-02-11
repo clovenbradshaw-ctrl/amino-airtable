@@ -645,6 +645,20 @@ var MatrixClient = (function() {
         });
     }
 
+    async function setAvatarUrl(avatarUrl) {
+        await _request('PUT', '/profile/' + encodeURIComponent(_userId) + '/avatar_url', {
+            avatar_url: avatarUrl
+        });
+    }
+
+    async function get3pids() {
+        try {
+            return await _request('GET', '/account/3pid');
+        } catch (e) {
+            return null;
+        }
+    }
+
     // ============ Account Data (Per-User Private Storage) ============
 
     async function setAccountData(type, content) {
@@ -1075,6 +1089,8 @@ var MatrixClient = (function() {
         // User management
         getProfile: getProfile,
         setDisplayName: setDisplayName,
+        setAvatarUrl: setAvatarUrl,
+        get3pids: get3pids,
 
         // Account data (per-user private storage)
         setAccountData: setAccountData,
