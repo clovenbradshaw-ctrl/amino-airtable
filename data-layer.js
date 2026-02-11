@@ -795,9 +795,6 @@ var AminoData = (function() {
             return false;
         }
 
-        // Join rooms first
-        await joinTableRooms();
-
         _matrixSyncRunning = true;
         console.log('[AminoData] Starting Matrix realtime sync for', Object.keys(_tableRoomMap).length, 'tables');
 
