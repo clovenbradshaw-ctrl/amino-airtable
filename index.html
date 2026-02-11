@@ -24239,7 +24239,7 @@ var InterfaceApp = (function() {
             if (col && col.field) existingByField[col.field] = col;
         });
 
-        return visibleFieldIds.map(function(fieldId) {
+        var mirroredColumns = visibleFieldIds.map(function(fieldId) {
             var fieldMeta = tableFields[fieldId] || {};
             var fieldName = fieldMeta.fieldName || fieldId;
             var existing = existingByField[fieldName] || existingByField[fieldId];
@@ -24249,6 +24249,32 @@ var InterfaceApp = (function() {
                 width: (existing && existing.width) || 160
             };
         });
+
+        // Keep curated block columns first when available.
+        // This prevents interface tables from ballooning into every visible field
+        // while still honoring view visibility.
+        if (existingCols.length) {
+            var mirroredFieldSet = new Set();
+            mirroredColumns.forEach(function(col) {
+                mirroredFieldSet.add(col.field);
+            });
+
+            var curatedVisibleColumns = existingCols
+                .filter(function(col) {
+                    return col && col.field && mirroredFieldSet.has(col.field);
+                })
+                .map(function(col) {
+                    return {
+                        field: col.field,
+                        label: col.label || col.field,
+                        width: col.width || 160
+                    };
+                });
+
+            if (curatedVisibleColumns.length) return curatedVisibleColumns;
+        }
+
+        return mirroredColumns;
     }
 
     function _renderDataTable(block, records, pageState, allRecords, tableId) {
