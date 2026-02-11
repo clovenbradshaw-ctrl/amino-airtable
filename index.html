@@ -1746,6 +1746,11 @@
         .history-btn { padding: 4px 8px; background: transparent; border: 1px solid var(--border-primary); border-radius: var(--radius-sm); cursor: pointer; font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; transition: all var(--transition-fast); }
         .history-btn:hover { background: var(--bg-hover); border-color: var(--primary-500); color: var(--primary-400); }
         .history-btn svg { width: 12px; height: 12px; }
+        .history-item-actions { display: flex; gap: 8px; margin-top: 10px; }
+        .history-revert-btn { padding: 5px 12px; background: transparent; border: 1px solid var(--border-primary); border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; color: var(--text-muted); font-weight: 500; transition: all var(--transition-fast); display: inline-flex; align-items: center; gap: 6px; }
+        .history-revert-btn:hover { background: var(--primary-500); border-color: var(--primary-500); color: white; }
+        .history-revert-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .history-revert-btn svg { width: 14px; height: 14px; }
 
         /* Modal Toolbar */
         .modal-toolbar { padding: 12px 24px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-primary); display: flex; align-items: center; gap: 12px; }
@@ -13567,6 +13572,21 @@ function renderHistoryModal() {
         html += '</div>';
 
         html += '</div>'; // .history-values
+
+        // Revert button
+        var revertValue = JSON.stringify(item.newValue);
+        html += '<div class="history-item-actions">';
+        html += '<button class="history-revert-btn" onclick="this.disabled=true;this.textContent=\'Reverting...\';revertFieldToHistoryState(';
+        html += '\'' + esc(item.tableId) + '\',';
+        html += '\'' + esc(item.recordId) + '\',';
+        html += '\'' + esc(item.fieldId) + '\',';
+        html += 'JSON.parse(decodeURIComponent(\'' + encodeURIComponent(revertValue) + '\'))';
+        html += ')" title="Revert this field to this value">';
+        html += '<svg viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 1 1 1.76 4.24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M2 12V8h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        html += 'Revert to this state';
+        html += '</button>';
+        html += '</div>';
+
         html += '</div>'; // .history-item
     }
 
@@ -13576,6 +13596,52 @@ function renderHistoryModal() {
 
 function filterHistoryByField() {
     renderHistoryModal();
+}
+
+async function revertFieldToHistoryState(tableId, recordId, fieldId, targetValue) {
+    // Resolve the field key used in the record (fieldId or fieldName)
+    var field = META_FIELDS[tableId]?.[fieldId];
+    var fieldKey = fieldId;
+    var recordData = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId])
+        ? window.IN_MEMORY_DATA[tableId][recordId]
+        : null;
+    if (!recordData) {
+        var rec = await getRecord(tableId, recordId);
+        recordData = rec ? rec.fields : null;
+    }
+    if (recordData && recordData[fieldId] === undefined && field?.fieldName && recordData[field.fieldName] !== undefined) {
+        fieldKey = field.fieldName;
+    }
+
+    // Get the current value before reverting (for history tracking)
+    var currentValue = recordData ? (recordData[fieldKey] !== undefined ? recordData[fieldKey] : null) : null;
+
+    // Build field changes
+    var revertChanges = {};
+    revertChanges[fieldKey] = targetValue !== undefined ? targetValue : null;
+
+    // Save field history locally (optimistic)
+    await saveFieldHistory([{
+        tableId: tableId,
+        recordId: recordId,
+        fieldId: fieldId,
+        eventId: null,
+        timestamp: Date.now(),
+        changeType: 'updated',
+        oldValue: currentValue,
+        newValue: targetValue !== undefined ? targetValue : null
+    }]);
+
+    try {
+        await editRecord(tableId, recordId, revertChanges);
+
+        // Refresh the history modal to show the new change
+        currentHistoryData = await getFieldHistoryForRecord(tableId, recordId);
+        renderHistoryModal();
+    } catch (err) {
+        console.error('[Revert] Failed to revert field:', err);
+        // editRecord already handles rollback and error toast
+    }
 }
 
 function formatTimestamp(ts) {
