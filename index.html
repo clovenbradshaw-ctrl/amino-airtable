@@ -19440,6 +19440,15 @@ function computedFieldLabel(fieldType) {
 
 var _compiledFormulaCache = {};   // tableId -> { fieldId -> { fn, deps, fieldName } }
 var _compiledFormulaCacheKey = ''; // invalidation key
+// Temporary fail-open mode: prioritize table load speed and raw data visibility.
+// Formula evaluation can be re-enabled later once formula parity is stable.
+var _disableFormulaEvaluation = true;
+
+function _shouldSkipFormulaColumns(recordCount, formulaCount) {
+    if (_disableFormulaEvaluation) return true;
+    // Additional budget guard for very large formula workloads.
+    return (recordCount * formulaCount) > 2500;
+}
 
 function _applyFormulaColumns(tableId, fields, recordMap) {
     var engine = window._formulaEngine;
@@ -19454,6 +19463,7 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         }
     }
     if (formulaFields.length === 0) return;
+    if (_shouldSkipFormulaColumns(Object.keys(recordMap).length, formulaFields.length)) return;
 
     // Build / reuse compiled formula cache per table
     var cacheKey = tableId + ':' + formulaFields.map(function(f) { return f.fieldId; }).join(',');
@@ -19551,6 +19561,7 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
 // Compute formula values for a single record (used by profile view).
 // Returns augmented copy of recordFields.
 function _applyFormulaSingleRecord(tableId, fields, recordFields, recordId) {
+    if (_disableFormulaEvaluation) return recordFields;
     var engine = window._formulaEngine;
     if (!engine) return recordFields;
 
