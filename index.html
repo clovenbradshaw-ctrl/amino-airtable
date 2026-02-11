@@ -4335,10 +4335,17 @@
                 </div>
                 <div class="create-view-field">
                     <label for="create-view-sharing">Visibility</label>
-                    <select id="create-view-sharing">
-                        <option value="private">Private (only you)</option>
+                    <select id="create-view-sharing" onchange="onCreateViewSharingChange()">
                         <option value="everyone">Shared with everyone</option>
+                        <option value="specific">Shared with specific people</option>
+                        <option value="private">Private (only you)</option>
                     </select>
+                </div>
+                <div class="create-view-field" id="create-view-users-section" style="display: none;">
+                    <label>Share with</label>
+                    <div class="share-users-list" id="create-view-users-list">
+                        <div class="share-users-loading">Loading org members...</div>
+                    </div>
                 </div>
             </div>
             <div class="create-view-modal-footer">
@@ -8520,7 +8527,7 @@ var SharedViews = (function() {
         var viewData = existing || {
             tableId: tableId,
             viewId: viewId,
-            sharing: 'private',
+            sharing: 'everyone',
             sharedWith: [],
             createdAt: Date.now()
         };
@@ -11687,35 +11694,60 @@ async function deleteView() {
         return;
     }
 
-    // Remove sharing metadata (unpublishes from org space if shared)
-    try {
-        await SharedViews.deleteViewSharing(contextMenuTableId, contextMenuViewId);
-    } catch (e) {
-        console.warn('[deleteView] Failed to clean up sharing metadata:', e);
-    }
+    var tableId = contextMenuTableId;
+    var viewId = contextMenuViewId;
 
-    // Remove from META_VIEWS
-    delete META_VIEWS[contextMenuTableId][contextMenuViewId];
+    // Capture snapshot before deletion (for undo / propagation)
+    var viewSnapshot = META_VIEWS[tableId] && META_VIEWS[tableId][viewId]
+        ? Object.assign({}, META_VIEWS[tableId][viewId])
+        : { tableId: tableId, viewId: viewId };
+    delete viewSnapshot._sharing; // strip transient UI metadata from snapshot
 
-    // Remove from IndexedDB
-    await new Promise((resolve, reject) => {
-        var tx = db.transaction('views', 'readwrite');
-        tx.objectStore('views').delete([contextMenuTableId, contextMenuViewId]);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
+    // Immediately remove from local UI (no waiting for network)
+    delete META_VIEWS[tableId][viewId];
 
     // If current view was deleted, switch to default
-    if (currentView === contextMenuViewId) {
+    if (currentView === viewId && currentTable === tableId) {
         currentView = '_default';
         renderViewSelector();
         renderFieldsDropdown();
         updateFieldsCount();
-        await renderTable();
+        renderTable(); // fire-and-forget; don't block deletion flow
     }
 
     closeViewContextMenu();
-    await loadTableViewsAsync(contextMenuTableId);
+
+    // Re-render sidebar immediately so the view disappears
+    var viewsList = document.getElementById('views-list-' + tableId);
+    if (viewsList) {
+        viewsList.innerHTML = renderViewsListHTML(tableId);
+    }
+
+    // Remove from IndexedDB
+    try {
+        await new Promise((resolve, reject) => {
+            var tx = db.transaction('views', 'readwrite');
+            tx.objectStore('views').delete([tableId, viewId]);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (e) {
+        console.warn('[deleteView] Failed to remove view from IndexedDB:', e);
+    }
+
+    // Remove sharing metadata (unpublishes from org space if shared)
+    try {
+        await SharedViews.deleteViewSharing(tableId, viewId);
+    } catch (e) {
+        console.warn('[deleteView] Failed to clean up sharing metadata:', e);
+    }
+
+    // Record deletion in Matrix (NUL event) for propagation to other clients
+    try {
+        await AminoData.deleteView(tableId, viewId, viewSnapshot);
+    } catch (e) {
+        console.warn('[deleteView] Failed to record deletion in Matrix (view removed locally):', e);
+    }
 }
 
 // Manage view tags from context menu
@@ -11996,11 +12028,61 @@ function openCreateViewModal(tableId) {
     // Populate workspace options
     populateWorkspaceOptions();
 
+    // Reset sharing to default (everyone) and hide users section
+    var sharingSelect = document.getElementById('create-view-sharing');
+    if (sharingSelect) sharingSelect.value = 'everyone';
+    var usersSection = document.getElementById('create-view-users-section');
+    if (usersSection) usersSection.style.display = 'none';
+
     // Show modal
     document.getElementById('create-view-modal').classList.add('open');
 
     // Focus name input
     setTimeout(() => nameInput?.focus(), 100);
+}
+
+// Handle sharing level change in create view modal
+function onCreateViewSharingChange() {
+    var sharingSelect = document.getElementById('create-view-sharing');
+    var usersSection = document.getElementById('create-view-users-section');
+    if (!sharingSelect || !usersSection) return;
+
+    if (sharingSelect.value === 'specific') {
+        usersSection.style.display = '';
+        _loadCreateViewUsersList();
+    } else {
+        usersSection.style.display = 'none';
+    }
+}
+
+// Load org members into the create view user picker
+async function _loadCreateViewUsersList() {
+    var listEl = document.getElementById('create-view-users-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<div class="share-users-loading">Loading org members...</div>';
+
+    var members = await SharedViews.getOrgMembers();
+    var currentUserId = MatrixClient.getUserId();
+
+    if (members.length === 0) {
+        listEl.innerHTML = '<div class="share-users-loading">No org members found.</div>';
+        return;
+    }
+
+    var html = '';
+    for (var i = 0; i < members.length; i++) {
+        var m = members[i];
+        if (m.userId === currentUserId) continue;
+        html += '<label class="share-user-item">' +
+            '<input type="checkbox" value="' + esc(m.userId) + '">' +
+            '<div>' +
+            '<div class="user-name">' + esc(m.displayName) + '</div>' +
+            '<div class="user-id">' + esc(m.userId) + '</div>' +
+            '</div>' +
+            '</label>';
+    }
+
+    listEl.innerHTML = html;
 }
 
 // Close context menu on click outside
@@ -14343,6 +14425,13 @@ async function init() {
             var orgSpaceId = await MatrixClient.findOrgSpace();
             if (orgSpaceId) {
                 SharedViews.setOrgSpaceId(orgSpaceId);
+
+                // Start monitoring for view deletions/restorations from other clients
+                try {
+                    AminoData.startViewDeletionSync(orgSpaceId);
+                } catch (vdsErr) {
+                    console.warn('[init] Failed to start view deletion sync:', vdsErr);
+                }
             }
         }
         await SharedViews.load();
@@ -18026,6 +18115,96 @@ window.addEventListener('amino:record-updated', function(e) {
     }
 });
 
+// ============ View Deletion / Restoration from Matrix Sync ============
+
+// When another client (or this client via AminoData) deletes a view, remove it
+// from the local UI immediately.
+window.addEventListener('amino:view-delete', function(e) {
+    var d = e.detail;
+    if (!d || !d.tableId || !d.viewId) return;
+
+    var tableId = d.tableId;
+    var viewId = d.viewId;
+
+    // Skip if already removed locally (e.g. this client initiated the delete)
+    if (META_VIEWS[tableId] && META_VIEWS[tableId][viewId]) {
+        delete META_VIEWS[tableId][viewId];
+    }
+
+    // Remove from IndexedDB (fire-and-forget)
+    if (db) {
+        try {
+            var tx = db.transaction('views', 'readwrite');
+            tx.objectStore('views').delete([tableId, viewId]);
+        } catch (e) {
+            console.warn('[amino:view-delete] IndexedDB cleanup failed:', e);
+        }
+    }
+
+    // If the deleted view was active, switch to default
+    if (currentTable === tableId && currentView === viewId) {
+        currentView = '_default';
+        renderViewSelector();
+        renderFieldsDropdown();
+        updateFieldsCount();
+        renderTable();
+    }
+
+    // Re-render sidebar view list for the affected table
+    var viewsList = document.getElementById('views-list-' + tableId);
+    if (viewsList) {
+        viewsList.innerHTML = renderViewsListHTML(tableId);
+    }
+
+    // Also update the view selector dropdown if showing this table
+    if (currentTable === tableId) {
+        renderViewSelector();
+    }
+
+    console.log('[amino:view-delete] View removed from UI:', viewId, 'in table', tableId,
+                '(by', d.deletedBy || 'unknown', ')');
+});
+
+// When another client restores a previously deleted view, add it back.
+window.addEventListener('amino:view-restore', function(e) {
+    var d = e.detail;
+    if (!d || !d.tableId || !d.viewId || !d.viewSnapshot) return;
+
+    var tableId = d.tableId;
+    var viewId = d.viewId;
+    var snapshot = d.viewSnapshot;
+
+    // Re-add to META_VIEWS
+    if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+    if (!META_VIEWS[tableId][viewId]) {
+        META_VIEWS[tableId][viewId] = snapshot;
+    }
+
+    // Persist back to IndexedDB (fire-and-forget)
+    if (db) {
+        try {
+            var tx = db.transaction('views', 'readwrite');
+            tx.objectStore('views').put(snapshot);
+        } catch (e) {
+            console.warn('[amino:view-restore] IndexedDB persist failed:', e);
+        }
+    }
+
+    // Re-render sidebar view list for the affected table
+    var viewsList = document.getElementById('views-list-' + tableId);
+    if (viewsList) {
+        viewsList.innerHTML = renderViewsListHTML(tableId);
+    }
+
+    // Update view selector dropdown if showing this table
+    if (currentTable === tableId) {
+        renderViewSelector();
+    }
+
+    console.log('[amino:view-restore] View restored to UI:', viewId, 'in table', tableId,
+                '(by', d.restoredBy || 'unknown', ')');
+});
+
 // ============ Live Field History from Matrix Sync ============
 
 window.addEventListener('amino:record-mutate', function(e) {
@@ -20729,9 +20908,14 @@ async function submitCreateView() {
 
         // Apply sharing preference from modal
         var sharingSelect = document.getElementById('create-view-sharing');
-        var sharingLevel = sharingSelect ? sharingSelect.value : 'private';
+        var sharingLevel = sharingSelect ? sharingSelect.value : 'everyone';
         if (sharingLevel !== 'private' && currentUserId) {
-            await SharedViews.shareView(currentTable, newViewId, sharingLevel, []);
+            var sharedWith = [];
+            if (sharingLevel === 'specific') {
+                var checkboxes = document.querySelectorAll('#create-view-users-list input[type="checkbox"]:checked');
+                checkboxes.forEach(function(cb) { sharedWith.push(cb.value); });
+            }
+            await SharedViews.shareView(currentTable, newViewId, sharingLevel, sharedWith);
         }
 
         // Close modal
