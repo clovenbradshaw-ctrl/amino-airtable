@@ -25458,6 +25458,31 @@ async function loadSettingsUsers() {
 
         // Get members of the org space
         var members = await MatrixClient.getRoomMembers(_settingsOrgSpaceId);
+
+        // Also include users that are in any table room but not yet joined to the org
+        // space (for example, users provisioned externally or force-joined to data rooms).
+        if (!_settingsRooms.length) await loadSettingsRoomList();
+        var memberMap = {};
+        members.forEach(function(member) {
+            memberMap[member.userId] = member;
+        });
+        for (var roomIndex = 0; roomIndex < _settingsRooms.length; roomIndex++) {
+            var room = _settingsRooms[roomIndex];
+            try {
+                var roomMembers = await MatrixClient.getRoomMembers(room.roomId);
+                roomMembers.forEach(function(member) {
+                    if (!memberMap[member.userId]) {
+                        memberMap[member.userId] = member;
+                    }
+                });
+            } catch (roomMemberError) {
+                console.warn('[Settings] Could not load members for room', room.roomId, roomMemberError);
+            }
+        }
+        members = Object.keys(memberMap).map(function(userId) {
+            return memberMap[userId];
+        });
+
         // Get power levels of the org space
         var powerLevels = await MatrixClient.getRoomPowerLevels(_settingsOrgSpaceId);
 
