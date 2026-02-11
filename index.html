@@ -12540,6 +12540,7 @@ async function selectTableView(tableId, viewId) {
 
     // Render the table
     await renderTable();
+    syncUrlState();
 }
 
 function updateStatus(msg, isSynced, progress, detail) {
@@ -12822,6 +12823,7 @@ async function showTable(tableId) {
 
     // Now render full table with data
     await renderTable();
+    syncUrlState();
 }
 
 // Update the sidebar to highlight the active view
@@ -13292,6 +13294,7 @@ function prevPage() {
     if (currentPage > 0) {
         currentPage--;
         renderTable();
+        syncUrlState();
     }
 }
 
@@ -13300,6 +13303,7 @@ function nextPage() {
     if (currentPage < totalPages - 1) {
         currentPage++;
         renderTable();
+        syncUrlState();
     }
 }
 
@@ -15215,6 +15219,7 @@ async function showEventsView() {
     if (toolbarViews) toolbarViews.style.display = 'none';
 
     await renderEventsView();
+    syncUrlState();
     // Navigation guard check after async work (renderEventsView handles its own loading state)
 }
 
@@ -15256,6 +15261,7 @@ function switchEventsTab(tab) {
     if (eventsActiveTab === tab) return;
     eventsActiveTab = tab;
     renderEventsView();
+    syncUrlState();
 }
 
 function stopRoomAccessRefresh() {
@@ -15981,16 +15987,19 @@ function togglePayloadExpand(eventId) {
 function setEventsTypeFilter(type) {
     eventsTypeFilter = type;
     renderEventsView();
+    syncUrlState();
 }
 
 function setEventsSetFilter(set) {
     eventsSetFilter = set;
     renderEventsView();
+    syncUrlState();
 }
 
 function setEventsSearch(query) {
     eventsSearchQuery = query;
     renderEventsView();
+    syncUrlState();
 }
 
 // ============ Changelog Tab (drawn from Matrix room data) ============
@@ -18701,6 +18710,7 @@ window.addEventListener('amino:record-updated', function(e) {
         // Clear inline editing cell before full re-render to avoid stale DOM
         _inlineEditingCell = null;
         renderTable();
+        syncUrlState();
     }
 });
 
@@ -18737,6 +18747,7 @@ window.addEventListener('amino:view-delete', function(e) {
         renderFieldsDropdown();
         updateFieldsCount();
         renderTable();
+        syncUrlState();
     }
 
     // Re-render sidebar view list for the affected table
@@ -20124,6 +20135,7 @@ async function selectView(viewId) {
 
     // Re-render table with new view's field configuration
     await renderTable();
+    syncUrlState();
 }
 
 // Render fields dropdown
@@ -21118,6 +21130,7 @@ function handleViewSearch(query) {
     _viewSearchTimer = setTimeout(function() {
         currentSearchQuery = q;
         renderTable();
+        syncUrlState();
     }, 150);
 }
 
@@ -24463,6 +24476,7 @@ var InterfaceApp = (function() {
         _blockSearchState = {};
         _tablePaginationState = {};
         renderPage(pageId);
+        syncUrlState();
     }
 
     function switchTab(blockId, tabId) {
@@ -24482,6 +24496,7 @@ var InterfaceApp = (function() {
         clearTimeout(onBlockSearch._timer);
         onBlockSearch._timer = setTimeout(function() {
             renderPage(_activePage);
+            syncUrlState();
         }, 300);
     }
 
@@ -24499,6 +24514,7 @@ var InterfaceApp = (function() {
         clearTimeout(onGlobalSearch._timer);
         onGlobalSearch._timer = setTimeout(function() {
             renderPage(_activePage);
+            syncUrlState();
         }, 300);
     }
 
@@ -24523,6 +24539,7 @@ var InterfaceApp = (function() {
         // Reset pagination when filter changes
         _tablePaginationState[blockId] = { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
         renderPage(_activePage);
+        syncUrlState();
     }
 
     function onColumnSort(blockId, fieldName) {
@@ -24539,6 +24556,7 @@ var InterfaceApp = (function() {
         }
         _tablePaginationState[blockId] = { page: 0, pageSize: block.segment.pageSize || 50 };
         renderPage(_activePage);
+        syncUrlState();
     }
 
     function onPageChange(blockId, newPage) {
@@ -24547,6 +24565,7 @@ var InterfaceApp = (function() {
         ps.page = newPage;
         _tablePaginationState[blockId] = ps;
         renderPage(_activePage);
+        syncUrlState();
     }
 
     // ============ Admin: Edit Mode ============
@@ -24557,6 +24576,7 @@ var InterfaceApp = (function() {
         var btn = document.getElementById('iface-edit-toggle');
         if (btn) btn.classList.toggle('active', _editMode);
         renderPage(_activePage);
+        syncUrlState();
     }
 
     async function removeBlock(blockId) {
@@ -24572,6 +24592,7 @@ var InterfaceApp = (function() {
         });
         await saveSchema();
         renderPage(_activePage);
+        syncUrlState();
     }
 
     async function addPage() {
@@ -24669,8 +24690,123 @@ var _currentUserRole = 'unknown';
 var _settingsOrgSpaceId = null;
 var _settingsMembers = []; // Cached member list for settings
 var _settingsRooms = []; // Cached room list (tables with matrix_room_id)
+var _suppressUrlStateSync = false;
 
-function switchApp(appName) {
+function _safeParseJson(value, fallback) {
+    if (!value) return fallback;
+    try {
+        return JSON.parse(value);
+    } catch (e) {
+        return fallback;
+    }
+}
+
+function _collectUrlState() {
+    var state = { app: _currentApp || 'home' };
+
+    if (state.app === 'database') {
+        if (currentTable) state.table = currentTable;
+        if (currentView) state.view = currentView;
+        if (currentPage > 0) state.page = String(currentPage + 1);
+        if (currentSearchQuery) state.search = currentSearchQuery;
+        if (currentFilters && currentFilters.length) state.filters = JSON.stringify(currentFilters);
+        if (currentSorts && currentSorts.length) state.sorts = JSON.stringify(currentSorts);
+
+        if (currentTable === '_events') {
+            if (eventsActiveTab && eventsActiveTab !== 'events') state.eventsTab = eventsActiveTab;
+            if (eventsTypeFilter) state.eventsType = eventsTypeFilter;
+            if (eventsSetFilter) state.eventsSet = eventsSetFilter;
+            if (eventsSearchQuery) state.eventsSearch = eventsSearchQuery;
+        }
+    } else if (state.app === 'interface') {
+        if (InterfaceApp && InterfaceApp.activePage) state.ifacePage = InterfaceApp.activePage;
+    }
+
+    return state;
+}
+
+function syncUrlState() {
+    if (_suppressUrlStateSync) return;
+    var state = _collectUrlState();
+    var params = new URLSearchParams();
+    Object.keys(state).forEach(function(key) {
+        var value = state[key];
+        if (value != null && value !== '') params.set(key, String(value));
+    });
+
+    var next = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+    var current = window.location.pathname + window.location.search + window.location.hash;
+    if (next !== current) {
+        history.replaceState(null, '', next);
+    }
+}
+
+async function applyUrlState() {
+    var params = new URLSearchParams(window.location.search || '');
+    var app = params.get('app') || 'home';
+
+    _suppressUrlStateSync = true;
+    try {
+        if (app === 'database') {
+            switchApp('database', { skipUrlSync: true });
+
+            var table = params.get('table');
+            var view = params.get('view');
+            if (table === '_events') {
+                eventsActiveTab = params.get('eventsTab') || eventsActiveTab || 'events';
+                eventsTypeFilter = params.get('eventsType') || '';
+                eventsSetFilter = params.get('eventsSet') || '';
+                eventsSearchQuery = params.get('eventsSearch') || '';
+                await showEventsView();
+            } else if (table && META_TABLES[table]) {
+                await showTable(table);
+                if (view) {
+                    await selectTableView(table, view);
+                }
+
+                var search = params.get('search');
+                currentSearchQuery = search ? search.toLowerCase() : '';
+                var searchInput = document.getElementById('view-search-input');
+                if (searchInput) searchInput.value = search || '';
+
+                var parsedFilters = _safeParseJson(params.get('filters'), null);
+                var parsedSorts = _safeParseJson(params.get('sorts'), null);
+                if (Array.isArray(parsedFilters)) currentFilters = parsedFilters;
+                if (Array.isArray(parsedSorts)) currentSorts = parsedSorts;
+
+                var page = parseInt(params.get('page') || '', 10);
+                currentPage = !isNaN(page) && page > 0 ? page - 1 : 0;
+
+                updateFilterCount();
+                updateSortCount();
+                await renderTable();
+            }
+        } else if (app === 'interface') {
+            switchApp('interface', { skipUrlSync: true });
+            await InterfaceApp.init();
+            var ifacePage = params.get('ifacePage');
+            if (ifacePage && InterfaceApp.schema && InterfaceApp.schema.pages &&
+                InterfaceApp.schema.pages.some(function(p) { return p.id === ifacePage; })) {
+                InterfaceApp.switchPage(ifacePage);
+            }
+        } else if (app === 'settings') {
+            switchApp('settings', { skipUrlSync: true });
+        } else {
+            switchApp('home', { skipUrlSync: true });
+        }
+    } finally {
+        _suppressUrlStateSync = false;
+    }
+
+    syncUrlState();
+}
+
+window.addEventListener('popstate', function() {
+    applyUrlState();
+});
+
+function switchApp(appName, options) {
+    options = options || {};
     _currentApp = appName;
 
     // Update nav button states
@@ -24710,6 +24846,8 @@ function switchApp(appName) {
         stApp.classList.add('visible');
         loadSettingsData();
     }
+
+    if (!options.skipUrlSync) syncUrlState();
 }
 
 // ============ Home Page Data Population ============
@@ -25777,8 +25915,8 @@ init = async function() {
     showAppNav();
     await detectAndStoreUserRole();
 
-    // Show home page as the default landing after init
-    switchApp('home');
+    // Apply URL state so page/filter context survives refresh/deeplinks
+    await applyUrlState();
 };
 
 // Keyboard handler for modals (Escape to close)
