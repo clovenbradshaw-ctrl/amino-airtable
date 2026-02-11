@@ -236,6 +236,7 @@
             background: var(--bg-primary);
             color: var(--text-primary);
             display: flex;
+            flex-direction: column;
             height: 100vh;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
@@ -872,6 +873,316 @@
         .synapse-login-box button:disabled { background: var(--gray-600); cursor: not-allowed; }
         .synapse-login-box .synapse-error { color: #f87171; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); display: none; }
         .synapse-login-box label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+
+        /* ===== App Navigation Bar ===== */
+        .app-nav {
+            display: none;
+            width: 100%;
+            height: 44px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-primary);
+            align-items: center;
+            padding: 0 16px;
+            gap: 2px;
+            flex-shrink: 0;
+            z-index: 50;
+        }
+        .app-nav.visible { display: flex; }
+        .app-nav-btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: var(--radius-md);
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 500;
+            font-family: var(--font-sans);
+            cursor: pointer;
+            transition: background var(--transition-fast), color var(--transition-fast);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .app-nav-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+        .app-nav-btn.active { background: var(--bg-active); color: var(--text-primary); }
+        .app-nav-btn svg { width: 16px; height: 16px; }
+        .app-nav-spacer { flex: 1; }
+        .app-nav-user {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .app-nav-user-role {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .app-nav-user-role.admin { background: rgba(59, 130, 246, 0.15); color: var(--primary-400); }
+        .app-nav-user-role.staff { background: rgba(34, 197, 94, 0.15); color: var(--success-500); }
+        .app-nav-logout {
+            padding: 4px 10px;
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-family: var(--font-sans);
+            cursor: pointer;
+            transition: background var(--transition-fast), color var(--transition-fast);
+        }
+        .app-nav-logout:hover { background: rgba(239, 68, 68, 0.1); color: var(--danger-500); border-color: var(--danger-500); }
+
+        /* App content wrapper - holds sidebar + main or settings */
+        .app-content-wrapper {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ===== Settings Sub-App ===== */
+        #settings-app {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+            padding: 32px 48px;
+            background: var(--bg-primary);
+        }
+        #settings-app.visible { display: block; }
+        .settings-header {
+            margin-bottom: 32px;
+        }
+        .settings-header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .settings-header p {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+        .settings-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--border-primary);
+            margin-bottom: 24px;
+        }
+        .settings-tab {
+            padding: 10px 20px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 500;
+            font-family: var(--font-sans);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: color var(--transition-fast), border-color var(--transition-fast);
+        }
+        .settings-tab:hover { color: var(--text-secondary); }
+        .settings-tab.active { color: var(--primary-400); border-bottom-color: var(--primary-400); }
+        .settings-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .settings-section h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .settings-section-desc {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+        }
+
+        /* Settings: Users & Roles Table */
+        .settings-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .settings-table th {
+            text-align: left;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-primary);
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .settings-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-primary);
+            color: var(--text-primary);
+            vertical-align: middle;
+        }
+        .settings-table tr:last-child td { border-bottom: none; }
+        .settings-table tr:hover td { background: var(--bg-hover); }
+        .settings-table .user-id {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .settings-table .role-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .settings-table .role-badge.admin { background: rgba(59, 130, 246, 0.15); color: var(--primary-400); }
+        .settings-table .role-badge.staff { background: rgba(34, 197, 94, 0.15); color: var(--success-500); }
+        .settings-table .role-badge.client { background: rgba(245, 158, 11, 0.15); color: var(--warning-500); }
+        .settings-table .role-badge.default { background: var(--bg-tertiary); color: var(--text-muted); }
+        .settings-role-select {
+            padding: 4px 8px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-family: var(--font-sans);
+            cursor: pointer;
+        }
+        .settings-role-select:focus { outline: none; border-color: var(--primary-500); }
+
+        /* Settings: Room Access Table */
+        .settings-room-access {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .settings-room-access th {
+            text-align: left;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-primary);
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 12px;
+        }
+        .settings-room-access td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-primary);
+            color: var(--text-primary);
+            vertical-align: middle;
+        }
+        .settings-room-access tr:last-child td { border-bottom: none; }
+        .settings-room-access .room-name {
+            font-weight: 500;
+        }
+        .settings-room-access .room-id {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            display: block;
+            margin-top: 2px;
+        }
+        .settings-access-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--primary-500);
+        }
+        .settings-action-btn {
+            padding: 6px 14px;
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-family: var(--font-sans);
+            cursor: pointer;
+            transition: background var(--transition-fast);
+        }
+        .settings-action-btn:hover { background: var(--bg-hover); }
+        .settings-action-btn.primary {
+            background: var(--primary-500);
+            border-color: var(--primary-500);
+            color: #fff;
+        }
+        .settings-action-btn.primary:hover { background: var(--primary-600); }
+        .settings-action-btn.danger {
+            color: var(--danger-500);
+            border-color: var(--danger-500);
+        }
+        .settings-action-btn.danger:hover { background: rgba(239, 68, 68, 0.1); }
+        .settings-action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .settings-toast {
+            padding: 10px 16px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .settings-toast.success {
+            display: block;
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: var(--success-500);
+        }
+        .settings-toast.error {
+            display: block;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--danger-500);
+        }
+        .settings-toast.info {
+            display: block;
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: var(--primary-400);
+        }
+        .settings-loading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-muted);
+            font-size: 13px;
+            padding: 16px 0;
+        }
+        .settings-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border-primary);
+            border-top-color: var(--primary-500);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Interface placeholder */
+        #interface-app {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+            background: var(--bg-primary);
+        }
+        #interface-app.visible { display: flex; align-items: center; justify-content: center; }
+        .interface-placeholder {
+            text-align: center;
+            color: var(--text-muted);
+        }
+        .interface-placeholder svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.3; }
+        .interface-placeholder h2 { font-size: 20px; color: var(--text-secondary); margin-bottom: 8px; }
+        .interface-placeholder p { font-size: 14px; }
 
         .hidden { display: none !important; }
 
@@ -2221,6 +2532,39 @@
         </div>
     </div>
 
+    <!-- App Navigation Bar (shown after login) -->
+    <nav class="app-nav" id="app-nav">
+        <button class="app-nav-btn active" id="app-nav-database" onclick="switchApp('database')">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
+            </svg>
+            Database
+        </button>
+        <button class="app-nav-btn" id="app-nav-interface" onclick="switchApp('interface')">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
+            </svg>
+            Interface
+        </button>
+        <button class="app-nav-btn" id="app-nav-settings" onclick="switchApp('settings')">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+            Settings
+        </button>
+        <div class="app-nav-spacer"></div>
+        <div class="app-nav-user">
+            <span id="app-nav-username"></span>
+            <span class="app-nav-user-role" id="app-nav-role"></span>
+            <button class="app-nav-logout" onclick="appNavLogout()">Sign Out</button>
+        </div>
+    </nav>
+
+    <!-- App Content Wrapper -->
+    <div class="app-content-wrapper" id="app-content-wrapper">
+
+    <!-- Database Sub-App (existing sidebar + main) -->
+    <div id="database-app" style="display: flex; flex: 1; overflow: hidden;">
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-header-top">
@@ -2744,6 +3088,102 @@
             </div>
         </div>
     </div>
+
+    </div><!-- /database-app -->
+
+    <!-- Interface Sub-App (placeholder) -->
+    <div id="interface-app">
+        <div class="interface-placeholder">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
+            </svg>
+            <h2>Interface Designer</h2>
+            <p>Custom interfaces for your data — coming soon.</p>
+        </div>
+    </div>
+
+    <!-- Settings Sub-App -->
+    <div id="settings-app">
+        <div class="settings-header">
+            <h1>Settings</h1>
+            <p>Manage users, roles, and room access for your organization.</p>
+        </div>
+
+        <div id="settings-toast" class="settings-toast"></div>
+
+        <div class="settings-tabs">
+            <button class="settings-tab active" id="settings-tab-roles" onclick="switchSettingsTab('roles')">Users &amp; Roles</button>
+            <button class="settings-tab" id="settings-tab-rooms" onclick="switchSettingsTab('rooms')">Room Access</button>
+        </div>
+
+        <!-- Users & Roles Tab -->
+        <div id="settings-panel-roles">
+            <div class="settings-section">
+                <h2>Organization Members</h2>
+                <p class="settings-section-desc">Assign roles to control what each user can do. Admins can manage schema and members. Staff can create and edit records. Clients have read-only access.</p>
+                <div id="settings-users-loading" class="settings-loading">
+                    <div class="settings-spinner"></div>
+                    Loading members...
+                </div>
+                <div id="settings-users-content" style="display: none;">
+                    <table class="settings-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Display Name</th>
+                                <th>Current Role</th>
+                                <th>Change Role</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="settings-users-tbody">
+                        </tbody>
+                    </table>
+                </div>
+                <div id="settings-users-empty" style="display: none; padding: 16px 0; color: var(--text-muted); font-size: 13px;">
+                    No members found. Ensure you are connected to an organization space.
+                </div>
+            </div>
+        </div>
+
+        <!-- Room Access Tab -->
+        <div id="settings-panel-rooms" style="display: none;">
+            <div class="settings-section">
+                <h2>Room Access Management</h2>
+                <p class="settings-section-desc">Control which users have access to which data rooms. Check a box to grant a user access (join them to the room), uncheck to revoke (kick from room).</p>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 6px;">Select user:</label>
+                    <select id="settings-room-user-select" class="settings-role-select" style="min-width: 260px;" onchange="loadRoomAccessForUser()">
+                        <option value="">-- Choose a user --</option>
+                    </select>
+                </div>
+
+                <div id="settings-rooms-loading" class="settings-loading" style="display: none;">
+                    <div class="settings-spinner"></div>
+                    Loading room access...
+                </div>
+                <div id="settings-rooms-content" style="display: none;">
+                    <table class="settings-room-access">
+                        <thead>
+                            <tr>
+                                <th>Room</th>
+                                <th style="text-align: center; width: 80px;">Access</th>
+                                <th style="width: 100px;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="settings-rooms-tbody">
+                        </tbody>
+                    </table>
+                </div>
+                <div id="settings-rooms-empty" style="display: none; padding: 16px 0; color: var(--text-muted); font-size: 13px;">
+                    Select a user to manage their room access.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div><!-- /app-content-wrapper -->
 
     <!-- Room Publishing Modal -->
     <div class="room-publish-modal hidden" id="room-publish-modal" onclick="closeRoomPublishModal(event)">
@@ -19433,6 +19873,470 @@ async function promptCreateWorkspace() {
     }
 }
 
+// ============ Utility: HTML Escaping ============
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// ============ App Navigation & Settings ============
+
+var _currentApp = 'database'; // 'database' | 'interface' | 'settings'
+var _currentUserRole = 'unknown';
+var _settingsOrgSpaceId = null;
+var _settingsMembers = []; // Cached member list for settings
+var _settingsRooms = []; // Cached room list (tables with matrix_room_id)
+
+function switchApp(appName) {
+    _currentApp = appName;
+
+    // Update nav button states
+    document.querySelectorAll('.app-nav-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+    });
+    var activeBtn = document.getElementById('app-nav-' + appName);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    // Toggle sub-app visibility
+    var dbApp = document.getElementById('database-app');
+    var ifApp = document.getElementById('interface-app');
+    var stApp = document.getElementById('settings-app');
+
+    dbApp.style.display = 'none';
+    ifApp.classList.remove('visible');
+    stApp.classList.remove('visible');
+
+    if (appName === 'database') {
+        dbApp.style.display = 'flex';
+    } else if (appName === 'interface') {
+        ifApp.classList.add('visible');
+    } else if (appName === 'settings') {
+        stApp.classList.add('visible');
+        loadSettingsData();
+    }
+}
+
+function showAppNav() {
+    document.getElementById('app-nav').classList.add('visible');
+}
+
+function hideAppNav() {
+    document.getElementById('app-nav').classList.remove('visible');
+}
+
+function updateAppNavUser() {
+    var session = _loadSynapseSession();
+    var username = session ? session.userId : '';
+    document.getElementById('app-nav-username').textContent = username;
+    var roleEl = document.getElementById('app-nav-role');
+    roleEl.textContent = _currentUserRole;
+    roleEl.className = 'app-nav-user-role';
+    if (_currentUserRole === 'admin') roleEl.classList.add('admin');
+    else if (_currentUserRole === 'staff') roleEl.classList.add('staff');
+}
+
+async function detectAndStoreUserRole() {
+    try {
+        if (!MatrixClient.isLoggedIn()) return;
+        var orgSpaceId = await MatrixClient.findOrgSpace();
+        if (orgSpaceId) {
+            _settingsOrgSpaceId = orgSpaceId;
+            _currentUserRole = await MatrixClient.detectUserRole(orgSpaceId);
+        }
+    } catch (e) {
+        console.warn('[AppNav] Could not detect user role:', e);
+    }
+    updateAppNavUser();
+}
+
+function appNavLogout() {
+    if (!confirm('Sign out of Amino?')) return;
+    hideAppNav();
+    synapseLogout();
+    location.reload();
+}
+
+// ============ Settings: Tab Switching ============
+
+function switchSettingsTab(tab) {
+    document.querySelectorAll('.settings-tab').forEach(function(t) { t.classList.remove('active'); });
+    document.getElementById('settings-tab-' + tab).classList.add('active');
+
+    document.getElementById('settings-panel-roles').style.display = tab === 'roles' ? 'block' : 'none';
+    document.getElementById('settings-panel-rooms').style.display = tab === 'rooms' ? 'block' : 'none';
+}
+
+// ============ Settings: Toast ============
+
+function showSettingsToast(type, message) {
+    var toast = document.getElementById('settings-toast');
+    toast.className = 'settings-toast ' + type;
+    toast.textContent = message;
+    setTimeout(function() {
+        toast.className = 'settings-toast';
+        toast.textContent = '';
+    }, 5000);
+}
+
+// ============ Settings: Load Data ============
+
+var _settingsLoaded = false;
+
+async function loadSettingsData() {
+    if (_settingsLoaded) return;
+
+    if (_currentUserRole !== 'admin') {
+        document.getElementById('settings-users-loading').style.display = 'none';
+        document.getElementById('settings-users-empty').style.display = 'block';
+        document.getElementById('settings-users-empty').textContent = 'You need admin privileges to manage settings.';
+        return;
+    }
+
+    await loadSettingsUsers();
+    await loadSettingsRoomList();
+    _settingsLoaded = true;
+}
+
+// ============ Settings: Users & Roles ============
+
+async function loadSettingsUsers() {
+    var loadingEl = document.getElementById('settings-users-loading');
+    var contentEl = document.getElementById('settings-users-content');
+    var emptyEl = document.getElementById('settings-users-empty');
+
+    loadingEl.style.display = 'flex';
+    contentEl.style.display = 'none';
+    emptyEl.style.display = 'none';
+
+    try {
+        if (!_settingsOrgSpaceId) {
+            _settingsOrgSpaceId = await MatrixClient.findOrgSpace();
+        }
+        if (!_settingsOrgSpaceId) {
+            loadingEl.style.display = 'none';
+            emptyEl.style.display = 'block';
+            return;
+        }
+
+        // Get members of the org space
+        var members = await MatrixClient.getRoomMembers(_settingsOrgSpaceId);
+        // Get power levels of the org space
+        var powerLevels = await MatrixClient.getRoomPowerLevels(_settingsOrgSpaceId);
+
+        _settingsMembers = members.map(function(m) {
+            var level = (powerLevels.users && powerLevels.users[m.userId]) || powerLevels.users_default || 0;
+            var role = 'default';
+            if (level >= 100) role = 'admin';
+            else if (level >= 50) role = 'staff';
+            else if (level >= 10) role = 'client';
+            return {
+                userId: m.userId,
+                displayName: m.displayName,
+                powerLevel: level,
+                role: role
+            };
+        });
+
+        // Sort: admins first, then staff, then others
+        _settingsMembers.sort(function(a, b) { return b.powerLevel - a.powerLevel; });
+
+        renderSettingsUsers();
+
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'block';
+    } catch (e) {
+        console.error('[Settings] Failed to load users:', e);
+        loadingEl.style.display = 'none';
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = 'Failed to load members: ' + e.message;
+    }
+}
+
+function renderSettingsUsers() {
+    var tbody = document.getElementById('settings-users-tbody');
+    var session = _loadSynapseSession();
+    var myUserId = session ? session.userId : '';
+
+    tbody.innerHTML = _settingsMembers.map(function(m) {
+        var isSelf = m.userId === myUserId;
+        var roleClass = m.role;
+        return '<tr>' +
+            '<td class="user-id">' + escapeHtml(m.userId) + '</td>' +
+            '<td>' + escapeHtml(m.displayName) + '</td>' +
+            '<td><span class="role-badge ' + roleClass + '">' + m.role + '</span></td>' +
+            '<td>' +
+                (isSelf
+                    ? '<span style="font-size: 12px; color: var(--text-muted);">You</span>'
+                    : '<select class="settings-role-select" onchange="changeUserRole(\'' + escapeHtml(m.userId).replace(/'/g, "\\'") + '\', this.value)">' +
+                        '<option value="admin"' + (m.role === 'admin' ? ' selected' : '') + '>Admin (100)</option>' +
+                        '<option value="staff"' + (m.role === 'staff' ? ' selected' : '') + '>Staff (50)</option>' +
+                        '<option value="client"' + (m.role === 'client' ? ' selected' : '') + '>Client (10)</option>' +
+                        '<option value="default"' + (m.role === 'default' ? ' selected' : '') + '>Default (0)</option>' +
+                    '</select>'
+                ) +
+            '</td>' +
+            '<td>' +
+                (isSelf ? '' : '<button class="settings-action-btn danger" onclick="kickUserFromOrg(\'' + escapeHtml(m.userId).replace(/'/g, "\\'") + '\')">Remove</button>') +
+            '</td>' +
+        '</tr>';
+    }).join('');
+
+    // Also update the room access user dropdown
+    populateRoomUserSelect();
+}
+
+async function changeUserRole(userId, newRole) {
+    var levelMap = { admin: 100, staff: 50, client: 10, default: 0 };
+    var level = levelMap[newRole];
+    if (level === undefined) return;
+
+    try {
+        // 1. Set power level in org space
+        await MatrixClient.setUserPowerLevel(_settingsOrgSpaceId, userId, level);
+
+        // 2. Also update power levels in all table rooms the user is in
+        await updateUserRoleInAllRooms(userId, level);
+
+        // Update local cache
+        _settingsMembers.forEach(function(m) {
+            if (m.userId === userId) {
+                m.powerLevel = level;
+                m.role = newRole;
+            }
+        });
+        renderSettingsUsers();
+
+        showSettingsToast('success', 'Role updated to ' + newRole + ' for ' + userId);
+    } catch (e) {
+        console.error('[Settings] Failed to change role:', e);
+        showSettingsToast('error', 'Failed to update role: ' + e.message);
+        // Reload to reflect actual state
+        _settingsLoaded = false;
+        loadSettingsData();
+    }
+}
+
+async function updateUserRoleInAllRooms(userId, level) {
+    // Get all table rooms and update the user's power level in each
+    if (!_settingsRooms.length) await loadSettingsRoomList();
+
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken) return;
+
+    for (var i = 0; i < _settingsRooms.length; i++) {
+        var room = _settingsRooms[i];
+        try {
+            await MatrixClient.setUserPowerLevel(room.roomId, userId, level);
+        } catch (e) {
+            // User may not be in this room — that's fine, skip
+            console.warn('[Settings] Could not set power level in room ' + room.name + ':', e.message);
+        }
+    }
+}
+
+async function kickUserFromOrg(userId) {
+    if (!confirm('Remove ' + userId + ' from the organization? They will lose access to all rooms.')) return;
+
+    try {
+        // Kick from org space
+        await MatrixClient.kickUser(_settingsOrgSpaceId, userId, 'Removed by admin');
+
+        // Kick from all table rooms
+        for (var i = 0; i < _settingsRooms.length; i++) {
+            try {
+                await MatrixClient.kickUser(_settingsRooms[i].roomId, userId, 'Removed by admin');
+            } catch (e) {
+                // May not be in room
+            }
+        }
+
+        // Remove from local cache
+        _settingsMembers = _settingsMembers.filter(function(m) { return m.userId !== userId; });
+        renderSettingsUsers();
+
+        showSettingsToast('success', 'Removed ' + userId + ' from organization');
+    } catch (e) {
+        console.error('[Settings] Failed to kick user:', e);
+        showSettingsToast('error', 'Failed to remove user: ' + e.message);
+    }
+}
+
+// ============ Settings: Room Access ============
+
+async function loadSettingsRoomList() {
+    try {
+        var tablesData = await webhookFetch('/amino-tables');
+        _settingsRooms = (tablesData.tables || [])
+            .filter(function(t) { return !!t.matrix_room_id; })
+            .map(function(t) {
+                return {
+                    roomId: t.matrix_room_id,
+                    name: t.table_name || t.table_id,
+                    tableId: t.table_id
+                };
+            });
+    } catch (e) {
+        console.warn('[Settings] Failed to load rooms:', e);
+        _settingsRooms = [];
+    }
+}
+
+function populateRoomUserSelect() {
+    var select = document.getElementById('settings-room-user-select');
+    var currentVal = select.value;
+    // Keep the first option
+    select.innerHTML = '<option value="">-- Choose a user --</option>';
+    _settingsMembers.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m.userId;
+        opt.textContent = m.displayName + ' (' + m.userId + ')';
+        select.appendChild(opt);
+    });
+    if (currentVal) select.value = currentVal;
+}
+
+async function loadRoomAccessForUser() {
+    var userId = document.getElementById('settings-room-user-select').value;
+    var loadingEl = document.getElementById('settings-rooms-loading');
+    var contentEl = document.getElementById('settings-rooms-content');
+    var emptyEl = document.getElementById('settings-rooms-empty');
+
+    if (!userId) {
+        contentEl.style.display = 'none';
+        loadingEl.style.display = 'none';
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = 'Select a user to manage their room access.';
+        return;
+    }
+
+    loadingEl.style.display = 'flex';
+    contentEl.style.display = 'none';
+    emptyEl.style.display = 'none';
+
+    try {
+        if (!_settingsRooms.length) await loadSettingsRoomList();
+
+        // Check membership for selected user in each room
+        var roomAccess = [];
+        for (var i = 0; i < _settingsRooms.length; i++) {
+            var room = _settingsRooms[i];
+            var isMember = false;
+            try {
+                var members = await MatrixClient.getRoomMembers(room.roomId);
+                isMember = members.some(function(m) { return m.userId === userId; });
+            } catch (e) {
+                // Can't check — assume not member
+            }
+            roomAccess.push({
+                roomId: room.roomId,
+                name: room.name,
+                tableId: room.tableId,
+                isMember: isMember
+            });
+        }
+
+        renderRoomAccessTable(userId, roomAccess);
+
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'block';
+    } catch (e) {
+        console.error('[Settings] Failed to load room access:', e);
+        loadingEl.style.display = 'none';
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = 'Failed to load room access: ' + e.message;
+    }
+}
+
+function renderRoomAccessTable(userId, roomAccess) {
+    var tbody = document.getElementById('settings-rooms-tbody');
+    tbody.innerHTML = roomAccess.map(function(r) {
+        var checkedAttr = r.isMember ? ' checked' : '';
+        return '<tr>' +
+            '<td><span class="room-name">' + escapeHtml(r.name) + '</span>' +
+                '<span class="room-id">' + escapeHtml(r.roomId) + '</span></td>' +
+            '<td style="text-align: center;">' +
+                '<input type="checkbox" class="settings-access-checkbox"' + checkedAttr +
+                ' onchange="toggleRoomAccess(\'' + escapeHtml(userId).replace(/'/g, "\\'") + '\', \'' +
+                escapeHtml(r.roomId).replace(/'/g, "\\'") + '\', this.checked, this)">' +
+            '</td>' +
+            '<td><span id="room-status-' + r.roomId.replace(/[^a-zA-Z0-9]/g, '_') + '" style="font-size: 12px; color: var(--text-muted);">' +
+                (r.isMember ? 'Joined' : 'Not joined') + '</span></td>' +
+        '</tr>';
+    }).join('');
+}
+
+async function toggleRoomAccess(userId, roomId, grant, checkbox) {
+    var statusSpan = document.getElementById('room-status-' + roomId.replace(/[^a-zA-Z0-9]/g, '_'));
+    checkbox.disabled = true;
+
+    try {
+        var session = _loadSynapseSession();
+        if (!session || !session.accessToken) throw new Error('Not logged in');
+
+        if (grant) {
+            // Use Synapse Admin API to force-join user to room
+            statusSpan.textContent = 'Joining...';
+            statusSpan.style.color = 'var(--primary-400)';
+
+            var encodedRoomId = encodeURIComponent(roomId);
+            var res = await fetch(
+                SYNAPSE_HOMESERVER_URL + '/_synapse/admin/v1/join/' + encodedRoomId,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + session.accessToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ user_id: userId })
+                }
+            );
+
+            if (!res.ok) {
+                // Fallback: try inviting via standard Matrix API, then the user must accept
+                var errData = await res.json().catch(function() { return {}; });
+                if (res.status === 403 || (errData.errcode && errData.errcode === 'M_FORBIDDEN')) {
+                    // Not a server admin — fall back to invite
+                    await MatrixClient.inviteUser(roomId, userId);
+                    statusSpan.textContent = 'Invited';
+                    statusSpan.style.color = 'var(--warning-500)';
+                    showSettingsToast('info', 'Invited ' + userId + ' to room (they must accept). Server admin required for force-join.');
+                    checkbox.disabled = false;
+                    return;
+                }
+                throw new Error(errData.error || 'Admin join failed (' + res.status + ')');
+            }
+
+            statusSpan.textContent = 'Joined';
+            statusSpan.style.color = 'var(--success-500)';
+            showSettingsToast('success', 'Joined ' + userId + ' to room');
+        } else {
+            // Kick user from room
+            statusSpan.textContent = 'Removing...';
+            statusSpan.style.color = 'var(--danger-500)';
+
+            await MatrixClient.kickUser(roomId, userId, 'Access revoked by admin');
+
+            statusSpan.textContent = 'Not joined';
+            statusSpan.style.color = 'var(--text-muted)';
+            showSettingsToast('success', 'Removed ' + userId + ' from room');
+        }
+    } catch (e) {
+        console.error('[Settings] toggleRoomAccess failed:', e);
+        // Revert checkbox
+        checkbox.checked = !grant;
+        statusSpan.textContent = grant ? 'Failed' : 'Joined';
+        statusSpan.style.color = 'var(--danger-500)';
+        showSettingsToast('error', 'Failed: ' + e.message);
+    }
+
+    checkbox.disabled = false;
+}
+
 // ============ Initialize Workspaces on Load ============
 
 // Extend init to load workspaces and update Matrix status
@@ -19442,6 +20346,10 @@ init = async function() {
     await loadWorkspaces();
     renderWorkspaceTabs();
     updateMatrixStatus();
+
+    // Show app nav bar and detect role
+    showAppNav();
+    await detectAndStoreUserRole();
 };
 
 // Keyboard handler for modals (Escape to close)
