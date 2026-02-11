@@ -294,3 +294,10 @@ html:not(.light-theme) .op-des { background: rgba(74, 222, 128, 0.15); color: #4
 html:not(.light-theme) .op-seg { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
 html:not(.light-theme) .op-con { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
 html:not(.light-theme) .op-alt { background: rgba(167, 139, 250, 0.2); color: #a78bfa; }
+
+/* Responsive: Provenance panel full-width on mobile */
+@media (max-width: 768px) {
+    .provenance-panel {
+        width: 100vw;
+    }
+}
