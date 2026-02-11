@@ -6311,6 +6311,7 @@ var eventsTypeFilter = ''; // 'INS', 'ALT', 'NUL', 'SYN', 'table', 'field', 'vie
 var eventsSetFilter = ''; // Filter by set (table id)
 var eventsSearchQuery = '';
 var expandedPayloads = new Set(); // Set of event IDs with expanded payloads
+var cachedEventRecordLabels = {}; // tableId::recordId -> display label
 var appOpenedEventId = 0; // Highest event ID when app was opened (events with higher IDs are "new")
 
 // Infinite scroll state
@@ -15488,6 +15489,7 @@ async function renderEventsContent() {
 
         // Count new events (events with ID > appOpenedEventId)
         var newEventsCount = events.filter(e => e.id > appOpenedEventId).length;
+        await prefetchEventRecordLabels(events);
 
         var html = '';
 
@@ -15556,19 +15558,18 @@ async function renderEventsContent() {
         // Events table
         html += '<table class="events-table">';
         html += '<thead><tr>';
-        html += '<th style="width: 80px;">ID</th>';
+        html += '<th style="width: 190px;">Record</th>';
         html += '<th style="width: 140px;">Timestamp</th>';
         html += '<th style="width: 90px;">Type</th>';
         html += '<th style="width: 140px;">Set</th>';
-        html += '<th style="width: 130px;">Record ID</th>';
-        html += '<th style="width: 140px;">Details</th>';
+        html += '<th style="width: 260px;">Details</th>';
         html += '<th>Payload</th>';
-        html += '<th style="width: 120px;">Actions</th>';
+        html += '<th style="width: 140px;">Actions</th>';
         html += '</tr></thead>';
         html += '<tbody id="events-tbody">';
 
         if (events.length === 0) {
-            html += '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #666;">No events found</td></tr>';
+            html += '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">No events found</td></tr>';
         } else {
             html += renderEventRows(events, newEventsCount);
         }
@@ -15638,6 +15639,83 @@ async function fetchEventsForInfiniteScroll(offset, limit) {
     return events;
 }
 
+function getEventRecordLabel(tableId, recordId, fields) {
+    if (!recordId) return '—';
+
+    var cacheKey = (tableId || '') + '::' + recordId;
+    if (cachedEventRecordLabels[cacheKey]) {
+        return cachedEventRecordLabels[cacheKey];
+    }
+
+    var value = null;
+    var tableFields = META_FIELDS[tableId] || {};
+    var displayNameFieldId = getDisplayNameFieldId(tableId);
+    var displayField = displayNameFieldId ? tableFields[displayNameFieldId] : null;
+
+    if (displayNameFieldId && fields) {
+        value = fields[displayNameFieldId];
+        if ((value === undefined || value === null || value === '') && displayField) {
+            value = fields[displayField.fieldName];
+        }
+    }
+
+    if ((value === undefined || value === null || value === '') && fields) {
+        var firstFieldId = Object.keys(tableFields)[0];
+        if (firstFieldId) {
+            var firstField = tableFields[firstFieldId];
+            value = fields[firstFieldId];
+            if ((value === undefined || value === null || value === '') && firstField) {
+                value = fields[firstField.fieldName];
+            }
+        }
+    }
+
+    var label = (value === undefined || value === null || value === '') ? recordId : String(value);
+    cachedEventRecordLabels[cacheKey] = label;
+    return label;
+}
+
+async function prefetchEventRecordLabels(events) {
+    var byTable = {};
+
+    for (var i = 0; i < events.length; i++) {
+        var event = events[i] || {};
+        var tableId = (event.set || '').replace('airtable:', '');
+        var recordId = event.recordId;
+        if (!tableId || !recordId) continue;
+
+        var cacheKey = tableId + '::' + recordId;
+        if (cachedEventRecordLabels[cacheKey]) continue;
+        if (!byTable[tableId]) byTable[tableId] = [];
+        if (byTable[tableId].indexOf(recordId) === -1) byTable[tableId].push(recordId);
+    }
+
+    var tableIds = Object.keys(byTable);
+    for (var t = 0; t < tableIds.length; t++) {
+        var tableId = tableIds[t];
+        try {
+            var records = await getRecordsByIds(tableId, byTable[tableId]);
+            var mapped = {};
+            for (var r = 0; r < records.length; r++) {
+                var rec = records[r];
+                mapped[rec.recordId] = rec;
+            }
+
+            for (var j = 0; j < byTable[tableId].length; j++) {
+                var recordId = byTable[tableId][j];
+                var rec = mapped[recordId];
+                var fields = rec ? (rec.fields || {}) : null;
+                getEventRecordLabel(tableId, recordId, fields);
+            }
+        } catch (err) {
+            for (var k = 0; k < byTable[tableId].length; k++) {
+                var fallbackRecordId = byTable[tableId][k];
+                cachedEventRecordLabels[tableId + '::' + fallbackRecordId] = fallbackRecordId;
+            }
+        }
+    }
+}
+
 // Render multiple event rows and track new events divider
 function renderEventRows(events, newEventsCount) {
     var html = '';
@@ -15699,6 +15777,7 @@ async function loadMoreEvents(totalEventsCount, totalRecordsCount) {
 
             // Count new events in this batch
             var newEventsCount = newEvents.filter(e => e.id > appOpenedEventId).length;
+            await prefetchEventRecordLabels(newEvents);
 
             // Append rows to tbody
             var tbody = document.getElementById('events-tbody');
@@ -15769,31 +15848,19 @@ function renderEventRow(event, isNew) {
     var rowClass = isNew ? 'new-event' : (isCurrentState ? 'current-state-row' : '');
     var html = '<tr data-event-id="' + (event.id || event.recordId) + '"' + (rowClass ? ' class="' + rowClass + '"' : '') + '>';
 
-    // ID column - show "–" for current state
-    if (isCurrentState) {
-        html += '<td><span class="event-id current-state">–</span></td>';
-    } else {
-        html += '<td><span class="event-id">' + event.id + (isNew ? '<span class="new-event-badge">NEW</span>' : '') + '</span></td>';
-    }
+    var recordLabel = getEventRecordLabel((event.set || '').replace('airtable:', ''), event.recordId, null);
+    html += '<td><span class="event-record-id" title="' + esc(event.recordId || '') + '">' + esc(recordLabel) + (isNew ? '<span class="new-event-badge">NEW</span>' : '') + '</span></td>';
 
     html += '<td><span class="event-timestamp">' + esc(timestamp) + '</span></td>';
     html += '<td><span class="event-type-badge ' + eventType + '">' + esc(ENTITY_TYPE_NAMES[eventType] || eventType) + '</span></td>';
     var setTableId = (event.set || '').replace('airtable:', '');
     var setDisplayName = (META_TABLES[setTableId] && META_TABLES[setTableId].tableName) || event.set || '';
     html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(setDisplayName) + '</span></td>';
-    html += '<td><span class="event-record-id">' + esc(event.recordId || '') + '</span></td>';
-
-    // Details column - show field operation types and counts
+    // Details column - highlight operator and how to inspect full historical record state
     html += '<td class="event-details">';
-    var fieldOps = getFieldOperationDetails(payload);
-    if (fieldOps) {
-        fieldOps.forEach(function(op) {
-            html += '<span class="field-op-badge ' + op.type + '">' + op.type + ' <span class="field-count">' + op.label + '</span></span>';
-        });
-    } else if (eventType !== 'data') {
-        html += '<span style="color: #9ca3af; font-size: 11px;">–</span>';
-    } else {
-        html += '<span style="color: #9ca3af; font-size: 11px;">–</span>';
+    html += '<div><span class="field-op-badge ' + eventType + '">Operator: ' + esc(ENTITY_TYPE_NAMES[eventType] || eventType) + '</span></div>';
+    if (!isCurrentState && event.recordId && event.recordId.startsWith('rec')) {
+        html += '<div style="margin-top: 6px; color: #9ca3af; font-size: 11px; line-height: 1.4;">View State shows the full record snapshot from this moment (all fields as they were then).</div>';
     }
     html += '</td>';
 
@@ -15820,7 +15887,7 @@ function renderEventRow(event, isNew) {
             html += 'View Record';
             html += '</button>';
         } else {
-            html += '<button class="event-action-btn primary" onclick="viewRecordAtPointInTime(' + event.id + ', \'' + esc(event.recordId) + '\', \'' + esc(event.set || '') + '\')" title="View record state at this point in time">';
+            html += '<button class="event-action-btn primary" onclick="viewRecordAtPointInTime(' + event.id + ', \'' + esc(event.recordId) + '\', \'' + esc(event.set || '') + '\')" title="View the full record snapshot at this point in time (all fields)">';
             html += '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/></svg>';
             html += 'View State';
             html += '</button>';
