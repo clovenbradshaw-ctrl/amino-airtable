@@ -271,6 +271,8 @@
             font-family: var(--font-sans);
             display: flex;
             flex-direction: column;
+            contain: layout style;
+            will-change: contents;
         }
         .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border-primary); }
         .sidebar-header-top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
@@ -328,12 +330,18 @@
 
         .sidebar-divider { height: 1px; background: var(--border-primary); margin: 8px 16px; }
 
+        /* Fast sidebar search: hide structural elements via CSS class on container */
+        #table-list.sidebar-searching > .sidebar-section-header,
+        #table-list.sidebar-searching > .sidebar-divider { display: none; }
+        #table-list .sidebar-search-hidden { display: none !important; }
+
         /* Table Items */
+        .table-wrapper { contain: layout style; }
         .sidebar div.table-item {
             padding: 9px 12px; margin: 2px 8px; border-radius: var(--radius-lg);
             cursor: pointer; font-size: 13px; color: var(--text-secondary);
             display: flex; align-items: center; gap: 10px;
-            transition: all var(--transition-fast); position: relative;
+            transition: background-color var(--transition-fast), color var(--transition-fast); position: relative;
         }
         .sidebar div.table-item:hover { background: var(--bg-hover); color: var(--text-primary); }
         .sidebar div.table-item:active { background: var(--bg-active); color: var(--text-primary); transition: background-color 0.05s, color 0.05s; }
@@ -344,6 +352,7 @@
         .sidebar div.table-item.active::before {
             content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
             width: 3px; height: 20px; border-radius: 0 2px 2px 0;
+            background: var(--type-color, var(--primary-500));
         }
         .sidebar div.table-item .table-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .sidebar div.table-item .count { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
@@ -394,17 +403,17 @@
 
         /* Table Views List */
         .table-views-list {
-            max-height: 0; overflow: hidden;
-            transition: max-height 0.25s ease-out;
+            display: none;
             background: var(--bg-primary);
             margin: 0 8px; border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+            contain: content;
         }
-        .table-views-list.expanded { max-height: 500px; }
+        .table-views-list.expanded { display: block; }
         .table-view-item {
             padding: 7px 12px 7px 40px; cursor: pointer;
             font-size: 12px; color: var(--text-muted);
             display: flex; align-items: center; gap: 8px;
-            transition: all var(--transition-fast);
+            transition: background-color var(--transition-fast), color var(--transition-fast);
             margin: 1px 4px; border-radius: var(--radius-md);
         }
         .table-view-item:hover { background: var(--bg-hover); color: var(--text-primary); }
@@ -5294,14 +5303,63 @@ function toggleTablePin(tableId, event) {
         SIDEBAR_STATE.pinnedTables.push(tableId);
     }
     saveSidebarState();
-    renderSidebar();
+    // Fast path: update pin button icon in-place instead of full sidebar rebuild
+    var wrapper = document.querySelector('.table-wrapper[data-table-id="' + tableId + '"]');
+    if (wrapper) {
+        var pinBtn = wrapper.querySelector('.pin-btn');
+        if (pinBtn) {
+            var isPinned = SIDEBAR_STATE.pinnedTables.includes(tableId);
+            pinBtn.className = 'pin-btn' + (isPinned ? ' pinned' : '');
+            pinBtn.title = isPinned ? 'Unpin' : 'Pin';
+            pinBtn.innerHTML = isPinned ? SIDEBAR_ICONS.starFilled : SIDEBAR_ICONS.star;
+        }
+    }
+    // Debounce the full re-render for structural changes (pinned section)
+    _debouncedSidebarRender();
+}
+
+// Debounced sidebar render to coalesce rapid toggling
+var _sidebarRenderTimer = null;
+function _debouncedSidebarRender() {
+    if (_sidebarRenderTimer) cancelAnimationFrame(_sidebarRenderTimer);
+    _sidebarRenderTimer = requestAnimationFrame(function() {
+        _sidebarRenderTimer = null;
+        renderSidebar();
+    });
 }
 
 // Toggle sidebar section
 function toggleSidebarSection(sectionId) {
-    SIDEBAR_STATE.expandedSections[sectionId] = !SIDEBAR_STATE.expandedSections[sectionId];
+    var wasExpanded = SIDEBAR_STATE.expandedSections[sectionId];
+    SIDEBAR_STATE.expandedSections[sectionId] = !wasExpanded;
     saveSidebarState();
-    renderSidebar();
+
+    // Fast path for collapsing: just toggle CSS class on the header
+    // (table items under it are already in the DOM, hidden by the collapsed state)
+    // For expanding, we need a full render to populate the section's table items
+    if (wasExpanded) {
+        // Collapsing — fast DOM toggle
+        var headers = document.querySelectorAll('.sidebar-section-header');
+        for (var i = 0; i < headers.length; i++) {
+            var hdr = headers[i];
+            // Match by section ID stored in the onclick
+            if (hdr.onclick && hdr._sectionId === sectionId) {
+                hdr.classList.add('collapsed');
+                // Hide the table wrappers that follow until next section header or divider
+                var sibling = hdr.nextElementSibling;
+                while (sibling && !sibling.classList.contains('sidebar-section-header') && !sibling.classList.contains('sidebar-divider')) {
+                    sibling.style.display = 'none';
+                    sibling = sibling.nextElementSibling;
+                }
+                return;
+            }
+        }
+        // Fallback if we couldn't find the header
+        renderSidebar();
+    } else {
+        // Expanding — need full render to build the section content
+        renderSidebar();
+    }
 }
 
 // Save sidebar state to localStorage
@@ -5331,12 +5389,11 @@ function initSidebarSearch() {
 
     var debounceTimer = null;
 
-    // Search input handler with debounce - uses fast DOM filtering when possible
+    // Search input handler with debounce - uses fast CSS-class-based filtering
     searchInput.addEventListener('input', function(e) {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(function() {
             var newQuery = e.target.value;
-            var oldQuery = SIDEBAR_STATE.searchQuery;
             SIDEBAR_STATE.searchQuery = newQuery;
             // Use fast DOM filter if sidebar is already rendered (no need for full rebuild)
             if (_sidebarCache.tables) {
@@ -5344,7 +5401,7 @@ function initSidebarSearch() {
             } else {
                 renderSidebar();
             }
-        }, 150);
+        }, 80); // Reduced from 150ms since CSS class toggling is much cheaper
     });
 
     // Clear search on Escape
@@ -6721,6 +6778,20 @@ function getRecordIdsForTable(tableId) {
             var recordIds = (req.result || []).map(k => k[1]);
             resolve(recordIds);
         };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// Fast record count using IndexedDB count() — avoids loading all keys into memory
+function getRecordCountForTable(tableId) {
+    if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
+        return Promise.resolve(Object.keys(window.IN_MEMORY_DATA[tableId]).length);
+    }
+    return new Promise((resolve, reject) => {
+        var tx = db.transaction('data', 'readonly');
+        var index = tx.objectStore('data').index('by_table');
+        var req = index.count(tableId);
+        req.onsuccess = () => resolve(req.result || 0);
         req.onerror = () => reject(req.error);
     });
 }
@@ -9913,40 +9984,42 @@ function applyPayloadFields(target, payload) {
 
 // ============ UI ============
 
-// Fast DOM-only search filter — hides/shows existing table items without rebuilding
+// Fast DOM-only search filter — uses CSS class toggling for minimal reflow
 function filterSidebarDOM(query) {
     var searchQuery = (query || '').toLowerCase().trim();
     var tableList = document.getElementById('table-list');
     if (!tableList) return;
 
+    // Toggle a single class on the container to control search-mode styles via CSS
+    // This avoids touching every element's style.display individually
+    var isSearching = !!searchQuery;
+    tableList.classList.toggle('sidebar-searching', isSearching);
+
+    if (!isSearching) {
+        // Clear any per-item hidden classes when search is cleared
+        var hidden = tableList.querySelectorAll('.sidebar-search-hidden');
+        for (var i = 0; i < hidden.length; i++) {
+            hidden[i].classList.remove('sidebar-search-hidden');
+        }
+        return;
+    }
+
+    // Only update the per-wrapper match/hide class (batch reads then writes)
     var wrappers = tableList.querySelectorAll('.table-wrapper[data-table-id]');
-    var sectionHeaders = tableList.querySelectorAll('.sidebar-section-header');
-
-    // When searching, show all matching items and hide non-matching
-    wrappers.forEach(function(wrapper) {
-        var tableId = wrapper.getAttribute('data-table-id');
+    var names = new Array(wrappers.length);
+    for (var i = 0; i < wrappers.length; i++) {
+        var tableId = wrappers[i].getAttribute('data-table-id');
         if (tableId === '_events' || tableId === '_sync_status') {
-            // Hide special items during search, show when not searching
-            wrapper.style.display = searchQuery ? 'none' : '';
-            return;
-        }
-        var nameEl = wrapper.querySelector('.table-name');
-        var name = nameEl ? nameEl.textContent.toLowerCase() : tableId.toLowerCase();
-        if (!searchQuery || name.includes(searchQuery)) {
-            wrapper.style.display = '';
+            names[i] = null;
         } else {
-            wrapper.style.display = 'none';
+            var nameEl = wrappers[i].querySelector('.table-name');
+            names[i] = nameEl ? nameEl.textContent.toLowerCase() : tableId.toLowerCase();
         }
-    });
-
-    // Hide section headers and dividers during search, show when not searching
-    sectionHeaders.forEach(function(header) {
-        header.style.display = searchQuery ? 'none' : '';
-    });
-    var dividers = tableList.querySelectorAll('.sidebar-divider');
-    dividers.forEach(function(d) {
-        d.style.display = searchQuery ? 'none' : '';
-    });
+    }
+    for (var i = 0; i < wrappers.length; i++) {
+        var shouldHide = names[i] === null || !names[i].includes(searchQuery);
+        wrappers[i].classList.toggle('sidebar-search-hidden', shouldHide);
+    }
 }
 
 async function renderSidebar(forceRefresh) {
@@ -9983,8 +10056,8 @@ async function renderSidebar(forceRefresh) {
         maxCount = 0;
         var countAndEvents = await Promise.all([
             Promise.all(tables.map(function(table) {
-                return getRecordIdsForTable(table.tableId).then(function(ids) {
-                    return { tableId: table.tableId, count: ids.length };
+                return getRecordCountForTable(table.tableId).then(function(count) {
+                    return { tableId: table.tableId, count: count };
                 });
             })),
             getRawEventsCount()
@@ -10124,6 +10197,7 @@ async function renderSidebar(forceRefresh) {
             '<span>' + title + '</span>' +
             '<span class="section-count">' + count + '</span>';
         header.onclick = () => toggleSidebarSection(sectionId);
+        header._sectionId = sectionId;
         return header;
     }
 
@@ -10233,31 +10307,24 @@ async function renderSidebar(forceRefresh) {
     tableList.innerHTML = '';
     tableList.appendChild(fragment);
 
-    // Now load views for visible tables (after DOM is in place)
-    _viewLoadQueue.forEach(tid => loadTableViewsAsync(tid));
-
-    // Update active indicator color using a single reusable style element
-    var activeStyles = [];
-    document.querySelectorAll('.sidebar .table-item.active').forEach(el => {
-        var tableId = el.closest('.table-wrapper')?.getAttribute('data-table-id');
-        if (tableId && tableId !== '_events') {
-            var table = tables.find(t => t.tableId === tableId);
-            if (table) {
-                var type = getTableType(table.tableName || table.tableId);
-                var config = TABLE_TYPE_CONFIG[type] || TABLE_TYPE_CONFIG.operational;
-                el.style.setProperty('--before-bg', config.color);
-                activeStyles.push('.table-wrapper[data-table-id="' + tableId + '"] .table-item.active::before { background: ' + config.color + ' !important; }');
-            }
-        }
-    });
-    // Use a single style element instead of creating one per table per render
-    var activeStyleEl = document.getElementById('sidebar-active-indicators');
-    if (!activeStyleEl) {
-        activeStyleEl = document.createElement('style');
-        activeStyleEl.id = 'sidebar-active-indicators';
-        document.head.appendChild(activeStyleEl);
+    // Load views for visible tables (after DOM is in place)
+    // Prioritize the active table, then load others with idle callbacks
+    var activeTid = currentTable;
+    if (activeTid && _viewLoadQueue.includes(activeTid)) {
+        loadTableViewsAsync(activeTid);
     }
-    activeStyleEl.textContent = activeStyles.join('\n');
+    for (var _qi = 0; _qi < _viewLoadQueue.length; _qi++) {
+        var _tid = _viewLoadQueue[_qi];
+        if (_tid === activeTid) continue;
+        // Use requestIdleCallback if available, otherwise setTimeout(0)
+        if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(loadTableViewsAsync.bind(null, _tid));
+        } else {
+            setTimeout(loadTableViewsAsync.bind(null, _tid), 0);
+        }
+    }
+
+    // Active indicator color is set via --type-color CSS variable on renderTableItem above.
 }
 
 // Render views list HTML from cached META_VIEWS (synchronous, no DB hit)
@@ -10324,6 +10391,9 @@ function renderViewsListHTML(tableId) {
     return html;
 }
 
+// Track in-flight view load requests to prevent duplicate fetches
+var _viewLoadInFlight = {};
+
 // Load views for a table and populate the views list
 async function loadTableViewsAsync(tableId) {
     var viewsList = document.getElementById('views-list-' + tableId);
@@ -10335,57 +10405,64 @@ async function loadTableViewsAsync(tableId) {
         return;
     }
 
-    // Fetch views and folders in parallel instead of sequentially
-    var results = await Promise.all([
-        getViewsForTable(tableId),
-        getFoldersForTable(tableId)
-    ]);
-    var views = results[0];
-    var folders = results[1];
+    // Deduplicate: if already loading this table's views, skip
+    if (_viewLoadInFlight[tableId]) return;
+    _viewLoadInFlight[tableId] = true;
 
-    // Cache views in META_VIEWS
-    if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
-    views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
-
-    // Load sharing metadata for views and attach as _sharing
     try {
-        var sharedViews = await SharedViews.getVisibleViewsForTable(tableId);
-        var sharingMap = {};
-        sharedViews.forEach(function(sv) { sharingMap[sv.viewId] = sv; });
+        // Fetch views and folders in parallel instead of sequentially
+        var results = await Promise.all([
+            getViewsForTable(tableId),
+            getFoldersForTable(tableId)
+        ]);
+        var views = results[0];
+        var folders = results[1];
 
-        // Merge shared views that aren't in local DB yet (from other users)
-        sharedViews.forEach(function(sv) {
-            if (sv.viewId && !META_VIEWS[tableId][sv.viewId] && sv.viewName) {
-                // This is a view shared with us by someone else — add it
-                META_VIEWS[tableId][sv.viewId] = {
-                    tableId: sv.tableId,
-                    viewId: sv.viewId,
-                    viewName: sv.viewName,
-                    viewType: sv.viewType || 'grid',
-                    filters: sv.filters || [],
-                    sorts: sv.sorts || [],
-                    groupBy: sv.groupBy || null,
-                    hiddenFieldIds: sv.hiddenFieldIds || [],
-                    fieldOrder: sv.fieldOrder || [],
-                    tags: sv.tags || [],
-                    folderId: sv.folderId || null
-                };
-            }
-        });
+        // Cache views in META_VIEWS
+        if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+        views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
 
-        // Attach sharing metadata to cached views for rendering
-        Object.keys(META_VIEWS[tableId]).forEach(function(vid) {
-            META_VIEWS[tableId][vid]._sharing = sharingMap[vid] || null;
-        });
-    } catch (e) {
-        console.warn('[loadTableViewsAsync] Failed to load sharing metadata:', e);
+        // Load sharing metadata for views and attach as _sharing
+        try {
+            var sharedViews = await SharedViews.getVisibleViewsForTable(tableId);
+            var sharingMap = {};
+            sharedViews.forEach(function(sv) { sharingMap[sv.viewId] = sv; });
+
+            // Merge shared views that aren't in local DB yet (from other users)
+            sharedViews.forEach(function(sv) {
+                if (sv.viewId && !META_VIEWS[tableId][sv.viewId] && sv.viewName) {
+                    META_VIEWS[tableId][sv.viewId] = {
+                        tableId: sv.tableId,
+                        viewId: sv.viewId,
+                        viewName: sv.viewName,
+                        viewType: sv.viewType || 'grid',
+                        filters: sv.filters || [],
+                        sorts: sv.sorts || [],
+                        groupBy: sv.groupBy || null,
+                        hiddenFieldIds: sv.hiddenFieldIds || [],
+                        fieldOrder: sv.fieldOrder || [],
+                        tags: sv.tags || [],
+                        folderId: sv.folderId || null
+                    };
+                }
+            });
+
+            // Attach sharing metadata to cached views for rendering
+            Object.keys(META_VIEWS[tableId]).forEach(function(vid) {
+                META_VIEWS[tableId][vid]._sharing = sharingMap[vid] || null;
+            });
+        } catch (e) {
+            console.warn('[loadTableViewsAsync] Failed to load sharing metadata:', e);
+        }
+
+        // Cache folders in VIEW_FOLDERS
+        if (!VIEW_FOLDERS[tableId]) VIEW_FOLDERS[tableId] = {};
+        folders.forEach(f => VIEW_FOLDERS[tableId][f.folderId] = f);
+
+        viewsList.innerHTML = renderViewsListHTML(tableId);
+    } finally {
+        delete _viewLoadInFlight[tableId];
     }
-
-    // Cache folders in VIEW_FOLDERS
-    if (!VIEW_FOLDERS[tableId]) VIEW_FOLDERS[tableId] = {};
-    folders.forEach(f => VIEW_FOLDERS[tableId][f.folderId] = f);
-
-    viewsList.innerHTML = renderViewsListHTML(tableId);
 }
 
 // Render a single view item
@@ -11228,21 +11305,17 @@ async function selectTableView(tableId, viewId) {
     // Clean up any special view state (Events, Sync Status)
     cleanupSpecialViewState();
 
-    // Update sidebar active states
-    document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.table-view-item').forEach(el => el.classList.remove('active'));
+    // Update sidebar active states - only clear previous active, not all items
+    var prevActive = document.querySelectorAll('.table-item.active, .table-view-item.active');
+    for (var i = 0; i < prevActive.length; i++) prevActive[i].classList.remove('active');
 
     var wrapper = document.querySelector('.table-wrapper[data-table-id="' + tableId + '"]');
     if (wrapper) {
-        wrapper.querySelector('.table-item').classList.add('active');
-        // Find and mark the selected view as active
-        var viewItems = wrapper.querySelectorAll('.table-view-item');
-        viewItems.forEach(item => {
-            var onclickAttr = item.getAttribute('onclick') || '';
-            if (onclickAttr.includes("'" + viewId + "'")) {
-                item.classList.add('active');
-            }
-        });
+        var tableItemEl = wrapper.querySelector('.table-item');
+        if (tableItemEl) tableItemEl.classList.add('active');
+        // Find and mark the selected view as active using data attribute
+        var viewItem = wrapper.querySelector('.table-view-item[data-view-id="' + viewId + '"]');
+        if (viewItem) viewItem.classList.add('active');
     }
 
     // If switching to a different table, load it first
@@ -11512,9 +11585,9 @@ async function showTable(tableId) {
     var tabIcons = { events: '\u26A1', operational: '\u25A6', collection: '\uD83D\uDCC5', reference: '\uD83D\uDCD6', dev: '\u2699' };
     openTableInTab(tableId, tableName, tabIcons[tableType] || '\u25A6');
 
-    // Update sidebar - expand the selected table and highlight it
-    document.querySelectorAll('.table-item').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.table-view-item').forEach(el => el.classList.remove('active'));
+    // Update sidebar - only clear previous active elements, then expand new one
+    var prevActive = document.querySelectorAll('.table-item.active, .table-view-item.active');
+    for (var i = 0; i < prevActive.length; i++) prevActive[i].classList.remove('active');
 
     var wrapper = document.querySelector('.table-wrapper[data-table-id="' + tableId + '"]');
     if (wrapper) {
@@ -11522,6 +11595,11 @@ async function showTable(tableId) {
         var viewsList = wrapper.querySelector('.table-views-list');
         if (tableItem) {
             tableItem.classList.add('active', 'expanded');
+            // Set the type color for the active indicator
+            var tableName_temp = (META_TABLES[tableId]?.tableName || tableId);
+            var type_temp = getTableType(tableName_temp);
+            var config_temp = TABLE_TYPE_CONFIG[type_temp] || TABLE_TYPE_CONFIG.operational;
+            tableItem.style.setProperty('--type-color', config_temp.color);
         }
         if (viewsList) {
             viewsList.classList.add('expanded');
@@ -11595,14 +11673,13 @@ function updateSidebarViewActive(tableId, viewId) {
     var wrapper = document.querySelector('.table-wrapper[data-table-id="' + tableId + '"]');
     if (!wrapper) return;
 
-    var viewItems = wrapper.querySelectorAll('.table-view-item');
-    viewItems.forEach(item => {
-        item.classList.remove('active');
-        var onclickAttr = item.getAttribute('onclick') || '';
-        if (onclickAttr.includes("'" + viewId + "'")) {
-            item.classList.add('active');
-        }
-    });
+    // Clear only currently active items (cheaper than iterating all)
+    var prevActive = wrapper.querySelectorAll('.table-view-item.active');
+    for (var i = 0; i < prevActive.length; i++) prevActive[i].classList.remove('active');
+
+    // Use data-view-id attribute for O(1) lookup
+    var target = wrapper.querySelector('.table-view-item[data-view-id="' + viewId + '"]');
+    if (target) target.classList.add('active');
 }
 
 function showTableLoading(message) {
