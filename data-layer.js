@@ -619,6 +619,11 @@ var AminoData = (function() {
             throw err;
         }
 
+        // Full hydration should mirror current server state.
+        // Clear existing table rows first so deleted upstream records
+        // do not linger as stale local entries.
+        await deleteTableRecords(tableId);
+
         // Write records in batches to avoid holding a single long transaction
         var BATCH_SIZE = 200;
         for (var b = 0; b < records.length; b += BATCH_SIZE) {
