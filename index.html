@@ -1986,6 +1986,7 @@
         }
         .iface-table {
             width: 100%; border-collapse: collapse; font-size: 13px;
+            table-layout: fixed;
         }
         .iface-table th {
             text-align: left; padding: 8px 12px; font-weight: 600; font-size: 12px;
@@ -1997,10 +1998,44 @@
         .iface-table td {
             padding: 8px 12px; border-bottom: 1px solid var(--border-primary);
             color: var(--text-primary); white-space: nowrap; overflow: hidden;
-            text-overflow: ellipsis; max-width: 200px;
+            text-overflow: ellipsis;
         }
         .iface-table tr:hover td { background: var(--bg-hover); }
         .iface-table tr:last-child td { border-bottom: none; }
+
+        /* Responsive table: hide less important columns at smaller breakpoints */
+        @media (max-width: 1200px) {
+            .iface-table th[data-col="country"],
+            .iface-table td[data-col="country"],
+            .iface-table th[data-col="email"],
+            .iface-table td[data-col="email"],
+            .iface-table th[data-col="event-info"],
+            .iface-table td[data-col="event-info"] { display: none; }
+        }
+        @media (max-width: 900px) {
+            .iface-table th[data-col="a-"],
+            .iface-table td[data-col="a-"],
+            .iface-table th[data-col="dob-age"],
+            .iface-table td[data-col="dob-age"],
+            .iface-table th[data-col="ich-atty"],
+            .iface-table td[data-col="ich-atty"],
+            .iface-table th[data-col="mch-atty"],
+            .iface-table td[data-col="mch-atty"],
+            .iface-table th[data-col="case-manager"],
+            .iface-table td[data-col="case-manager"] { display: none; }
+            .iface-table th, .iface-table td { padding: 6px 8px; font-size: 12px; }
+            .iface-page[data-page-id="clients"] { padding: 12px 10px 14px; }
+        }
+        @media (max-width: 480px) {
+            .iface-table th[data-col="phone"],
+            .iface-table td[data-col="phone"] { display: none; }
+            .iface-table th, .iface-table td { padding: 6px 6px; font-size: 11px; }
+            .iface-page[data-page-id="clients"] { padding: 8px 6px 10px; }
+            .iface-filters { padding: 8px 10px; gap: 6px; }
+            .iface-filter-dropdown { font-size: 11px; padding: 4px 6px; }
+            .iface-block-header { flex-wrap: wrap; }
+            .iface-block-search { width: 100%; }
+        }
 
         /* Status badges */
         .iface-badge {
@@ -25662,8 +25697,9 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-body"><div class="iface-table-wrapper"><table class="iface-table">';
         html += '<thead><tr>';
         columns.forEach(function(col) {
-            var w = col.width ? ' style="min-width:' + col.width + 'px;max-width:' + (col.width + 80) + 'px"' : '';
-            html += '<th' + w + ' onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + '</th>';
+            var w = col.width ? ' style="width:' + col.width + 'px"' : '';
+            var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            html += '<th' + w + ' data-col="' + _esc(colId) + '" onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + '</th>';
         });
         html += '</tr></thead><tbody>';
         if (!pageRecords.length) {
@@ -25673,7 +25709,8 @@ var InterfaceApp = (function() {
                 html += '<tr data-record-id="' + _esc(r.recordId) + '">';
                 columns.forEach(function(col) {
                     var val = _findFieldValue(r.fields || {}, col.field);
-                    html += '<td>' + _formatFieldValue(val) + '</td>';
+                    var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                    html += '<td data-col="' + _esc(colId) + '">' + _formatFieldValue(val) + '</td>';
                 });
                 html += '</tr>';
             });
