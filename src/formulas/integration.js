@@ -50,7 +50,7 @@ export function metaFieldsToRegistry(metaFields, tableId) {
     fieldId,
     fieldName: field.fieldName || fieldId,
     fieldType: field.fieldType || 'singleLineText',
-    isComputed: COMPUTED_FIELD_TYPES.indexOf(field.fieldType) !== -1,
+    isComputed: COMPUTED_FIELD_TYPES.indexOf(field.fieldType) !== -1 || field.readOnly === true,
     tableId,
     options: field.options || {}
   }));

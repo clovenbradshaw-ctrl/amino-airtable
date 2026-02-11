@@ -748,12 +748,28 @@
             background: rgba(124, 58, 237, 0.06);
         }
 
+        /* Read-only (non-computed) field cells */
+        td.cell-readonly { cursor: default; color: var(--text-secondary); }
+        td.cell-readonly:hover { background: rgba(148, 163, 184, 0.06); outline: none; }
+        td.cell-readonly:hover::after { display: none; }
+        td.cell-readonly.cell-focused {
+            outline: 2px solid rgba(148, 163, 184, 0.4); outline-offset: -2px;
+            background: rgba(148, 163, 184, 0.06);
+        }
+
         /* Formula icon in column headers */
         th .formula-icon {
             display: inline-flex; align-items: center; margin-left: 4px;
             color: var(--text-muted); vertical-align: middle;
         }
         th .formula-icon svg { width: 12px; height: 12px; }
+
+        /* Read-only icon in column headers (lock icon) */
+        th .readonly-icon {
+            display: inline-flex; align-items: center; margin-left: 4px;
+            color: var(--text-muted); vertical-align: middle;
+        }
+        th .readonly-icon svg { width: 11px; height: 11px; }
 
         /* Formula badge on profile field cards */
         .profile-field-name .formula-badge {
@@ -765,9 +781,21 @@
         html.light-theme .profile-field-name .formula-badge { color: #7c3aed; background: rgba(124, 58, 237, 0.12); }
         html.light-theme .profile-field-name .formula-badge:hover { background: rgba(124, 58, 237, 0.22); }
 
+        /* Read-only badge on profile field cards */
+        .profile-field-name .readonly-badge {
+            font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+            color: var(--text-muted); background: rgba(148, 163, 184, 0.2);
+            padding: 1px 5px; border-radius: 3px; margin-left: auto;
+        }
+        html.light-theme .profile-field-name .readonly-badge { color: #64748b; background: rgba(100, 116, 139, 0.12); }
+
         /* Formula field value in profile (read-only look) */
         .profile-field-value.formula-readonly { cursor: default; }
         .profile-field-value.formula-readonly:hover { background: none; }
+
+        /* Read-only field value in profile */
+        .profile-field-value.field-readonly { cursor: default; }
+        .profile-field-value.field-readonly:hover { background: none; }
 
         /* Formula info popover */
         .formula-info-popover {
@@ -7823,6 +7851,7 @@ async function processEventsMemoryOnly(events, onProgress) {
             if (payload.fieldType) fieldData.fieldType = payload.fieldType;
             if (payload.fieldId) fieldData.fieldId = payload.fieldId;
             if (payload.options) fieldData.options = payload.options;
+            if (payload.readOnly != null) fieldData.readOnly = payload.readOnly;
             if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
             META_FIELDS[tableId][fieldId] = fieldData;
 
@@ -7992,6 +8021,7 @@ async function processEvents(events) {
             if (payload.fieldType) fieldData.fieldType = payload.fieldType;
             if (payload.fieldId) fieldData.fieldId = payload.fieldId;
             if (payload.options) fieldData.options = payload.options;
+            if (payload.readOnly != null) fieldData.readOnly = payload.readOnly;
             fields.push(fieldData);
             if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
             META_FIELDS[tableId][fieldId] = fieldData;
@@ -10024,7 +10054,8 @@ async function renderTable() {
     colList.forEach((col, idx) => {
         var colField = fields[col];
         var colIsComputed = colField && isComputedFieldType(colField.fieldType);
-        var colTitle = esc(col) + (colIsComputed ? ' (' + computedFieldLabel(colField.fieldType) + ')' : '');
+        var colIsReadOnly = colField && isReadOnlyField(colField);
+        var colTitle = esc(col) + (colIsComputed ? ' (' + computedFieldLabel(colField.fieldType) + ')' : (colIsReadOnly ? ' (Read-only)' : ''));
         html += '<th draggable="true" data-field-id="' + esc(col) + '" data-field-index="' + idx + '" ' +
                 'ondragstart="handleColumnDragStart(event)" ondragover="handleColumnDragOver(event)" ' +
                 'ondrop="handleColumnDrop(event)" ondragend="handleColumnDragEnd(event)" ' +
@@ -10033,6 +10064,9 @@ async function renderTable() {
         if (colIsComputed) {
             html += '<span class="formula-icon" title="' + esc(computedFieldLabel(colField.fieldType)) + '">' +
                     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2H4a1 1 0 0 0-1 1v5"/><path d="M15 2h5a1 1 0 0 1 1 1v5"/><path d="M20 15v5a1 1 0 0 1-1 1h-5"/><path d="M4 15v5a1 1 0 0 0 1 1h5"/><path d="m9 12 2 2 4-4"/></svg></span>';
+        } else if (colIsReadOnly) {
+            html += '<span class="readonly-icon" title="' + esc(readOnlyFieldLabel(colField)) + '">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>';
         }
         html += '</th>';
     });
@@ -10070,8 +10104,11 @@ async function renderTable() {
                     if (value === undefined) value = row[colNames[col]];
                     var cellField = fields[col];
                     var cellIsComputed = cellField && isComputedFieldType(cellField.fieldType);
+                    var cellIsReadOnly = !cellIsComputed && cellField && isReadOnlyField(cellField);
                     if (cellIsComputed) {
                         html += '<td class="cell-formula" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + esc(computedFieldLabel(cellField.fieldType)) + ' — click for info">' + formatCell(value) + '</td>';
+                    } else if (cellIsReadOnly) {
+                        html += '<td class="cell-readonly" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" title="' + esc(readOnlyFieldLabel(cellField)) + ' — read-only">' + formatCell(value) + '</td>';
                     } else {
                         html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
                     }
@@ -10094,8 +10131,11 @@ async function renderTable() {
                 if (value === undefined) value = row[colNames[col]];
                 var cellField = fields[col];
                 var cellIsComputed = cellField && isComputedFieldType(cellField.fieldType);
+                var cellIsReadOnly = !cellIsComputed && cellField && isReadOnlyField(cellField);
                 if (cellIsComputed) {
                     html += '<td class="cell-formula" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + esc(computedFieldLabel(cellField.fieldType)) + ' — click for info">' + formatCell(value) + '</td>';
+                } else if (cellIsReadOnly) {
+                    html += '<td class="cell-readonly" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" title="' + esc(readOnlyFieldLabel(cellField)) + ' — read-only">' + formatCell(value) + '</td>';
                 } else {
                     html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
                 }
@@ -11096,6 +11136,7 @@ var SynapseSync = {
                     if (META_TABLES) META_TABLES[tableId] = { tableId: tableId, tableName: evt.content.name || evt.content.tableName || tableId };
                 } else if (evt.type === 'law.firm.schema.field' && evt.content) {
                     var fieldData = { tableId: tableId, fieldId: evt.content.fieldId || evt.content.field_id || evt.state_key, fieldName: evt.content.name, fieldType: evt.content.type, options: evt.content.options };
+                    if (evt.content.readOnly != null) fieldData.readOnly = evt.content.readOnly;
                     await saveField(fieldData);
                     if (META_FIELDS && META_FIELDS[tableId]) META_FIELDS[tableId][fieldData.fieldId] = fieldData;
                 } else if (evt.type === 'law.firm.vault.metadata' && evt.content) {
@@ -14443,11 +14484,14 @@ async function renderRecordProfile() {
 
             html += '<div class="profile-field-card" data-field-id="' + esc(fieldId) + '" data-block-index="' + blockIndex + '" data-field-index="' + fieldIndex + '" draggable="true" ondragstart="handleFieldDragStart(event)" ondragover="handleFieldDragOver(event)" ondragleave="handleFieldDragLeave(event)" ondrop="handleFieldDrop(event)">';
             var pfIsComputed = field && isComputedFieldType(field.fieldType);
+            var pfIsReadOnly = !pfIsComputed && field && isReadOnlyField(field);
             html += '<div class="profile-field-name">';
             html += '<span class="field-drag-handle">&#8942;&#8942;</span>';
             html += esc(fieldName);
             if (pfIsComputed) {
                 html += '<span class="formula-badge" onclick="event.stopPropagation(); showFormulaInfoPopover(this, META_FIELDS[\'' + esc(profileCurrentTableId) + '\'][\'' + esc(fieldId) + '\'])" title="Click to see formula details">' + esc(computedFieldLabel(field.fieldType)) + '</span>';
+            } else if (pfIsReadOnly) {
+                html += '<span class="readonly-badge" title="This field is read-only">' + esc(readOnlyFieldLabel(field)) + '</span>';
             }
             if (profileConfigureMode) {
                 html += '<button style="margin-left: auto; background: none; border: none; color: #ccc; cursor: pointer; font-size: 12px;" onclick="removeFieldFromBlock(' + blockIndex + ', ' + fieldIndex + ')">&times;</button>';
@@ -14459,6 +14503,13 @@ async function renderRecordProfile() {
                     html += '<div class="profile-field-value empty formula-readonly" data-edit-field-id="' + esc(fieldId) + '">—</div>';
                 } else {
                     html += '<div class="profile-field-value formula-readonly" data-edit-field-id="' + esc(fieldId) + '">' + formatCell(value) + '</div>';
+                }
+            } else if (pfIsReadOnly) {
+                // Read-only fields: show value without edit handler
+                if (isEmpty) {
+                    html += '<div class="profile-field-value empty field-readonly" data-edit-field-id="' + esc(fieldId) + '">—</div>';
+                } else {
+                    html += '<div class="profile-field-value field-readonly" data-edit-field-id="' + esc(fieldId) + '">' + formatCell(value) + '</div>';
                 }
             } else if (isEmpty) {
                 html += '<div class="profile-field-value empty" data-edit-field-id="' + esc(fieldId) + '" onclick="startProfileFieldEdit(this)">—</div>';
@@ -14754,9 +14805,9 @@ async function startProfileFieldEdit(element) {
     var fieldId = element.dataset.editFieldId;
     if (!fieldId) return;
 
-    // Don't edit formula/computed fields
+    // Don't edit formula/computed/read-only fields
     var pfField = META_FIELDS[profileCurrentTableId]?.[fieldId];
-    if (pfField && isComputedFieldType(pfField.fieldType)) return;
+    if (pfField && isReadOnlyField(pfField)) return;
 
     profileEditingFieldId = fieldId;
 
@@ -15182,7 +15233,7 @@ window.addEventListener('amino:record-updated', function(e) {
             // Update all cells for this record in the DOM without a full re-render
             var row = document.querySelector('tr[data-record-id="' + CSS.escape(detail.recordId) + '"]');
             if (row) {
-                var cells = row.querySelectorAll('td.inline-editable');
+                var cells = row.querySelectorAll('td.inline-editable, td.cell-formula, td.cell-readonly');
                 cells.forEach(function(cell) {
                     // Skip cell currently being edited
                     if (cell === _inlineEditingCell) return;
@@ -15586,8 +15637,34 @@ function handleRowDblClick(event, tableId, recordId) {
 // Airtable field types that are computed (read-only, not user-editable)
 var COMPUTED_FIELD_TYPES = ['formula', 'rollup', 'lookup', 'count', 'autoNumber', 'createdTime', 'lastModifiedTime', 'createdBy', 'lastModifiedBy'];
 
+// Additional Airtable field types that are inherently read-only (not computed, but not editable)
+var READONLY_FIELD_TYPES = ['button', 'externalSyncSource'];
+
 function isComputedFieldType(fieldType) {
     return COMPUTED_FIELD_TYPES.indexOf(fieldType) !== -1;
+}
+
+// Check if a field is read-only (not editable). This includes:
+// - Computed field types (formula, rollup, lookup, etc.)
+// - Explicitly read-only fields (readOnly flag from Airtable API)
+// - Inherently non-editable field types (button, externalSyncSource)
+function isReadOnlyField(field) {
+    if (!field) return false;
+    if (field.readOnly === true) return true;
+    if (isComputedFieldType(field.fieldType)) return true;
+    if (READONLY_FIELD_TYPES.indexOf(field.fieldType) !== -1) return true;
+    return false;
+}
+
+// Get a human-readable label for why a field is read-only
+function readOnlyFieldLabel(field) {
+    if (!field) return 'Read-only';
+    if (isComputedFieldType(field.fieldType)) return computedFieldLabel(field.fieldType);
+    if (READONLY_FIELD_TYPES.indexOf(field.fieldType) !== -1) {
+        var rtLabels = { button: 'Button', externalSyncSource: 'Sync Source' };
+        return rtLabels[field.fieldType] || field.fieldType;
+    }
+    return 'Read-only';
 }
 
 // Get a human-readable label for a computed field type
@@ -15710,8 +15787,8 @@ async function startInlineCellEdit(event, td) {
     // Don't start edit if clicking a link, button, or already in an input
     if (event.target.closest('button, a, input, select, textarea')) return;
 
-    // Don't edit formula/computed fields
-    if (td.classList.contains('cell-formula')) return;
+    // Don't edit formula/computed/read-only fields
+    if (td.classList.contains('cell-formula') || td.classList.contains('cell-readonly')) return;
 
     // Already editing this cell
     if (td.classList.contains('inline-editing')) return;
@@ -15726,9 +15803,9 @@ async function startInlineCellEdit(event, td) {
     var tableId = td.closest('tr')?.dataset.tableId || currentTable;
     if (!fieldId || !recordId || !tableId) return;
 
-    // Double-check field metadata for computed types
+    // Double-check field metadata for read-only fields (computed, explicit readOnly, etc.)
     var fieldMeta = META_FIELDS[tableId]?.[fieldId];
-    if (fieldMeta && isComputedFieldType(fieldMeta.fieldType)) return;
+    if (fieldMeta && isReadOnlyField(fieldMeta)) return;
 
     // Get field metadata and current value
     var field = META_FIELDS[tableId]?.[fieldId];
@@ -16059,7 +16136,7 @@ function setFocusedCell(td) {
 }
 
 document.addEventListener('click', function(e) {
-    var cell = e.target.closest('td.inline-editable, td.cell-formula');
+    var cell = e.target.closest('td.inline-editable, td.cell-formula, td.cell-readonly');
     if (cell) {
         setFocusedCell(cell);
     }
@@ -16086,6 +16163,8 @@ document.addEventListener('keydown', function(e) {
         // For formula cells, show info popover instead of editing
         if (_focusedCell.classList.contains('cell-formula')) {
             handleFormulaCellClick({ target: _focusedCell, stopPropagation: function(){} }, _focusedCell);
+        } else if (_focusedCell.classList.contains('cell-readonly')) {
+            // Read-only cells: do nothing on Enter/F2
         } else {
             startInlineCellEdit({ target: _focusedCell, stopPropagation: function(){} }, _focusedCell);
         }
@@ -16097,8 +16176,8 @@ document.addEventListener('keydown', function(e) {
         var row = _focusedCell.closest('tr');
         if (!row) return;
 
-        // Include both editable and formula cells in keyboard navigation
-        var cellsInRow = Array.from(row.querySelectorAll('td.inline-editable, td.cell-formula'));
+        // Include editable, formula, and read-only cells in keyboard navigation
+        var cellsInRow = Array.from(row.querySelectorAll('td.inline-editable, td.cell-formula, td.cell-readonly'));
         var colIdx = cellsInRow.indexOf(_focusedCell);
 
         if (e.key === 'ArrowRight') {
@@ -16113,7 +16192,7 @@ document.addEventListener('keydown', function(e) {
             var nextRow = row.nextElementSibling;
             while (nextRow && nextRow.classList.contains('group-header-row')) nextRow = nextRow.nextElementSibling;
             if (nextRow) {
-                var nextCells = nextRow.querySelectorAll('td.inline-editable, td.cell-formula');
+                var nextCells = nextRow.querySelectorAll('td.inline-editable, td.cell-formula, td.cell-readonly');
                 if (nextCells[colIdx]) setFocusedCell(nextCells[colIdx]);
                 else if (nextCells.length > 0) setFocusedCell(nextCells[nextCells.length - 1]);
             }
@@ -16121,7 +16200,7 @@ document.addEventListener('keydown', function(e) {
             var prevRow = row.previousElementSibling;
             while (prevRow && prevRow.classList.contains('group-header-row')) prevRow = prevRow.previousElementSibling;
             if (prevRow) {
-                var prevCells = prevRow.querySelectorAll('td.inline-editable, td.cell-formula');
+                var prevCells = prevRow.querySelectorAll('td.inline-editable, td.cell-formula, td.cell-readonly');
                 if (prevCells[colIdx]) setFocusedCell(prevCells[colIdx]);
                 else if (prevCells.length > 0) setFocusedCell(prevCells[prevCells.length - 1]);
             }
