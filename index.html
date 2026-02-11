@@ -14933,11 +14933,15 @@ async function openHistoryModal(tableId, recordId) {
 
     // Fetch history data
     try {
-        // First fetch any new events from API for this specific record (incremental)
-        await fetchAndProcessHistoryForRecord(tableId, recordId);
-
-        // Then get all history from IndexedDB (includes newly fetched entries)
-        currentHistoryData = await getFieldHistoryForRecord(tableId, recordId);
+        // Check for local events first (in-memory from CSV import, or IndexedDB events store)
+        var rawEvents = await getRawEventsByRecordId(recordId);
+        if (rawEvents && rawEvents.length > 0) {
+            currentHistoryData = buildFieldHistoryFromRawEvents(tableId, recordId, rawEvents);
+        } else {
+            // Fall back to Matrix API for this specific record
+            await fetchAndProcessHistoryForRecord(tableId, recordId);
+            currentHistoryData = await getFieldHistoryForRecord(tableId, recordId);
+        }
         renderHistoryModal();
     } catch (err) {
         console.error('Error loading history:', err);
