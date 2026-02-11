@@ -4564,7 +4564,9 @@ function openNewTab() {
 function renderTabBar() {
     var container = document.getElementById('tab-bar-tabs');
     if (!container) return;
-    container.innerHTML = '';
+
+    // Build all tab elements into a DocumentFragment (single DOM write, no per-tab reflows)
+    var frag = document.createDocumentFragment();
     openTabs.forEach(function(tab) {
         var el = document.createElement('div');
         el.className = 'browser-tab' + (tab.id === activeTabId ? ' active' : '');
@@ -4588,8 +4590,10 @@ function renderTabBar() {
             el.appendChild(closeEl);
         }
 
-        container.appendChild(el);
+        frag.appendChild(el);
     });
+    container.innerHTML = '';
+    container.appendChild(frag);
 
     // Update theme icon state on render
     var saved = localStorage.getItem('amino_theme');
@@ -7089,35 +7093,73 @@ async function getRecord(tableId, recordId) {
     return result;
 }
 
+// Short-lived record cache — keeps recently fetched records in memory so that
+// re-renders (same page, filter tweaks, view toggles) avoid hitting IndexedDB.
+// Evicted whenever the active table changes.
+var _recordCache = {};  // key: "tableId|recordId" -> record object
+var _recordCacheTable = null;
+var _RECORD_CACHE_MAX = 600; // cap to avoid unbounded growth
+function _rcKey(tid, rid) { return tid + '|' + rid; }
+function clearRecordCache() { _recordCache = {}; _recordCacheTable = null; }
+
 async function getRecordsByIds(tableId, recordIds) {
     if (!recordIds.length) return [];
 
-    // Check in-memory data first (from CSV import)
+    // Evict cache if table changed
+    if (_recordCacheTable && _recordCacheTable !== tableId) clearRecordCache();
+    _recordCacheTable = tableId;
+
+    // Serve from cache where possible, only fetch missing IDs
+    var cached = [];
+    var missingForCache = [];
+    for (var ci = 0; ci < recordIds.length; ci++) {
+        var ck = _rcKey(tableId, recordIds[ci]);
+        if (_recordCache[ck]) {
+            cached.push(_recordCache[ck]);
+        } else {
+            missingForCache.push(recordIds[ci]);
+        }
+    }
+    if (missingForCache.length === 0) return cached;
+
+    // Check in-memory data first (from CSV import) — only for missing IDs
+    var fetched = [];
+    var stillMissing = missingForCache;
     if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
-        var memResults = [];
-        var missingIds = [];
-        for (var i = 0; i < recordIds.length; i++) {
-            var rid = recordIds[i];
+        var afterMem = [];
+        for (var i = 0; i < stillMissing.length; i++) {
+            var rid = stillMissing[i];
             if (window.IN_MEMORY_DATA[tableId][rid]) {
-                memResults.push({
+                fetched.push({
                     tableId: tableId,
                     recordId: rid,
                     fields: window.IN_MEMORY_DATA[tableId][rid]
                 });
             } else {
-                missingIds.push(rid);
+                afterMem.push(rid);
             }
         }
-        // If all records found in memory, return immediately
-        if (missingIds.length === 0) {
-            return memResults;
-        }
-        // Otherwise, also check IndexedDB for missing ones
-        var dbResults = await getRecordsByIdsFromDB(tableId, missingIds);
-        return memResults.concat(dbResults);
+        stillMissing = afterMem;
     }
 
-    return getRecordsByIdsFromDB(tableId, recordIds);
+    // Fetch remaining from IndexedDB
+    if (stillMissing.length > 0) {
+        var dbResults = await getRecordsByIdsFromDB(tableId, stillMissing);
+        fetched = fetched.concat(dbResults);
+    }
+
+    // Populate cache (cap size to avoid unbounded growth)
+    var cacheKeys = Object.keys(_recordCache);
+    if (cacheKeys.length + fetched.length > _RECORD_CACHE_MAX) {
+        // Evict oldest entries (simple FIFO: clear half)
+        var toRemove = cacheKeys.slice(0, Math.floor(cacheKeys.length / 2));
+        for (var ri = 0; ri < toRemove.length; ri++) delete _recordCache[toRemove[ri]];
+    }
+    for (var fi = 0; fi < fetched.length; fi++) {
+        _recordCache[_rcKey(tableId, fetched[fi].recordId)] = fetched[fi];
+    }
+
+    return cached.concat(fetched);
 }
 
 // Internal: Get records from IndexedDB only
@@ -7125,8 +7167,7 @@ async function getRecordsByIdsFromDB(tableId, recordIds) {
     if (!recordIds.length) return [];
 
     var results = await new Promise((resolve, reject) => {
-        var tx = db.transaction('data', 'readonly');
-        var store = tx.objectStore('data');
+        var store = db.transaction('data', 'readonly').objectStore('data');
         var results = [];
         var pending = recordIds.length;
 
@@ -7669,12 +7710,11 @@ async function saveViewToBackendNow() {
     await saveViewToBackend();
 }
 
-// Auto-save before navigation
-async function autoSaveBeforeNavigation() {
-    if (viewDirtyState.isDirty) {
-        clearTimeout(autoSaveTimer);
-        await saveViewToBackend();
-    }
+// Auto-save before navigation (sync fast-path when nothing is dirty)
+function autoSaveBeforeNavigation() {
+    if (!viewDirtyState.isDirty) return; // sync return — no await overhead
+    clearTimeout(autoSaveTimer);
+    return saveViewToBackend();
 }
 
 // Browser beforeunload - auto-save
@@ -8911,8 +8951,14 @@ function getViewFiltersAndSorts(tableId, viewId) {
     };
 }
 
+// Memoize visible fields per render cycle (same table+view = same result)
+var _visibleFieldsCache = { key: null, result: null };
+function invalidateVisibleFieldsCache() { _visibleFieldsCache.key = null; _visibleFieldsCache.result = null; }
+
 // Get visible fields for current view in correct order
 function getVisibleFieldsForView(tableId, viewId) {
+    var ckey = tableId + '|' + (viewId || '_default');
+    if (_visibleFieldsCache.key === ckey && _visibleFieldsCache.result) return _visibleFieldsCache.result;
     var config = getViewFieldConfig(tableId, viewId || '_default');
     var fields = META_FIELDS[tableId] || {};
     var allFieldIds = Object.keys(fields);
@@ -8938,6 +8984,8 @@ function getVisibleFieldsForView(tableId, viewId) {
         }
     }
 
+    _visibleFieldsCache.key = ckey;
+    _visibleFieldsCache.result = result;
     return result;
 }
 
@@ -11995,6 +12043,8 @@ async function showTable(tableId) {
     currentTable = tableId;
     currentView = null; // Reset view when switching tables
     currentPage = 0;
+    invalidateFilterCache(); // New table — stale cache
+    clearRecordCache();      // New table — stale records
 
     // Track as recently accessed table
     addToRecentTables(tableId);
@@ -12085,22 +12135,24 @@ async function showTable(tableId) {
     currentGroupBy = viewConfig.groupBy;
     currentColorBy = viewConfig.colorBy;
 
-    // Update filter/sort/group/color button states
+    // Update critical button states synchronously (cheap DOM writes)
     updateFilterCount();
     updateSortCount();
-    updateGroupButtonState();
-    updateColorButtonState();
-
-    // Update the view list to highlight the active view
-    updateSidebarViewActive(tableId, currentView);
-
-    // Render view selector and fields dropdown
-    renderViewSelector();
-    renderFieldsDropdown();
-    updateFieldsCount();
 
     // Show table headers immediately with skeleton rows (even before data loads)
     renderTableHeaders();
+
+    // Defer non-critical UI updates so the table skeleton paints first
+    var _deferredViewId = currentView;
+    var _deferredTableId = tableId;
+    queueMicrotask(function() {
+        updateGroupButtonState();
+        updateColorButtonState();
+        updateSidebarViewActive(_deferredTableId, _deferredViewId);
+        renderViewSelector();
+        renderFieldsDropdown();
+        updateFieldsCount();
+    });
 
     // Now render full table with data
     await renderTable();
@@ -12262,6 +12314,23 @@ async function renderTable() {
     // Get group field name for header display
     var groupFieldName = currentGroupBy ? (fields[currentGroupBy]?.fieldName || currentGroupBy) : null;
 
+    // Pre-compute per-column metadata once (avoids per-cell function calls)
+    var _colMeta = colList.map(function(col) {
+        var f = fields[col];
+        var isComp = f && isComputedFieldType(f.fieldType);
+        var isRO = !isComp && f && isReadOnlyField(f);
+        return {
+            id: col,
+            escapedId: esc(col),
+            name: colNames[col],
+            field: f,
+            isComputed: isComp,
+            isReadOnly: isRO,
+            computedLabel: isComp ? esc(computedFieldLabel(f.fieldType)) : '',
+            readOnlyLabel: isRO ? esc(readOnlyFieldLabel(f)) : ''
+        };
+    });
+
     // Build table with draggable headers
     var displayNameFid = getDisplayNameFieldId(currentTable);
     var html = '<thead><tr><th style="width: 70px; cursor: default;">Actions</th>';
@@ -12324,20 +12393,18 @@ async function renderTable() {
                 html += '<td><button class="history-btn" onclick="event.stopPropagation(); openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
                 html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
                 html += 'History</button></td>';
-                colList.forEach(col => {
-                    var value = row[col];
-                    if (value === undefined) value = row[colNames[col]];
-                    var cellField = fields[col];
-                    var cellIsComputed = cellField && isComputedFieldType(cellField.fieldType);
-                    var cellIsReadOnly = !cellIsComputed && cellField && isReadOnlyField(cellField);
-                    if (cellIsComputed) {
-                        html += '<td class="cell-formula" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + esc(computedFieldLabel(cellField.fieldType)) + ' — click for info">' + formatCell(value) + '</td>';
-                    } else if (cellIsReadOnly) {
-                        html += '<td class="cell-readonly" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" title="' + esc(readOnlyFieldLabel(cellField)) + ' — read-only">' + formatCell(value) + '</td>';
+                for (var _ci = 0; _ci < _colMeta.length; _ci++) {
+                    var cm = _colMeta[_ci];
+                    var value = row[cm.id];
+                    if (value === undefined) value = row[cm.name];
+                    if (cm.isComputed) {
+                        html += '<td class="cell-formula" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + cm.computedLabel + ' — click for info">' + formatCell(value) + '</td>';
+                    } else if (cm.isReadOnly) {
+                        html += '<td class="cell-readonly" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" title="' + cm.readOnlyLabel + ' — read-only">' + formatCell(value) + '</td>';
                     } else {
-                        html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
+                        html += '<td class="inline-editable" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
                     }
-                });
+                }
                 html += '</tr>';
             });
 
@@ -12358,20 +12425,18 @@ async function renderTable() {
             html += '<td><button class="history-btn" onclick="event.stopPropagation(); openHistoryModal(\'' + esc(currentTable) + '\', \'' + esc(rid) + '\')" title="View field history">';
             html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>';
             html += 'History</button></td>';
-            colList.forEach(col => {
-                var value = row[col];
-                if (value === undefined) value = row[colNames[col]];
-                var cellField = fields[col];
-                var cellIsComputed = cellField && isComputedFieldType(cellField.fieldType);
-                var cellIsReadOnly = !cellIsComputed && cellField && isReadOnlyField(cellField);
-                if (cellIsComputed) {
-                    html += '<td class="cell-formula" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + esc(computedFieldLabel(cellField.fieldType)) + ' — click for info">' + formatCell(value) + '</td>';
-                } else if (cellIsReadOnly) {
-                    html += '<td class="cell-readonly" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" title="' + esc(readOnlyFieldLabel(cellField)) + ' — read-only">' + formatCell(value) + '</td>';
+            for (var _ci = 0; _ci < _colMeta.length; _ci++) {
+                var cm = _colMeta[_ci];
+                var value = row[cm.id];
+                if (value === undefined) value = row[cm.name];
+                if (cm.isComputed) {
+                    html += '<td class="cell-formula" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="handleFormulaCellClick(event, this)" title="' + cm.computedLabel + ' — click for info">' + formatCell(value) + '</td>';
+                } else if (cm.isReadOnly) {
+                    html += '<td class="cell-readonly" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" title="' + cm.readOnlyLabel + ' — read-only">' + formatCell(value) + '</td>';
                 } else {
-                    html += '<td class="inline-editable" data-field-id="' + esc(col) + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
+                    html += '<td class="inline-editable" data-field-id="' + cm.escapedId + '" data-record-id="' + esc(rid) + '" onclick="startInlineCellEdit(event, this)">' + formatCell(value) + '</td>';
                 }
-            });
+            }
             html += '</tr>';
         });
     }
@@ -18910,10 +18975,17 @@ function renderViewSelector() {
 
 // Select a view
 async function selectView(viewId) {
+    // Short-circuit if the requested view is already active (avoids full re-render)
+    if (viewId === currentView) {
+        closeAllDropdowns();
+        return;
+    }
+
     // Auto-save any pending changes before switching views
     await autoSaveBeforeNavigation();
 
     currentView = viewId;
+    invalidateVisibleFieldsCache(); // view changed — stale field order
     closeAllDropdowns();
 
     // Load and apply view filters, sorts, groupBy, and colorBy for the new view
@@ -19250,10 +19322,25 @@ function compareValues(a, b, direction) {
     return direction === 'asc' ? result : -result;
 }
 
+// Cache for filtered/sorted results — avoids redundant IndexedDB reads when
+// re-rendering the same view with the same filters (e.g. toggling back to a tab).
+var _filterCache = { key: null, result: null };
+function _filterCacheKey() {
+    return currentTable + '|' + currentView + '|' + JSON.stringify(currentFilters) + '|' +
+           JSON.stringify(currentSorts) + '|' + currentSearchQuery + '|' + originalRecordIds.length;
+}
+function invalidateFilterCache() { _filterCache.key = null; _filterCache.result = null; }
+
 // Apply all filters, search, and sorts to get filtered record IDs
 // Processes records in batches to avoid loading entire dataset into memory at once
 async function getFilteredSortedRecords() {
     if (!currentTable) return [];
+
+    // Return cached result if filters/sorts/search haven't changed
+    var cacheKey = _filterCacheKey();
+    if (_filterCache.key === cacheKey && _filterCache.result) {
+        return _filterCache.result.slice();
+    }
 
     var hasFilters = currentFilters.length > 0;
     var hasSearch = !!currentSearchQuery;
@@ -19263,8 +19350,11 @@ async function getFilteredSortedRecords() {
     // If no filters/search/sorts, just return a copy
     if (!needsRecordData) return originalRecordIds.slice();
 
-    var BATCH_SIZE = 500;
+    // Larger batches reduce IDB transaction overhead; safe because record cache
+    // prevents duplicate reads when the sort phase re-fetches the same records.
+    var BATCH_SIZE = 1000;
     var filteredIds = [];
+    var filterCount = currentFilters.length; // cache length outside loop
 
     // Phase 1: Filter in batches — only load BATCH_SIZE records at a time
     for (var batchStart = 0; batchStart < originalRecordIds.length; batchStart += BATCH_SIZE) {
@@ -19281,7 +19371,14 @@ async function getFilteredSortedRecords() {
             if (!record) continue;
 
             if (hasSearch && !matchesSearch(record, currentSearchQuery)) continue;
-            if (hasFilters && !currentFilters.every(function(filter) { return matchesFilter(record, filter); })) continue;
+            // Inline filter check — avoids per-record closure allocation from .every()
+            if (hasFilters) {
+                var pass = true;
+                for (var fi = 0; fi < filterCount; fi++) {
+                    if (!matchesFilter(record, currentFilters[fi])) { pass = false; break; }
+                }
+                if (!pass) continue;
+            }
 
             filteredIds.push(id);
         }
@@ -19318,6 +19415,9 @@ async function getFilteredSortedRecords() {
         sortCache = null; // release
     }
 
+    // Cache the result for subsequent renders with the same config
+    _filterCache.key = cacheKey;
+    _filterCache.result = filteredIds;
     return filteredIds;
 }
 
@@ -19901,10 +20001,15 @@ function setRowHeight(height) {
     }
 }
 
-// Handle view search
+// Handle view search (debounced to avoid per-keystroke re-renders)
+var _viewSearchTimer = null;
 function handleViewSearch(query) {
-    currentSearchQuery = query.toLowerCase();
-    renderTable();
+    clearTimeout(_viewSearchTimer);
+    var q = query.toLowerCase();
+    _viewSearchTimer = setTimeout(function() {
+        currentSearchQuery = q;
+        renderTable();
+    }, 150);
 }
 
 // Update closeAllDropdowns to also close view control dropdowns
@@ -19993,6 +20098,7 @@ function updateFieldVisibilityFast(tableId, viewId, newHiddenFieldIds) {
         META_VIEWS[tableId][viewId].hiddenFieldIds = newHiddenFieldIds;
     }
 
+    invalidateVisibleFieldsCache();
     // Mark dirty for debounced auto-save (uses existing system)
     markViewDirty('hiddenFieldIds', newHiddenFieldIds);
 }
@@ -20011,6 +20117,7 @@ function updateFieldOrderFast(tableId, viewId, newFieldOrder) {
         META_VIEWS[tableId][viewId].fieldOrder = newFieldOrder;
     }
 
+    invalidateVisibleFieldsCache();
     // Mark dirty for debounced auto-save (uses existing system)
     markViewDirty('fieldOrder', newFieldOrder);
 }
