@@ -726,6 +726,27 @@ var MatrixClient = (function() {
             var orgConfig = getCachedStateEvent(roomId, EVENT_TYPES.ORG_CONFIG, '');
             if (orgConfig) return roomId;
         }
+
+        // Fallback: if sync cache has not populated yet, query joined rooms directly.
+        // This prevents admin settings from appearing empty immediately after login.
+        try {
+            var joined = await _requestWithRetry('GET', '/joined_rooms');
+            var joinedRooms = (joined && joined.joined_rooms) || [];
+            for (var j = 0; j < joinedRooms.length; j++) {
+                var joinedRoomId = joinedRooms[j];
+                try {
+                    var createEvent = await getStateEvent(joinedRoomId, 'm.room.create', '');
+                    if (!createEvent || !createEvent.type || createEvent.type !== 'm.space') continue;
+                    var orgConfigEvent = await getStateEvent(joinedRoomId, EVENT_TYPES.ORG_CONFIG, '');
+                    if (orgConfigEvent) return joinedRoomId;
+                } catch (e) {
+                    // Ignore rooms we cannot inspect and continue scanning.
+                }
+            }
+        } catch (e) {
+            // Ignore fallback failures and return null below.
+        }
+
         return null;
     }
 
