@@ -5623,6 +5623,23 @@
                     </label>
                 </div>
             </div>
+
+            <div class="settings-section">
+                <h2>Local Data</h2>
+                <p class="settings-section-desc">Manage the local database stored on this device. Your data is encrypted at rest and synced from the server.</p>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <button class="settings-action-btn" id="refresh-db-btn" onclick="refreshLocalDB()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
+                            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                        Refresh Database
+                    </button>
+                    <span id="refresh-db-status" style="font-size: 12px; color: var(--text-muted);"></span>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+                    Clears all locally cached records and re-downloads the full dataset from the server. Use this if data appears out of sync or corrupted.
+                </p>
+            </div>
         </div>
     </div>
 
@@ -10995,6 +11012,110 @@ async function clearLocalAndReset() {
     document.getElementById('set-filter-input').value = '';
     document.getElementById('auth-error').style.display = 'none';
     initAuthScreen();
+}
+
+// Refresh the entire local database by clearing all cached data and
+// re-downloading everything from the PostgreSQL-backed webhook API.
+async function refreshLocalDB() {
+    if (!confirm('Refresh local database?\n\nThis will clear all locally cached data and re-download everything from the server. The app will be unavailable during the refresh.')) return;
+
+    var btn = document.getElementById('refresh-db-btn');
+    var statusEl = document.getElementById('refresh-db-status');
+    if (btn) btn.disabled = true;
+    if (statusEl) statusEl.textContent = 'Refreshing...';
+
+    // Switch to the home/database view so the loading overlay is visible
+    switchApp('home');
+
+    try {
+        // Pause real-time sync while we rebuild
+        SynapseSync.stop();
+
+        // Show loading overlay
+        showLoadingOverlay();
+        updateLoadingOverlay('Refreshing database...', 'Clearing local data...', 0, 0, 0, 0, null);
+
+        // Clear all local data stores
+        await clearAllData();
+        console.log('[RefreshDB] Local data cleared');
+
+        // Reset in-memory metadata
+        META_TABLES = {};
+        META_FIELDS = {};
+        META_VIEWS = {};
+        currentTable = null;
+        currentPage = 0;
+        currentRecordIds = [];
+        originalRecordIds = [];
+        totalRecords = 0;
+        lastEventTimestamp = null;
+
+        // Re-hydrate from webhook API (PostgreSQL)
+        updateLoadingOverlay('Refreshing database...', 'Downloading from server...', 0, 0, 0, 0, null);
+        var webhookHydration = await hydrateFromWebhooks();
+        var hydrated = !!(webhookHydration && webhookHydration.success);
+
+        if (hydrated) {
+            // Save webhook sync cursor for future incremental syncs
+            var hydrationCursor = webhookHydration.nextCursor || new Date().toISOString();
+            await setSyncMeta('lastWebhookSync', hydrationCursor);
+
+            // Reload metadata into memory
+            var tables = await getAllTables();
+            var fields = await getAllFields();
+            var views = await getAllViews();
+            tables.forEach(function(t) { META_TABLES[t.tableId] = t; });
+            fields.forEach(function(f) {
+                if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+                META_FIELDS[f.tableId][f.fieldId] = f;
+            });
+            views.forEach(function(v) {
+                if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+                META_VIEWS[v.tableId][v.viewId] = v;
+            });
+
+            // Re-render UI
+            await renderSidebar(true);
+            var firstTable = Object.keys(META_TABLES)[0];
+            if (firstTable) {
+                await showTable(firstTable);
+            }
+
+            if (statusEl) {
+                statusEl.style.color = 'var(--success-500, #22c55e)';
+                statusEl.textContent = 'Refreshed — ' + (webhookHydration.totalRecords || 0).toLocaleString() + ' records downloaded';
+            }
+            console.log('[RefreshDB] Complete: ' + (webhookHydration.totalRecords || 0) + ' records across ' + (webhookHydration.totalTables || 0) + ' tables');
+            SyncStatusFeed.success('Database refresh complete: ' + (webhookHydration.totalRecords || 0) + ' records');
+        } else {
+            // Hydration failed — try rendering whatever we have
+            await renderSidebar(true);
+            if (statusEl) {
+                statusEl.style.color = 'var(--danger-500, #ef4444)';
+                statusEl.textContent = 'Refresh failed — could not download data from server';
+            }
+            SyncStatusFeed.error('Database refresh failed — no data returned from server');
+        }
+
+        hideLoadingOverlay();
+
+        // Restart real-time sync
+        lastSyncTime = Date.now();
+        SynapseSync.start();
+
+    } catch (err) {
+        console.error('[RefreshDB] Failed:', err);
+        hideLoadingOverlay();
+        if (statusEl) {
+            statusEl.style.color = 'var(--danger-500, #ef4444)';
+            statusEl.textContent = 'Refresh failed: ' + err.message;
+        }
+        SyncStatusFeed.error('Database refresh failed: ' + err.message);
+        // Restart sync even on error
+        SynapseSync.start();
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 async function tryAuth() {
