@@ -12009,6 +12009,20 @@ async function hydrateFromWebhooks() {
         console.log('[WebhookHydration] Found ' + webhookTables.length + ' tables');
         SyncStatusFeed.info('Found ' + webhookTables.length + ' tables via webhook API');
 
+        // Populate SynapseSync room mappings immediately so _getRoomForTable()
+        // works as soon as hydration finishes (before ensureRoomMembership runs).
+        var roomTables = webhookTables.filter(function(t) { return !!t.matrix_room_id; });
+        if (roomTables.length > 0) {
+            SynapseSync.tableRooms = roomTables.map(function(t) {
+                return { tableId: t.table_id, roomId: t.matrix_room_id, name: t.table_name || t.table_id };
+            });
+            SynapseSync.roomToTable = {};
+            for (var rm = 0; rm < roomTables.length; rm++) {
+                SynapseSync.roomToTable[roomTables[rm].matrix_room_id] = roomTables[rm].table_id;
+            }
+            console.log('[WebhookHydration] Populated ' + SynapseSync.tableRooms.length + ' table↔room mappings');
+        }
+
         var totalRecords = 0;
         var totalFields = 0;
         var failedTables = 0;
@@ -12444,6 +12458,13 @@ async function init() {
 
     hideAuthScreen();
 
+    // Populate room mappings early so _getRoomForTable() works as soon as the
+    // UI is interactive (History modal, etc.). ensureRoomMembership() fetches
+    // /amino-tables, populates SynapseSync.tableRooms / roomToTable, and joins
+    // any rooms the user hasn't joined yet. On subsequent loads where rooms are
+    // already joined, this returns quickly after two lightweight API calls.
+    await ensureRoomMembership();
+
     // Check if records actually exist AND previous hydration completed fully.
     // Tables may have been saved by a partial hydration (some tables got
     // records, others failed).  The lastWebhookSync cursor is only set when
@@ -12545,12 +12566,6 @@ async function init() {
     // Start the refresh indicator countdown
     lastSyncTime = Date.now();
     startRefreshCountdown();
-
-    // Ensure the user is a member of all table rooms before starting sync.
-    // On first login the bot-created rooms require an invite; this requests
-    // invites from the bot and then joins each room. Subsequent logins skip
-    // this when the user is already a member of all rooms.
-    await ensureRoomMembership();
 
     // Start Synapse real-time sync (long-poll /sync for room events)
     SynapseSync.start();
