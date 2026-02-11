@@ -1,0 +1,3309 @@
+
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "box-upload",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "98a21307-8da4-4563-9c1d-611ccd45f085",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3536,
+        3248
+      ],
+      "webhookId": "27286e8f-aafe-4cdc-a62a-bbc1f8e70516"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://upload.box.com/api/2.0/files/content",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "boxOAuth2Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "attributes",
+              "value": "={\"name\":\"{{ $binary.file.fileName }}\",\"parent\":{\"id\":\"364363223627\"}}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "file"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "b3100062-622e-40e0-9954-12d01cbc4427",
+      "name": "Try Upload to Box",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3088,
+        3248
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8smzU1ors4so56Qb",
+          "name": "Header Auth account"
+        },
+        "boxOAuth2Api": {
+          "id": "DYLRFtpk6g8f5LeA",
+          "name": "Box account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-409",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 409,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2e32f924-7fb9-4a79-be64-2333de77913c",
+      "name": "File Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2864,
+        3248
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://upload.box.com/api/2.0/files/{{ $json.body.context_info.conflicts.id }}/content",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "attributes",
+              "value": "={\"name\":\"{{ $('Webhook').item.json.headers['x-file-name'] || $('Webhook').item.binary.file.fileName }}\"}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "file"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "891068e3-b8de-48de-8db5-c594a3452fc3",
+      "name": "Upload New Version",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2640,
+        3152
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8smzU1ors4so56Qb",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: 'overwritten', file: $json.body.entries ? $json.body.entries[0] : $json.body }) }}",
+        "options": {}
+      },
+      "id": "15446178-4437-4c1e-b5e3-735c44181074",
+      "name": "Respond Overwritten",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2416,
+        3152
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: 'uploaded', file: $json.body.entries ? $json.body.entries[0] : $json.body }) }}",
+        "options": {}
+      },
+      "id": "c9253786-582a-4ce6-a149-dad93b924689",
+      "name": "Respond New Upload",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2640,
+        3344
+      ]
+    },
+    {
+      "parameters": {
+        "path": "box-download",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5ec1aab6-e859-471f-b242-196e0f781b21",
+      "name": "GET Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3536,
+        3568
+      ],
+      "webhookId": "c2d3e4f5-1111-4aaa-bbbb-222222222222"
+    },
+    {
+      "parameters": {
+        "url": "https://api.box.com/2.0/folders/364363223627/items?fields=id,name,modified_at,type&limit=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "boxOAuth2Api",
+        "options": {}
+      },
+      "id": "912080be-82c9-4ab6-a3c6-feb1a859b770",
+      "name": "List Folder for Download",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3088,
+        3568
+      ],
+      "credentials": {
+        "boxOAuth2Api": {
+          "id": "DYLRFtpk6g8f5LeA",
+          "name": "Box account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.box.com/2.0/files/{{ $json.entries[0].id }}/content",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "boxOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "833aa532-5048-44c8-9102-d58594b1ce7a",
+      "name": "Download from Box",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2864,
+        3568
+      ],
+      "credentials": {
+        "boxOAuth2Api": {
+          "id": "DYLRFtpk6g8f5LeA",
+          "name": "Box account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "responseDataSource": "set",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Disposition",
+                "value": "=attachment; filename=\"{{ $binary.data.fileName }}\""
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/octet-stream"
+              }
+            ]
+          }
+        }
+      },
+      "id": "682f7cd1-14e0-408e-a8de-ef2eded777a7",
+      "name": "Respond With File",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2640,
+        3568
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ac8a5c67-174e-4bc4-b75a-3936350ab7d7",
+              "leftValue": "={{ $json.query.api_key }}",
+              "rightValue": "7aea6b6c-ce2b-48ce-9909-9cae15cdb220",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -3312,
+        3568
+      ],
+      "id": "de53ecf8-d3ae-4274-900e-e3c9ba859bd4",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ac8a5c67-174e-4bc4-b75a-3936350ab7d7",
+              "leftValue": "={{ $json.query.api_key }}",
+              "rightValue": "7aea6b6c-ce2b-48ce-9909-9cae15cdb220",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -3312,
+        3248
+      ],
+      "id": "b774a7a9-918c-4eff-8698-a4c634495350",
+      "name": "Filter1"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "81d20020-9e6f-4d64-95c8-d50cffcdeeb3",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -3536,
+        3984
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.airtable.com/v0/meta/bases/app1tsUyKa7F3sy0D/tables",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "options": {}
+      },
+      "id": "78cabebb-59ec-4cf9-bcdc-de516f56cc5b",
+      "name": "Get All Tables",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3312,
+        3984
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "Iu5gTUPvdBG4iwcH",
+          "name": "Airtable June 12 2025"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const AIRTABLE_BASE = 'app1tsUyKa7F3sy0D';\nconst staticData = $getWorkflowStaticData('global');\nconst now = new Date();\n\n// ── Concurrency guard ───────────────────────\nconst LOCK_TTL_MS = 3 * 60 * 1000;\n\nif (staticData._running) {\n  const lockAge = now.getTime() - (staticData._lockTime || 0);\n  if (lockAge < LOCK_TTL_MS) {\n    return [{ json: { _skip: true, _reason: 'concurrent_execution_blocked' } }];\n  }\n}\n\nstaticData._running = true;\nstaticData._lockTime = now.getTime();\n\nconst lastRunTime = staticData.lastRunTime \n  ? new Date(staticData.lastRunTime) \n  : new Date(now.getTime() - 60 * 60 * 1000);\n\nconst checkTime = new Date(lastRunTime.getTime() - 60 * 1000).toISOString();\nconst newCheckTime = now.toISOString();\n\nconst tables = $input.first().json.tables || [];\nconst filtered = tables.filter(t => t.id !== 'tblJh06tcQ1X85bB0');\n\nreturn filtered.map(table => {\n  const filterFormula = `IS_AFTER(LAST_MODIFIED_TIME(), DATETIME_PARSE('${checkTime}'))`;\n  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(table.id)}?filterByFormula=${encodeURIComponent(filterFormula)}&pageSize=100`;\n  \n  const computedFields = (table.fields || [])\n    .filter(f => ['formula','rollup','lookup','lastModifiedTime','createdTime','lastModifiedBy','createdBy','autoNumber','count'].includes(f.type))\n    .map(f => f.name);\n  \n  return {\n    json: { tableId: table.id, tableName: table.name, checkTime, newCheckTime, url, computedFields }\n  };\n});"
+      },
+      "id": "5fef5fa1-8f8c-429c-a9d4-6233c0eee34a",
+      "name": "Prepare Table URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3088,
+        3984
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT table_id, table_name, matrix_room_id FROM amino.table_registry",
+        "options": {}
+      },
+      "id": "63ba58af-9958-410e-854a-88697cd7f706",
+      "name": "Load Room Map",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2864,
+        3984
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recover the original table items for Loop Tables.\n// Load Room Map is a Postgres query that replaces its input with\n// room-map rows. We re-read the table items from Prepare Table URLs\n// so Loop Tables iterates over the correct data.\nconst tableItems = $('Prepare Table URLs').all().filter(i => !i.json._skip);\nreturn tableItems;"
+      },
+      "id": "e9da92c9-f5c6-428a-85a4-a6190391e750",
+      "name": "Restore Table Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2640,
+        3984
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "8de1ebce-dfe5-4054-ad2b-4d6499ccc984",
+      "name": "Loop Tables",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2416,
+        3984
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "options": {}
+      },
+      "id": "206af975-13a7-4851-ad65-db3f0fac695e",
+      "name": "Fetch Records",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2192,
+        3984
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "Iu5gTUPvdBG4iwcH",
+          "name": "Airtable June 12 2025"
+        }
+      },
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const tableItem = $('Loop Tables').first().json;\nconst { tableId, tableName, computedFields, newCheckTime, checkTime } = tableItem;\n\nconst response = $input.first().json;\nconst records = response?.records || [];\n\nif (!records.length) {\n  return [{ \n    json: { \n      _noRecords: true, \n      tableId, \n      tableName,\n      _debug: { checkTime, responseKeys: Object.keys(response || {}) }\n    } \n  }];\n}\n\nreturn records.map(record => ({\n  json: {\n    recordId: record.id,\n    fields: record.fields || {},\n    createdTime: record.createdTime,\n    tableId,\n    tableName,\n    computedFields,\n    newCheckTime\n  }\n}));"
+      },
+      "id": "d73f9050-0a9c-46fd-985f-7749c5305d49",
+      "name": "Explode Records",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1968,
+        3984
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "has-records",
+                    "leftValue": "={{ $json.recordId }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "has_records"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "no-records",
+                    "leftValue": "={{ $json._noRecords }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "no_records"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "13d892c2-a336-42fe-8f6a-489e9a378093",
+      "name": "Has Records?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -1744,
+        3984
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "8bc4286e-e5c6-41e1-a8f1-d183f02b91ef",
+      "name": "Loop Records",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1520,
+        4112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT record_id, fields, matrix_room_id FROM amino.current_state WHERE record_id = '{{ $json.recordId }}'",
+        "options": {}
+      },
+      "id": "d824b0e3-4a6a-4655-85f4-d943afce1bab",
+      "name": "Get Current State",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1296,
+        4080
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      },
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════\n// Diff Against State\n// Diffs Airtable snapshot against stored current_state row.\n// ═══════════════════════════════════════════════════════════\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.processedINS) staticData.processedINS = {};\nif (!staticData.processedALT) staticData.processedALT = {};\n\n// Clear dedup entries older than 1 hour\nconst oneHourAgo = Date.now() - 60 * 60 * 1000;\nfor (const rid of Object.keys(staticData.processedINS)) {\n  if (staticData.processedINS[rid] < oneHourAgo) delete staticData.processedINS[rid];\n}\nfor (const rid of Object.keys(staticData.processedALT)) {\n  if (staticData.processedALT[rid] < oneHourAgo) delete staticData.processedALT[rid];\n}\n\n// ── Field exclusion ─────────────────────────────────────\nconst EXCLUDED_FIELDS = new Set([\n  'Last Xano Sync', 'Gcal Last Modified', 'Last Modified', 'Last Modified Time',\n  'Processing Stage', 'Push', 'Calendar Event ID', 'Calendar Event Link',\n  'Magic Link', 'Box shared link', 'box_shared_link', 'Box button', 'box button',\n  'amino button', 'EAD Stage Ref Lookup', 'EAD ID Ref Lookup', 'EAD Front Notes',\n  'EAD Manager', 'EAD Category', 'EAD Link'\n]);\n\nconst EXCLUDED_PATTERNS = [\n  'Ref Lookup', 'Magic Link', 'Gcal', 'Calendar Event', 'box_shared', 'Box shared',\n  'Last Modified', 'lastMod', 'Processing Stage', 'Rollup', 'Lookup', 'Formula'\n];\n\nconst shouldSkipField = (field, computedFields = []) =>\n  EXCLUDED_FIELDS.has(field) || computedFields.includes(field) || EXCLUDED_PATTERNS.some(p => field.includes(p));\n\nconst isEmpty = (val) => {\n  if (val == null) return true;\n  if (typeof val === 'string' && val.trim() === '') return true;\n  if (Array.isArray(val) && val.length === 0) return true;\n  return false;\n};\n\nconst cleanValue = (val) => {\n  if (val == null) return null;\n  if (typeof val === 'string') return val.trim() === '' ? null : val;\n  if (Array.isArray(val)) {\n    const cleaned = val.map(cleanValue).filter(v => v != null);\n    return cleaned.length ? cleaned : null;\n  }\n  if (typeof val === 'object') {\n    const out = {};\n    for (const [k, v] of Object.entries(val)) {\n      if (['url', 'thumbnails', 'size', 'type', 'width', 'height'].includes(k)) continue;\n      const c = cleanValue(v);\n      if (c != null) out[k] = c;\n    }\n    return Object.keys(out).length ? out : null;\n  }\n  return val;\n};\n\nconst stableStringify = (obj) => {\n  const sortKeys = (x) => {\n    if (x == null || typeof x !== 'object') return x;\n    if (Array.isArray(x)) return x.map(sortKeys);\n    return Object.keys(x).sort().reduce((acc, k) => { acc[k] = sortKeys(x[k]); return acc; }, {});\n  };\n  return JSON.stringify(sortKeys(obj));\n};\n\nconst isEqual = (a, b) => stableStringify(a) === stableStringify(b);\n\nconst generateUUID = () =>\n  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {\n    const r = Math.random() * 16 | 0;\n    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);\n  });\n\n// ── Get inputs ──────────────────────────────────────────\nconst snapshot = $('Loop Records').first().json;\nconst { tableId, tableName, recordId, fields: rawFields, computedFields = [] } = snapshot;\n\n// Get stored state from Postgres\nconst stateRows = $('Get Current State').all();\nconst stateRow = stateRows.length > 0 && stateRows[0].json?.record_id ? stateRows[0].json : null;\nconst currentState = stateRow?.fields || null;\nconst isNewRecord = !currentState;\n\n// Get room ID from state row or from room map\nconst roomMap = $('Load Room Map').all().reduce((m, row) => {\n  if (row.json.table_id) m[row.json.table_id] = row.json.matrix_room_id;\n  return m;\n}, {});\nconst matrixRoomId = stateRow?.matrix_room_id || roomMap[tableId] || null;\n\nif (!matrixRoomId) {\n  return [{ json: { _skip: true, _reason: 'no_room_for_table', tableId, recordId } }];\n}\n\n// ── Dedup ────────────────────────────────────────────────\nconst dedupKey = recordId + ':' + tableId;\nif (isNewRecord && staticData.processedINS[dedupKey]) {\n  const twoMinAgo = Date.now() - 2 * 60 * 1000;\n  if (staticData.processedINS[dedupKey] > twoMinAgo) {\n    return [{ json: { _skip: true, _reason: 'already_ins_this_session', recordId, dedupKey } }];\n  }\n}\n\n// ── Clean snapshot ───────────────────────────────────────\nconst cleanedSnapshot = {};\nfor (const [field, value] of Object.entries(rawFields || {})) {\n  if (shouldSkipField(field, computedFields)) continue;\n  const cleaned = cleanValue(value);\n  if (cleaned != null && !isEmpty(cleaned)) cleanedSnapshot[field] = cleaned;\n}\n\nif (!Object.keys(cleanedSnapshot).length) {\n  return [{ json: { _skip: true, _reason: 'empty_after_cleaning', recordId } }];\n}\n\n// ── Compute field-level diff ─────────────────────────────\nconst INS = {}, ALT = {}, NUL = [];\n\nif (!isNewRecord) {\n  const stored = typeof currentState === 'string' ? JSON.parse(currentState) : currentState;\n  for (const [field, value] of Object.entries(cleanedSnapshot)) {\n    if (!(field in stored)) INS[field] = value;\n    else if (!isEqual(value, stored[field])) ALT[field] = value;\n  }\n  for (const field of Object.keys(stored)) {\n    if (!shouldSkipField(field, computedFields) && !(field in cleanedSnapshot)) {\n      NUL.push(field);\n    }\n  }\n}\n\nconst hasChanges = isNewRecord || Object.keys(INS).length || Object.keys(ALT).length || NUL.length;\n\nif (!hasChanges) {\n  return [{ json: { _skip: true, _reason: 'no_changes', recordId } }];\n}\n\n// Dedup ALT\nif (!isNewRecord) {\n  const changeHash = stableStringify({ INS, ALT, NUL });\n  const lastAltHash = staticData.processedALT[dedupKey];\n  if (lastAltHash === changeHash) {\n    return [{ json: { _skip: true, _reason: 'duplicate_alt', recordId, dedupKey } }];\n  }\n  staticData.processedALT[dedupKey] = changeHash;\n}\n\n// ── Build payload ────────────────────────────────────────\nconst payload = {};\npayload._f = 'v1';\npayload._set = tableName;\n\nconst lastModifiedBy = rawFields['Last Modified By'];\nlet actor = (lastModifiedBy?.email || lastModifiedBy?.id || lastModifiedBy?.name) || 's';\nif (actor === 'michael.t.lacy@gmail.com') actor = 'admin@rklacylaw.com';\npayload._a = actor;\n\nif (isNewRecord) {\n  const createdFieldNames = ['Created', 'Created At', 'Created at', 'created', 'created_at', 'CreatedAt', 'createdAt', 'Creation Date', 'Date Created'];\n  let recordCreatedAt = snapshot.createdTime;\n  for (const fieldName of createdFieldNames) {\n    if (rawFields[fieldName]) { recordCreatedAt = rawFields[fieldName]; break; }\n  }\n  payload._created_at = recordCreatedAt || null;\n}\n\npayload.fields = {};\nif (isNewRecord) {\n  payload.fields.INS = cleanedSnapshot;\n} else {\n  if (Object.keys(INS).length) payload.fields.INS = INS;\n  if (Object.keys(ALT).length) payload.fields.ALT = ALT;\n  if (NUL.length) payload.fields.NUL = NUL;\n}\n\nif (isNewRecord) staticData.processedINS[dedupKey] = Date.now();\n\nconst uuid = generateUUID();\nconst cleanedSnapshotHex = Buffer.from(JSON.stringify(cleanedSnapshot)).toString('hex');\n\nreturn [{\n  json: {\n    uuid,\n    recordId,\n    tableId,\n    tableName,\n    set: `airtable:${tableId}`,\n    operator: isNewRecord ? 'INS' : 'ALT',\n    created_at: new Date().toISOString(),\n    payload,\n    matrixRoomId,\n    cleanedSnapshot,\n    cleanedSnapshotHex,\n    eventContent: {\n      recordId,\n      op: isNewRecord ? 'INS' : 'ALT',\n      payload,\n      set: `airtable:${tableId}`,\n      source: 'airtable_sync',\n      sourceTimestamp: Date.now()\n    }\n  }\n}];"
+      },
+      "id": "6a345e7d-df9d-438b-b186-4b6f7d844dae",
+      "name": "Diff Against State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        4080
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "has-uuid",
+                    "leftValue": "={{ $json.uuid }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "emit"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "no-uuid",
+                    "leftValue": "={{ $json.uuid }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notExists"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "skip"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "356a6a31-20ed-4e74-95b9-edfde911de9c",
+      "name": "Has Changes?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -848,
+        4080
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://app.aminoimmigration.com/_matrix/client/v3/rooms/{{ encodeURIComponent($json.matrixRoomId) }}/send/law.firm.record.mutate/{{ $json.uuid }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.eventContent) }}",
+        "options": {}
+      },
+      "id": "299ce30e-aeef-4b6d-aa26-9c7287840e84",
+      "name": "Send to Matrix",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -624,
+        4016
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8smzU1ors4so56Qb",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "a424c48d-b6fc-483d-8687-c00fd2d72258",
+      "name": "Back to Records",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        4160
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a012a573-a702-4ee8-b6f8-ec12b0faa1e5",
+      "name": "Back to Tables",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1296,
+        3888
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nstaticData.lastRunTime = new Date().toISOString();\nstaticData._running = false;\nstaticData._lockTime = null;\nreturn [{ json: { done: true, lastRunTime: staticData.lastRunTime } }];"
+      },
+      "id": "459d1f1f-840e-49a3-b9ff-4e0c1b20ff75",
+      "name": "Update Checkpoint",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2192,
+        3792
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 4
+            }
+          ]
+        }
+      },
+      "id": "6aeafc15-2ea4-4752-ab63-7bb855db90eb",
+      "name": "Every 4 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -3536,
+        4480
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.airtable.com/v0/meta/bases/app1tsUyKa7F3sy0D/tables",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "options": {}
+      },
+      "id": "88661b7e-db81-4627-b499-d32d7d7aaa5a",
+      "name": "Get Airtable Schema",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3312,
+        4576
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "Iu5gTUPvdBG4iwcH",
+          "name": "Airtable June 12 2025"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const AIRTABLE_BASE = 'app1tsUyKa7F3sy0D';\nconst EXCLUDED_TABLE_IDS = ['tblJh06tcQ1X85bB0'];\n\nconst response = $('Get Airtable Schema').first().json;\nconst tables = (Array.isArray(response) ? response[0]?.tables : response.tables) || [];\nconst output = [];\n\nfor (const table of tables) {\n  if (EXCLUDED_TABLE_IDS.includes(table.id)) continue;\n  \n  // Table-level object — set is the base ID\n  output.push({\n    json: {\n      recordId: table.id,\n      set: `airtable:${AIRTABLE_BASE}`,\n      tableId: table.id,\n      objectType: 'table',\n      payload: {\n        _f: 'v1',\n        _set: 'table',\n        tableId: table.id,\n        tableName: table.name,\n        primaryFieldId: table.primaryFieldId\n      }\n    }\n  });\n  \n  // Field-level objects — set is the table ID\n  for (const f of (table.fields || [])) {\n    const fieldPayload = {\n      _f: 'v1',\n      _set: 'field',\n      fieldId: f.id,\n      fieldName: f.name,\n      fieldType: f.type,\n      tableId: table.id,\n      tableName: table.name\n    };\n    if (f.options !== undefined) fieldPayload.options = f.options;\n    output.push({\n      json: {\n        recordId: f.id,\n        set: `airtable:${table.id}`,\n        tableId: table.id,\n        objectType: 'field',\n        payload: fieldPayload\n      }\n    });\n  }\n  \n  // View-level objects — set is the table ID\n  for (const view of (table.views || [])) {\n    output.push({\n      json: {\n        recordId: view.id,\n        set: `airtable:${table.id}`,\n        tableId: table.id,\n        objectType: 'view',\n        payload: {\n          _f: 'v1',\n          _set: 'view',\n          viewId: view.id,\n          viewName: view.name,\n          viewType: view.type,\n          tableId: table.id,\n          tableName: table.name\n        }\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "56801490-b4ab-4928-8b51-d5b15a49668b",
+      "name": "Explode Tables & Views",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2864,
+        4576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT table_id, 'airtable:' || table_id as set_key, table_name, matrix_room_id FROM amino.table_registry",
+        "options": {}
+      },
+      "id": "bc42b4da-d1c1-480e-9e71-18450f8ba399",
+      "name": "Load Schema Room Map",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -3088,
+        4576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "33e2cac7-5f29-4d68-9715-427815cf55ca",
+      "name": "Loop Objects",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2640,
+        4576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT record_id, fields AS payload FROM amino.current_state WHERE record_id = '{{ $json.recordId }}'",
+        "options": {}
+      },
+      "id": "fc09ab7b-5279-4599-a6f5-d13779a90516",
+      "name": "Get Schema State",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2416,
+        4576
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      },
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Diff Schema — compares Airtable schema against stored state\n// Skips Matrix send for objects with no room mapping\n\nconst generateUUID = () =>\n  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {\n    const r = Math.random() * 16 | 0;\n    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);\n  });\n\nconst sortKeys = (obj) => {\n  if (obj === null || typeof obj !== 'object') return obj;\n  if (Array.isArray(obj)) return obj.map(sortKeys);\n  return Object.keys(obj).sort().reduce((acc, k) => {\n    acc[k] = sortKeys(obj[k]);\n    return acc;\n  }, {});\n};\n\nconst isEqual = (a, b) => JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));\n\nconst currentObject = $('Loop Objects').first().json;\nconst { recordId, set, tableId, objectType, payload: currentPayload } = currentObject;\n\nconst stateRows = $('Get Schema State').all();\nconst stateRow = stateRows.length > 0 && stateRows[0].json?.record_id ? stateRows[0].json : null;\nconst storedPayload = stateRow?.payload || null;\nconst existsInState = storedPayload !== null;\n\nconst roomMap = $('Load Schema Room Map').all().reduce((m, row) => {\n  if (row.json.table_id) m[row.json.table_id] = row.json.matrix_room_id;\n  return m;\n}, {});\nconst matrixRoomId = roomMap[tableId] || null;\n\nif (existsInState) {\n  const parsed = typeof storedPayload === 'string' ? JSON.parse(storedPayload) : storedPayload;\n  if (isEqual(currentPayload, parsed)) {\n    return [{ json: { _skip: true, _reason: 'no_changes', recordId, objectType } }];\n  }\n}\n\nconst op = existsInState ? 'ALT' : 'INS';\nconst uuid = generateUUID();\nconst payloadHex = Buffer.from(JSON.stringify(currentPayload)).toString('hex');\n\nreturn [{\n  json: {\n    uuid,\n    recordId,\n    set,\n    tableId,\n    operator: op,\n    created_at: new Date().toISOString(),\n    payload: currentPayload,\n    payloadHex,\n    matrixRoomId,\n    sendToMatrix: !!matrixRoomId,\n    eventContent: {\n      recordId,\n      op,\n      payload: currentPayload,\n      set,\n      source: 'schema_sync',\n      sourceTimestamp: Date.now()\n    }\n  }\n}];"
+      },
+      "id": "5cd5e4de-cfe8-4664-897c-f88f4c0bf7cd",
+      "name": "Diff Schema",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2192,
+        4576
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "has-uuid",
+                    "leftValue": "={{ $json.uuid }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "emit"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "skip",
+                    "leftValue": "={{ $json._skip }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "skip"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e4bb3cfe-5fed-4bda-93ae-1d5af0fb5c1e",
+      "name": "Schema Has Changes?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -1968,
+        4576
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-room",
+              "leftValue": "={{ $json.sendToMatrix }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e348a58c-e346-436c-ba6e-9b4d6fa0740b",
+      "name": "Has Room?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1744,
+        4496
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://app.aminoimmigration.com/_matrix/client/v3/rooms/{{ encodeURIComponent($json.matrixRoomId) }}/send/law.firm.schema.object/{{ $json.uuid }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.eventContent) }}",
+        "options": {}
+      },
+      "id": "4f88d74c-6b5d-4505-b393-c443c92bdfbf",
+      "name": "Send Schema to Matrix",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1520,
+        4432
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8smzU1ors4so56Qb",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "7893d575-0940-444d-8146-de783e93392d",
+      "name": "Back to Loop",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1072,
+        4688
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "122c9ed6-ccb7-4483-bf04-12c055dcb757",
+      "name": "Schema Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -2416,
+        4384
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -3536,
+        4672
+      ],
+      "id": "b05faac8-e72f-4066-a9dc-2cbeed561a6e",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO amino.current_state\n  (record_id, table_id, table_name, fields, matrix_room_id, last_event_id, event_count)\nVALUES (\n  '{{ $('Diff Schema').first().json.recordId }}',\n  '{{ $('Diff Schema').first().json.tableId || $('Diff Schema').first().json.set }}',\n  '',\n  convert_from(decode('{{ $('Diff Schema').first().json.payloadHex }}', 'hex'), 'UTF8')::jsonb,\n  '{{ $('Diff Schema').first().json.matrixRoomId || '' }}',\n  '{{ $('Diff Schema').first().json.uuid }}',\n  1\n)\nON CONFLICT (record_id) DO UPDATE SET\n  fields = EXCLUDED.fields,\n  last_synced_at = now(),\n  last_event_id = EXCLUDED.last_event_id,\n  event_count = amino.current_state.event_count + 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1296,
+        4496
+      ],
+      "id": "1550956f-1dde-4ae0-a79f-02639650cf5f",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO amino.current_state\n  (record_id, table_id, table_name, fields, matrix_room_id, last_event_id, event_count)\nVALUES (\n  '{{ $('Diff Against State').first().json.recordId }}',\n  '{{ $('Diff Against State').first().json.tableId }}',\n  '{{ $('Diff Against State').first().json.tableName.split(\"'\").join(\"''\") }}',\n  convert_from(decode('{{ $('Diff Against State').first().json.cleanedSnapshotHex }}', 'hex'), 'UTF8')::jsonb,\n  '{{ $('Diff Against State').first().json.matrixRoomId }}',\n  '{{ $('Diff Against State').first().json.uuid }}',\n  1\n)\nON CONFLICT (record_id) DO UPDATE SET\n  fields = EXCLUDED.fields,\n  table_name = EXCLUDED.table_name,\n  matrix_room_id = EXCLUDED.matrix_room_id,\n  last_synced_at = now(),\n  last_event_id = EXCLUDED.last_event_id,\n  event_count = amino.current_state.event_count + 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -400,
+        4016
+      ],
+      "id": "e1ab6041-4d70-466f-97da-ef008c80740f",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "amino-tables",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "cd01219e-9884-4913-86ae-3fe98f0e16a8",
+      "name": "GET /tables",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3536,
+        1488
+      ],
+      "webhookId": "amino-tables"
+    },
+    {
+      "parameters": {
+        "url": "https://app.aminoimmigration.com/_matrix/client/v3/account/whoami",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer ' + ($json.query.access_token || '') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "698fadcd-7590-464a-8178-a25cd9a56f92",
+      "name": "Auth /tables",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3312,
+        1568
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT table_id, table_name, matrix_room_id, COUNT(*) as record_count FROM amino.current_state WHERE table_name != '' GROUP BY table_id, table_name, matrix_room_id ORDER BY table_name;",
+        "options": {}
+      },
+      "id": "21fd2823-8f05-442b-923b-1b06b1591745",
+      "name": "Query Tables",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2864,
+        1392
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ tables: $input.all().map(i => i.json) }) }}",
+        "options": {}
+      },
+      "id": "377f8b8f-0421-4227-8bce-5bf6ed8f8fed",
+      "name": "Respond Tables",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2640,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'unauthorized', message: 'Valid Matrix access token required' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "b33bdfd0-53cd-417b-b506-2aa2bb9016d9",
+      "name": "401 /tables",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2864,
+        1616
+      ]
+    },
+    {
+      "parameters": {
+        "path": "amino-records",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8d3db55d-52ff-4f6f-8c98-a8b08e79f60a",
+      "name": "GET /records/:tableId",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3536,
+        1936
+      ],
+      "webhookId": "amino-records"
+    },
+    {
+      "parameters": {
+        "url": "https://app.aminoimmigration.com/_matrix/client/v3/account/whoami",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer ' + ($json.query.access_token || '') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "91779963-8637-4ac5-82cd-3ad4690dab9a",
+      "name": "Auth /records",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3104,
+        2000
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $json.query.tableId }}' AND table_name != '' ORDER BY last_synced_at DESC;",
+        "options": {}
+      },
+      "id": "3b737dc6-8a8f-41ac-9227-1a7f875f6158",
+      "name": "Query Records by Table",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2656,
+        1840
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/:tableId').first().json.query.tableId, count: $input.all().length, records: $input.all().map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
+        "options": {}
+      },
+      "id": "0ee8c3f5-7409-4634-9dca-6e75ea6bcac2",
+      "name": "Respond Records",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2432,
+        1840
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'unauthorized', message: 'Valid Matrix access token required' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "d4d50745-5aae-4d9f-85ab-15a59fcaa3b0",
+      "name": "401 /records",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2656,
+        2048
+      ]
+    },
+    {
+      "parameters": {
+        "path": "amino-record",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "bd528b07-e3fa-4286-8f91-1ed711dd1eb7",
+      "name": "GET /record/:recordId",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3536,
+        2368
+      ],
+      "webhookId": "amino-record"
+    },
+    {
+      "parameters": {
+        "url": "https://app.aminoimmigration.com/_matrix/client/v3/account/whoami",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer ' + ($json.query.access_token || '') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "68727a27-29bc-4e65-a9ff-44435d1f161d",
+      "name": "Auth /record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3312,
+        2448
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT record_id, table_id, table_name, fields, matrix_room_id, last_synced_at, event_count FROM amino.current_state WHERE record_id = '{{ $json.query.recordId }}';",
+        "options": {}
+      },
+      "id": "78c69165-9b59-486d-9a0a-2aaef25c51d4",
+      "name": "Query Single Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2864,
+        2272
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.all().length ? { record: { id: $input.first().json.record_id, tableId: $input.first().json.table_id, tableName: $input.first().json.table_name, fields: $input.first().json.fields, matrixRoomId: $input.first().json.matrix_room_id, lastSynced: $input.first().json.last_synced_at, eventCount: $input.first().json.event_count } } : { error: 'not_found' }) }}",
+        "options": {}
+      },
+      "id": "01dc28a0-ab8f-4b2c-bbda-c89accacc312",
+      "name": "Respond Single Record",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2640,
+        2272
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'unauthorized', message: 'Valid Matrix access token required' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "b3b84c86-0505-4718-bf9d-396f55e45e81",
+      "name": "401 /record",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2864,
+        2496
+      ]
+    },
+    {
+      "parameters": {
+        "path": "amino-records-since",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1c9285f7-d416-4948-b857-c7916f6f6070",
+      "name": "GET /records/since",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3584,
+        2720
+      ],
+      "webhookId": "amino-records-since"
+    },
+    {
+      "parameters": {
+        "url": "https://app.aminoimmigration.com/_matrix/client/v3/account/whoami",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer ' + ($json.query.access_token || '') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "74af899b-5065-491e-8589-ae5010ca8b84",
+      "name": "Auth /since",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3312,
+        2880
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $json.query.tableId }}' AND table_name != '' AND last_synced_at > '{{ $json.query.since }}'::timestamptz ORDER BY last_synced_at DESC;",
+        "options": {}
+      },
+      "id": "30a38f4f-77f1-4e8f-a631-7ccc143c7b14",
+      "name": "Query Records Since",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2864,
+        2720
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/since').first().json.query.tableId, since: $('GET /records/since').first().json.query.since, count: $input.all().length, records: $input.all().map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
+        "options": {}
+      },
+      "id": "0223a04f-9fa5-42ce-adb8-f409d432d1b8",
+      "name": "Respond Records Since",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2640,
+        2720
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'unauthorized', message: 'Valid Matrix access token required' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "957d3edd-4193-408f-8e5d-b71ffdbf118a",
+      "name": "401 /since",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2864,
+        2928
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "PATCH",
+        "path": "amino-write",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "872b13a6-7f1f-4fb0-9d77-81b0c20cbeda",
+      "name": "PATCH /write",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3504,
+        5168
+      ],
+      "webhookId": "amino-write"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'unauthorized' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "46c7c57b-9a9d-4a67-a219-a455ab0fd231",
+      "name": "401 /write",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2576,
+        5424
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = $('PATCH /write').first().json;\n\nconst tableId = webhook.body.tableId;\nconst recordId = webhook.body.recordId;\nconst fields = webhook.body.fields;\n\nif (!tableId || !recordId) {\n  return [{ json: { _error: true, message: 'tableId and recordId are required' } }];\n}\n\nif (!fields || !Object.keys(fields).length) {\n  return [{ json: { _error: true, message: 'No fields provided' } }];\n}\n\nreturn [{\n  json: {\n    tableId,\n    recordId,\n    fields,\n    matrixUserId: 'client_write',\n    airtableUrl: `https://api.airtable.com/v0/app1tsUyKa7F3sy0D/${encodeURIComponent(tableId)}/${recordId}`,\n    airtableBody: JSON.stringify({ fields })\n  }\n}];"
+      },
+      "id": "d591185e-ef44-469f-8e67-a6173d984ea1",
+      "name": "Prepare Write",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2576,
+        5232
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Prepare Write').first().json.airtableUrl }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "airtableTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Prepare Write').first().json.airtableBody }}",
+        "options": {}
+      },
+      "id": "693526cf-e707-4957-bea0-971a029e5363",
+      "name": "Write to Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2128,
+        5136
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "Iu5gTUPvdBG4iwcH",
+          "name": "Airtable June 12 2025"
+        }
+      },
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-id",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "648202cc-ae37-4665-9327-89c224e8c8fc",
+      "name": "Airtable OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1904,
+        5136
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'airtable_write_failed', detail: $json }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "185171d6-beb3-42b6-80d4-5ddbdcc6a730",
+      "name": "502 Airtable Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1680,
+        5232
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const EXCLUDED_FIELDS = new Set([\n  'Last Xano Sync', 'Gcal Last Modified', 'Last Modified', 'Last Modified Time',\n  'Processing Stage', 'Push', 'Calendar Event ID', 'Calendar Event Link',\n  'Magic Link', 'Box shared link', 'box_shared_link', 'Box button', 'box button',\n  'amino button', 'EAD Stage Ref Lookup', 'EAD ID Ref Lookup', 'EAD Front Notes',\n  'EAD Manager', 'EAD Category', 'EAD Link'\n]);\n\nconst EXCLUDED_PATTERNS = [\n  'Ref Lookup', 'Magic Link', 'Gcal', 'Calendar Event', 'box_shared', 'Box shared',\n  'Last Modified', 'lastMod', 'Processing Stage', 'Rollup', 'Lookup', 'Formula'\n];\n\nconst shouldSkip = (field) =>\n  EXCLUDED_FIELDS.has(field) || EXCLUDED_PATTERNS.some(p => field.includes(p));\n\nconst cleanValue = (val) => {\n  if (val == null) return null;\n  if (typeof val === 'string') return val.trim() === '' ? null : val;\n  if (Array.isArray(val)) {\n    const c = val.map(cleanValue).filter(v => v != null);\n    return c.length ? c : null;\n  }\n  if (typeof val === 'object') {\n    const out = {};\n    for (const [k, v] of Object.entries(val)) {\n      if (['url', 'thumbnails', 'size', 'type', 'width', 'height'].includes(k)) continue;\n      const c = cleanValue(v);\n      if (c != null) out[k] = c;\n    }\n    return Object.keys(out).length ? out : null;\n  }\n  return val;\n};\n\nconst generateUUID = () =>\n  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {\n    const r = Math.random() * 16 | 0;\n    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);\n  });\n\nconst airtableRecord = $input.first().json;\nconst prep = $('Prepare Write').first().json;\nconst { tableId, recordId, matrixUserId } = prep;\n\nconst rawFields = airtableRecord.fields || {};\nconst cleanedSnapshot = {};\nfor (const [field, value] of Object.entries(rawFields)) {\n  if (shouldSkip(field)) continue;\n  const cleaned = cleanValue(value);\n  if (cleaned != null) cleanedSnapshot[field] = cleaned;\n}\n\nconst changedFields = prep.fields;\nconst payload = {\n  _f: 'v1',\n  _set: airtableRecord.fields?.['Table Name'] || '',\n  _a: matrixUserId,\n  fields: {\n    ALT: changedFields\n  }\n};\n\nconst uuid = generateUUID();\nconst cleanedSnapshotHex = Buffer.from(JSON.stringify(cleanedSnapshot)).toString('hex');\n\nreturn [{\n  json: {\n    uuid,\n    recordId,\n    tableId,\n    cleanedSnapshot,\n    cleanedSnapshotHex,\n    matrixUserId,\n    payload,\n    eventContent: {\n      recordId,\n      op: 'ALT',\n      payload,\n      set: `airtable:${tableId}`,\n      source: 'client_write',\n      sourceTimestamp: Date.now(),\n      actor: matrixUserId\n    }\n  }\n}];"
+      },
+      "id": "6e8ef75f-557d-47b6-b2aa-3282a53d8f32",
+      "name": "Build Sync Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1680,
+        5040
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT matrix_room_id FROM amino.table_registry WHERE table_id = '{{ $json.tableId }}'",
+        "options": {}
+      },
+      "id": "763903c7-ddb4-432b-8d54-1c81e593010c",
+      "name": "Get Room ID",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1456,
+        5040
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $('Build Sync Payload').first().json;\nconst roomRow = $input.first().json;\nconst matrixRoomId = roomRow?.matrix_room_id || null;\n\nreturn [{\n  json: {\n    ...payload,\n    matrixRoomId\n  }\n}];"
+      },
+      "id": "e7e43d04-05d9-439d-bb24-83f9d534d36c",
+      "name": "Merge Room ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1232,
+        5040
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://app.aminoimmigration.com/_matrix/client/v3/rooms/{{ encodeURIComponent($json.matrixRoomId) }}/send/law.firm.record.mutate/{{ $json.uuid }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.eventContent) }}",
+        "options": {}
+      },
+      "id": "6011e3d3-113f-4496-b202-8cbc046c5813",
+      "name": "Send to Matrix1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1008,
+        5040
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8smzU1ors4so56Qb",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO amino.current_state\n  (record_id, table_id, table_name, fields, matrix_room_id, last_event_id, event_count)\nVALUES (\n  '{{ $('Build Sync Payload').first().json.recordId }}',\n  '{{ $('Build Sync Payload').first().json.tableId }}',\n  '',\n  convert_from(decode('{{ $('Build Sync Payload').first().json.cleanedSnapshotHex }}', 'hex'), 'UTF8')::jsonb,\n  '{{ $('Merge Room ID').first().json.matrixRoomId }}',\n  '{{ $('Build Sync Payload').first().json.uuid }}',\n  1\n)\nON CONFLICT (record_id) DO UPDATE SET\n  fields = EXCLUDED.fields,\n  matrix_room_id = EXCLUDED.matrix_room_id,\n  last_synced_at = now(),\n  last_event_id = EXCLUDED.last_event_id,\n  event_count = amino.current_state.event_count + 1;",
+        "options": {}
+      },
+      "id": "2d241a5a-fb5f-4da0-b19c-f52b5e433c73",
+      "name": "Update Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -784,
+        5040
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, recordId: $('Build Sync Payload').first().json.recordId, tableId: $('Build Sync Payload').first().json.tableId, uuid: $('Build Sync Payload').first().json.uuid, fields: $('Build Sync Payload').first().json.cleanedSnapshot, synced: { airtable: true, postgres: true, matrix: true } }) }}",
+        "options": {}
+      },
+      "id": "87d35ee1-af4f-47df-b733-456e79e1ee80",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -560,
+        5040
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798",
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notExists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -3024,
+        5328
+      ],
+      "id": "9f5eaf8d-2369-480e-af16-5a16b8660125",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "url": "https://app.aminoimmigration.com/_matrix/client/v3/account/whoami",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.query.access_token}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "bbe22f1f-e76e-4e5c-a548-c7515fa65428",
+      "name": "Auth /write",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3232,
+        5328
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798",
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notExists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -3088,
+        1520
+      ],
+      "id": "5a864f55-4fef-4467-be76-4169eb4efc34",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798",
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notExists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -2896,
+        1936
+      ],
+      "id": "f2e6dfb1-c9f9-4b3a-83b8-7dd8f6a57887",
+      "name": "Switch2"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798",
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notExists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -3152,
+        2368
+      ],
+      "id": "1aba0e64-88b2-491f-ae4b-5e53e5dfd815",
+      "name": "Switch3"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798",
+                    "leftValue": "={{ $json.user_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notExists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -3184,
+        2848
+      ],
+      "id": "3c5cd4ea-e849-4098-a8ba-de47e1bbe41c",
+      "name": "Switch4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "760a0cd1-348c-4ae5-9380-74446565035c",
+              "leftValue": "={{$json.query.access_token}}",
+              "rightValue": "syt_YWRtaW4_fSuiUjeUIGVyjFbCjuDB_2S0yMU",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -3328,
+        1936
+      ],
+      "id": "8a8d75d1-f58a-4ba4-aa9e-972721c457ee",
+      "name": "Filter2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "760a0cd1-348c-4ae5-9380-74446565035c",
+              "leftValue": "={{$json.query.access_token}}",
+              "rightValue": "syt_YWRtaW4_fSuiUjeUIGVyjFbCjuDB_2S0yMU",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -3312,
+        2224
+      ],
+      "id": "54cb6125-5928-4197-8bac-58b93996c7f0",
+      "name": "Filter3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "760a0cd1-348c-4ae5-9380-74446565035c",
+              "leftValue": "={{$json.query.access_token}}",
+              "rightValue": "syt_YWRtaW4_fSuiUjeUIGVyjFbCjuDB_2S0yMU",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -3264,
+        2672
+      ],
+      "id": "95e43dc3-e514-477d-8b3b-fe9c306bef08",
+      "name": "Filter4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "760a0cd1-348c-4ae5-9380-74446565035c",
+              "leftValue": "={{$json.query.access_token}}",
+              "rightValue": "syt_YWRtaW4_fSuiUjeUIGVyjFbCjuDB_2S0yMU",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -3312,
+        1360
+      ],
+      "id": "0d988d08-b159-4039-bf04-2a588baedb4f",
+      "name": "Filter5"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "amino-invite",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "81c46482-ebaa-4ef1-bc3f-c2280411810a",
+      "name": "POST /invite",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3056,
+        5936
+      ],
+      "webhookId": "amino-invite"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT table_name, matrix_room_id FROM amino.table_registry WHERE matrix_room_id IS NOT NULL ORDER BY table_name;",
+        "options": {}
+      },
+      "id": "7d74f82a-deac-4d8e-86b2-b6c7564efbf3",
+      "name": "Get All Rooms",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2816,
+        5936
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst userId = $('POST /invite').first().json.body.userId;\n\nreturn items.map(item => ({\n  json: {\n    userId,\n    roomId: item.json.matrix_room_id,\n    tableName: item.json.table_name\n  }\n}));"
+      },
+      "id": "ce01e768-f02c-4f58-92c5-c99f25ed1415",
+      "name": "Prepare Invites",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2576,
+        5936
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "4d9e9194-5afe-4e54-91a1-387b61df4f92",
+      "name": "Loop Rooms",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2336,
+        5936
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://app.aminoimmigration.com/_matrix/client/v3/rooms/{{ encodeURIComponent($json.roomId) }}/invite",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user_id: $json.userId }) }}",
+        "options": {
+          "redirect": {
+            "redirect": {}
+          },
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "6c8a3d55-03c7-43ab-9a82-20948b26902a",
+      "name": "Send Invite",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        5936
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8smzU1ors4so56Qb",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "id": "863dede8-ad18-422e-8967-60d5b1a0b538",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1872,
+        5936
+      ],
+      "webhookId": "d57057b7-7c64-438b-b199-194c09e3c263"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst userId = $('POST /invite').first().json.body.userId;\n\nlet invited = 0;\nlet alreadyJoined = 0;\nlet rateLimited = 0;\nlet failed = 0;\nconst errors = [];\n\nfor (const item of items) {\n  const errcode = item.json?.errcode;\n  const error = item.json?.error || '';\n\n  if (!errcode) {\n    invited++;\n  } else if (errcode === 'M_FORBIDDEN' && error.includes('already in the room')) {\n    alreadyJoined++;\n  } else if (errcode === 'M_LIMIT_EXCEEDED') {\n    rateLimited++;\n    errors.push({ room: item.json?.roomId || 'unknown', error: `Rate limited (retry_after_ms: ${item.json?.retry_after_ms})` });\n  } else {\n    failed++;\n    errors.push({ room: item.json?.roomId || 'unknown', error: `${errcode}: ${error}` });\n  }\n}\n\nreturn [{\n  json: {\n    success: rateLimited === 0 && failed === 0,\n    userId,\n    roomsInvited: invited,\n    alreadyJoined,\n    rateLimited,\n    failed,\n    total: items.length,\n    errors: errors.length > 0 ? errors : undefined,\n    message: `Invited ${userId} to ${invited} rooms. ${alreadyJoined} already joined. ${rateLimited} rate limited. ${failed} other failures.`\n  }\n}];"
+      },
+      "id": "4e080b2e-762f-4a19-adf5-539991ebd406",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2096,
+        6176
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "de1f8dcb-18af-4afb-b4f0-37c69222f647",
+      "name": "Respond Success1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1856,
+        6176
+      ]
+    },
+    {
+      "parameters": {
+        "path": "c875f674-9228-45ae-b6ec-10870df8a403",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -3536,
+        4256
+      ],
+      "id": "fe43faf6-b024-4fa6-817c-d69e5e5c2804",
+      "name": "Webhook1",
+      "webhookId": "c875f674-9228-45ae-b6ec-10870df8a403"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Try Upload to Box": {
+      "main": [
+        [
+          {
+            "node": "File Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Exists?": {
+      "main": [
+        [
+          {
+            "node": "Upload New Version",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond New Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload New Version": {
+      "main": [
+        [
+          {
+            "node": "Respond Overwritten",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Folder for Download": {
+      "main": [
+        [
+          {
+            "node": "Download from Box",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download from Box": {
+      "main": [
+        [
+          {
+            "node": "Respond With File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "List Folder for Download",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter1": {
+      "main": [
+        [
+          {
+            "node": "Try Upload to Box",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 30 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get All Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Tables": {
+      "main": [
+        [
+          {
+            "node": "Prepare Table URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Table URLs": {
+      "main": [
+        [
+          {
+            "node": "Load Room Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Room Map": {
+      "main": [
+        [
+          {
+            "node": "Restore Table Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Table Items": {
+      "main": [
+        [
+          {
+            "node": "Loop Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Tables": {
+      "main": [
+        [
+          {
+            "node": "Update Checkpoint",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Records": {
+      "main": [
+        [
+          {
+            "node": "Explode Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explode Records": {
+      "main": [
+        [
+          {
+            "node": "Has Records?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Records?": {
+      "main": [
+        [
+          {
+            "node": "Loop Records",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Back to Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Records": {
+      "main": [
+        [
+          {
+            "node": "Back to Tables",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Current State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current State": {
+      "main": [
+        [
+          {
+            "node": "Diff Against State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diff Against State": {
+      "main": [
+        [
+          {
+            "node": "Has Changes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Changes?": {
+      "main": [
+        [
+          {
+            "node": "Send to Matrix",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Back to Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Matrix": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Back to Records": {
+      "main": [
+        [
+          {
+            "node": "Loop Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Back to Tables": {
+      "main": [
+        [
+          {
+            "node": "Loop Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 4 Hours": {
+      "main": [
+        [
+          {
+            "node": "Get Airtable Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Airtable Schema": {
+      "main": [
+        [
+          {
+            "node": "Load Schema Room Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explode Tables & Views": {
+      "main": [
+        [
+          {
+            "node": "Loop Objects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Schema Room Map": {
+      "main": [
+        [
+          {
+            "node": "Explode Tables & Views",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Objects": {
+      "main": [
+        [
+          {
+            "node": "Schema Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Schema State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Schema State": {
+      "main": [
+        [
+          {
+            "node": "Diff Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diff Schema": {
+      "main": [
+        [
+          {
+            "node": "Schema Has Changes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schema Has Changes?": {
+      "main": [
+        [
+          {
+            "node": "Has Room?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Back to Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Room?": {
+      "main": [
+        [
+          {
+            "node": "Send Schema to Matrix",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Schema to Matrix": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Back to Loop": {
+      "main": [
+        [
+          {
+            "node": "Loop Objects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Airtable Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Back to Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Back to Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /tables": {
+      "main": [
+        [
+          {
+            "node": "Filter5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth /tables": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Tables": {
+      "main": [
+        [
+          {
+            "node": "Respond Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /records/:tableId": {
+      "main": [
+        [
+          {
+            "node": "Filter2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth /records": {
+      "main": [
+        [
+          {
+            "node": "Switch2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Records by Table": {
+      "main": [
+        [
+          {
+            "node": "Respond Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /record/:recordId": {
+      "main": [
+        [
+          {
+            "node": "Filter3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth /record": {
+      "main": [
+        [
+          {
+            "node": "Switch3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Single Record": {
+      "main": [
+        [
+          {
+            "node": "Respond Single Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /records/since": {
+      "main": [
+        [
+          {
+            "node": "Filter4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth /since": {
+      "main": [
+        [
+          {
+            "node": "Switch4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Records Since": {
+      "main": [
+        [
+          {
+            "node": "Respond Records Since",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH /write": {
+      "main": [
+        [
+          {
+            "node": "Auth /write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Write": {
+      "main": [
+        [
+          {
+            "node": "Write to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Airtable OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable OK?": {
+      "main": [
+        [
+          {
+            "node": "Build Sync Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "502 Airtable Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Sync Payload": {
+      "main": [
+        [
+          {
+            "node": "Get Room ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Room ID": {
+      "main": [
+        [
+          {
+            "node": "Merge Room ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Room ID": {
+      "main": [
+        [
+          {
+            "node": "Send to Matrix1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Matrix1": {
+      "main": [
+        [
+          {
+            "node": "Update Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Postgres": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Prepare Write",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 /write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth /write": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "Query Tables",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 /tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch2": {
+      "main": [
+        [
+          {
+            "node": "Query Records by Table",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 /records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch3": {
+      "main": [
+        [
+          {
+            "node": "Query Single Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 /record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch4": {
+      "main": [
+        [
+          {
+            "node": "Query Records Since",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 /since",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter2": {
+      "main": [
+        [
+          {
+            "node": "Query Records by Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter3": {
+      "main": [
+        [
+          {
+            "node": "Query Single Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter4": {
+      "main": [
+        [
+          {
+            "node": "Query Records Since",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter5": {
+      "main": [
+        [
+          {
+            "node": "Query Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /invite": {
+      "main": [
+        []
+      ]
+    },
+    "Get All Rooms": {
+      "main": [
+        [
+          {
+            "node": "Prepare Invites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Invites": {
+      "main": [
+        [
+          {
+            "node": "Loop Rooms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Rooms": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Invite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Invite": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Rooms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Respond Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Get All Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "5c737be3fd9beebae6ccb42a087a71b95589b90d613100d5ba10c73188a40d22"
+  }
+}
