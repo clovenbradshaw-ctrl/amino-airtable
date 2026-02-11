@@ -16061,13 +16061,13 @@ async function renderProfileSyncHistory() {
                 if (item.oldValue != null) {
                     html += '<div class="profile-sync-history-value old">';
                     html += '<div class="profile-sync-history-value-label">Old</div>';
-                    html += formatHistoryValue(item.oldValue);
+                    html += formatSyncHistoryValue(item.oldValue);
                     html += '</div>';
                 }
                 if (item.newValue != null) {
                     html += '<div class="profile-sync-history-value new">';
                     html += '<div class="profile-sync-history-value-label">New</div>';
-                    html += formatHistoryValue(item.newValue);
+                    html += formatSyncHistoryValue(item.newValue);
                     html += '</div>';
                 }
                 html += '</div>';
@@ -16075,7 +16075,7 @@ async function renderProfileSyncHistory() {
                 html += '<div class="profile-sync-history-values">';
                 html += '<div class="profile-sync-history-value new">';
                 html += '<div class="profile-sync-history-value-label">Value</div>';
-                html += formatHistoryValue(item.newValue);
+                html += formatSyncHistoryValue(item.newValue);
                 html += '</div>';
                 html += '</div>';
             }
@@ -16092,8 +16092,8 @@ async function renderProfileSyncHistory() {
     }
 }
 
-// Format history value for display
-function formatHistoryValue(value) {
+// Format sync history value for display
+function formatSyncHistoryValue(value) {
     if (value == null) return '<em>empty</em>';
     if (typeof value === 'object') {
         return esc(JSON.stringify(value));
