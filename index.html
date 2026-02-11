@@ -2052,6 +2052,33 @@
         .iface-card-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .iface-card-meta { font-size: 11px; color: var(--text-disabled); margin-top: 4px; }
 
+        /* Case notes widget */
+        .iface-case-notes-widget { max-height: none; }
+        .iface-case-notes-controls { padding: 14px 16px; border-bottom: 1px solid var(--border-primary); display: grid; gap: 10px; }
+        .iface-case-notes-endpoint { font-size: 12px; color: var(--text-muted); word-break: break-all; }
+        .iface-case-notes-endpoint code { font-family: var(--font-mono); }
+        .iface-case-notes-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .iface-case-notes-grid label { font-size: 12px; color: var(--text-muted); display: grid; gap: 6px; }
+        .iface-case-notes-grid input, .iface-case-notes-grid select { padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-primary); background: var(--bg-primary); color: var(--text-primary); }
+        .iface-case-notes-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .iface-case-notes-actions button, .iface-case-notes-pager button, .iface-case-note-link-btn { padding: 7px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-primary); background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
+        .iface-case-notes-actions button:hover, .iface-case-notes-pager button:hover, .iface-case-note-link-btn:hover { background: var(--bg-hover); }
+        .iface-case-notes-actions button:disabled, .iface-case-notes-pager button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .iface-case-notes-status { font-size: 12px; color: var(--text-muted); }
+        .iface-case-notes-error { font-size: 12px; color: var(--danger-500); }
+        .iface-case-notes-pager { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; color: var(--text-muted); }
+        .iface-case-notes-list { display: grid; gap: 10px; padding: 12px 16px 16px; }
+        .iface-case-note-item { border: 1px solid var(--border-primary); border-radius: var(--radius-md); padding: 12px; background: var(--bg-primary); }
+        .iface-case-note-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--text-primary); }
+        .iface-case-note-top span { color: var(--text-muted); font-size: 12px; }
+        .iface-case-note-desc { margin-top: 8px; font-size: 13px; line-height: 1.4; white-space: pre-wrap; color: var(--text-primary); }
+        .iface-case-note-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .iface-case-note-pill { padding: 4px 8px; border: 1px solid var(--border-primary); border-radius: 999px; font-size: 11px; color: var(--text-muted); }
+        .iface-case-note-link-btn { margin-top: 10px; }
+        .iface-case-note-unlinked { margin-top: 10px; font-size: 12px; color: var(--text-disabled); }
+        @media (max-width: 1000px) { .iface-case-notes-grid { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 680px) { .iface-case-notes-grid { grid-template-columns: 1fr; } }
+
         /* Data table */
         .iface-table-wrapper { overflow-x: auto; }
         .iface-page[data-page-id="clients"] .iface-data-table-block {
@@ -24158,6 +24185,9 @@ var InterfaceApp = (function() {
     var _apiDataCache = {};         // sourceKey -> { records: [], lastFetch: timestamp }
     var _tablePaginationState = {}; // pageId -> { page: 0, pageSize: 50, sort: { field, dir } }
     var _blockSearchState = {};     // blockId -> searchQuery
+    var _caseNotesWidgetState = {}; // blockId -> remote case note query state
+
+    var CASE_NOTES_WIDGET_ENDPOINT = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:l_gEBOGc/get_case_notes';
 
     // ============ Default Schema (EO Format) ============
     // The schema describes pages and their blocks using EO operators:
@@ -24469,35 +24499,10 @@ var InterfaceApp = (function() {
                 icon: 'notes',
                 blocks: [
                     {
-                        id: 'case-notes-table',
-                        type: 'data-table',
+                        id: 'case-notes-widget',
+                        type: 'case-notes-widget',
                         label: 'Case Notes',
-                        source: {
-                            op: 'DES',
-                            tableNamePattern: 'caseNotes',
-                            fallbackTablePattern: 'case note'
-                        },
-                        columns: [
-                            { field: 'Activity', label: 'Activity', width: 180 },
-                            { field: 'Type', label: 'Type', width: 120 },
-                            { field: 'Date', label: 'Date', width: 150 },
-                            { field: 'Description', label: 'Description', width: 280 },
-                            { field: 'Contact', label: 'Contact', width: 140 },
-                            { field: 'Created_By', label: 'Created By', width: 120 },
-                            { field: 'Due_Date', label: 'Due Date', width: 140 },
-                            { field: 'source', label: 'Source', width: 100 },
-                            { field: 'tags', label: 'Tags', width: 160 }
-                        ],
-                        filters: [
-                            { id: 'type', label: 'Type', field: 'Type' },
-                            { id: 'source', label: 'Source', field: 'source' },
-                            { id: 'created-by', label: 'Created By', field: 'Created_By' }
-                        ],
-                        segment: {
-                            op: 'SEG',
-                            sort: { field: 'Date', dir: 'desc' },
-                            pageSize: 50
-                        }
+                        endpoint: CASE_NOTES_WIDGET_ENDPOINT
                     }
                 ]
             }
@@ -25858,6 +25863,243 @@ var InterfaceApp = (function() {
         return html;
     }
 
+
+    function _getCaseNotesWidgetState(blockId) {
+        if (!_caseNotesWidgetState[blockId]) {
+            _caseNotesWidgetState[blockId] = {
+                filters: {
+                    client_pp_id: '',
+                    matter_id: '',
+                    type: '',
+                    search: '',
+                    dateFrom: '',
+                    dateTo: '',
+                    per_page: '20'
+                },
+                page: 1,
+                items: [],
+                total: 0,
+                per_page: 20,
+                count: 0,
+                status: 'Ready.',
+                error: '',
+                lastQueryKey: ''
+            };
+        }
+        return _caseNotesWidgetState[blockId];
+    }
+
+    function _toCaseNotesTimestamp(dateValue, isEndOfDay) {
+        if (!dateValue) return '';
+        var d = new Date(dateValue + 'T00:00:00');
+        if (isEndOfDay) d.setHours(23, 59, 59, 999);
+        return isNaN(d.getTime()) ? '' : d.toISOString();
+    }
+
+    function _buildCaseNotesWidgetParams(state) {
+        var params = new URLSearchParams();
+        var filters = state.filters || {};
+        if (filters.client_pp_id) params.set('client_pp_id', String(filters.client_pp_id).trim());
+        if (filters.matter_id) params.set('matter_id', String(filters.matter_id).trim());
+        if (filters.type) params.set('type', String(filters.type).trim());
+        var dateFrom = _toCaseNotesTimestamp(filters.dateFrom, false);
+        var dateTo = _toCaseNotesTimestamp(filters.dateTo, true);
+        if (dateFrom) params.set('date_from', dateFrom);
+        if (dateTo) params.set('date_to', dateTo);
+        params.set('page', String(Math.max(1, state.page || 1)));
+        params.set('per_page', String(filters.per_page || '20'));
+        return params;
+    }
+
+    function _normalizeCaseNotesResponse(json, fallbackPerPage) {
+        if (Array.isArray(json)) {
+            return { items: json, total: json.length, page: 1, per_page: fallbackPerPage };
+        }
+        var items = json && (json.items || json.data || json.records || json.result || json.results) || [];
+        var total = json && (json.totalItems || json.total_items || json.total || json.count);
+        var page = json && (json.page || json.currentPage || json.current_page);
+        var perPage = json && (json.perPage || json.per_page || json.limit);
+        return {
+            items: Array.isArray(items) ? items : [],
+            total: Number(total != null ? total : (Array.isArray(items) ? items.length : 0)),
+            page: Number(page || 1),
+            per_page: Number(perPage || fallbackPerPage || 20)
+        };
+    }
+
+    function _pickCaseNoteValue(note, keys) {
+        if (!note || typeof note !== 'object') return '';
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            if (note[key] != null && String(note[key]).trim() !== '') {
+                return String(note[key]);
+            }
+        }
+        return '';
+    }
+
+    function _caseNotesSearch(items, query) {
+        var q = String(query || '').toLowerCase().trim();
+        if (!q) return items;
+        return items.filter(function(note) {
+            var desc = _pickCaseNoteValue(note, ['Description', 'description', 'note', 'body', 'details']).toLowerCase();
+            return desc.indexOf(q) !== -1;
+        });
+    }
+
+    async function _buildCaseNotesClientIndex() {
+        var source = { op: 'DES', tableNamePattern: 'client info', fallbackTablePattern: 'client' };
+        var records = await _getSourceRecords(source);
+        var byAirtableId = {};
+        var byClientPpId = {};
+        records.forEach(function(record) {
+            var fields = record.fields || {};
+            var recordId = String(record.recordId || '');
+            var airtableId = String(fields.airtableId || fields.Airtable_ID || fields.airtable_id || recordId || '').trim();
+            var clientPpId = String(fields.Client_PP_ID || fields.client_pp_id || fields.pp_client_id || '').trim();
+            if (airtableId) byAirtableId[airtableId.toLowerCase()] = recordId;
+            if (clientPpId) byClientPpId[clientPpId.toLowerCase()] = recordId;
+        });
+        return { byAirtableId: byAirtableId, byClientPpId: byClientPpId };
+    }
+
+    function _resolveCaseNoteClientRecordId(note, clientIndex) {
+        var airtableId = _pickCaseNoteValue(note, ['client_airtable_id', 'Softr_Link_to_clients', 'airtableId']);
+        if (airtableId) {
+            var byAirtable = clientIndex.byAirtableId[String(airtableId).toLowerCase()];
+            if (byAirtable) return byAirtable;
+        }
+        var clientPpId = _pickCaseNoteValue(note, ['Client_PP_ID', 'client_pp_id']);
+        if (clientPpId) {
+            var byPpId = clientIndex.byClientPpId[String(clientPpId).toLowerCase()];
+            if (byPpId) return byPpId;
+        }
+        return '';
+    }
+
+    async function _fetchCaseNotesWidgetData(block, state) {
+        var endpoint = block.endpoint || CASE_NOTES_WIDGET_ENDPOINT;
+        var params = _buildCaseNotesWidgetParams(state);
+        var queryKey = params.toString();
+        if (state.lastQueryKey === queryKey && state.items.length) return;
+
+        var url = endpoint + '?' + queryKey;
+        var res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+        if (!res.ok) {
+            var errText = await res.text().catch(function() { return ''; });
+            throw new Error('Request failed (' + res.status + ' ' + res.statusText + ')' + (errText ? ': ' + errText : ''));
+        }
+
+        var json = await res.json();
+        var normalized = _normalizeCaseNotesResponse(json, Number(state.filters.per_page || 20));
+        var filteredItems = _caseNotesSearch(normalized.items, state.filters.search);
+
+        state.items = filteredItems;
+        state.total = normalized.total;
+        state.per_page = normalized.per_page;
+        state.count = filteredItems.length;
+        state.page = normalized.page || state.page;
+        state.lastQueryKey = queryKey;
+        state.status = 'Loaded ' + filteredItems.length + ' notes (page ' + state.page + ').';
+        state.error = '';
+    }
+
+    function _readCaseNotesWidgetForm(blockId) {
+        var ids = ['client_pp_id', 'matter_id', 'type', 'search', 'dateFrom', 'dateTo', 'per_page'];
+        var next = {};
+        ids.forEach(function(key) {
+            var input = document.getElementById('cnw-' + blockId + '-' + key);
+            next[key] = input ? String(input.value || '').trim() : '';
+        });
+        return next;
+    }
+
+    async function _renderCaseNotesWidget(block) {
+        var state = _getCaseNotesWidgetState(block.id);
+        if (!state.lastQueryKey) {
+            try {
+                await _fetchCaseNotesWidgetData(block, state);
+            } catch (err) {
+                state.error = err && err.message ? err.message : 'Failed to load case notes.';
+                state.status = 'Error.';
+            }
+        }
+
+        var clientIndex = await _buildCaseNotesClientIndex();
+        var typeOptions = ['', 'Case Note', 'Client Call', 'Invoice Update', 'Document Generation', 'Applied Credit', 'Creation Note', 'Engagement Note', 'Event Notes'];
+        var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '">';
+        html += '<div class="iface-block-header"><span class="iface-block-title">' + _esc(block.label || 'Case Notes') + '</span></div>';
+        html += '<div class="iface-block-body iface-case-notes-widget">';
+        html += '<div class="iface-case-notes-controls">';
+        html += '<div class="iface-case-notes-endpoint">Endpoint: <code>' + _esc(block.endpoint || CASE_NOTES_WIDGET_ENDPOINT) + '</code></div>';
+        html += '<div class="iface-case-notes-grid">';
+        html += '<label>client_pp_id<input id="cnw-' + _esc(block.id) + '-client_pp_id" value="' + _esc(state.filters.client_pp_id) + '" onkeydown="if(event.key===\'Enter\'){InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'load\');}"></label>';
+        html += '<label>matter_id<input id="cnw-' + _esc(block.id) + '-matter_id" value="' + _esc(state.filters.matter_id) + '" onkeydown="if(event.key===\'Enter\'){InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'load\');}"></label>';
+        html += '<label>type<select id="cnw-' + _esc(block.id) + '-type">';
+        typeOptions.forEach(function(opt) {
+            var selected = String(state.filters.type || '') === String(opt) ? ' selected' : '';
+            html += '<option value="' + _esc(opt) + '"' + selected + '>' + _esc(opt || '(any)') + '</option>';
+        });
+        html += '</select></label>';
+        html += '<label>search description<input id="cnw-' + _esc(block.id) + '-search" value="' + _esc(state.filters.search) + '" onkeydown="if(event.key===\'Enter\'){InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'load\');}"></label>';
+        html += '<label>date from<input type="date" id="cnw-' + _esc(block.id) + '-dateFrom" value="' + _esc(state.filters.dateFrom) + '"></label>';
+        html += '<label>date to<input type="date" id="cnw-' + _esc(block.id) + '-dateTo" value="' + _esc(state.filters.dateTo) + '"></label>';
+        html += '<label>per_page<select id="cnw-' + _esc(block.id) + '-per_page">';
+        ['10', '20', '50', '100', '200'].forEach(function(opt) {
+            var selected = String(state.filters.per_page || '20') === opt ? ' selected' : '';
+            html += '<option value="' + opt + '"' + selected + '>' + opt + '</option>';
+        });
+        html += '</select></label>';
+        html += '</div>';
+        html += '<div class="iface-case-notes-actions">';
+        html += '<button onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'load\')">Load notes</button>';
+        html += '<button onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'reset\')">Reset</button>';
+        html += '<button onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'copy\')">Copy query URL</button>';
+        html += '</div>';
+        html += '<div class="iface-case-notes-status">' + _esc(state.status || 'Ready.') + '</div>';
+        if (state.error) html += '<div class="iface-case-notes-error">' + _esc(state.error) + '</div>';
+        html += '<div class="iface-case-notes-pager">';
+        var totalPages = state.total && state.per_page ? Math.ceil(Number(state.total) / Math.max(Number(state.per_page), 1)) : 0;
+        html += '<button ' + (state.page <= 1 ? 'disabled ' : '') + 'onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'prev\')">← Prev</button>';
+        html += '<span>Total: ' + _esc(String(state.total || 0)) + ' · Showing: ' + _esc(String(state.count || 0)) + ' · Page: ' + _esc(String(state.page || 1)) + (totalPages ? ' / ' + _esc(String(totalPages)) : '') + '</span>';
+        html += '<button ' + (totalPages && state.page >= totalPages ? 'disabled ' : '') + 'onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'next\')">Next →</button>';
+        html += '</div>';
+        html += '</div>';
+
+        html += '<div class="iface-case-notes-list">';
+        if (!state.items.length) {
+            html += '<div class="iface-empty" style="padding:16px;">No results.</div>';
+        } else {
+            state.items.forEach(function(note) {
+                var title = _pickCaseNoteValue(note, ['Type', 'type', 'Activity', 'activity', 'id']) || 'Case Note';
+                var date = _pickCaseNoteValue(note, ['Date', 'date', 'created_at', 'updated_at', 'Modified']);
+                var description = _pickCaseNoteValue(note, ['Description', 'description', 'note', 'body', 'details']);
+                var clientRecordId = _resolveCaseNoteClientRecordId(note, clientIndex);
+                var clientPp = _pickCaseNoteValue(note, ['Client_PP_ID', 'client_pp_id']);
+                html += '<div class="iface-case-note-item">';
+                html += '<div class="iface-case-note-top"><strong>' + _esc(title) + '</strong>' + (date ? '<span>' + _esc(date) + '</span>' : '') + '</div>';
+                html += '<div class="iface-case-note-desc">' + _esc(description || 'No description field found on this note.') + '</div>';
+                html += '<div class="iface-case-note-meta">';
+                if (clientPp) html += '<span class="iface-case-note-pill">Client_PP_ID: ' + _esc(clientPp) + '</span>';
+                var matterId = _pickCaseNoteValue(note, ['matter_id', 'Matter']);
+                if (matterId) html += '<span class="iface-case-note-pill">matter_id: ' + _esc(matterId) + '</span>';
+                var source = _pickCaseNoteValue(note, ['source']);
+                if (source) html += '<span class="iface-case-note-pill">source: ' + _esc(source) + '</span>';
+                html += '</div>';
+                if (clientRecordId) {
+                    html += '<button class="iface-case-note-link-btn" data-client-record-id="' + _esc(clientRecordId) + '" onclick="InterfaceApp.openClientFromCaseNote(this)">Open linked client</button>';
+                } else {
+                    html += '<div class="iface-case-note-unlinked">No linked client found for this note.</div>';
+                }
+                html += '</div>';
+            });
+        }
+        html += '</div>';
+
+        html += '</div></div>';
+        return html;
+    }
+
     function _renderTabContainer(block, allBlocksMap) {
         var tabs = block.tabs || [];
         var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '" style="margin:0 24px 16px;">';
@@ -26617,6 +26859,10 @@ var InterfaceApp = (function() {
                 html = _renderDataTableRevamped(block, records, pageState, allTableRecords, tableId);
                 break;
 
+            case 'case-notes-widget':
+                html = await _renderCaseNotesWidget(block);
+                break;
+
             case 'tab-container':
                 html = _renderTabContainer(block, allBlocksMap);
                 break;
@@ -26784,6 +27030,54 @@ var InterfaceApp = (function() {
         if (_urlStateBootstrapped) persistUrlState();
     }
 
+    async function caseNotesWidgetAction(blockId, action) {
+        var state = _getCaseNotesWidgetState(blockId);
+        if (action === 'load') {
+            state.filters = _readCaseNotesWidgetForm(blockId);
+            state.page = 1;
+            state.lastQueryKey = '';
+            state.status = 'Loading...';
+        } else if (action === 'prev') {
+            state.page = Math.max(1, Number(state.page || 1) - 1);
+            state.lastQueryKey = '';
+            state.status = 'Loading...';
+        } else if (action === 'next') {
+            state.page = Number(state.page || 1) + 1;
+            state.lastQueryKey = '';
+            state.status = 'Loading...';
+        } else if (action === 'reset') {
+            _caseNotesWidgetState[blockId] = null;
+            _getCaseNotesWidgetState(blockId);
+        } else if (action === 'copy') {
+            state.filters = _readCaseNotesWidgetForm(blockId);
+            var url = CASE_NOTES_WIDGET_ENDPOINT + '?' + _buildCaseNotesWidgetParams(state).toString();
+            try {
+                await navigator.clipboard.writeText(url);
+                _showToast('Copied query URL to clipboard.');
+            } catch (e) {
+                _showToast('Clipboard unavailable.');
+            }
+        }
+        renderPage(_activePage);
+    }
+
+    async function openClientFromCaseNote(buttonEl) {
+        if (!buttonEl) return;
+        var recordId = buttonEl.getAttribute('data-client-record-id');
+        if (!recordId) return;
+        var clientsTableId = (typeof CaseNotesAPI !== 'undefined' && CaseNotesAPI.getClientsTableId)
+            ? CaseNotesAPI.getClientsTableId()
+            : _resolveTableId({ tableNamePattern: 'client info', fallbackTablePattern: 'client' });
+        if (!clientsTableId) {
+            _showToast('Clients table is not available in this workspace.');
+            return;
+        }
+        switchPage('clients');
+        setTimeout(function() {
+            openRecordProfile(clientsTableId, recordId);
+        }, 50);
+    }
+
     // ============ Admin: Edit Mode ============
 
     function toggleEditMode() {
@@ -26939,6 +27233,8 @@ var InterfaceApp = (function() {
         onFilterChange: onFilterChange,
         onColumnSort: onColumnSort,
         onPageChange: onPageChange,
+        caseNotesWidgetAction: caseNotesWidgetAction,
+        openClientFromCaseNote: openClientFromCaseNote,
         onClientGraphClientChange: onClientGraphClientChange,
         setUrlState: setUrlState,
         getUrlState: getUrlState,
