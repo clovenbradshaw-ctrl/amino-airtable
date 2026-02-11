@@ -1896,11 +1896,9 @@
         /* Interface page container */
         .iface-page-container {
             flex: 1; overflow-y: auto; padding: 0;
-            background: #f0f4f8;
+            background: var(--bg-primary);
         }
-        html.dark-theme .iface-page-container,
-        :root .iface-page-container { background: var(--bg-primary); }
-        html:not(.light-theme) .iface-page-container { background: var(--bg-primary); }
+        html.light-theme .iface-page-container { background: #f8fafc; }
 
         .iface-page { display: none; flex-direction: column; min-height: 100%; }
         .iface-page.active { display: flex; }
@@ -2171,6 +2169,404 @@
         .iface-page-btn:hover { border-color: var(--primary-500); }
         .iface-page-btn:disabled { opacity: 0.4; cursor: default; }
         .iface-page-btn:disabled:hover { border-color: var(--border-primary); }
+
+        /* ============ Revamped Interface Design System ============ */
+        /* New top bar matching the mockup design */
+        .iface-topbar-nav { display: flex; gap: 2px; }
+        .iface-topbar-nav button {
+            font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+            padding: 6px 14px; border-radius: 999px;
+            border: none; background: transparent; color: var(--text-muted);
+            cursor: pointer; transition: all var(--transition-fast);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .iface-topbar-nav button:hover { background: var(--bg-hover); color: var(--text-secondary); }
+        .iface-topbar-nav button.active { background: rgba(59,130,246,0.12); color: var(--primary-500); }
+        .iface-topbar-nav button svg { width: 15px; height: 15px; }
+
+        .iface-synced-badge {
+            display: flex; align-items: center; gap: 5px;
+            font-size: 12px; font-weight: 500; color: var(--success-500);
+            background: rgba(34,197,94,0.1); padding: 4px 10px;
+            border-radius: 999px;
+        }
+        .iface-synced-badge::before {
+            content: ''; width: 6px; height: 6px; border-radius: 50%;
+            background: var(--success-500);
+        }
+        .iface-topbar-avatar {
+            width: 30px; height: 30px; border-radius: 50%;
+            background: rgba(59,130,246,0.12); color: var(--primary-500);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: 600; cursor: pointer;
+        }
+
+        /* Revamped page container */
+        .iface-page-content {
+            padding: 32px 24px; max-width: 1240px; margin: 0 auto;
+            animation: iface-fadeUp .35s ease both;
+        }
+        .iface-page-content.full-width { max-width: none; }
+        @keyframes iface-fadeUp {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Welcome greeting */
+        .iface-welcome-greeting { margin-bottom: 32px; }
+        .iface-welcome-greeting h1 {
+            font-size: 26px; font-weight: 700; letter-spacing: -.02em;
+            color: var(--text-primary); margin-bottom: 4px;
+        }
+        .iface-welcome-greeting h1 span { color: var(--primary-500); }
+        .iface-welcome-greeting p { font-size: 14px; color: var(--text-muted); }
+
+        /* Action cards */
+        .iface-action-cards {
+            display: grid; grid-template-columns: repeat(3, 1fr);
+            gap: 16px; margin-bottom: 28px;
+        }
+        .iface-action-card {
+            background: var(--bg-secondary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl); padding: 24px;
+            cursor: pointer; transition: all 0.2s ease;
+            display: flex; flex-direction: column; gap: 14px;
+        }
+        .iface-action-card:hover { border-color: var(--primary-300); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .iface-action-card .acard-icon {
+            width: 44px; height: 44px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px;
+        }
+        .iface-action-card .acard-icon.blue { background: rgba(59,130,246,0.1); color: var(--primary-500); }
+        .iface-action-card .acard-icon.green { background: rgba(34,197,94,0.08); color: var(--success-500); }
+        .iface-action-card .acard-icon.slate { background: var(--bg-tertiary); color: var(--text-muted); }
+        .iface-action-card h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+        .iface-action-card p { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+        .iface-action-card .acard-arrow {
+            font-size: 13px; color: var(--primary-500); font-weight: 500;
+            display: flex; align-items: center; gap: 4px; margin-top: auto;
+            opacity: 0; transition: opacity var(--transition-fast);
+        }
+        .iface-action-card:hover .acard-arrow { opacity: 1; }
+
+        /* Stats row */
+        .iface-stats-row {
+            display: grid; grid-template-columns: repeat(4, 1fr);
+            gap: 0; margin-bottom: 28px;
+            background: var(--bg-secondary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl); overflow: hidden;
+        }
+        .iface-stat-cell {
+            padding: 20px 24px; text-align: center;
+            border-right: 1px solid var(--border-primary);
+            cursor: pointer; transition: background var(--transition-fast);
+        }
+        .iface-stat-cell:last-child { border-right: none; }
+        .iface-stat-cell:hover { background: var(--bg-hover); }
+        .iface-stat-cell .stat-num {
+            font-size: 28px; font-weight: 700; color: var(--text-primary);
+            letter-spacing: -.02em; margin-bottom: 2px;
+        }
+        .iface-stat-cell .stat-num.green { color: var(--success-500); }
+        .iface-stat-cell .stat-label {
+            font-size: 11px; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: .06em;
+        }
+
+        /* Recent section (hearings, clients) */
+        .iface-recent-section h2 {
+            font-size: 15px; font-weight: 600; margin-bottom: 14px;
+            color: var(--text-primary); display: flex; align-items: center; gap: 8px;
+        }
+        .iface-recent-section h2 .count {
+            font-size: 11px; font-weight: 500; color: var(--text-muted);
+            background: var(--bg-tertiary); padding: 2px 8px; border-radius: 999px;
+        }
+        .iface-recent-list {
+            background: var(--bg-secondary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl); overflow: hidden;
+        }
+        .iface-recent-item {
+            padding: 14px 20px;
+            display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid var(--border-primary);
+            cursor: pointer; transition: background var(--transition-fast);
+        }
+        .iface-recent-item:last-child { border-bottom: none; }
+        .iface-recent-item:hover { background: var(--bg-hover); }
+        .iface-recent-item-left { display: flex; align-items: center; gap: 12px; }
+        .iface-ri-avatar {
+            width: 34px; height: 34px; border-radius: 50%;
+            background: var(--bg-tertiary); color: var(--text-muted);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 600;
+        }
+        .iface-ri-info h4 { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+        .iface-ri-info p { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+        .iface-recent-item-right { display: flex; align-items: center; gap: 10px; }
+
+        /* Badges */
+        .iface-badge-green { background: rgba(34,197,94,0.12); color: #16a34a; }
+        html:not(.light-theme) .iface-badge-green { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .iface-badge-amber { background: rgba(245,158,11,0.12); color: #92400e; }
+        html:not(.light-theme) .iface-badge-amber { background: rgba(245,158,11,0.15); color: #f59e0b; }
+        .iface-badge-red { background: rgba(239,68,68,0.12); color: #991b1b; }
+        html:not(.light-theme) .iface-badge-red { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .iface-badge-blue { background: rgba(59,130,246,0.12); color: #1e40af; }
+        html:not(.light-theme) .iface-badge-blue { background: rgba(59,130,246,0.15); color: #60a5fa; }
+        .iface-badge-outline {
+            background: transparent; border: 1px solid var(--border-primary);
+            color: var(--text-muted); font-weight: 500;
+        }
+        .iface-date-tag { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+        /* Activity log */
+        .iface-activity-log { margin-top: 28px; }
+        .iface-activity-log h2 {
+            font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--text-primary);
+        }
+        .iface-log-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 0; font-size: 13px; color: var(--text-secondary);
+        }
+        .iface-log-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+        .iface-log-dot.green { background: var(--success-500); }
+        .iface-log-dot.blue { background: var(--primary-500); }
+        .iface-log-time { color: var(--text-muted); font-size: 12px; margin-left: auto; }
+
+        /* Clients page header */
+        .iface-clients-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .iface-clients-header h2 { font-size: 17px; font-weight: 600; color: var(--text-primary); }
+        .iface-clients-header h2 .muted { color: var(--text-muted); font-weight: 400; font-size: 14px; }
+        .iface-clients-header-actions { display: flex; gap: 8px; }
+        .iface-btn-secondary {
+            font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+            padding: 7px 14px; border-radius: var(--radius-md);
+            border: 1px solid var(--border-primary); background: var(--bg-secondary);
+            color: var(--text-secondary); cursor: pointer; transition: all var(--transition-fast);
+            display: flex; align-items: center; gap: 5px;
+        }
+        .iface-btn-secondary:hover { border-color: var(--border-secondary); background: var(--bg-tertiary); }
+        .iface-btn-primary {
+            font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+            padding: 7px 14px; border-radius: var(--radius-md);
+            border: 1px solid var(--primary-500); background: var(--primary-500);
+            color: #fff; cursor: pointer; transition: all var(--transition-fast);
+            display: flex; align-items: center; gap: 5px;
+        }
+        .iface-btn-primary:hover { background: var(--primary-600); border-color: var(--primary-600); }
+
+        /* Filter pills */
+        .iface-filter-bar {
+            display: flex; align-items: center; gap: 6px;
+            margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .iface-filter-pill {
+            font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+            padding: 5px 12px; border-radius: 999px;
+            border: 1px solid var(--border-primary); background: var(--bg-secondary);
+            color: var(--text-muted); cursor: pointer; transition: all var(--transition-fast);
+            display: flex; align-items: center; gap: 5px;
+        }
+        .iface-filter-pill:hover { border-color: var(--border-secondary); }
+        .iface-filter-pill.active {
+            background: rgba(59,130,246,0.12); border-color: var(--primary-300);
+            color: var(--primary-500); font-weight: 600;
+        }
+        .iface-filter-pill .pill-label { color: var(--text-muted); font-weight: 400; }
+        .iface-filter-pill.active .pill-label { color: var(--primary-500); opacity: .7; }
+        .iface-filter-pill svg { width: 12px; height: 12px; }
+        .iface-filter-clear {
+            font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+            color: var(--text-muted); background: none; border: none;
+            cursor: pointer; padding: 5px 8px; margin-left: 4px;
+        }
+        .iface-filter-clear:hover { color: var(--danger-500); }
+
+        /* Revamped data table */
+        .iface-table-revamp {
+            width: 100%; border-collapse: collapse; font-size: 13px;
+        }
+        .iface-table-revamp thead th {
+            text-align: left; padding: 10px 16px;
+            font-size: 12px; font-weight: 600; color: var(--text-muted);
+            background: var(--bg-tertiary); border-bottom: 1px solid var(--border-primary);
+            position: sticky; top: 0; z-index: 10;
+            letter-spacing: .01em; white-space: nowrap;
+            cursor: pointer; user-select: none;
+        }
+        .iface-table-revamp thead th:hover { color: var(--text-primary); }
+        .iface-table-revamp tbody tr {
+            border-bottom: 1px solid var(--border-primary);
+            cursor: pointer; transition: background var(--transition-fast);
+        }
+        .iface-table-revamp tbody tr:nth-child(even) { background: var(--bg-primary); }
+        .iface-table-revamp tbody tr:hover { background: var(--bg-hover) !important; }
+        .iface-table-revamp tbody tr:last-child { border-bottom: none; }
+        .iface-table-revamp td {
+            padding: 11px 16px; color: var(--text-primary);
+            vertical-align: middle; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; max-width: 240px;
+        }
+        .iface-table-revamp td .client-name { font-weight: 500; }
+        .iface-table-revamp td .cell-muted { color: var(--text-muted); font-size: 12px; }
+        .iface-table-revamp td .cell-empty { color: var(--border-primary); }
+        .iface-table-revamp td .date-primary { font-size: 13px; color: var(--text-primary); }
+        .iface-table-revamp td .date-relative { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+        .iface-table-revamp td .status-dot {
+            display: inline-block; width: 7px; height: 7px;
+            border-radius: 50%; margin-right: 6px; vertical-align: middle;
+        }
+        .iface-table-revamp td .status-dot.green { background: var(--success-500); }
+        .iface-table-revamp td .status-dot.amber { background: var(--warning-500); }
+        .iface-table-revamp td .status-dot.red { background: var(--danger-500); }
+        .iface-table-revamp td .status-dot.slate { background: var(--text-muted); }
+
+        /* Events page layout */
+        .iface-events-layout {
+            display: grid; grid-template-columns: 240px 1fr; gap: 20px;
+        }
+        .iface-events-sidebar {
+            background: var(--bg-secondary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl); padding: 16px;
+            height: fit-content; position: sticky; top: 110px;
+        }
+        .iface-events-sidebar-search {
+            font-family: var(--font-sans); font-size: 12px;
+            width: 100%; padding: 7px 10px; border: 1px solid var(--border-primary);
+            border-radius: var(--radius-md); background: var(--bg-primary);
+            outline: none; margin-bottom: 12px; color: var(--text-primary);
+        }
+        .iface-events-sidebar-search::placeholder { color: var(--text-muted); }
+        .iface-events-sidebar-search:focus { border-color: var(--primary-500); }
+        .iface-sidebar-group-title {
+            font-size: 10px; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: .08em;
+            padding: 8px 0 4px; display: flex; align-items: center; justify-content: space-between;
+        }
+        .iface-sidebar-toggle {
+            font-size: 10px; color: var(--primary-500); font-weight: 500;
+            background: none; border: none; cursor: pointer; font-family: var(--font-sans);
+        }
+        .iface-attorney-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 4px; border-radius: 6px; cursor: pointer;
+            transition: background var(--transition-fast);
+        }
+        .iface-attorney-row:hover { background: var(--bg-hover); }
+        .iface-attorney-check {
+            width: 16px; height: 16px; border-radius: 4px;
+            border: 1.5px solid var(--border-secondary); flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            transition: all var(--transition-fast);
+        }
+        .iface-attorney-check.checked { background: var(--primary-500); border-color: var(--primary-500); }
+        .iface-attorney-check.checked::after {
+            content: '\2713'; color: white; font-size: 10px; font-weight: 700;
+        }
+        .iface-attorney-name-side { font-size: 13px; font-weight: 400; color: var(--text-secondary); }
+        .iface-attorney-row.active .iface-attorney-name-side { color: var(--text-primary); font-weight: 500; }
+
+        /* Events main area */
+        .iface-events-main {
+            background: var(--bg-secondary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl); overflow: hidden;
+        }
+        .iface-cal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 20px; border-bottom: 1px solid var(--border-primary);
+        }
+        .iface-cal-header-left { display: flex; align-items: center; gap: 12px; }
+        .iface-cal-nav-btn {
+            font-family: var(--font-sans); width: 30px; height: 30px; border-radius: 6px;
+            border: 1px solid var(--border-primary); background: var(--bg-secondary);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; color: var(--text-muted); font-size: 14px;
+            transition: all var(--transition-fast);
+        }
+        .iface-cal-nav-btn:hover { background: var(--bg-hover); border-color: var(--border-secondary); }
+        .iface-cal-month { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+        .iface-cal-header-right { display: flex; gap: 4px; }
+        .iface-view-btn {
+            font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+            padding: 5px 12px; border-radius: 999px;
+            border: 1px solid transparent; background: transparent;
+            color: var(--text-muted); cursor: pointer; transition: all var(--transition-fast);
+        }
+        .iface-view-btn:hover { background: var(--bg-hover); }
+        .iface-view-btn.active { background: rgba(59,130,246,0.12); color: var(--primary-500); border-color: var(--primary-300); }
+
+        /* Calendar filters bar */
+        .iface-cal-filters {
+            display: flex; gap: 4px; padding: 10px 20px; border-bottom: 1px solid var(--border-primary);
+            background: var(--bg-tertiary);
+        }
+        .iface-cal-filter-btn {
+            font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+            padding: 4px 12px; border-radius: 999px;
+            border: none; background: transparent;
+            color: var(--text-muted); cursor: pointer;
+        }
+        .iface-cal-filter-btn.active { background: var(--bg-secondary); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+
+        /* Agenda items */
+        .iface-agenda-list { padding: 0; }
+        .iface-agenda-day {
+            padding: 12px 20px 4px;
+            font-size: 12px; font-weight: 600; color: var(--text-muted);
+            background: var(--bg-tertiary); border-bottom: 1px solid var(--border-primary);
+            letter-spacing: .02em;
+        }
+        .iface-agenda-day.today { color: var(--primary-500); }
+        .iface-agenda-item {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 14px 20px; border-bottom: 1px solid var(--border-primary);
+            cursor: pointer; transition: background var(--transition-fast);
+        }
+        .iface-agenda-item:hover { background: var(--bg-hover); }
+        .iface-agenda-time {
+            font-size: 12px; font-weight: 500; color: var(--text-muted);
+            min-width: 70px; padding-top: 1px;
+            font-family: var(--font-mono);
+        }
+        .iface-agenda-bar {
+            width: 3px; border-radius: 2px; min-height: 36px; flex-shrink: 0;
+        }
+        .iface-agenda-bar.blue { background: var(--primary-500); }
+        .iface-agenda-bar.green { background: var(--success-500); }
+        .iface-agenda-bar.amber { background: var(--warning-500); }
+        .iface-agenda-bar.red { background: var(--danger-500); }
+        .iface-agenda-content h4 {
+            font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: 2px;
+        }
+        .iface-agenda-content p { font-size: 12px; color: var(--text-muted); }
+        .iface-agenda-content .agenda-tags { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+
+        /* Breadcrumb */
+        .iface-breadcrumb {
+            font-size: 12px; color: var(--text-muted); margin-bottom: 18px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .iface-breadcrumb a {
+            color: var(--text-muted); text-decoration: none; cursor: pointer;
+        }
+        .iface-breadcrumb a:hover { color: var(--primary-500); }
+        .iface-breadcrumb .sep { color: var(--border-primary); }
+
+        /* Two-column layout for home page */
+        .iface-home-columns {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .iface-action-cards { grid-template-columns: 1fr; }
+            .iface-stats-row { grid-template-columns: repeat(2, 1fr); }
+            .iface-home-columns { grid-template-columns: 1fr; }
+            .iface-events-layout { grid-template-columns: 1fr; }
+        }
 
         .hidden { display: none !important; }
 
@@ -4758,10 +5154,30 @@
         <div class="iface-topbar">
             <div class="iface-topbar-left">
                 <div class="iface-topbar-logo">A</div>
-                <div class="iface-topbar-title">Amino Interface</div>
+                <div class="iface-topbar-title">Amino</div>
+                <nav class="iface-topbar-nav" id="iface-topbar-nav">
+                    <button onclick="InterfaceApp.switchPage('home')" id="iface-nav-home" class="active">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/></svg>
+                        Home
+                    </button>
+                    <button onclick="switchApp('database')" id="iface-nav-database">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                        Database
+                    </button>
+                    <button onclick="InterfaceApp.switchPage('home')" id="iface-nav-interface" class="active">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg>
+                        Interface
+                    </button>
+                    <button onclick="switchApp('settings')" id="iface-nav-settings">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                        Settings
+                    </button>
+                </nav>
             </div>
             <div class="iface-topbar-right">
-                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search..." oninput="InterfaceApp.onGlobalSearch(this.value)">
+                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search clients, events..." oninput="InterfaceApp.onGlobalSearch(this.value)">
+                <span class="iface-synced-badge" id="iface-sync-badge">Synced</span>
+                <div class="iface-topbar-avatar" id="iface-avatar" onclick="switchApp('settings')">RL</div>
                 <button class="iface-edit-toggle" id="iface-edit-toggle" onclick="InterfaceApp.toggleEditMode()">Edit Layout</button>
             </div>
         </div>
@@ -23385,7 +23801,7 @@ var InterfaceApp = (function() {
     //   ALT  = alteration (transform display, compute)
 
     var DEFAULT_SCHEMA = {
-        version: '1',
+        version: '2',
         schemaType: 'law.firm.interface',
         epistemicStatus: 'GIVEN',
         pages: [
@@ -23395,69 +23811,35 @@ var InterfaceApp = (function() {
                 icon: 'home',
                 blocks: [
                     {
-                        id: 'home-quick-links',
-                        type: 'quick-links',
+                        id: 'home-welcome',
+                        type: 'welcome-greeting',
+                        display: {
+                            subtitle: '{tableCount} tables synced'
+                        }
+                    },
+                    {
+                        id: 'home-action-cards',
+                        type: 'action-cards',
                         items: [
-                            { label: 'Home', icon: '\u2302', page: 'home' },
-                            { label: 'Clients', icon: '\uD83D\uDCC1', page: 'clients' },
-                            { label: 'Events', icon: '\uD83D\uDCC5', page: 'events' },
-                            { label: 'Case Notes', icon: '\uD83D\uDCDD', page: 'case-notes' },
-                            { label: 'New Client Event', icon: '\u2795', action: 'new-event' },
-                            { label: 'New Case Note', icon: '\u2795', action: 'new-note' }
+                            { label: 'Database', desc: 'Browse tables, run queries, and explore your Airtable data through the synchronized Matrix layer.', icon: 'database', color: 'blue', action: 'switchApp:database' },
+                            { label: 'Interface', desc: 'Client views, case dashboards, and custom forms \u2014 your workspace for day-to-day operations.', icon: 'interface', color: 'green', action: 'page:clients' },
+                            { label: 'Settings', desc: 'Matrix sync configuration, user management, webhook endpoints, and system preferences.', icon: 'settings', color: 'slate', action: 'switchApp:settings' }
                         ]
                     },
                     {
-                        id: 'home-columns',
-                        type: 'columns',
-                        children: ['home-case-notes', 'home-communications']
+                        id: 'home-stats',
+                        type: 'stats-row'
                     },
                     {
-                        id: 'home-case-notes',
-                        type: 'card-list',
-                        label: 'Latest Case Notes',
-                        source: {
-                            op: 'DES',
-                            tableNamePattern: 'case note',
-                            fallbackTablePattern: 'note',
-                            apiUrl: 'https://xvkq-pq7i-idtl.n7d.xano.io/api:l_gEBOGc/case_notes'
-                        },
-                        display: {
-                            titleField: 'Activity',
-                            subtitleField: 'Description',
-                            metaField: 'Date',
-                            icon: '\uD83D\uDCDD'
-                        },
-                        segment: {
-                            op: 'SEG',
-                            sort: { field: 'Date', dir: 'desc' },
-                            limit: 20
-                        }
-                    },
-                    {
-                        id: 'home-communications',
-                        type: 'card-list',
-                        label: 'Latest Communications',
-                        source: {
-                            op: 'DES',
-                            tableNamePattern: 'communication',
-                            fallbackTablePattern: 'message'
-                        },
-                        display: {
-                            titleField: 'Client Name',
-                            subtitleField: 'Subject',
-                            metaField: null,
-                            icon: '\uD83D\uDCE8'
-                        },
-                        segment: {
-                            op: 'SEG',
-                            sort: { field: '_createdTime', dir: 'desc' },
-                            limit: 20
-                        }
+                        id: 'home-two-col',
+                        type: 'home-columns',
+                        children: ['home-hearings', 'home-recent-clients']
                     },
                     {
                         id: 'home-hearings',
-                        type: 'timeline',
-                        label: 'Daily Hearings & Interviews',
+                        type: 'recent-list',
+                        label: 'Upcoming Hearings',
+                        countLabel: 'Today',
                         source: {
                             op: 'DES',
                             tableNamePattern: 'events',
@@ -23465,15 +23847,40 @@ var InterfaceApp = (function() {
                         },
                         display: {
                             titleField: 'Event Title',
+                            subtitleField: 'Client Name',
                             timeField: 'Hearing Date/Time',
-                            detailFields: ['Client Name', 'ICH Attny', 'MCH Attny', 'Court/Office']
+                            detailFields: ['Court/Office']
                         },
                         segment: {
                             op: 'SEG',
                             filter: { field: 'Hearing Date/Time', op: 'isToday' },
                             sort: { field: 'Hearing Date/Time', dir: 'asc' },
-                            limit: 50
+                            limit: 5
                         }
+                    },
+                    {
+                        id: 'home-recent-clients',
+                        type: 'recent-list',
+                        label: 'Recent Clients',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'client info',
+                            fallbackTablePattern: 'client'
+                        },
+                        display: {
+                            titleField: 'Client Name',
+                            subtitleFields: ['ICH Atty', 'A#'],
+                            statusField: 'File Case Status (from Case Master View // Activities)'
+                        },
+                        segment: {
+                            op: 'SEG',
+                            sort: { field: '_createdTime', dir: 'desc' },
+                            limit: 5
+                        }
+                    },
+                    {
+                        id: 'home-activity',
+                        type: 'activity-log'
                     }
                 ]
             },
@@ -23526,45 +23933,38 @@ var InterfaceApp = (function() {
                 icon: 'events',
                 blocks: [
                     {
-                        id: 'events-quick-links',
-                        type: 'quick-links',
-                        items: [
-                            { label: 'Home', icon: '\u2302', page: 'home' },
-                            { label: 'Clients', icon: '\uD83D\uDCC1', page: 'clients' },
-                            { label: 'Events', icon: '\uD83D\uDCC5', page: 'events' },
-                            { label: 'New Event', icon: '\u2795', action: 'new-event' }
-                        ]
-                    },
-                    {
-                        id: 'events-tabs',
-                        type: 'tab-container',
-                        tabs: [
-                            {
-                                id: 'google-cal-tab',
-                                label: 'Google Calendar',
-                                blockId: 'events-google-calendar'
-                            },
-                            {
-                                id: 'hearings-tab',
-                                label: 'Hearings & Interviews',
-                                blockId: 'events-hearings-timeline'
-                            },
-                            {
-                                id: 'client-events-tab',
-                                label: 'Client Events',
-                                blockId: 'events-client-list'
-                            },
-                            {
-                                id: 'all-events-tab',
-                                label: 'All Events',
-                                blockId: 'events-all-table'
-                            }
-                        ]
+                        id: 'events-agenda',
+                        type: 'events-agenda',
+                        label: 'Events',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'events',
+                            fallbackTablePattern: 'event'
+                        },
+                        display: {
+                            titleField: 'Event Title',
+                            timeField: 'Hearing Date/Time',
+                            clientField: 'Client Name',
+                            detailFields: ['Court/Office', 'Judge'],
+                            attorneyFields: ['ICH Attny', 'MCH Attny']
+                        },
+                        calendarConfig: {
+                            timezone: 'America/New_York',
+                            webhookUrl: 'https://n8n.intelechia.com/webhook/users',
+                            cacheKey: 'rklUserRoster'
+                        },
+                        segment: {
+                            op: 'SEG',
+                            filter: { field: 'Hearing Date/Time', op: 'isFutureOrToday' },
+                            sort: { field: 'Hearing Date/Time', dir: 'asc' },
+                            limit: 200
+                        }
                     },
                     {
                         id: 'events-google-calendar',
                         type: 'google-calendar',
                         label: 'Google Calendar',
+                        _hidden: true,
                         config: {
                             timezone: 'America/New_York',
                             webhookUrl: 'https://n8n.intelechia.com/webhook/users',
@@ -23618,6 +24018,7 @@ var InterfaceApp = (function() {
                         id: 'events-hearings-timeline',
                         type: 'timeline',
                         label: 'Upcoming Hearings & Interviews',
+                        _hidden: true,
                         source: {
                             op: 'DES',
                             tableNamePattern: 'events',
@@ -23639,6 +24040,7 @@ var InterfaceApp = (function() {
                         id: 'events-client-list',
                         type: 'card-list',
                         label: 'Client Events',
+                        _hidden: true,
                         source: {
                             op: 'DES',
                             tableNamePattern: 'events',
@@ -23660,6 +24062,7 @@ var InterfaceApp = (function() {
                         id: 'events-all-table',
                         type: 'data-table',
                         label: 'All Events',
+                        _hidden: true,
                         source: {
                             op: 'DES',
                             tableNamePattern: 'events',
@@ -23689,58 +24092,9 @@ var InterfaceApp = (function() {
                 icon: 'notes',
                 blocks: [
                     {
-                        id: 'case-notes-quick-links',
-                        type: 'quick-links',
-                        items: [
-                            { label: 'Home', icon: '\u2302', page: 'home' },
-                            { label: 'Clients', icon: '\uD83D\uDCC1', page: 'clients' },
-                            { label: 'Events', icon: '\uD83D\uDCC5', page: 'events' },
-                            { label: 'Case Notes', icon: '\uD83D\uDCDD', page: 'case-notes' },
-                            { label: 'New Case Note', icon: '\u2795', action: 'new-note' }
-                        ]
-                    },
-                    {
-                        id: 'case-notes-tabs',
-                        type: 'tab-container',
-                        tabs: [
-                            {
-                                id: 'recent-notes-tab',
-                                label: 'Recent Notes',
-                                blockId: 'case-notes-recent'
-                            },
-                            {
-                                id: 'all-notes-tab',
-                                label: 'All Notes',
-                                blockId: 'case-notes-all-table'
-                            }
-                        ]
-                    },
-                    {
-                        id: 'case-notes-recent',
-                        type: 'card-list',
-                        label: 'Recent Case Notes',
-                        source: {
-                            op: 'DES',
-                            tableNamePattern: 'case note',
-                            fallbackTablePattern: 'note',
-                            apiUrl: 'https://xvkq-pq7i-idtl.n7d.xano.io/api:l_gEBOGc/case_notes'
-                        },
-                        display: {
-                            titleField: 'Activity',
-                            subtitleField: 'Description',
-                            metaField: 'Date',
-                            icon: '\uD83D\uDCDD'
-                        },
-                        segment: {
-                            op: 'SEG',
-                            sort: { field: 'Date', dir: 'desc' },
-                            limit: 50
-                        }
-                    },
-                    {
-                        id: 'case-notes-all-table',
+                        id: 'case-notes-table',
                         type: 'data-table',
-                        label: 'All Case Notes',
+                        label: 'Case Notes',
                         source: {
                             op: 'DES',
                             tableNamePattern: 'case note',
@@ -23753,8 +24107,6 @@ var InterfaceApp = (function() {
                             { field: 'Date', label: 'Date', width: 150 },
                             { field: 'Description', label: 'Description', width: 280 },
                             { field: 'Contact', label: 'Contact', width: 140 },
-                            { field: 'Client_PP_ID', label: 'Client PP ID', width: 120 },
-                            { field: 'matter_id', label: 'Matter ID', width: 120 },
                             { field: 'Created_By', label: 'Created By', width: 120 },
                             { field: 'Due_Date', label: 'Due Date', width: 140 },
                             { field: 'source', label: 'Source', width: 100 },
@@ -24143,19 +24495,34 @@ var InterfaceApp = (function() {
     }
 
     function _formatFieldValue(val) {
-        if (val == null) return '<span style="color:var(--text-disabled)">—</span>';
-        if (Array.isArray(val)) return _esc(val.join(', '));
+        if (val == null) return '<span style="color:var(--text-disabled)">\u2013</span>';
+        if (Array.isArray(val)) {
+            // Filter out raw record IDs
+            var filtered = val.filter(function(v) {
+                return !(typeof v === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(v));
+            });
+            if (!filtered.length && val.length) return '<span style="color:var(--text-muted)">assigned</span>';
+            return _esc(filtered.join(', '));
+        }
         if (typeof val === 'object') {
             if (val.label) return _esc(val.label);
+            if (val.name) return _esc(val.name);
             return _esc(JSON.stringify(val));
         }
-        // Try to detect date strings
+        // Hide raw record IDs
+        if (typeof val === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(val)) {
+            return '<span style="color:var(--text-muted)">assigned</span>';
+        }
+        // Try to detect date strings and format them
         if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
             try {
                 var d = new Date(val);
                 if (!isNaN(d.getTime())) {
-                    return _esc(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
-                        (val.includes('T') ? ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''));
+                    var formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    if (val.includes('T')) {
+                        formatted += ' \u00B7 ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                    }
+                    return _esc(formatted);
                 }
             } catch (e) {}
         }
@@ -24323,6 +24690,660 @@ var InterfaceApp = (function() {
         }
         html += '</div></div></div>';
         return html;
+    }
+
+    // ============ Revamped Block Renderers ============
+
+    function _getUserDisplayName() {
+        var session = typeof _loadSynapseSession === 'function' ? _loadSynapseSession() : null;
+        var userId = session ? session.userId : '';
+        if (typeof _cachedUserProfile !== 'undefined' && _cachedUserProfile && _cachedUserProfile.displayName) {
+            return _cachedUserProfile.displayName;
+        }
+        var name = userId ? userId.replace(/@([^:]+):.*/, '$1') : 'User';
+        return name.charAt(0).toUpperCase() + name.slice(1);
+    }
+
+    function _getUserInitials() {
+        var name = _getUserDisplayName();
+        var parts = name.split(/\s+/);
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        return name.substring(0, 2).toUpperCase();
+    }
+
+    function _getTimeGreeting() {
+        var h = new Date().getHours();
+        if (h < 12) return 'Good morning';
+        if (h < 17) return 'Good afternoon';
+        return 'Good evening';
+    }
+
+    function _renderWelcomeGreeting(block) {
+        var name = _getUserDisplayName();
+        var tableCount = Object.keys(typeof META_TABLES !== 'undefined' ? META_TABLES : {}).length;
+        var subtitle = (block.display && block.display.subtitle) || '';
+        subtitle = subtitle.replace('{tableCount}', tableCount);
+        if (!subtitle) subtitle = tableCount + ' tables synced';
+
+        var html = '<div class="iface-welcome-greeting">';
+        html += '<h1>' + _getTimeGreeting() + ', <span>' + _esc(name) + '</span></h1>';
+        html += '<p>' + _esc(subtitle) + '</p>';
+        html += '</div>';
+        return html;
+    }
+
+    function _renderActionCards(block) {
+        var items = block.items || [];
+        var icons = {
+            database: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
+            interface: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg>',
+            settings: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+        };
+        var html = '<div class="iface-action-cards">';
+        items.forEach(function(item) {
+            var onclick = '';
+            if (item.action && item.action.indexOf('switchApp:') === 0) {
+                onclick = 'switchApp(\'' + _esc(item.action.split(':')[1]) + '\')';
+            } else if (item.action && item.action.indexOf('page:') === 0) {
+                onclick = 'InterfaceApp.switchPage(\'' + _esc(item.action.split(':')[1]) + '\')';
+            }
+            html += '<div class="iface-action-card" onclick="' + onclick + '">';
+            html += '<div class="acard-icon ' + _esc(item.color || 'blue') + '">' + (icons[item.icon] || '') + '</div>';
+            html += '<h3>' + _esc(item.label) + '</h3>';
+            html += '<p>' + _esc(item.desc) + '</p>';
+            html += '<span class="acard-arrow">Open \u2192</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    function _renderStatsRow() {
+        var tableCount = Object.keys(typeof META_TABLES !== 'undefined' ? META_TABLES : {}).length;
+        var roomCount = '--';
+        try {
+            if (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms && SynapseSync.tableRooms.length > 0) {
+                roomCount = SynapseSync.tableRooms.length;
+            }
+        } catch (e) {}
+        var userCount = '--';
+        try {
+            if (typeof _settingsMembers !== 'undefined' && _settingsMembers && _settingsMembers.length > 0) {
+                userCount = _settingsMembers.length;
+            }
+        } catch (e) {}
+
+        var html = '<div class="iface-stats-row">';
+        html += '<div class="iface-stat-cell" onclick="switchApp(\'database\')"><div class="stat-num">' + tableCount + '</div><div class="stat-label">Tables</div></div>';
+        html += '<div class="iface-stat-cell"><div class="stat-num">' + roomCount + '</div><div class="stat-label">Rooms</div></div>';
+        html += '<div class="iface-stat-cell"><div class="stat-num">' + userCount + '</div><div class="stat-label">Users</div></div>';
+        html += '<div class="iface-stat-cell"><div class="stat-num green">99.9%</div><div class="stat-label">Uptime</div></div>';
+        html += '</div>';
+        return html;
+    }
+
+    function _getInitials(name) {
+        if (!name) return '??';
+        var parts = String(name).trim().split(/\s+/);
+        if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        return name.substring(0, 2).toUpperCase();
+    }
+
+    function _formatRelativeTime(dateVal) {
+        if (!dateVal) return '';
+        var d;
+        try { d = new Date(dateVal); } catch (e) { return ''; }
+        if (isNaN(d.getTime())) return '';
+        var now = new Date();
+        var diffMs = d.getTime() - now.getTime();
+        var diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        var eventDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        if (eventDay.getTime() === today.getTime()) return 'today';
+        if (diffDays === 1) return 'tomorrow';
+        if (diffDays > 1 && diffDays <= 30) return 'in ' + diffDays + ' days';
+        if (diffDays > 30) {
+            var months = Math.round(diffDays / 30);
+            return 'in ' + months + ' month' + (months > 1 ? 's' : '');
+        }
+        if (diffDays < 0) return Math.abs(diffDays) + ' days ago';
+        return '';
+    }
+
+    function _formatStatusBadge(status) {
+        if (!status) return '';
+        var s = String(status).toLowerCase();
+        if (s.includes('active') || s.includes('open')) return '<span class="iface-badge iface-badge-green">Active</span>';
+        if (s.includes('pending') || s.includes('review')) return '<span class="iface-badge iface-badge-amber">Pending</span>';
+        if (s.includes('closed') || s.includes('complete')) return '<span class="iface-badge iface-badge-gray">Closed</span>';
+        if (s.includes('overdue') || s.includes('miss')) return '<span class="iface-badge iface-badge-red">Overdue</span>';
+        return '<span class="iface-badge iface-badge-outline">' + _esc(status) + '</span>';
+    }
+
+    function _renderRecentList(block, records) {
+        var display = block.display || {};
+        var html = '<div class="iface-recent-section">';
+        html += '<h2>' + _esc(block.label || 'Recent');
+        if (block.countLabel) html += ' <span class="count">' + _esc(block.countLabel) + '</span>';
+        html += '</h2>';
+        html += '<div class="iface-recent-list">';
+
+        if (!records || !records.length) {
+            html += '<div class="iface-recent-item"><div class="iface-recent-item-left"><div class="iface-ri-info"><p>No records found</p></div></div></div>';
+        } else {
+            records.forEach(function(r) {
+                var f = r.fields || {};
+                var title = _findFieldValue(f, display.titleField) || '';
+                var initials = _getInitials(Array.isArray(title) ? title[0] : title);
+                var subtitle = '';
+                if (display.subtitleField) {
+                    subtitle = _findFieldValue(f, display.subtitleField) || '';
+                } else if (display.subtitleFields) {
+                    var parts = display.subtitleFields.map(function(sf) {
+                        var v = _findFieldValue(f, sf);
+                        return v ? String(Array.isArray(v) ? v.join(', ') : v) : '';
+                    }).filter(Boolean);
+                    subtitle = parts.join(' \u00B7 ');
+                }
+                if (display.detailFields) {
+                    var details = display.detailFields.map(function(df) {
+                        var v = _findFieldValue(f, df);
+                        return v ? String(Array.isArray(v) ? v.join(', ') : v) : '';
+                    }).filter(Boolean);
+                    if (details.length && subtitle) subtitle += ' \u00B7 ' + details.join(' \u00B7 ');
+                    else if (details.length) subtitle = details.join(' \u00B7 ');
+                }
+
+                html += '<div class="iface-recent-item">';
+                html += '<div class="iface-recent-item-left">';
+                html += '<div class="iface-ri-avatar">' + _esc(initials) + '</div>';
+                html += '<div class="iface-ri-info">';
+                html += '<h4>' + _formatFieldValue(Array.isArray(title) ? title[0] : title) + '</h4>';
+                if (subtitle) html += '<p>' + _esc(String(subtitle).substring(0, 80)) + '</p>';
+                html += '</div></div>';
+                html += '<div class="iface-recent-item-right">';
+
+                // Show status badge or time badge
+                if (display.statusField) {
+                    var statusVal = _findFieldValue(f, display.statusField);
+                    if (statusVal) html += _formatStatusBadge(Array.isArray(statusVal) ? statusVal[0] : statusVal);
+                }
+                if (display.timeField) {
+                    var timeVal = _findFieldValue(f, display.timeField);
+                    if (timeVal) {
+                        try {
+                            var td = new Date(timeVal);
+                            if (!isNaN(td.getTime())) {
+                                html += '<span class="iface-badge iface-badge-amber">' +
+                                    td.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '</span>';
+                            }
+                        } catch (e) {}
+                    }
+                }
+                html += '</div></div>';
+            });
+        }
+        html += '</div></div>';
+        return html;
+    }
+
+    function _renderActivityLog() {
+        var html = '<div class="iface-activity-log">';
+        html += '<h2>Recent Activity</h2>';
+
+        // Pull activity items from data layer events if available
+        var items = [];
+        try {
+            if (typeof _activityLog !== 'undefined' && _activityLog && _activityLog.length) {
+                items = _activityLog.slice(0, 5);
+            }
+        } catch (e) {}
+
+        if (!items.length) {
+            // Default activity items
+            var name = _getUserDisplayName();
+            var tableCount = Object.keys(typeof META_TABLES !== 'undefined' ? META_TABLES : {}).length;
+            items = [
+                { dot: 'green', text: '<strong>' + _esc(name) + '</strong> signed in', time: 'just now' },
+                { dot: 'green', text: '<strong>' + _esc(name) + '</strong> synced ' + tableCount + ' tables', time: 'just now' },
+                { dot: 'blue', text: 'System health check passed', time: '3 min ago' }
+            ];
+        }
+
+        items.forEach(function(item) {
+            html += '<div class="iface-log-item">';
+            html += '<span class="iface-log-dot ' + (item.dot || 'blue') + '"></span>';
+            html += '<span>' + (item.text || '') + '</span>';
+            html += '<span class="iface-log-time">' + _esc(item.time || '') + '</span>';
+            html += '</div>';
+        });
+
+        html += '</div>';
+        return html;
+    }
+
+    // ============ Revamped Data Table Renderer ============
+
+    function _formatFieldValueRevamped(val, colField) {
+        if (val == null || val === '') return '<span class="cell-empty">\u2013</span>';
+        if (Array.isArray(val)) {
+            // Check if array contains record IDs (starts with rec)
+            var resolved = val.map(function(v) {
+                if (typeof v === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(v)) {
+                    return null; // Hide raw record IDs
+                }
+                return v;
+            }).filter(function(v) { return v != null; });
+            if (!resolved.length) return '<span class="cell-muted">assigned</span>';
+            return _esc(resolved.join(', '));
+        }
+        if (typeof val === 'object') {
+            if (val.label) return _esc(val.label);
+            if (val.name) return _esc(val.name);
+            return _esc(JSON.stringify(val));
+        }
+        // Resolve record IDs
+        if (typeof val === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(val)) {
+            return '<span class="cell-muted">assigned</span>';
+        }
+        // Format dates
+        if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+            try {
+                var d = new Date(val);
+                if (!isNaN(d.getTime())) {
+                    var formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    if (val.includes('T')) {
+                        formatted += ' \u00B7 ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                    }
+                    var relative = _formatRelativeTime(val);
+                    if (relative) {
+                        return '<div class="date-primary">' + _esc(formatted) + '</div>' +
+                               '<div class="date-relative">' + _esc(relative) + '</div>';
+                    }
+                    return _esc(formatted);
+                }
+            } catch (e) {}
+        }
+        return _esc(String(val));
+    }
+
+    function _formatFileStatus(val) {
+        if (!val) return '<span class="cell-empty">\u2013</span>';
+        var s = String(Array.isArray(val) ? val[0] || '' : val).toLowerCase();
+        var dotClass = 'slate';
+        var label = Array.isArray(val) ? val[0] || '' : String(val);
+        if (s.includes('active') || s.includes('open')) dotClass = 'green';
+        else if (s.includes('pending') || s.includes('review')) dotClass = 'amber';
+        else if (s.includes('overdue') || s.includes('miss')) dotClass = 'red';
+        else if (s.includes('closed') || s.includes('complete') || s.includes('denied')) dotClass = 'slate';
+        return '<span class="status-dot ' + dotClass + '"></span>' + _esc(label);
+    }
+
+    function _renderDataTableRevamped(block, records, pageState, allRecords, tableId) {
+        var columns = _getMirroredColumnsFromView(tableId, block) || block.columns || [];
+        var filters = block.filters || [];
+        var ps = pageState || { page: 0, pageSize: block.segment && block.segment.pageSize || 50 };
+        var total = records.length;
+        var start = ps.page * ps.pageSize;
+        var pageRecords = records.slice(start, start + ps.pageSize);
+
+        var html = '<div class="iface-page-content full-width">';
+
+        // Breadcrumb
+        html += '<div class="iface-breadcrumb">';
+        html += '<a onclick="InterfaceApp.switchPage(\'home\')">Home</a>';
+        html += '<span class="sep">\u203A</span>';
+        html += '<span>' + _esc(block.label || 'Table') + '</span>';
+        html += '</div>';
+
+        // Header with title and actions
+        html += '<div class="iface-clients-header">';
+        html += '<h2>' + _esc(block.label || 'Table') + ' <span class="muted">\u00B7 ' + total + ' records</span></h2>';
+        html += '<div class="iface-clients-header-actions">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<button class="iface-btn-secondary">';
+        html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+        html += ' Export</button>';
+        html += '</div></div>';
+
+        // Filter pills
+        if (filters.length) {
+            html += '<div class="iface-filter-bar">';
+            filters.forEach(function(flt) {
+                var activeVal = (block._activeFilters && block._activeFilters[flt.id]) ? block._activeFilters[flt.id].value : '';
+                var isActive = !!activeVal;
+                html += '<span class="iface-filter-pill' + (isActive ? ' active' : '') + '" onclick="InterfaceApp._showFilterDropdown(\'' + _esc(block.id) + '\', \'' + _esc(flt.id) + '\', this)">';
+                html += '<span class="pill-label">' + _esc(flt.label) + (isActive ? ':' : '') + '</span>';
+                if (isActive) {
+                    html += ' ' + _esc(activeVal);
+                    html += ' <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" onclick="event.stopPropagation();InterfaceApp.onFilterChange(\'' + _esc(block.id) + '\', \'' + _esc(flt.id) + '\', \'\')"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+                } else {
+                    html += ' <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+                }
+                html += '</span>';
+
+                // Hidden select for filter value picking
+                html += '<select class="iface-filter-dropdown" data-filter-id="' + _esc(flt.id) + '" style="display:none;position:absolute;" onchange="InterfaceApp.onFilterChange(\'' + _esc(block.id) + '\', \'' + _esc(flt.id) + '\', this.value);this.style.display=\'none\';">';
+                html += '<option value="">All ' + _esc(flt.label) + '</option>';
+                var vals = {};
+                (allRecords || records).forEach(function(r) {
+                    var v = _findFieldValue(r.fields || {}, flt.field);
+                    if (v != null && v !== '') {
+                        var sv = Array.isArray(v) ? v.join(', ') : String(v);
+                        vals[sv] = true;
+                    }
+                });
+                Object.keys(vals).sort().forEach(function(v) {
+                    var sel = (v === activeVal) ? ' selected' : '';
+                    html += '<option value="' + _esc(v) + '"' + sel + '>' + _esc(v) + '</option>';
+                });
+                html += '</select>';
+            });
+
+            // Clear filters button
+            var hasActiveFilters = filters.some(function(flt) {
+                return block._activeFilters && block._activeFilters[flt.id];
+            });
+            if (hasActiveFilters) {
+                html += '<button class="iface-filter-clear" onclick="InterfaceApp._clearAllFilters(\'' + _esc(block.id) + '\')">Clear filters</button>';
+            }
+            html += '</div>';
+        }
+
+        // Table wrapper
+        html += '<div style="background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:var(--radius-xl);overflow:hidden;">';
+        html += '<div class="iface-table-wrapper"><table class="iface-table-revamp">';
+        html += '<thead><tr>';
+        columns.forEach(function(col) {
+            var sortIndicator = '';
+            if (block.segment && block.segment.sort && block.segment.sort.field === col.field) {
+                sortIndicator = block.segment.sort.dir === 'asc' ? ' \u2191' : ' \u2193';
+            }
+            var w = col.width ? ' style="min-width:' + col.width + 'px;max-width:' + (col.width + 80) + 'px"' : '';
+            html += '<th' + w + ' onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + sortIndicator + '</th>';
+        });
+        html += '</tr></thead><tbody>';
+
+        if (!pageRecords.length) {
+            html += '<tr><td colspan="' + columns.length + '" style="text-align:center;color:var(--text-muted);padding:40px;">No records found</td></tr>';
+        } else {
+            pageRecords.forEach(function(r) {
+                html += '<tr data-record-id="' + _esc(r.recordId) + '">';
+                columns.forEach(function(col) {
+                    var val = _findFieldValue(r.fields || {}, col.field);
+                    var label = (col.label || col.field || '').toLowerCase();
+                    // Special formatting based on column type
+                    if (label.includes('client name') || label === 'name') {
+                        html += '<td><span class="client-name">' + _formatFieldValueRevamped(val, col.field) + '</span></td>';
+                    } else if (label.includes('file status') || label.includes('status')) {
+                        html += '<td>' + _formatFileStatus(val) + '</td>';
+                    } else {
+                        html += '<td>' + _formatFieldValueRevamped(val, col.field) + '</td>';
+                    }
+                });
+                html += '</tr>';
+            });
+        }
+        html += '</tbody></table></div>';
+
+        // Pagination
+        var totalPages = Math.ceil(total / ps.pageSize);
+        if (totalPages > 1) {
+            html += '<div class="iface-pagination">';
+            html += '<span>Showing ' + (start + 1) + '\u2013' + Math.min(start + ps.pageSize, total) + ' of ' + total + '</span>';
+            html += '<div class="iface-pagination-btns">';
+            html += '<button class="iface-page-btn" onclick="InterfaceApp.onPageChange(\'' + _esc(block.id) + '\', ' + (ps.page - 1) + ')"' + (ps.page <= 0 ? ' disabled' : '') + '>\u00AB Prev</button>';
+            html += '<button class="iface-page-btn" onclick="InterfaceApp.onPageChange(\'' + _esc(block.id) + '\', ' + (ps.page + 1) + ')"' + (ps.page >= totalPages - 1 ? ' disabled' : '') + '>Next \u00BB</button>';
+            html += '</div></div>';
+        }
+
+        html += '</div></div>';
+        return html;
+    }
+
+    // ============ Events Agenda Renderer ============
+
+    function _groupEventsByDay(records, timeField) {
+        var groups = {};
+        var today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        records.forEach(function(r) {
+            var val = _findFieldValue(r.fields || {}, timeField);
+            if (!val) return;
+            var d;
+            try { d = new Date(val); } catch (e) { return; }
+            if (isNaN(d.getTime())) return;
+            var dayKey = d.toISOString().split('T')[0];
+            if (!groups[dayKey]) groups[dayKey] = { date: new Date(d.getFullYear(), d.getMonth(), d.getDate()), events: [] };
+            groups[dayKey].events.push(r);
+        });
+
+        return Object.keys(groups).sort().map(function(key) {
+            var g = groups[key];
+            g.isToday = g.date.getTime() === today.getTime();
+            return g;
+        });
+    }
+
+    function _getAgendaBarColor(index) {
+        var colors = ['blue', 'green', 'amber', 'red'];
+        return colors[index % colors.length];
+    }
+
+    function _renderEventsAgenda(block, records) {
+        var display = block.display || {};
+        var timeField = display.timeField || 'Hearing Date/Time';
+        var calConfig = block.calendarConfig || {};
+
+        // Build attorney list from records for sidebar
+        var attorneySet = {};
+        var attorneyFields = display.attorneyFields || ['ICH Attny', 'MCH Attny'];
+        records.forEach(function(r) {
+            var f = r.fields || {};
+            attorneyFields.forEach(function(af) {
+                var v = _findFieldValue(f, af);
+                if (v) {
+                    var names = Array.isArray(v) ? v : [v];
+                    names.forEach(function(n) {
+                        if (n && typeof n === 'string' && !/^rec[A-Za-z0-9]{10,}$/.test(n)) {
+                            attorneySet[n] = true;
+                        }
+                    });
+                }
+            });
+        });
+        var attorneys = Object.keys(attorneySet).sort();
+
+        // Group events by day
+        var dayGroups = _groupEventsByDay(records, timeField);
+        var todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
+
+        var html = '<div class="iface-page-content full-width">';
+
+        // Breadcrumb
+        html += '<div class="iface-breadcrumb">';
+        html += '<a onclick="InterfaceApp.switchPage(\'home\')">Home</a>';
+        html += '<span class="sep">\u203A</span>';
+        html += '<span>Events</span>';
+        html += '</div>';
+
+        html += '<div class="iface-events-layout">';
+
+        // ── Sidebar ──
+        html += '<div class="iface-events-sidebar">';
+        html += '<input type="text" class="iface-events-sidebar-search" placeholder="Search attorneys..." oninput="InterfaceApp._filterEventsSidebar(this.value)">';
+
+        // Active attorneys
+        html += '<div class="iface-sidebar-group-title">Attorneys <span style="font-weight:500;color:var(--text-muted)">' + attorneys.length + '</span></div>';
+        attorneys.forEach(function(name) {
+            html += '<div class="iface-attorney-row active" data-attorney="' + _esc(name) + '" onclick="InterfaceApp._toggleAttorneyFilter(this)">';
+            html += '<div class="iface-attorney-check checked"></div>';
+            html += '<span class="iface-attorney-name-side">' + _esc(name) + '</span>';
+            html += '</div>';
+        });
+
+        // Google Calendar link
+        html += '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-primary);">';
+        html += '<button class="iface-btn-secondary" style="width:100%;justify-content:center;" onclick="InterfaceApp._showGoogleCalendar()">Open Google Calendar</button>';
+        html += '</div>';
+
+        html += '</div>';
+
+        // ── Main area ──
+        html += '<div class="iface-events-main">';
+
+        // Calendar header
+        var dateDisplay = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        html += '<div class="iface-cal-header">';
+        html += '<div class="iface-cal-header-left">';
+        html += '<button class="iface-cal-nav-btn">\u2039</button>';
+        html += '<span class="iface-cal-month">' + _esc(dateDisplay) + '</span>';
+        html += '<button class="iface-cal-nav-btn">\u203A</button>';
+        html += '<button class="iface-cal-nav-btn" style="font-size:11px;width:auto;padding:0 10px;font-weight:500;">Today</button>';
+        html += '</div>';
+        html += '<div class="iface-cal-header-right">';
+        html += '<button class="iface-view-btn active">Agenda</button>';
+        html += '<button class="iface-view-btn" onclick="InterfaceApp._showGoogleCalendar()">Calendar</button>';
+        html += '</div></div>';
+
+        // Event type filters
+        html += '<div class="iface-cal-filters">';
+        html += '<button class="iface-cal-filter-btn active">All Events</button>';
+        html += '<button class="iface-cal-filter-btn">Hearings</button>';
+        html += '<button class="iface-cal-filter-btn">Interviews</button>';
+        html += '<button class="iface-cal-filter-btn">Client Appts</button>';
+        html += '<button class="iface-cal-filter-btn">Deadlines</button>';
+        html += '</div>';
+
+        // Agenda list
+        html += '<div class="iface-agenda-list">';
+
+        if (!dayGroups.length) {
+            html += '<div style="padding:40px 20px;text-align:center;color:var(--text-muted);font-size:13px;">No upcoming events found</div>';
+        } else {
+            dayGroups.forEach(function(group) {
+                var dayLabel = group.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
+                html += '<div class="iface-agenda-day' + (group.isToday ? ' today' : '') + '">';
+                html += (group.isToday ? 'TODAY \u2014 ' : '') + dayLabel;
+                html += '</div>';
+
+                group.events.forEach(function(r, idx) {
+                    var f = r.fields || {};
+                    var title = _findFieldValue(f, display.titleField) || 'Event';
+                    var clientName = _findFieldValue(f, display.clientField || 'Client Name') || '';
+                    var timeVal = _findFieldValue(f, timeField);
+                    var timeStr = '';
+                    if (timeVal) {
+                        try {
+                            var td = new Date(timeVal);
+                            if (!isNaN(td.getTime())) timeStr = td.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                        } catch (e) {}
+                    }
+                    var barColor = _getAgendaBarColor(idx);
+
+                    // Build detail text
+                    var detailParts = [];
+                    (display.detailFields || []).forEach(function(df) {
+                        var v = _findFieldValue(f, df);
+                        if (v && !/^rec[A-Za-z0-9]{10,}$/.test(String(v))) {
+                            detailParts.push(Array.isArray(v) ? v.join(', ') : String(v));
+                        }
+                    });
+                    var detailText = detailParts.join(' \u00B7 ');
+
+                    // Build attorney badges
+                    var attyBadges = [];
+                    attorneyFields.forEach(function(af) {
+                        var v = _findFieldValue(f, af);
+                        if (v) {
+                            var names = Array.isArray(v) ? v : [v];
+                            names.forEach(function(n) {
+                                if (n && !/^rec[A-Za-z0-9]{10,}$/.test(String(n))) {
+                                    attyBadges.push(n);
+                                }
+                            });
+                        }
+                    });
+
+                    html += '<div class="iface-agenda-item">';
+                    html += '<span class="iface-agenda-time">' + _esc(timeStr || '--:--') + '</span>';
+                    html += '<div class="iface-agenda-bar ' + barColor + '"></div>';
+                    html += '<div class="iface-agenda-content">';
+                    var displayTitle = (clientName ? (Array.isArray(clientName) ? clientName[0] : clientName) + ' \u2014 ' : '') +
+                        (Array.isArray(title) ? title[0] : title);
+                    html += '<h4>' + _esc(displayTitle) + '</h4>';
+                    if (detailText) html += '<p>' + _esc(detailText) + '</p>';
+                    if (attyBadges.length) {
+                        html += '<div class="agenda-tags">';
+                        attyBadges.forEach(function(n) {
+                            html += '<span class="iface-badge iface-badge-blue">' + _esc(n) + '</span>';
+                        });
+                        html += '</div>';
+                    }
+                    html += '</div></div>';
+                });
+            });
+        }
+
+        html += '</div></div></div></div>';
+        return html;
+    }
+
+    // Helper: show filter dropdown on pill click
+    function _showFilterDropdown(blockId, filterId, pillEl) {
+        var sel = pillEl.parentElement.querySelector('select[data-filter-id="' + filterId + '"]');
+        if (sel) {
+            sel.style.display = sel.style.display === 'none' ? 'block' : 'none';
+            sel.focus();
+            sel.size = Math.min(Object.keys(sel.options).length, 10);
+        }
+    }
+
+    function _clearAllFilters(blockId) {
+        if (!_schema || !_activePage) return;
+        var page = _schema.pages.find(function(p) { return p.id === _activePage; });
+        if (!page) return;
+        var block = page.blocks.find(function(b) { return b.id === blockId; });
+        if (!block) return;
+        block._activeFilters = {};
+        _tablePaginationState[blockId] = { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
+        renderPage(_activePage);
+    }
+
+    function _filterEventsSidebar(query) {
+        var q = (query || '').toLowerCase();
+        document.querySelectorAll('.iface-attorney-row').forEach(function(row) {
+            var name = (row.querySelector('.iface-attorney-name-side') || {}).textContent || '';
+            row.style.display = (!q || name.toLowerCase().includes(q)) ? '' : 'none';
+        });
+    }
+
+    function _toggleAttorneyFilter(rowEl) {
+        var check = rowEl.querySelector('.iface-attorney-check');
+        if (check) {
+            check.classList.toggle('checked');
+            rowEl.classList.toggle('active');
+        }
+    }
+
+    function _showGoogleCalendar() {
+        // Switch to google calendar tab if events page has tab-container
+        // For now, toggle to google calendar view
+        if (_schema && _activePage === 'events') {
+            var page = _schema.pages.find(function(p) { return p.id === 'events'; });
+            if (page) {
+                var gcalBlock = page.blocks.find(function(b) { return b.type === 'google-calendar'; });
+                if (gcalBlock) {
+                    gcalBlock._hidden = false;
+                    var agendaBlock = page.blocks.find(function(b) { return b.type === 'events-agenda'; });
+                    if (agendaBlock) agendaBlock._hidden = true;
+                    renderPage('events');
+                    return;
+                }
+            }
+        }
+        _showToast('Google Calendar view not available');
     }
 
     function _getMirroredColumnsFromView(tableId, block) {
@@ -24876,17 +25897,33 @@ var InterfaceApp = (function() {
         });
         var rootBlocks = page.blocks.filter(function(b) { return !nestedBlockIds[b.id]; });
 
-        var html = '<div class="iface-page active" data-page-id="' + _esc(page.id) + '">';
         var editClass = _editMode ? ' iface-editing' : '';
-        html = '<div class="iface-page active' + editClass + '" data-page-id="' + _esc(page.id) + '">';
+        // Determine if page content needs the page-content wrapper (home page) or is full-width (clients, events)
+        var isHomePage = page.id === 'home';
+        var html = '<div class="iface-page active' + editClass + '" data-page-id="' + _esc(page.id) + '">';
+
+        if (isHomePage) {
+            html += '<div class="iface-page-content">';
+        }
 
         for (var i = 0; i < rootBlocks.length; i++) {
             var block = rootBlocks[i];
             html += await _renderBlock(block, allBlocksMap);
         }
 
+        if (isHomePage) {
+            html += '</div>';
+        }
+
         html += '</div>';
         container.innerHTML = html;
+
+        // Update topbar nav highlighting
+        _updateTopbarNav(page.id);
+
+        // Update avatar initials
+        var avatarEl = document.getElementById('iface-avatar');
+        if (avatarEl) avatarEl.textContent = _getUserInitials();
 
         // Render child blocks inside tab containers
         var tabContainers = container.querySelectorAll('[data-child-block]');
@@ -24901,17 +25938,70 @@ var InterfaceApp = (function() {
 
         // Initialize Google Calendar blocks (need live DOM)
         allBlocks.forEach(function(b) {
-            if (b.type === 'google-calendar') {
+            if (b.type === 'google-calendar' && !b._hidden) {
                 _gcalInit(b);
             }
         });
     }
 
+    function _updateTopbarNav(pageId) {
+        var navBtns = document.querySelectorAll('.iface-topbar-nav button');
+        navBtns.forEach(function(btn) { btn.classList.remove('active'); });
+        var interfaceBtn = document.getElementById('iface-nav-interface');
+        if (interfaceBtn) interfaceBtn.classList.add('active');
+        if (pageId === 'home') {
+            var homeBtn = document.getElementById('iface-nav-home');
+            if (homeBtn) homeBtn.classList.add('active');
+        }
+    }
+
     async function _renderBlock(block, allBlocksMap) {
+        if (block._hidden) return '';
         var html = '';
         var tableId, records, searchQ, pageState;
 
         switch (block.type) {
+            case 'welcome-greeting':
+                html = _renderWelcomeGreeting(block);
+                break;
+
+            case 'action-cards':
+                html = _renderActionCards(block);
+                break;
+
+            case 'stats-row':
+                html = _renderStatsRow();
+                break;
+
+            case 'home-columns':
+                html = '<div class="iface-home-columns">';
+                if (block.children) {
+                    for (var hc = 0; hc < block.children.length; hc++) {
+                        var hChildBlock = allBlocksMap[block.children[hc]];
+                        if (hChildBlock) html += await _renderBlock(hChildBlock, allBlocksMap);
+                    }
+                }
+                html += '</div>';
+                break;
+
+            case 'recent-list':
+                records = await _getSourceRecords(block.source);
+                searchQ = _blockSearchState[block.id] || '';
+                records = _applySegment(records, block.segment, searchQ, block._activeFilters);
+                html = _renderRecentList(block, records);
+                break;
+
+            case 'activity-log':
+                html = _renderActivityLog();
+                break;
+
+            case 'events-agenda':
+                records = await _getSourceRecords(block.source);
+                searchQ = _blockSearchState[block.id] || '';
+                records = _applySegment(records, block.segment, searchQ, block._activeFilters);
+                html = _renderEventsAgenda(block, records);
+                break;
+
             case 'quick-links':
                 html = _renderQuickLinks(block);
                 break;
@@ -24946,7 +26036,8 @@ var InterfaceApp = (function() {
                 searchQ = _blockSearchState[block.id] || '';
                 records = _applySegment(allTableRecords, block.segment, searchQ, block._activeFilters);
                 pageState = _tablePaginationState[block.id] || { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
-                html = _renderDataTable(block, records, pageState, allTableRecords, tableId);
+                tableId = _resolveTableId(block.source);
+                html = _renderDataTableRevamped(block, records, pageState, allTableRecords, tableId);
                 break;
 
             case 'tab-container':
@@ -25191,6 +26282,10 @@ var InterfaceApp = (function() {
             editBtn.classList.toggle('is-admin', _currentUserRole === 'admin');
         }
 
+        // Set avatar initials
+        var avatarEl = document.getElementById('iface-avatar');
+        if (avatarEl) avatarEl.textContent = _getUserInitials();
+
         if (_activePage) {
             await renderPage(_activePage);
         }
@@ -25262,6 +26357,11 @@ var InterfaceApp = (function() {
         addPage: addPage,
         editPagePermissions: editPagePermissions,
         _showToast: _showToast,
+        _showFilterDropdown: _showFilterDropdown,
+        _clearAllFilters: _clearAllFilters,
+        _filterEventsSidebar: _filterEventsSidebar,
+        _toggleAttorneyFilter: _toggleAttorneyFilter,
+        _showGoogleCalendar: _showGoogleCalendar,
         get schema() { return _schema; },
         get activePage() { return _activePage; },
         get editMode() { return _editMode; }
