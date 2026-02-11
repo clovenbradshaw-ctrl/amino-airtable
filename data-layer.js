@@ -1,7 +1,8 @@
 // ============================================================================
 // Amino Client Data Layer
-// Hydrates current state from n8n webhook API endpoints, stores data in
-// IndexedDB encrypted at rest (AES-GCM), and keeps data in sync via Matrix
+// Treats IndexedDB as the primary read source, and uses n8n webhook APIs
+// only to backfill/sync local state so the on-device mirror stays current.
+// Stores data in IndexedDB encrypted at rest (AES-GCM), and keeps data in sync via Matrix
 // realtime sync or HTTP polling fallback. Builds a tableId <-> matrixRoomId
 // lookup map from /api/tables, joins Matrix rooms, and applies incoming
 // law.firm.record.mutate and law.firm.schema.object events (ALT/INS/NUL) to IndexedDB records.
@@ -297,9 +298,20 @@ var AminoData = (function() {
 
     // ============ API Client ============
 
-    async function apiFetch(path) {
+    async function apiFetch(path, intent) {
         if (!_accessToken) {
             throw new Error('Not authenticated');
+        }
+
+        // Guardrail: APIs are for keeping local IndexedDB in sync/mirror mode,
+        // not for ad-hoc context lookups at read time.
+        var allowedIntents = {
+            metadataSync: true,
+            fullBackfill: true,
+            incrementalBackfill: true
+        };
+        if (!allowedIntents[intent]) {
+            throw new Error('apiFetch requires a sync intent (metadataSync/fullBackfill/incrementalBackfill)');
         }
 
         var MAX_RETRIES = 2;
@@ -379,7 +391,7 @@ var AminoData = (function() {
     // ============ Table Operations ============
 
     async function fetchAndStoreTables() {
-        var data = await apiFetch('/amino-tables');
+        var data = await apiFetch('/amino-tables', 'metadataSync');
         var tables = data.tables || [];
 
         var tx = _db.transaction('tables', 'readwrite');
@@ -609,7 +621,7 @@ var AminoData = (function() {
         console.log('[AminoData] Hydrating table:', tableId);
         var records = [];
         try {
-            var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
+            var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId), 'fullBackfill');
             records = data.records || [];
         } catch (err) {
             console.warn('[AminoData] API hydrate failed for table ' + tableId + ', attempting room rebuild:', err.message || err);
@@ -659,7 +671,8 @@ var AminoData = (function() {
 
         var data = await apiFetch(
             '/amino-records-since?tableId=' + encodeURIComponent(tableId) +
-            '&since=' + encodeURIComponent(since)
+            '&since=' + encodeURIComponent(since),
+            'incrementalBackfill'
         );
         var records = data.records || [];
 
