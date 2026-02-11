@@ -79,7 +79,34 @@ var MatrixClient = (function() {
         }
 
         var response = await fetch(url, opts);
-        var data = await response.json();
+
+        // Check for non-JSON responses (e.g. HTML error pages from reverse proxies)
+        var contentType = response.headers.get('content-type') || '';
+        if (contentType && !contentType.includes('application/json')) {
+            var preview = '';
+            try { preview = (await response.text()).substring(0, 120); } catch (e) {}
+            var err = new Error(
+                'Matrix API returned non-JSON response for ' + path +
+                ' (HTTP ' + response.status + ', content-type: ' + contentType + ').' +
+                (preview.indexOf('<html') !== -1 || preview.indexOf('<!DOCTYPE') !== -1
+                    ? ' The homeserver may be down or the URL may be incorrect.'
+                    : '')
+            );
+            err.httpStatus = response.status;
+            throw err;
+        }
+
+        var data;
+        try {
+            data = await response.json();
+        } catch (parseErr) {
+            var err = new Error(
+                'Invalid JSON from Matrix API for ' + path +
+                ' (HTTP ' + response.status + '). The homeserver may be misconfigured.'
+            );
+            err.httpStatus = response.status;
+            throw err;
+        }
 
         if (!response.ok) {
             var err = new Error(data.error || 'Matrix API error');
