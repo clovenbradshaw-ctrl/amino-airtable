@@ -119,6 +119,7 @@
         html.light-theme .history-change-type.updated { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
         html.light-theme .history-change-type.deleted { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
         html.light-theme .history-actor { background: rgba(217, 119, 6, 0.12); color: #b45309; }
+        html.light-theme .history-device { background: rgba(13, 148, 136, 0.12); color: #0d9488; }
         html.light-theme .history-source { background: rgba(100, 116, 139, 0.12); color: #64748b; }
 
         /* Sync status badges */
@@ -212,6 +213,7 @@
         html.light-theme .profile-sync-history-type.updated { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
         html.light-theme .profile-sync-history-type.deleted { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
         html.light-theme .profile-sync-history-actor { background: rgba(217, 119, 6, 0.12); color: #b45309; }
+        html.light-theme .profile-sync-history-device { background: rgba(13, 148, 136, 0.12); color: #0d9488; }
         html.light-theme .profile-sync-history-source { background: rgba(100, 116, 139, 0.12); color: #64748b; }
         html.light-theme .profile-sync-history-value.old { background: rgba(220, 38, 38, 0.06); color: #991b1b; }
         html.light-theme .profile-sync-history-value.new { background: rgba(22, 163, 74, 0.06); color: #166534; }
@@ -2208,6 +2210,7 @@
         .history-change-type.updated { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
         .history-change-type.deleted { background: rgba(239, 68, 68, 0.15); color: #f87171; }
         .history-actor { font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: var(--radius-sm); background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+        .history-device { font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: var(--radius-sm); background: rgba(20, 184, 166, 0.15); color: #2dd4bf; }
         .history-source { font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: var(--radius-sm); background: rgba(100, 116, 139, 0.15); color: #94a3b8; text-transform: capitalize; }
         .history-timestamp { font-size: 12px; color: var(--text-muted); margin-left: auto; }
         .history-event-id { font-size: 11px; color: var(--text-disabled); font-family: var(--font-mono); }
@@ -2845,6 +2848,7 @@
         .profile-sync-history-type.synced { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
         .profile-sync-history-sender { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: rgba(168, 85, 247, 0.15); color: #c084fc; font-weight: 500; }
         .profile-sync-history-actor { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: rgba(251, 191, 36, 0.15); color: #fbbf24; font-weight: 500; }
+        .profile-sync-history-device { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: rgba(20, 184, 166, 0.15); color: #2dd4bf; font-weight: 500; }
         .profile-sync-history-source { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: rgba(100, 116, 139, 0.15); color: #94a3b8; font-weight: 500; text-transform: capitalize; }
         .profile-sync-history-time { margin-left: auto; font-size: 11px; color: var(--text-muted); }
         .profile-sync-history-values { display: flex; gap: 12px; font-size: 12px; }
@@ -7598,8 +7602,9 @@ function normalizeHistoryEvent(matrixEvent) {
     if (ts && ts < 10000000000) ts = ts * 1000;
     var timestamp = ts || matrixEvent.origin_server_ts;
 
-    // Extract actor
+    // Extract actor and device
     var actor = payload._a || content.actor || matrixEvent.sender;
+    var device = payload._d || content.device || null;
 
     // Normalize field changes — both formats use the same structure
     var changes = {
@@ -7624,6 +7629,7 @@ function normalizeHistoryEvent(matrixEvent) {
         op: op,
         changes: changes,
         actor: actor,
+        device: device,
         timestamp: timestamp,
         source: content.source || 'unknown',
         set: content.set || payload._set || ''
@@ -7719,6 +7725,7 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
             var source = content.source || null;
             var sourceTimestamp = content.sourceTimestamp || null;
             var actor = (payload && payload._a) || null;
+            var device = (payload && payload._d) || content.device || null;
 
             // Extract field operations (structured or flat format)
             var fieldOps = payload.fields || {};
@@ -7733,7 +7740,8 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
                 sender: sender,
                 source: source,
                 sourceTimestamp: sourceTimestamp,
-                actor: actor
+                actor: actor,
+                device: device
             };
 
             if (hasStructuredOps) {
@@ -10623,6 +10631,10 @@ async function processEvents(events, options) {
                 pfields = { INS: pfields.ALT, NUL: pfields.NUL };
             }
 
+            // Extract actor (editor) and device metadata from payload
+            var actor = payload._a || null;
+            var device = payload._d || null;
+
             // Capture field history for INS (insert/create)
             if (pfields.INS) {
                 for (var fieldId in pfields.INS) {
@@ -10634,7 +10646,9 @@ async function processEvents(events, options) {
                         timestamp: timestamp,
                         changeType: 'created',
                         oldValue: null,
-                        newValue: pfields.INS[fieldId]
+                        newValue: pfields.INS[fieldId],
+                        actor: actor,
+                        device: device
                     });
                 }
                 Object.assign(state, pfields.INS);
@@ -10651,7 +10665,9 @@ async function processEvents(events, options) {
                         timestamp: timestamp,
                         changeType: 'updated',
                         oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
-                        newValue: pfields.ALT[fieldId]
+                        newValue: pfields.ALT[fieldId],
+                        actor: actor,
+                        device: device
                     });
                 }
                 Object.assign(state, pfields.ALT);
@@ -10668,7 +10684,9 @@ async function processEvents(events, options) {
                         timestamp: timestamp,
                         changeType: 'synced',
                         oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
-                        newValue: pfields.SYN[fieldId]
+                        newValue: pfields.SYN[fieldId],
+                        actor: actor,
+                        device: device
                     });
                 }
                 Object.assign(state, pfields.SYN);
@@ -10685,7 +10703,9 @@ async function processEvents(events, options) {
                         timestamp: timestamp,
                         changeType: 'deleted',
                         oldValue: state[fieldId] !== undefined ? state[fieldId] : null,
-                        newValue: null
+                        newValue: null,
+                        actor: actor,
+                        device: device
                     });
                     delete state[fieldId];
                 });
@@ -14581,6 +14601,7 @@ function renderHistoryModal() {
         var changeTypeClass = item.changeType || 'updated';
         var timestamp = item.timestamp ? formatTimestamp(item.timestamp) : 'Unknown time';
         var histActor = item.actor || null;
+        var histDevice = item.device || null;
         var histSource = item.source || null;
 
         html += '<div class="history-item">';
@@ -14589,6 +14610,9 @@ function renderHistoryModal() {
         html += '<span class="history-change-type ' + changeTypeClass + '">' + changeTypeClass + '</span>';
         if (histActor) {
             html += '<span class="history-actor">' + esc(histActor) + '</span>';
+        }
+        if (histDevice) {
+            html += '<span class="history-device">' + esc(histDevice) + '</span>';
         }
         if (histSource) {
             html += '<span class="history-source">' + esc(histSource.replace(/_/g, ' ')) + '</span>';
@@ -14672,7 +14696,9 @@ async function revertFieldToHistoryState(tableId, recordId, fieldId, targetValue
         timestamp: Date.now(),
         changeType: 'updated',
         oldValue: currentValue,
-        newValue: targetValue !== undefined ? targetValue : null
+        newValue: targetValue !== undefined ? targetValue : null,
+        actor: MatrixClient.getUserId() || null,
+        device: MatrixClient.getDeviceId() || null
     }]);
 
     try {
@@ -18329,6 +18355,9 @@ async function renderProfileSyncHistory() {
                 html += '<span class="profile-sync-history-actor" title="Changed by">' + esc(actor) + '</span>';
             } else if (senderDisplay) {
                 html += '<span class="profile-sync-history-sender">' + esc(senderDisplay) + '</span>';
+            }
+            if (item.device) {
+                html += '<span class="profile-sync-history-device" title="Device">' + esc(item.device) + '</span>';
             }
             if (source) {
                 html += '<span class="profile-sync-history-source" title="Source: ' + esc(source) + '">' + esc(source.replace(/_/g, ' ')) + '</span>';
