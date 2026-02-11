@@ -12540,7 +12540,6 @@ async function selectTableView(tableId, viewId) {
 
     // Render the table
     await renderTable();
-    syncUrlState();
 }
 
 function updateStatus(msg, isSynced, progress, detail) {
@@ -12823,7 +12822,6 @@ async function showTable(tableId) {
 
     // Now render full table with data
     await renderTable();
-    syncUrlState();
 }
 
 // Update the sidebar to highlight the active view
@@ -13294,7 +13292,6 @@ function prevPage() {
     if (currentPage > 0) {
         currentPage--;
         renderTable();
-        syncUrlState();
     }
 }
 
@@ -13303,7 +13300,6 @@ function nextPage() {
     if (currentPage < totalPages - 1) {
         currentPage++;
         renderTable();
-        syncUrlState();
     }
 }
 
@@ -15219,7 +15215,6 @@ async function showEventsView() {
     if (toolbarViews) toolbarViews.style.display = 'none';
 
     await renderEventsView();
-    syncUrlState();
     // Navigation guard check after async work (renderEventsView handles its own loading state)
 }
 
@@ -15261,7 +15256,6 @@ function switchEventsTab(tab) {
     if (eventsActiveTab === tab) return;
     eventsActiveTab = tab;
     renderEventsView();
-    syncUrlState();
 }
 
 function stopRoomAccessRefresh() {
@@ -15987,19 +15981,16 @@ function togglePayloadExpand(eventId) {
 function setEventsTypeFilter(type) {
     eventsTypeFilter = type;
     renderEventsView();
-    syncUrlState();
 }
 
 function setEventsSetFilter(set) {
     eventsSetFilter = set;
     renderEventsView();
-    syncUrlState();
 }
 
 function setEventsSearch(query) {
     eventsSearchQuery = query;
     renderEventsView();
-    syncUrlState();
 }
 
 // ============ Changelog Tab (drawn from Matrix room data) ============
@@ -18710,7 +18701,6 @@ window.addEventListener('amino:record-updated', function(e) {
         // Clear inline editing cell before full re-render to avoid stale DOM
         _inlineEditingCell = null;
         renderTable();
-        syncUrlState();
     }
 });
 
@@ -18747,7 +18737,6 @@ window.addEventListener('amino:view-delete', function(e) {
         renderFieldsDropdown();
         updateFieldsCount();
         renderTable();
-        syncUrlState();
     }
 
     // Re-render sidebar view list for the affected table
@@ -20135,7 +20124,6 @@ async function selectView(viewId) {
 
     // Re-render table with new view's field configuration
     await renderTable();
-    syncUrlState();
 }
 
 // Render fields dropdown
@@ -21130,7 +21118,6 @@ function handleViewSearch(query) {
     _viewSearchTimer = setTimeout(function() {
         currentSearchQuery = q;
         renderTable();
-        syncUrlState();
     }, 150);
 }
 
@@ -24476,7 +24463,6 @@ var InterfaceApp = (function() {
         _blockSearchState = {};
         _tablePaginationState = {};
         renderPage(pageId);
-        syncUrlState();
     }
 
     function switchTab(blockId, tabId) {
@@ -24496,7 +24482,6 @@ var InterfaceApp = (function() {
         clearTimeout(onBlockSearch._timer);
         onBlockSearch._timer = setTimeout(function() {
             renderPage(_activePage);
-            syncUrlState();
         }, 300);
     }
 
@@ -24514,7 +24499,6 @@ var InterfaceApp = (function() {
         clearTimeout(onGlobalSearch._timer);
         onGlobalSearch._timer = setTimeout(function() {
             renderPage(_activePage);
-            syncUrlState();
         }, 300);
     }
 
@@ -24539,7 +24523,6 @@ var InterfaceApp = (function() {
         // Reset pagination when filter changes
         _tablePaginationState[blockId] = { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
         renderPage(_activePage);
-        syncUrlState();
     }
 
     function onColumnSort(blockId, fieldName) {
@@ -24556,7 +24539,6 @@ var InterfaceApp = (function() {
         }
         _tablePaginationState[blockId] = { page: 0, pageSize: block.segment.pageSize || 50 };
         renderPage(_activePage);
-        syncUrlState();
     }
 
     function onPageChange(blockId, newPage) {
@@ -24565,7 +24547,6 @@ var InterfaceApp = (function() {
         ps.page = newPage;
         _tablePaginationState[blockId] = ps;
         renderPage(_activePage);
-        syncUrlState();
     }
 
     // ============ Admin: Edit Mode ============
@@ -24576,7 +24557,6 @@ var InterfaceApp = (function() {
         var btn = document.getElementById('iface-edit-toggle');
         if (btn) btn.classList.toggle('active', _editMode);
         renderPage(_activePage);
-        syncUrlState();
     }
 
     async function removeBlock(blockId) {
@@ -24592,7 +24572,6 @@ var InterfaceApp = (function() {
         });
         await saveSchema();
         renderPage(_activePage);
-        syncUrlState();
     }
 
     async function addPage() {
@@ -24741,6 +24720,83 @@ function syncUrlState() {
     }
 }
 
+var _urlSyncTimer = null;
+function scheduleUrlStateSync(delayMs) {
+    if (_suppressUrlStateSync) return;
+    clearTimeout(_urlSyncTimer);
+    _urlSyncTimer = setTimeout(syncUrlState, typeof delayMs === 'number' ? delayMs : 80);
+}
+
+var _urlStateHooksInstalled = false;
+function installUrlStateHooks() {
+    if (_urlStateHooksInstalled) return;
+    _urlStateHooksInstalled = true;
+
+    function wrapAsync(name) {
+        var original = window[name];
+        if (typeof original !== 'function' || original.__urlWrapped) return;
+        var wrapped = async function() {
+            var result = await original.apply(this, arguments);
+            scheduleUrlStateSync();
+            return result;
+        };
+        wrapped.__urlWrapped = true;
+        window[name] = wrapped;
+    }
+
+    function wrapSync(name) {
+        var original = window[name];
+        if (typeof original !== 'function' || original.__urlWrapped) return;
+        var wrapped = function() {
+            var result = original.apply(this, arguments);
+            scheduleUrlStateSync();
+            return result;
+        };
+        wrapped.__urlWrapped = true;
+        window[name] = wrapped;
+    }
+
+    // Database navigation/state changers
+    wrapAsync('showTable');
+    wrapAsync('selectTableView');
+    wrapSync('prevPage');
+    wrapSync('nextPage');
+
+    // Events view changers
+    wrapAsync('showEventsView');
+    wrapSync('switchEventsTab');
+    wrapSync('setEventsTypeFilter');
+    wrapSync('setEventsSetFilter');
+    wrapSync('setEventsSearch');
+
+    // View search function is hot-path; only schedule after debounce settles.
+    var originalHandleViewSearch = window.handleViewSearch;
+    if (typeof originalHandleViewSearch === 'function' && !originalHandleViewSearch.__urlWrapped) {
+        var wrappedHandleViewSearch = function() {
+            var result = originalHandleViewSearch.apply(this, arguments);
+            scheduleUrlStateSync(220);
+            return result;
+        };
+        wrappedHandleViewSearch.__urlWrapped = true;
+        window.handleViewSearch = wrappedHandleViewSearch;
+    }
+
+    // Interface app actions are exposed through InterfaceApp public API.
+    if (window.InterfaceApp) {
+        ['switchPage', 'onBlockSearch', 'onGlobalSearch', 'onFilterChange', 'onColumnSort', 'onPageChange'].forEach(function(method) {
+            var original = window.InterfaceApp[method];
+            if (typeof original !== 'function' || original.__urlWrapped) return;
+            var wrapped = function() {
+                var result = original.apply(window.InterfaceApp, arguments);
+                scheduleUrlStateSync(method.indexOf('Search') >= 0 ? 220 : 80);
+                return result;
+            };
+            wrapped.__urlWrapped = true;
+            window.InterfaceApp[method] = wrapped;
+        });
+    }
+}
+
 async function applyUrlState() {
     var params = new URLSearchParams(window.location.search || '');
     var app = params.get('app') || 'home';
@@ -24864,7 +24920,7 @@ function switchApp(appName, options) {
         loadSettingsData();
     }
 
-    if (!options.skipUrlSync) syncUrlState();
+    if (!options.skipUrlSync) scheduleUrlStateSync();
 }
 
 // ============ Home Page Data Population ============
@@ -25924,6 +25980,7 @@ async function toggleRoomAccess(userId, roomId, grant, checkbox) {
 var originalInit = init;
 init = async function() {
     await originalInit();
+    installUrlStateHooks();
     await loadWorkspaces();
     renderWorkspaceTabs();
     updateMatrixStatus();
