@@ -11715,6 +11715,113 @@ async function webhookIncrementalSync() {
     }
 }
 
+// ============ Room Membership ============
+
+// Ensure the current user is a member of all table rooms.
+// Fetches the table list to get room IDs, does a lightweight /sync to check
+// which rooms are already joined, requests bot invites for unjoined rooms,
+// then joins them. Shows a toast with progress.
+async function ensureRoomMembership() {
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken || !session.userId) return;
+
+    try {
+        // 1. Fetch tables with matrix_room_id from the webhook API
+        var tablesData = await webhookFetch('/amino-tables');
+        var tables = (tablesData.tables || []).filter(function(t) { return !!t.matrix_room_id; });
+        if (tables.length === 0) return;
+
+        // 2. Lightweight /sync to discover already-joined rooms
+        var syncFilter = JSON.stringify({
+            room: { timeline: { limit: 0 }, state: { types: [] }, ephemeral: { types: [] }, account_data: { types: [] } },
+            presence: { types: [] },
+            account_data: { types: [] }
+        });
+        var syncRes = await fetch(
+            SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?filter=' + encodeURIComponent(syncFilter) + '&timeout=0',
+            { headers: { 'Authorization': 'Bearer ' + session.accessToken } }
+        );
+        if (!syncRes.ok) {
+            console.warn('[RoomMembership] Sync check failed:', syncRes.status);
+            return;
+        }
+        var syncData = await syncRes.json();
+        var joinedRoomIds = new Set(Object.keys((syncData.rooms && syncData.rooms.join) || {}));
+
+        // 3. Identify rooms the user hasn't joined
+        var unjoined = tables.filter(function(t) { return !joinedRoomIds.has(t.matrix_room_id); });
+        console.log('[RoomMembership] ' + joinedRoomIds.size + ' rooms already joined, ' + unjoined.length + ' to join');
+
+        if (unjoined.length === 0) return;
+
+        // 4. Show progress toast
+        var toast = showToast('saving', 'Joining ' + unjoined.length + ' rooms...', 0);
+
+        // 5. Ask bot to invite us into all rooms
+        try {
+            await fetch(N8N_WEBHOOK_BASE + '/amino-invite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: session.userId })
+            });
+        } catch (inviteErr) {
+            console.warn('[RoomMembership] Invite request failed:', inviteErr.message);
+        }
+
+        // Small delay for invites to propagate
+        await new Promise(function(r) { setTimeout(r, 1000); });
+
+        // 6. Join each room
+        var joined = 0;
+        var failed = 0;
+        for (var i = 0; i < unjoined.length; i++) {
+            var table = unjoined[i];
+            try {
+                var joinRes = await fetch(
+                    SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/join/' + encodeURIComponent(table.matrix_room_id),
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + session.accessToken,
+                            'Content-Type': 'application/json'
+                        },
+                        body: '{}'
+                    }
+                );
+                if (joinRes.ok) {
+                    joined++;
+                } else {
+                    var errBody = await joinRes.json().catch(function() { return {}; });
+                    console.warn('[RoomMembership] Failed to join ' + (table.table_name || table.table_id) + ':', errBody.errcode || joinRes.status);
+                    failed++;
+                }
+            } catch (joinErr) {
+                console.warn('[RoomMembership] Failed to join ' + (table.table_name || table.table_id) + ':', joinErr.message);
+                failed++;
+            }
+
+            // Update toast progress
+            if (toast) {
+                var span = toast.querySelector('span');
+                if (span) span.textContent = 'Joining rooms... ' + (i + 1) + '/' + unjoined.length;
+            }
+        }
+
+        // 7. Dismiss progress toast and show result
+        if (toast) dismissToast(toast);
+
+        if (joined > 0) {
+            showToast('success', 'Joined ' + joined + ' rooms' + (failed > 0 ? ' (' + failed + ' failed)' : ''));
+        } else if (failed > 0) {
+            showToast('error', 'Failed to join ' + failed + ' rooms');
+        }
+
+        console.log('[RoomMembership] Complete: ' + joined + ' joined, ' + failed + ' failed');
+    } catch (err) {
+        console.warn('[RoomMembership] ensureRoomMembership failed:', err);
+    }
+}
+
 // ============ Init ============
 
 async function init() {
@@ -11888,6 +11995,12 @@ async function init() {
     // Start the refresh indicator countdown
     lastSyncTime = Date.now();
     startRefreshCountdown();
+
+    // Ensure the user is a member of all table rooms before starting sync.
+    // On first login the bot-created rooms require an invite; this requests
+    // invites from the bot and then joins each room. Subsequent logins skip
+    // this when the user is already a member of all rooms.
+    await ensureRoomMembership();
 
     // Start Synapse real-time sync (long-poll /sync for room events)
     SynapseSync.start();
