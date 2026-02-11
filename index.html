@@ -18660,7 +18660,13 @@ var CaseNotesAPI = (function() {
         } else if (typeof db !== 'undefined' && db) {
             try {
                 var tx = db.transaction('data', 'readonly');
-                var index = tx.objectStore('data').index('byTable');
+                var dataStore = tx.objectStore('data');
+                var index = null;
+                try {
+                    index = dataStore.index('by_table');
+                } catch (e) {
+                    index = dataStore.index('byTable');
+                }
                 var results = await new Promise(function(resolve, reject) {
                     var req = index.getAll(clientsTableId);
                     req.onsuccess = function() { resolve(req.result || []); };
@@ -23714,7 +23720,12 @@ var InterfaceApp = (function() {
             } else if (typeof db !== 'undefined' && db) {
                 var tx = db.transaction('data', 'readonly');
                 var store = tx.objectStore('data');
-                var index = store.index ? store.index('byTable') : null;
+                var index = null;
+                try {
+                    index = store.index('by_table');
+                } catch (e) {
+                    try { index = store.index('byTable'); } catch (e2) { index = null; }
+                }
                 if (index) {
                     var results = await new Promise(function(resolve, reject) {
                         var req = index.getAll(tableId);
