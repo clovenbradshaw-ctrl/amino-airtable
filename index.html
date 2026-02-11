@@ -2026,6 +2026,45 @@
         .iface-timeline-detail { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
         .iface-timeline-badges { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
 
+        /* Google Calendar embed block */
+        .gcal-container { display: flex; width: 100%; min-height: 860px; }
+        .gcal-sidebar { width: 25%; background: var(--bg-secondary); border-right: 1px solid var(--border-primary); padding: 16px; overflow-y: auto; max-height: 860px; }
+        .gcal-sidebar h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .gcal-main { width: 75%; padding: 16px; overflow-y: auto; }
+        .gcal-active-bar { display: flex; flex-wrap: wrap; gap: 6px; min-height: 42px; border: 2px dashed var(--border-secondary); padding: 8px; border-radius: 8px; background: var(--bg-primary); }
+        .gcal-chip-pool { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .gcal-chip { display: inline-flex; align-items: center; padding: 4px 10px; font-size: 12px; border-radius: 9999px; cursor: grab; user-select: none; transition: opacity 0.15s; font-weight: 500; }
+        .gcal-chip.dragging { opacity: 0.4; }
+        .gcal-bulk-buttons { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+        .gcal-bulk-buttons button {
+            padding: 5px 10px; font-size: 11px; border: 1px solid var(--border-primary);
+            background: var(--bg-primary); color: var(--text-secondary); cursor: pointer;
+            border-radius: var(--radius-sm); transition: all var(--transition-fast);
+        }
+        .gcal-bulk-buttons button:hover { background: var(--primary-500); color: #fff; border-color: var(--primary-500); }
+        .gcal-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+        .gcal-controls button {
+            padding: 6px 12px; font-size: 12px; border: 1px solid var(--border-primary);
+            background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer;
+            border-radius: var(--radius-sm); transition: all var(--transition-fast);
+        }
+        .gcal-controls button:hover { background: var(--primary-500); color: #fff; border-color: var(--primary-500); }
+        .gcal-date-picker { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .gcal-date-picker label { font-size: 12px; color: var(--text-muted); }
+        .gcal-date-picker input[type=date] {
+            padding: 5px 8px; border: 1px solid var(--border-primary); border-radius: var(--radius-sm);
+            font-size: 12px; background: var(--bg-primary); color: var(--text-primary);
+        }
+        .gcal-iframes { display: flex; flex-direction: column; gap: 16px; }
+        .gcal-iframe-wrapper { position: relative; width: 100%; }
+        .gcal-calendar-iframe { width: 100%; height: 800px; border: 0; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .gcal-person-wrapper { flex: 1; display: flex; flex-direction: column; height: 800px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+        .gcal-person-wrapper h4 { margin: 0; padding: 8px 12px; background: var(--primary-500); color: #fff; font-size: 13px; text-align: center; }
+        .gcal-spinner-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.7); display: flex; align-items: center; justify-content: center; z-index: 2; }
+        html:not(.light-theme) .gcal-spinner-overlay { background: rgba(0,0,0,0.4); }
+        .gcal-spinner { width: 28px; height: 28px; border: 4px solid var(--border-primary); border-top: 4px solid var(--primary-500); border-radius: 50%; animation: gcal-spin 1s linear infinite; }
+        @keyframes gcal-spin { to { transform: rotate(360deg); } }
+
         /* Empty state */
         .iface-empty {
             padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px;
@@ -23179,6 +23218,11 @@ var InterfaceApp = (function() {
                         type: 'tab-container',
                         tabs: [
                             {
+                                id: 'google-cal-tab',
+                                label: 'Google Calendar',
+                                blockId: 'events-google-calendar'
+                            },
+                            {
                                 id: 'hearings-tab',
                                 label: 'Hearings & Interviews',
                                 blockId: 'events-hearings-timeline'
@@ -23194,6 +23238,59 @@ var InterfaceApp = (function() {
                                 blockId: 'events-all-table'
                             }
                         ]
+                    },
+                    {
+                        id: 'events-google-calendar',
+                        type: 'google-calendar',
+                        label: 'Google Calendar',
+                        config: {
+                            timezone: 'America/New_York',
+                            webhookUrl: 'https://n8n.intelechia.com/webhook/users',
+                            cacheKey: 'rklUserRoster',
+                            staticGroups: [
+                                { id: 'c_2117d3d5346290d1f9769d5d8a60b1a82da31ecb4080f981cfb0b9f25590a298@group.calendar.google.com', name: 'Hearings & Interviews', grp: 'hear' },
+                                { id: 'c_ae631b2171ddcf4f882cd2e6d11a39e19480876fac7794206fca70e734ab9d1f@group.calendar.google.com', name: 'Client Appointments', grp: 'event' }
+                            ],
+                            fallbackRoster: [
+                                { Name: '\uD83D\uDFE0 AMishra', Email: 'abhinav@rklacylaw.com' },
+                                { Name: '\u26AA Office', Email: 'office@rklacylaw.com' },
+                                { Name: '\u26AB R. Valentin', Email: 'roberto.valentin@rklacylaw.com' },
+                                { Name: '\uD83D\uDD34 RKLacy', Email: 'bob@rklacylaw.com' },
+                                { Name: '\uD83D\uDD35 GCotto', Email: 'guillermo@rklacylaw.com' },
+                                { Name: '\uD83D\uDFE1 NRafi', Email: 'nafisa@rklacylaw.com' },
+                                { Name: '\uD83D\uDFE2 CVega', Email: 'christian@rklacylaw.com' },
+                                { Name: '\uD83D\uDFE3 MVieraLugo', Email: 'mariana@rklacylaw.com' },
+                                { Name: '\uD83D\uDFE4 ABahr', Email: 'andres@asiloymas.com' },
+                                { Name: 'Alexis', Email: 'alexis@rklacylaw.com' },
+                                { Name: 'Ana', Email: 'ana@rklacylaw.com' },
+                                { Name: 'Ariana', Email: 'ariana@rklacylaw.com' },
+                                { Name: 'Ashley', Email: 'ashley@rklacylaw.com' },
+                                { Name: 'Brian', Email: 'brian@rklacylaw.com' },
+                                { Name: 'Carol', Email: 'carol@rklacylaw.com' },
+                                { Name: 'Claudia', Email: 'claudiaa@rklacylaw.com' },
+                                { Name: 'Darma', Email: 'darma@rklacylaw.com' },
+                                { Name: 'Deema', Email: 'deema@rklacylaw.com' },
+                                { Name: 'Diana M.', Email: 'dianag@rklacylaw.com' },
+                                { Name: 'Edith', Email: 'edith@rklacylaw.com' },
+                                { Name: 'Elizabeth', Email: 'elizabethc@rklacylaw.com' },
+                                { Name: 'Gaby', Email: 'gaby@rklacylaw.com' },
+                                { Name: 'Huascar', Email: 'huascar@rklacylaw.com' },
+                                { Name: 'Jairo', Email: 'jairo@rklacylaw.com' },
+                                { Name: 'Jessica', Email: 'jessica@rklacylaw.com' },
+                                { Name: 'Jocelyn', Email: 'jocelyn@rklacylaw.com' },
+                                { Name: 'Kelly', Email: 'kelly@rklacylaw.com' },
+                                { Name: 'Kevin', Email: 'kevin@rklacylaw.com' },
+                                { Name: 'Luisa', Email: 'luisa@rklacylaw.com' },
+                                { Name: 'Lys', Email: 'lys@rklacylaw.com' },
+                                { Name: 'Monique', Email: 'monique@rklacylaw.com' },
+                                { Name: 'Nilson', Email: 'nilson@rklacylaw.com' },
+                                { Name: 'Paula', Email: 'paula@rklacylaw.com' },
+                                { Name: 'Saori', Email: 'saori@rklacylaw.com' },
+                                { Name: 'Sarahy', Email: 'sarahy@rklacylaw.com' },
+                                { Name: 'Sheila', Email: 'sheila@rklacylaw.com' },
+                                { Name: 'Tamy', Email: 'tamara@rklacylaw.com' }
+                            ]
+                        }
                     },
                     {
                         id: 'events-hearings-timeline',
@@ -23866,6 +23963,323 @@ var InterfaceApp = (function() {
         return html;
     }
 
+    // ============ Google Calendar Block ============
+
+    // Scoped state per block instance (keyed by block.id)
+    var _gcalState = {};
+
+    function _renderGoogleCalendar(block) {
+        var bid = _esc(block.id);
+        var html = '';
+        html += '<div class="gcal-container" data-gcal-block="' + bid + '">';
+
+        // Sidebar
+        html += '<div class="gcal-sidebar">';
+        html += '<h4>Active Calendars</h4>';
+        html += '<div class="gcal-active-bar" id="gcal-active-' + bid + '"></div>';
+        html += '<div class="gcal-bulk-buttons">';
+        html += '<button data-gcal-action="add-attorneys" data-gcal-bid="' + bid + '">Add Attorneys</button>';
+        html += '<button data-gcal-action="add-all" data-gcal-bid="' + bid + '">Add All</button>';
+        html += '<button data-gcal-action="clear-all" data-gcal-bid="' + bid + '">Clear All</button>';
+        html += '</div>';
+        html += '<h4 style="margin-top:16px">All Calendars</h4>';
+        html += '<div class="gcal-chip-pool" id="gcal-pool-' + bid + '"></div>';
+        html += '</div>';
+
+        // Main section
+        html += '<div class="gcal-main">';
+        html += '<div class="gcal-date-picker">';
+        html += '<label for="gcal-start-' + bid + '">Start:</label>';
+        html += '<input type="date" id="gcal-start-' + bid + '">';
+        html += '<button data-gcal-action="today" data-gcal-bid="' + bid + '">Today</button>';
+        html += '</div>';
+        html += '<div class="gcal-controls">';
+        html += '<button data-gcal-action="toggle-sidebar" data-gcal-bid="' + bid + '">Hide Sidebar</button>';
+        html += '<button data-gcal-action="toggle-view" data-gcal-bid="' + bid + '">Side-by-Side</button>';
+        html += '<button data-gcal-action="toggle-mode" data-gcal-bid="' + bid + '">Switch View</button>';
+        html += '</div>';
+        html += '<div class="gcal-iframes" id="gcal-iframes-' + bid + '"></div>';
+        html += '</div>';
+
+        html += '</div>';
+        return html;
+    }
+
+    function _gcalInit(block) {
+        var bid = block.id;
+        var cfg = block.config || {};
+        var tz = cfg.timezone || 'America/New_York';
+        var staticGroups = cfg.staticGroups || [];
+        var fallbackRoster = cfg.fallbackRoster || [];
+        var cacheKey = cfg.cacheKey || 'rklUserRoster';
+        var webhookUrl = cfg.webhookUrl || '';
+
+        // Color maps
+        var emojiHex = {'\u26AA':'#ffffff','\uD83D\uDFE2':'#43a047','\uD83D\uDD35':'#1e88e5','\uD83D\uDFE3':'#9c27b0','\uD83D\uDFE1':'#ffd600','\uD83D\uDD34':'#e53935','\uD83D\uDFE0':'#fb8c00','\u26AB':'#000000','\uD83D\uDFE4':'#964B00'};
+        var groupHex = { hear: '#8c24ff', event: '#4285f4' };
+        var isLight = function(hex) { var m = hex.match(/\w\w/g); if (!m) return true; var r = parseInt(m[0],16), g = parseInt(m[1],16), b = parseInt(m[2],16); return (r*0.299+g*0.587+b*0.114)>186; };
+
+        var state = _gcalState[bid] = {
+            allCalendars: [],
+            attorneyColors: {},
+            viewMode: localStorage.getItem('gcal-mode-' + bid) || 'WEEK',
+            sideView: JSON.parse(localStorage.getItem('gcal-side-' + bid) || 'false')
+        };
+
+        function chipColor(cal) {
+            var clr = state.attorneyColors[(cal.id || '').toLowerCase()];
+            if (clr) return emojiHex[clr] || '#6c757d';
+            if (cal.grp) return groupHex[cal.grp] || '#6c757d';
+            return '#6c757d';
+        }
+
+        function digestRows(rows) {
+            var cals = [], colors = {};
+            (rows || []).forEach(function(row) {
+                var email = (row.Email || '').trim().toLowerCase();
+                if (!email) return;
+                var display = (row.Name || '').trim() || email;
+                var emoji;
+                if (row.Colors && emojiHex[row.Colors.trim()]) { emoji = row.Colors.trim(); }
+                else { var first = Array.from(display)[0]; if (emojiHex[first]) emoji = first; }
+                if (emoji) colors[email] = emoji;
+                display = display.replace(emoji || '', '').trim() || email;
+                cals.push({ id: email, name: display });
+            });
+            return { cals: cals, colors: colors };
+        }
+
+        // DOM references
+        var activeBar = document.getElementById('gcal-active-' + bid);
+        var chipPool = document.getElementById('gcal-pool-' + bid);
+        var iframesBox = document.getElementById('gcal-iframes-' + bid);
+        var startInput = document.getElementById('gcal-start-' + bid);
+        if (!activeBar || !chipPool || !iframesBox) return;
+
+        function createChip(cal) {
+            var el = document.createElement('div');
+            el.className = 'gcal-chip';
+            el.textContent = cal.name;
+            el.draggable = true;
+            el.dataset.id = cal.id;
+            paintChip(el, cal);
+            el.ondragstart = function(e) { e.dataTransfer.setData('text/plain', ''); el.classList.add('dragging'); };
+            el.ondragend = function() { el.classList.remove('dragging'); };
+            el.ondblclick = function() { toggleChip(el); };
+            return el;
+        }
+
+        function paintChip(el, cal) {
+            var bg = chipColor(cal);
+            el.style.backgroundColor = bg;
+            el.style.color = isLight(bg) ? '#000' : '#fff';
+            if (bg === '#ffffff') el.style.border = '1px solid #ccc';
+        }
+
+        function toggleChip(chip) {
+            var target = (chip.parentElement === activeBar) ? chipPool : activeBar;
+            target.appendChild(chip);
+            persistSel();
+            updateIframes();
+        }
+
+        function persistSel() {
+            var ids = [];
+            activeBar.querySelectorAll('.gcal-chip').forEach(function(c) { ids.push(c.dataset.id); });
+            localStorage.setItem('gcal-sel-' + bid, JSON.stringify(ids));
+        }
+
+        function loadSel() {
+            try { var raw = localStorage.getItem('gcal-sel-' + bid); return raw ? JSON.parse(raw) : null; } catch(e) { return null; }
+        }
+
+        // Drag-and-drop
+        [activeBar, chipPool].forEach(function(zone) {
+            zone.addEventListener('dragover', function(e) { e.preventDefault(); });
+            zone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                var drag = document.querySelector('.gcal-chip.dragging');
+                if (drag) zone.appendChild(drag);
+                persistSel();
+                updateIframes();
+            });
+        });
+
+        // Calendar iframe rendering
+        var fmtDate = function(s) { return s.replace(/-/g, ''); };
+        var colorParam = function(id) {
+            var cal = state.allCalendars.find(function(c) { return c.id === id; });
+            return '%23' + chipColor(cal || { id: id }).slice(1);
+        };
+
+        function iframeWrap(src) {
+            var wrap = document.createElement('div');
+            wrap.className = 'gcal-iframe-wrapper';
+            wrap.innerHTML = '<div class="gcal-spinner-overlay"><div class="gcal-spinner"></div></div>';
+            var iframe = document.createElement('iframe');
+            iframe.className = 'gcal-calendar-iframe';
+            iframe.loading = 'lazy';
+            iframe.src = src;
+            iframe.onload = function() {
+                var spinner = wrap.querySelector('.gcal-spinner-overlay');
+                if (spinner) spinner.remove();
+            };
+            wrap.appendChild(iframe);
+            return wrap;
+        }
+
+        function updateIframes() {
+            iframesBox.innerHTML = '';
+            var selected = [];
+            activeBar.querySelectorAll('.gcal-chip').forEach(function(c) { selected.push(c.dataset.id); });
+            var mode = state.viewMode;
+            var side = state.sideView;
+            iframesBox.style.flexDirection = side ? 'row' : 'column';
+
+            var start = startInput ? startInput.value : '';
+            var end = '';
+            if (start) {
+                var s = new Date(start);
+                var e = new Date(start);
+                e.setDate(s.getDate() + 4);
+                end = fmtDate(e.toISOString().slice(0, 10));
+            }
+
+            if (!side) {
+                var url = 'https://calendar.google.com/calendar/embed?ctz=' + encodeURIComponent(tz) + '&mode=' + mode + '&showPrint=0';
+                selected.forEach(function(id) {
+                    url += '&src=' + encodeURIComponent(id) + '&color=' + colorParam(id);
+                });
+                if (start && end) url += '&dates=' + fmtDate(start) + '/' + end;
+                iframesBox.appendChild(iframeWrap(url));
+            } else {
+                selected.forEach(function(id) {
+                    var url = 'https://calendar.google.com/calendar/embed?src=' + encodeURIComponent(id) + '&mode=' + mode + '&ctz=' + encodeURIComponent(tz) + '&color=' + colorParam(id);
+                    if (start && end) url += '&dates=' + fmtDate(start) + '/' + end;
+                    var wrap = document.createElement('div');
+                    wrap.className = 'gcal-person-wrapper';
+                    var calObj = state.allCalendars.find(function(c) { return c.id === id; });
+                    wrap.innerHTML = '<h4>' + _esc((calObj || { name: id }).name) + '</h4>';
+                    wrap.appendChild(iframeWrap(url));
+                    iframesBox.appendChild(wrap);
+                });
+            }
+        }
+
+        // Wire control buttons
+        var gcalContainer = document.querySelector('[data-gcal-block="' + bid + '"]');
+        if (gcalContainer) {
+            gcalContainer.querySelectorAll('[data-gcal-action]').forEach(function(btn) {
+                var action = btn.getAttribute('data-gcal-action');
+                btn.addEventListener('click', function() {
+                    if (action === 'add-attorneys') {
+                        chipPool.querySelectorAll('.gcal-chip').forEach(function(ch) {
+                            if (state.attorneyColors[ch.dataset.id]) activeBar.appendChild(ch);
+                        });
+                        persistSel(); updateIframes();
+                    } else if (action === 'add-all') {
+                        chipPool.querySelectorAll('.gcal-chip').forEach(function(ch) { activeBar.appendChild(ch); });
+                        persistSel(); updateIframes();
+                    } else if (action === 'clear-all') {
+                        activeBar.querySelectorAll('.gcal-chip').forEach(function(ch) { chipPool.appendChild(ch); });
+                        persistSel(); updateIframes();
+                    } else if (action === 'toggle-sidebar') {
+                        var sidebar = gcalContainer.querySelector('.gcal-sidebar');
+                        var main = gcalContainer.querySelector('.gcal-main');
+                        if (sidebar.style.display === 'none') {
+                            sidebar.style.display = '';
+                            main.style.width = '75%';
+                            btn.textContent = 'Hide Sidebar';
+                        } else {
+                            sidebar.style.display = 'none';
+                            main.style.width = '100%';
+                            btn.textContent = 'Show Sidebar';
+                        }
+                    } else if (action === 'toggle-view') {
+                        state.sideView = !state.sideView;
+                        localStorage.setItem('gcal-side-' + bid, JSON.stringify(state.sideView));
+                        btn.textContent = state.sideView ? 'Composite View' : 'Side-by-Side';
+                        updateIframes();
+                    } else if (action === 'toggle-mode') {
+                        var seq = ['AGENDA', 'WEEK', 'MONTH'];
+                        var cur = state.viewMode;
+                        state.viewMode = seq[(seq.indexOf(cur) + 1) % seq.length];
+                        localStorage.setItem('gcal-mode-' + bid, state.viewMode);
+                        updateIframes();
+                    } else if (action === 'today') {
+                        if (startInput) {
+                            startInput.value = new Date().toISOString().split('T')[0];
+                            updateIframes();
+                        }
+                    }
+                });
+            });
+        }
+        if (startInput) { startInput.onchange = function() { updateIframes(); }; }
+
+        // Remote sync
+        function syncRemote() {
+            if (!webhookUrl) return;
+            fetch(webhookUrl).then(function(resp) {
+                if (!resp.ok) throw new Error(resp.statusText);
+                return resp.json();
+            }).then(function(data) {
+                localStorage.setItem(cacheKey, JSON.stringify(data));
+                reconcile(data);
+            }).catch(function(err) { console.error('[GCal] Remote sync failed', err); });
+        }
+
+        function reconcile(rows) {
+            var result = digestRows(rows);
+            var remoteCals = result.cals;
+            var remoteColors = result.colors;
+            var remoteIds = new Set(remoteCals.map(function(c) { return c.id; }));
+
+            state.allCalendars = state.allCalendars.filter(function(c) { return c.grp || remoteIds.has(c.id); });
+            gcalContainer.querySelectorAll('.gcal-chip').forEach(function(el) {
+                if (!remoteIds.has(el.dataset.id) && !staticGroups.find(function(g) { return g.id === el.dataset.id; })) el.remove();
+            });
+            remoteCals.forEach(function(c) {
+                if (!state.allCalendars.find(function(x) { return x.id === c.id; })) {
+                    state.allCalendars.push(c);
+                    chipPool.appendChild(createChip(c));
+                }
+            });
+            state.attorneyColors = remoteColors;
+            gcalContainer.querySelectorAll('.gcal-chip').forEach(function(ch) {
+                var cal = state.allCalendars.find(function(c) { return c.id === ch.dataset.id; });
+                paintChip(ch, cal || {});
+            });
+            persistSel(); updateIframes();
+        }
+
+        // Boot: load from cache or fallback, build chips, sync remote
+        var cachedJson = null;
+        try { cachedJson = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch(e) { cachedJson = null; }
+
+        var initial;
+        if (cachedJson) { initial = digestRows(cachedJson); }
+        else { initial = digestRows(fallbackRoster); }
+        state.allCalendars = initial.cals.slice();
+        state.attorneyColors = initial.colors;
+
+        // Add static groups
+        staticGroups.forEach(function(g) { state.allCalendars.push(g); });
+
+        // Build chips
+        var defaultSel = new Set(Object.keys(state.attorneyColors));
+        var storedSel = loadSel();
+        var sel = (storedSel && storedSel.length) ? new Set(storedSel) : defaultSel;
+        state.allCalendars.forEach(function(c) {
+            var chip = createChip(c);
+            if (sel.has(c.id)) { activeBar.appendChild(chip); }
+            else { chipPool.appendChild(chip); }
+        });
+
+        updateIframes();
+        syncRemote();
+    }
+
     // Helper: find a field value by name, using fuzzy matching
     function _findFieldValue(fields, fieldName) {
         if (!fields || !fieldName) return null;
@@ -23941,6 +24355,13 @@ var InterfaceApp = (function() {
                 childEl.innerHTML = await _renderBlock(childBlock, allBlocksMap);
             }
         }
+
+        // Initialize Google Calendar blocks (need live DOM)
+        allBlocks.forEach(function(b) {
+            if (b.type === 'google-calendar') {
+                _gcalInit(b);
+            }
+        });
     }
 
     async function _renderBlock(block, allBlocksMap) {
@@ -23990,6 +24411,10 @@ var InterfaceApp = (function() {
 
             case 'tab-container':
                 html = _renderTabContainer(block, allBlocksMap);
+                break;
+
+            case 'google-calendar':
+                html = _renderGoogleCalendar(block);
                 break;
 
             default:
