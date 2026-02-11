@@ -1503,6 +1503,65 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+        /* Preference toggle rows */
+        .settings-pref-row {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-primary);
+        }
+        .settings-pref-row:last-child { border-bottom: none; }
+        .settings-toggle-label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            gap: 16px;
+        }
+        .settings-toggle-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .settings-toggle-text strong {
+            font-size: 13px;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        .settings-toggle-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .settings-toggle-checkbox {
+            display: none;
+        }
+        .settings-toggle-switch {
+            position: relative;
+            width: 36px;
+            min-width: 36px;
+            height: 20px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: 10px;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .settings-toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            transition: transform 0.2s, background 0.2s;
+        }
+        .settings-toggle-checkbox:checked + .settings-toggle-switch {
+            background: var(--primary-500);
+            border-color: var(--primary-500);
+        }
+        .settings-toggle-checkbox:checked + .settings-toggle-switch::after {
+            transform: translateX(16px);
+            background: #fff;
+        }
         .settings-toast {
             padding: 10px 16px;
             border-radius: var(--radius-md);
@@ -4014,7 +4073,7 @@
     <div id="settings-app">
         <div class="settings-header">
             <h1>Settings</h1>
-            <p>Manage users, roles, and room access for your organization.</p>
+            <p>Manage users, roles, room access, and your personal preferences.</p>
         </div>
 
         <div id="settings-toast" class="settings-toast"></div>
@@ -4022,6 +4081,7 @@
         <div class="settings-tabs">
             <button class="settings-tab active" id="settings-tab-roles" onclick="switchSettingsTab('roles')">Users &amp; Roles</button>
             <button class="settings-tab" id="settings-tab-rooms" onclick="switchSettingsTab('rooms')">Room Access</button>
+            <button class="settings-tab" id="settings-tab-preferences" onclick="switchSettingsTab('preferences')">Preferences</button>
         </div>
 
         <!-- Users & Roles Tab -->
@@ -4086,6 +4146,24 @@
                 </div>
                 <div id="settings-rooms-empty" style="display: none; padding: 16px 0; color: var(--text-muted); font-size: 13px;">
                     Select a user to manage their room access.
+                </div>
+            </div>
+        </div>
+
+        <!-- Preferences Tab -->
+        <div id="settings-panel-preferences" style="display: none;">
+            <div class="settings-section">
+                <h2>Notifications</h2>
+                <p class="settings-section-desc">Control which notifications you receive. These preferences are synced to your account.</p>
+                <div class="settings-pref-row">
+                    <label class="settings-toggle-label" for="pref-offline-sync-toasts">
+                        <span class="settings-toggle-text">
+                            <strong>Offline sync toasts</strong>
+                            <span class="settings-toggle-desc">Show a toast notification when queued offline edits finish syncing</span>
+                        </span>
+                        <input type="checkbox" id="pref-offline-sync-toasts" class="settings-toggle-checkbox" onchange="toggleOfflineSyncToasts(this.checked)">
+                        <span class="settings-toggle-switch"></span>
+                    </label>
                 </div>
             </div>
         </div>
@@ -5983,6 +6061,9 @@ var OfflineSyncQueue = {
 
             SyncStatusFeed.info('Draining offline queue: ' + pending.length + ' edit' + (pending.length !== 1 ? 's' : '') + ' to retry');
 
+            var _syncedCount = 0;
+            var _failedCount = 0;
+
             for (var i = 0; i < pending.length; i++) {
                 var entry = pending[i];
                 entry.status = 'retrying';
@@ -6031,6 +6112,7 @@ var OfflineSyncQueue = {
                         detail: 'Queued edit replayed: ' + entry.recordId
                     });
                     SyncStatusFeed.success('Queued edit synced: ' + entry.recordId);
+                    _syncedCount++;
 
                 } catch (retryErr) {
                     if (entry.retries >= this.MAX_RETRIES) {
@@ -6038,6 +6120,7 @@ var OfflineSyncQueue = {
                         entry.error = retryErr.message;
                         await this._update(entry);
                         SyncStatusFeed.error('Queued edit permanently failed after ' + entry.retries + ' retries: ' + entry.recordId);
+                        _failedCount++;
                     } else {
                         entry.status = 'pending';
                         entry.error = retryErr.message;
@@ -6045,6 +6128,17 @@ var OfflineSyncQueue = {
                     }
                 }
                 this._notify();
+            }
+
+            // Show summary toast if the user has sync toasts enabled
+            if (UserPreferences.get('showOfflineSyncToasts')) {
+                if (_syncedCount > 0 && _failedCount === 0) {
+                    showToast('success', _syncedCount + ' offline edit' + (_syncedCount !== 1 ? 's' : '') + ' synced');
+                } else if (_syncedCount > 0 && _failedCount > 0) {
+                    showToast('warning', _syncedCount + ' edit' + (_syncedCount !== 1 ? 's' : '') + ' synced, ' + _failedCount + ' failed');
+                } else if (_failedCount > 0) {
+                    showToast('error', _failedCount + ' offline edit' + (_failedCount !== 1 ? 's' : '') + ' failed to sync');
+                }
             }
         } finally {
             this._draining = false;
@@ -7506,7 +7600,8 @@ var UserPreferences = (function() {
         gridDensity: 'comfortable',  // 'compact', 'comfortable', 'spacious'
         pageSize: 100,
         dateFormat: 'relative',      // 'relative', 'absolute', 'iso'
-        timezone: null               // null = browser default
+        timezone: null,              // null = browser default
+        showOfflineSyncToasts: true  // show toast when offline-queued edits sync
     };
 
     var _prefs = Object.assign({}, _defaults);
@@ -21394,6 +21489,24 @@ function switchSettingsTab(tab) {
 
     document.getElementById('settings-panel-roles').style.display = tab === 'roles' ? 'block' : 'none';
     document.getElementById('settings-panel-rooms').style.display = tab === 'rooms' ? 'block' : 'none';
+    document.getElementById('settings-panel-preferences').style.display = tab === 'preferences' ? 'block' : 'none';
+
+    if (tab === 'preferences') {
+        initPreferencesTab();
+    }
+}
+
+// ============ Settings: Preferences Tab ============
+
+function initPreferencesTab() {
+    var cb = document.getElementById('pref-offline-sync-toasts');
+    if (cb) {
+        cb.checked = UserPreferences.get('showOfflineSyncToasts') !== false;
+    }
+}
+
+function toggleOfflineSyncToasts(enabled) {
+    UserPreferences.set('showOfflineSyncToasts', enabled);
 }
 
 // ============ Settings: Toast ============
