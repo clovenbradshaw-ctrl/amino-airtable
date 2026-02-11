@@ -132,6 +132,10 @@ assert(exec('OR(FALSE(), TRUE())') === true, 'OR true');
 assert(exec('OR(FALSE(), FALSE())') === false, 'OR false');
 assert(exec('NOT(TRUE())') === false, 'NOT true');
 assert(exec('NOT(FALSE())') === true, 'NOT false');
+assert(exec('REGEX_MATCH("abc-123", "[a-z]+-[0-9]+")') === true, 'REGEX_MATCH true');
+assert(exec('REGEX_REPLACE("(555) 123-4567", "[^0-9]", "")') === '5551234567', 'REGEX_REPLACE strips punctuation');
+assert(exec('ISERROR(ERROR())') === true, 'ISERROR catches error object');
+assert(exec('ISERROR(123)') === false, 'ISERROR false for scalar');
 
 {
   const result = exec('SWITCH({Status}, "draft", 1, "review", 2, "final", 3, 0)', { Status: 'review' });
