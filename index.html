@@ -5115,12 +5115,14 @@ function openTableInTab(tableId, tableName, icon) {
         // Update name if changed
         if (tableName) existing.tableName = tableName;
         renderTabBar();
+        if (_urlStateBootstrapped) persistUrlState();
         return;
     }
     var tab = { id: generateTabId(), tableId: tableId, tableName: tableName || tableId, icon: icon || '' };
     openTabs.push(tab);
     activeTabId = tab.id;
     renderTabBar();
+    if (_urlStateBootstrapped) persistUrlState();
 }
 
 var _tabNavInProgress = false;
@@ -5130,6 +5132,7 @@ function activateTab(tabId) {
     if (activeTabId === tabId && !_tabNavInProgress) { renderTabBar(); return; }
     activeTabId = tabId;
     renderTabBar();
+    if (_urlStateBootstrapped) persistUrlState();
     // Prevent re-entrant calls from showTable -> openTableInTab -> activateTab
     if (_tabNavInProgress) return;
     _tabNavInProgress = true;
@@ -5159,6 +5162,7 @@ function closeTab(tabId, evt) {
         }
     }
     renderTabBar();
+    if (_urlStateBootstrapped) persistUrlState();
 }
 
 function openNewTab() {
@@ -12762,6 +12766,8 @@ async function showTable(tableId) {
     invalidateFilterCache(); // New table — stale cache
     clearRecordCache();      // New table — stale records
 
+    if (_urlStateBootstrapped) persistUrlState();
+
     // Track as recently accessed table
     addToRecentTables(tableId);
 
@@ -13341,6 +13347,7 @@ function updatePagination() {
 function prevPage() {
     if (currentPage > 0) {
         currentPage--;
+        if (_urlStateBootstrapped) persistUrlState();
         renderTable();
     }
 }
@@ -13349,6 +13356,7 @@ function nextPage() {
     var totalPages = Math.ceil(totalRecords / PAGE_SIZE);
     if (currentPage < totalPages - 1) {
         currentPage++;
+        if (_urlStateBootstrapped) persistUrlState();
         renderTable();
     }
 }
@@ -20254,6 +20262,8 @@ async function selectView(viewId) {
     invalidateVisibleFieldsCache(); // view changed — stale field order
     closeAllDropdowns();
 
+    if (_urlStateBootstrapped) persistUrlState();
+
     // Load and apply view filters, sorts, groupBy, and colorBy for the new view
     if (currentTable) {
         var viewConfig = getViewFiltersAndSorts(currentTable, viewId);
@@ -20919,6 +20929,7 @@ function updateFilterCount() {
 // Apply filters (re-render table)
 async function applyFilters() {
     updateFilterCount();
+    if (_urlStateBootstrapped) persistUrlState();
     await renderTable();
     // Save filters to current view
     if (currentTable && currentView) {
@@ -21274,6 +21285,7 @@ function handleViewSearch(query) {
     var q = query.toLowerCase();
     _viewSearchTimer = setTimeout(function() {
         currentSearchQuery = q;
+        if (_urlStateBootstrapped) persistUrlState();
         renderTable();
     }, 150);
 }
@@ -24716,6 +24728,7 @@ var InterfaceApp = (function() {
         _blockSearchState = {};
         _tablePaginationState = {};
         renderPage(pageId);
+        if (_urlStateBootstrapped) persistUrlState();
     }
 
     function switchTab(blockId, tabId) {
@@ -24735,6 +24748,7 @@ var InterfaceApp = (function() {
         clearTimeout(onBlockSearch._timer);
         onBlockSearch._timer = setTimeout(function() {
             renderPage(_activePage);
+            if (_urlStateBootstrapped) persistUrlState();
         }, 300);
     }
 
@@ -24752,6 +24766,7 @@ var InterfaceApp = (function() {
         clearTimeout(onGlobalSearch._timer);
         onGlobalSearch._timer = setTimeout(function() {
             renderPage(_activePage);
+            if (_urlStateBootstrapped) persistUrlState();
         }, 300);
     }
 
@@ -24776,6 +24791,7 @@ var InterfaceApp = (function() {
         // Reset pagination when filter changes
         _tablePaginationState[blockId] = { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
         renderPage(_activePage);
+        if (_urlStateBootstrapped) persistUrlState();
     }
 
     function onColumnSort(blockId, fieldName) {
@@ -24792,6 +24808,7 @@ var InterfaceApp = (function() {
         }
         _tablePaginationState[blockId] = { page: 0, pageSize: block.segment.pageSize || 50 };
         renderPage(_activePage);
+        if (_urlStateBootstrapped) persistUrlState();
     }
 
     function onPageChange(blockId, newPage) {
@@ -24800,6 +24817,7 @@ var InterfaceApp = (function() {
         ps.page = newPage;
         _tablePaginationState[blockId] = ps;
         renderPage(_activePage);
+        if (_urlStateBootstrapped) persistUrlState();
     }
 
     // ============ Admin: Edit Mode ============
@@ -24913,6 +24931,25 @@ var InterfaceApp = (function() {
         console.log('[Interface] Initialized with', _schema.pages.length, 'pages');
     }
 
+    function setUrlState(state) {
+        if (!state) return;
+        if (state.page) _activePage = state.page;
+        if (typeof state.search === 'string' && state.search) {
+            _globalSearchQuery = state.search;
+            _blockSearchState = _blockSearchState || {};
+            if (_schema && _activePage) {
+                var page = _schema.pages.find(function(p) { return p.id === _activePage; });
+                if (page) {
+                    page.blocks.forEach(function(b) { _blockSearchState[b.id] = state.search; });
+                }
+            }
+        }
+    }
+
+    function getUrlState() {
+        return { page: _activePage || '', search: _globalSearchQuery || '' };
+    }
+
     // ============ Public API ============
 
     return {
@@ -24927,6 +24964,8 @@ var InterfaceApp = (function() {
         onFilterChange: onFilterChange,
         onColumnSort: onColumnSort,
         onPageChange: onPageChange,
+        setUrlState: setUrlState,
+        getUrlState: getUrlState,
         toggleEditMode: toggleEditMode,
         removeBlock: removeBlock,
         addPage: addPage,
@@ -24946,6 +24985,69 @@ var _settingsOrgSpaceId = null;
 var _settingsMembers = []; // Cached member list for settings
 var _settingsRooms = []; // Cached room list (tables with matrix_room_id)
 var _settingsPermissionGroups = { groups: [], assignments: {} }; // Shared room permission structures
+var _urlStateBootstrapped = false;
+
+function _setUrlParam(params, key, value) {
+    if (value == null || value === '') params.delete(key);
+    else params.set(key, String(value));
+}
+
+function _encodeUrlJson(value) {
+    try { return encodeURIComponent(JSON.stringify(value)); } catch (e) { return ''; }
+}
+
+function _decodeUrlJson(raw, fallback) {
+    if (!raw) return fallback;
+    try { return JSON.parse(decodeURIComponent(raw)); } catch (e) { return fallback; }
+}
+
+function persistUrlState() {
+    if (typeof window === 'undefined' || !window.history || !window.location) return;
+    var params = new URLSearchParams(window.location.search || '');
+    _setUrlParam(params, 'app', _currentApp || 'home');
+
+    if (_currentApp === 'database') {
+        _setUrlParam(params, 'table', currentTable || '');
+        _setUrlParam(params, 'view', currentView || '');
+        _setUrlParam(params, 'search', currentSearchQuery || '');
+        _setUrlParam(params, 'page', currentPage || 0);
+        _setUrlParam(params, 'filters', currentFilters && currentFilters.length ? _encodeUrlJson(currentFilters) : '');
+    } else {
+        params.delete('table');
+        params.delete('view');
+        params.delete('search');
+        params.delete('page');
+        params.delete('filters');
+    }
+
+    if (_currentApp === 'interface') {
+        var ifaceState = (typeof InterfaceApp !== 'undefined' && InterfaceApp.getUrlState)
+            ? InterfaceApp.getUrlState()
+            : null;
+        _setUrlParam(params, 'ifacePage', ifaceState && ifaceState.page ? ifaceState.page : '');
+        _setUrlParam(params, 'ifaceSearch', ifaceState && ifaceState.search ? ifaceState.search : '');
+    } else {
+        params.delete('ifacePage');
+        params.delete('ifaceSearch');
+    }
+
+    var next = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+    window.history.replaceState(null, '', next);
+}
+
+function getUrlState() {
+    var params = new URLSearchParams(window.location.search || '');
+    return {
+        app: params.get('app') || '',
+        table: params.get('table') || '',
+        view: params.get('view') || '',
+        search: params.get('search') || '',
+        page: parseInt(params.get('page') || '0', 10) || 0,
+        filters: _decodeUrlJson(params.get('filters'), []),
+        ifacePage: params.get('ifacePage') || '',
+        ifaceSearch: params.get('ifaceSearch') || ''
+    };
+}
 
 function switchApp(appName) {
     _currentApp = appName;
@@ -24987,6 +25089,8 @@ function switchApp(appName) {
         stApp.classList.add('visible');
         loadSettingsData();
     }
+
+    if (_urlStateBootstrapped) persistUrlState();
 }
 
 // ============ Home Page Data Population ============
@@ -26333,8 +26437,37 @@ init = async function() {
     showAppNav();
     await detectAndStoreUserRole();
 
-    // Show home page as the default landing after init
-    switchApp('home');
+    var state = getUrlState();
+    _urlStateBootstrapped = true;
+
+    if (state.table && META_TABLES[state.table]) {
+        switchApp('database');
+        await showTable(state.table);
+        if (state.view) await selectView(state.view);
+        if (Array.isArray(state.filters)) {
+            currentFilters = state.filters;
+            updateFilterCount();
+        }
+        if (typeof state.search === 'string') {
+            currentSearchQuery = state.search;
+            var si = document.getElementById('view-search-input');
+            if (si) si.value = state.search;
+        }
+        if (typeof state.page === 'number' && state.page >= 0) currentPage = state.page;
+        await renderTable();
+    } else if (state.app === 'interface') {
+        switchApp('interface');
+        InterfaceApp.setUrlState({ page: state.ifacePage, search: state.ifaceSearch });
+        if (InterfaceApp.activePage) await InterfaceApp.renderPage(InterfaceApp.activePage);
+    } else if (state.app === 'settings') {
+        switchApp('settings');
+    } else if (state.app === 'database') {
+        switchApp('database');
+    } else {
+        switchApp('home');
+    }
+
+    persistUrlState();
 };
 
 // Keyboard handler for modals (Escape to close)
