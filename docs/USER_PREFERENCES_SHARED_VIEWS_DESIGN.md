@@ -220,7 +220,8 @@ init()
 |-----------|-------|---------|
 | `law.firm.user.preferences` | User preferences | Account data |
 | `law.firm.user.views` | Private view list | Account data |
-| `law.firm.view.share` | Shared view config | Room state (org space) |
+| `law.firm.view.share` | Shared view config (soft-deleted when `_deleted: true`) | Room state (org space) |
+| `law.firm.view.delete` | View deletion/restoration audit trail (op: NUL/INS) | Timeline (org space) |
 
 ---
 
@@ -233,6 +234,125 @@ init()
 | Shared view tampering | Matrix room state events are governed by power levels; only staff+ can send `law.firm.view.share` events |
 | Offline access | Local IndexedDB cache provides offline access to last-synced state |
 | Stale shared views | On each boot, shared views are re-fetched from org space state events |
+
+---
+
+## View Deletion & Restoration
+
+### Overview
+
+View deletion is tracked in Matrix as an auditable, reversible operation using EO operators. When a view is deleted, a timeline event is recorded in the org space and the deletion propagates to all viewers of that view via Matrix sync. Because the operation is recorded as an EO operator, it can be reversed by an operator (undo).
+
+### EO Operator Model
+
+View deletion uses the same EO operator pattern as record mutations:
+
+| Operation | EO Operator | Description |
+|-----------|------------|-------------|
+| Delete view | `NUL` | Removes the view; snapshot preserved for undo |
+| Restore view | `INS` | Re-inserts the view from its snapshot |
+
+### Event Structure
+
+**Timeline event** (auditable history in org space):
+
+```javascript
+// law.firm.view.delete
+{
+  tableId: string,
+  viewId: string,
+  op: 'NUL' | 'INS',        // EO operator
+  deletedBy: string,          // Matrix userId (on NUL)
+  restoredBy: string,         // Matrix userId (on INS)
+  timestamp: number,
+  viewSnapshot: { ... }       // Full view config for restoration
+}
+```
+
+**State event update** (soft-delete on `law.firm.view.share`):
+
+On deletion, the existing state event is updated with soft-delete markers rather than being removed, preserving the state key for in-place restoration:
+
+```javascript
+{
+  ...existingViewConfig,
+  _deleted: true,
+  _deletedBy: '@alice:amino.im',
+  _deletedAt: 1706745600000
+}
+```
+
+On restoration, the soft-delete markers are removed and the original view config is republished.
+
+### Propagation
+
+View deletions propagate to all viewers via a dedicated Matrix sync loop that monitors the org space for `law.firm.view.delete` events. When a deletion or restoration event is received:
+
+1. The event is processed by `processViewDeleteEvent()`
+2. A `amino:view-delete` or `amino:view-restore` CustomEvent is dispatched
+3. The UI reacts by removing/restoring the view in the sidebar
+
+The originating client also receives an immediate local event (with `source: 'local'`) so the UI can update without waiting for the sync round-trip.
+
+### API
+
+```javascript
+// Start monitoring org space for view deletion events
+await AminoData.startViewDeletionSync(orgSpaceId)
+
+// Delete a view (records NUL in Matrix, emits amino:view-delete)
+await AminoData.deleteView(tableId, viewId, viewSnapshot)
+
+// Restore a deleted view (records INS in Matrix, emits amino:view-restore)
+await AminoData.restoreView(tableId, viewId, viewSnapshot)
+
+// Fetch deletion/restoration history
+var history = await AminoData.getViewDeletionHistory({ limit: 50 })
+
+// Stop monitoring
+AminoData.stopViewDeletionSync()
+```
+
+### UI Events
+
+| Event | Dispatched When | Detail Fields |
+|-------|----------------|---------------|
+| `amino:view-delete` | View is deleted (local or remote) | `eventId, sender, timestamp, tableId, viewId, deletedBy, viewSnapshot, source` |
+| `amino:view-restore` | View is restored (local or remote) | `eventId, sender, timestamp, tableId, viewId, restoredBy, viewSnapshot, source` |
+
+### Data Flow: Deleting a View
+
+```
+User clicks "Delete View"
+  → AminoData.deleteView(tableId, viewId, viewSnapshot)
+    → MatrixClient.deleteView()
+      → Sends law.firm.view.delete timeline event (op: NUL)
+      → Updates law.firm.view.share state event (_deleted: true)
+    → Dispatches amino:view-delete (source: 'local')
+  → UI removes view from sidebar immediately
+
+Other clients (via Matrix sync):
+  → _runViewSyncLoop() receives law.firm.view.delete event
+  → processViewDeleteEvent() dispatches amino:view-delete
+  → UI removes view from sidebar
+```
+
+### Data Flow: Restoring a View
+
+```
+Operator clicks "Undo" / "Restore View"
+  → AminoData.restoreView(tableId, viewId, viewSnapshot)
+    → MatrixClient.restoreView()
+      → Sends law.firm.view.delete timeline event (op: INS)
+      → Republishes law.firm.view.share state event (clean)
+    → Dispatches amino:view-restore (source: 'local')
+  → UI re-adds view to sidebar immediately
+
+Other clients (via Matrix sync):
+  → _runViewSyncLoop() receives law.firm.view.delete event (op: INS)
+  → processViewDeleteEvent() dispatches amino:view-restore
+  → UI re-adds view to sidebar
+```
 
 ---
 
