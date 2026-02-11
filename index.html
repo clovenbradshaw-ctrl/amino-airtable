@@ -10967,17 +10967,24 @@ var SynapseSync = {
                 }
             }
 
-            this.tableRooms = tableRooms;
-            this.roomToTable = {};
-            for (var tr of tableRooms) {
-                this.roomToTable[tr.roomId] = tr.tableId;
+            if (tableRooms.length > 0) {
+                // State-event discovery found rooms — use them
+                this.tableRooms = tableRooms;
+                this.roomToTable = {};
+                for (var tr of tableRooms) {
+                    this.roomToTable[tr.roomId] = tr.tableId;
+                }
+            } else if (this.tableRooms.length > 0) {
+                // No rooms found via state events, but API-populated mappings exist —
+                // keep them (bot-created rooms may lack state events)
+                console.log('[SynapseSync] No rooms found via state events, keeping ' + this.tableRooms.length + ' API-populated mappings');
             }
 
-            console.log('[SynapseSync] Discovered ' + tableRooms.length + ' table rooms');
-            return tableRooms;
+            console.log('[SynapseSync] Discovered ' + this.tableRooms.length + ' table rooms');
+            return this.tableRooms;
         } catch (err) {
             console.error('[SynapseSync] Room discovery failed:', err);
-            return [];
+            return this.tableRooms || [];
         }
     },
 
@@ -11730,6 +11737,19 @@ async function ensureRoomMembership() {
         var tablesData = await webhookFetch('/amino-tables');
         var tables = (tablesData.tables || []).filter(function(t) { return !!t.matrix_room_id; });
         if (tables.length === 0) return;
+
+        // Populate SynapseSync table↔room mappings from the authoritative API source.
+        // discoverTableRooms() relies on state events (law.firm.schema.table,
+        // law.firm.vault.metadata) that may not exist in bot-created rooms.
+        // The webhook API is the canonical source for table↔room associations.
+        SynapseSync.tableRooms = tables.map(function(t) {
+            return { tableId: t.table_id, roomId: t.matrix_room_id, name: t.table_name || t.table_id };
+        });
+        SynapseSync.roomToTable = {};
+        for (var k = 0; k < tables.length; k++) {
+            SynapseSync.roomToTable[tables[k].matrix_room_id] = tables[k].table_id;
+        }
+        console.log('[RoomMembership] Populated ' + SynapseSync.tableRooms.length + ' table↔room mappings from API');
 
         // 2. Lightweight /sync to discover already-joined rooms
         var syncFilter = JSON.stringify({
