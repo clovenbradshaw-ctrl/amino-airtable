@@ -130,6 +130,7 @@
         html.light-theme .sync-history-table .sync-type-badge.full { background: rgba(124, 58, 237, 0.10); color: #7c3aed; }
         html.light-theme .sync-history-table .sync-type-badge.snapshot { background: rgba(22, 163, 74, 0.10); color: #15803d; }
         html.light-theme .sync-history-table .sync-type-badge.error { background: rgba(220, 38, 38, 0.10); color: #dc2626; }
+        html.light-theme .sync-history-table .sync-type-badge.edit { background: rgba(14, 165, 233, 0.10); color: #0284c7; }
         html.light-theme .sync-result-badge.success { background: rgba(22, 163, 74, 0.10); color: #15803d; }
         html.light-theme .sync-result-badge.error { background: rgba(220, 38, 38, 0.10); color: #dc2626; }
 
@@ -1377,6 +1378,7 @@
         .sync-history-table .sync-type-badge.full { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
         .sync-history-table .sync-type-badge.snapshot { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
         .sync-history-table .sync-type-badge.error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .sync-history-table .sync-type-badge.edit { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
         .sync-result-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-sm); }
         .sync-result-badge.success { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
         .sync-result-badge.error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
@@ -4540,9 +4542,18 @@ var SyncHistory = {
         var lastSync = this.entries.find(e => e.type !== 'poll' && e.result === 'success');
         var lastPoll = this.entries.find(e => e.type === 'poll');
 
+        var edits = this.entries.filter(e => e.type === 'edit');
+        var successfulEdits = edits.filter(e => e.result === 'success');
+        var failedEdits = edits.filter(e => e.result === 'error');
+        var totalFieldsEdited = successfulEdits.reduce((sum, e) => sum + (e.eventsFound || 0), 0);
+
         return {
-            totalSyncs: this.entries.filter(e => e.type !== 'poll').length,
+            totalSyncs: this.entries.filter(e => e.type !== 'poll' && e.type !== 'edit').length,
             totalPolls: this.entries.filter(e => e.type === 'poll').length,
+            totalEdits: edits.length,
+            successfulEdits: successfulEdits.length,
+            failedEdits: failedEdits.length,
+            totalFieldsEdited: totalFieldsEdited,
             last5minOps: last5min.length,
             lastHourOps: lastHour.length,
             totalEventsProcessed: totalEvents,
@@ -10469,6 +10480,12 @@ async function renderSyncStatusView() {
     html += '</div>';
 
     html += '<div class="sync-status-card">';
+    html += '<div class="card-label">Local Edits Propagated</div>';
+    html += '<div class="card-value">' + stats.successfulEdits.toLocaleString() + '</div>';
+    html += '<div class="card-sub">' + stats.totalFieldsEdited + ' field' + (stats.totalFieldsEdited !== 1 ? 's' : '') + ' changed' + (stats.failedEdits > 0 ? ', ' + stats.failedEdits + ' failed' : '') + '</div>';
+    html += '</div>';
+
+    html += '<div class="sync-status-card">';
     html += '<div class="card-label">Last Sync</div>';
     html += '<div class="card-value" style="font-size: 16px;">' + (stats.lastSyncTime ? formatSyncTimestamp(stats.lastSyncTime) : 'Never') + '</div>';
     html += '<div class="card-sub">Last poll: ' + (stats.lastPollTime ? formatSyncTimestamp(stats.lastPollTime) : 'Never') + '</div>';
@@ -15122,6 +15139,8 @@ async function editRecord(tableId, recordId, fieldChanges) {
 
     // Toast: saving
     var savingToast = showToast('saving', 'Saving...');
+    var editStartTime = Date.now();
+    var changedFieldCount = Object.keys(fieldChanges).length;
 
     try {
         // ── Stage 2: Write to server ──────────────────────────
@@ -15184,6 +15203,17 @@ async function editRecord(tableId, recordId, fieldChanges) {
         // writing to Airtable, ensuring the event only fires on successful
         // Airtable write and keeping Postgres current_state consistent.
 
+        // Record successful local edit in sync history
+        var editDuration = Date.now() - editStartTime;
+        SyncHistory.record({
+            type: 'edit',
+            result: 'success',
+            eventsFound: changedFieldCount,
+            duration: editDuration,
+            detail: 'Local edit propagated: ' + recordId + ' (' + changedFieldCount + ' field' + (changedFieldCount !== 1 ? 's' : '') + ')'
+        });
+        SyncStatusFeed.success('Edit propagated: ' + recordId + ' \u2192 ' + changedFieldCount + ' field' + (changedFieldCount !== 1 ? 's' : '') + ' updated (' + editDuration + 'ms)');
+
         showToast('success', 'Saved \u2713');
         return result;
 
@@ -15207,6 +15237,18 @@ async function editRecord(tableId, recordId, fieldChanges) {
         window.dispatchEvent(new CustomEvent('amino:record-updated', {
             detail: { recordId: recordId, tableId: tableId, fields: previousFields, optimistic: false, rolledBack: true }
         }));
+
+        // Record failed local edit in sync history
+        var editDuration = Date.now() - editStartTime;
+        SyncHistory.record({
+            type: 'edit',
+            result: 'error',
+            eventsFound: 0,
+            duration: editDuration,
+            error: err.message,
+            detail: 'Local edit failed: ' + recordId + ' \u2014 ' + err.message
+        });
+        SyncStatusFeed.error('Edit failed: ' + recordId + ' \u2014 ' + err.message);
 
         showToast('error', 'Save failed \u2014 please try again');
         throw err;
