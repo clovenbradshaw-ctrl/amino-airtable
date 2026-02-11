@@ -12,7 +12,7 @@ var AminoData = (function() {
 
     // ============ Constants ============
     var WEBHOOK_BASE_URL = 'https://n8n.intelechia.com/webhook';
-    var DB_NAME = 'amino';
+    var DB_NAME = 'amino-data-layer';
     var DB_VERSION = 1;
     var DEFAULT_POLL_INTERVAL = 15000; // 15 seconds
     var SYNAPSE_SALT_PREFIX = 'amino-local-encrypt:';
