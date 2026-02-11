@@ -14,12 +14,14 @@ var AminoData = (function() {
     // ============ Constants ============
     var WEBHOOK_BASE_URL = 'https://n8n.intelechia.com/webhook';
     var DB_NAME = 'amino-data-layer';
-    var DB_VERSION = 1;
+    var DB_VERSION = 2;
     var DEFAULT_POLL_INTERVAL = 15000; // 15 seconds
     var SYNAPSE_SALT_PREFIX = 'amino-local-encrypt:';
     var ENCRYPTION_ALGORITHM = 'aes-gcm-256';
     var AIRTABLE_SYNC_WEBHOOK = 'https://n8n.intelechia.com/webhook/c875f674-9228-45ae-b6ec-10870df8a403';
     var AIRTABLE_SYNC_COOLDOWN = 60000; // 60 seconds minimum between triggers
+    var CONNECTIVITY_CHECK_INTERVAL = 30000; // 30 seconds
+    var DEFAULT_OFFLINE_ACCESS_MAX_DAYS = 30; // configurable per org
 
     // ============ Internal State (memory only) ============
     var _db = null;
@@ -28,6 +30,8 @@ var AminoData = (function() {
     var _userId = null;
     var _pollInterval = null;
     var _tableIds = [];
+    var _offlineMode = false;
+    var _connectivityCheckTimer = null;
     var _tables = [];
     var _tableRoomMap = {}; // tableId -> matrixRoomId
     var _roomTableMap = {}; // matrixRoomId -> tableId (reverse lookup)
@@ -249,6 +253,14 @@ var AminoData = (function() {
                 // Crypto store — stores the salt (unencrypted)
                 if (!db.objectStoreNames.contains('crypto')) {
                     db.createObjectStore('crypto', { keyPath: 'key' });
+                }
+
+                // Pending mutations store — queued writes created while offline
+                if (!db.objectStoreNames.contains('pending_mutations')) {
+                    var mutStore = db.createObjectStore('pending_mutations', { keyPath: 'id' });
+                    mutStore.createIndex('byTable', 'tableId', { unique: false });
+                    mutStore.createIndex('byStatus', 'status', { unique: false });
+                    mutStore.createIndex('byTimestamp', 'timestamp', { unique: false });
                 }
             };
 
@@ -1518,11 +1530,13 @@ var AminoData = (function() {
         var metaStore = metaTx.objectStore('crypto');
         await idbPut(metaStore, { key: 'salt', value: 'synapse-derived', userId: userId });
         await idbPut(metaStore, { key: 'verify', value: verifyToken });
+        await idbPut(metaStore, { key: 'lastOnlineAuth', value: Date.now() });
         await idbTxDone(metaTx);
 
         // Load table list from API
         await fetchAndStoreTables();
 
+        _offlineMode = false;
         _initialized = true;
         console.log('[AminoData] Initialized with', _tables.length, 'tables (Synapse-derived encryption)');
 
@@ -1605,12 +1619,14 @@ var AminoData = (function() {
         stopPolling();
         stopMatrixSync();
         stopViewDeletionSync();
+        stopConnectivityMonitor();
         _cryptoKey = null;
         _accessToken = null;
         _userId = null;
         _tableRoomMap = {};
         _roomTableMap = {};
         _orgSpaceId = null;
+        _offlineMode = false;
         _initialized = false;
 
         if (clearData && _db) {
@@ -1921,10 +1937,465 @@ var AminoData = (function() {
         return result;
     }
 
+    // ============ Offline Session Manager ============
+
+    // Check if we can reach the Matrix homeserver
+    async function checkConnectivity() {
+        var homeserverUrl = null;
+
+        // Try MatrixClient first
+        if (typeof MatrixClient !== 'undefined' && MatrixClient.getHomeserverUrl) {
+            homeserverUrl = MatrixClient.getHomeserverUrl();
+        }
+
+        // Fall back to localStorage session
+        if (!homeserverUrl) {
+            try {
+                var session = JSON.parse(localStorage.getItem('matrix_session') || '{}');
+                homeserverUrl = session.homeserverUrl;
+            } catch (e) { /* ignore */ }
+        }
+
+        if (!homeserverUrl) return false;
+
+        try {
+            var controller = new AbortController();
+            var timeoutId = setTimeout(function() { controller.abort(); }, 5000);
+            var response = await fetch(homeserverUrl + '/_matrix/client/versions', {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            return response.ok;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Check if offline access has expired (too many days since last online auth)
+    async function checkOfflineAccessExpiry(db) {
+        var targetDb = db || _db;
+        if (!targetDb) return false;
+
+        try {
+            var cryptoTx = targetDb.transaction('crypto', 'readonly');
+            var lastOnlineAuth = await idbGet(cryptoTx.objectStore('crypto'), 'lastOnlineAuth');
+            if (!lastOnlineAuth || !lastOnlineAuth.value) return false;
+
+            // Read configurable max days from cached org config, or use default
+            var maxDays = DEFAULT_OFFLINE_ACCESS_MAX_DAYS;
+            try {
+                var configStr = localStorage.getItem('amino_offline_max_days');
+                if (configStr) {
+                    var parsed = parseInt(configStr, 10);
+                    if (parsed > 0) maxDays = parsed;
+                }
+            } catch (e) { /* use default */ }
+
+            var daysSinceAuth = (Date.now() - lastOnlineAuth.value) / (1000 * 60 * 60 * 24);
+            return daysSinceAuth <= maxDays;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Attempt offline unlock using stored verification token.
+    // Requires a previous successful online login (verification token in IndexedDB).
+    // Returns session info on success, throws on failure.
+    async function offlineUnlock(password) {
+        // 1. Get userId from localStorage session
+        var session;
+        try {
+            session = JSON.parse(localStorage.getItem('matrix_session') || '{}');
+        } catch (e) {
+            throw new Error('No saved session found');
+        }
+        if (!session.userId) {
+            throw new Error('No saved session found. You must log in online first.');
+        }
+
+        // 2. Open IndexedDB
+        var db = await openDatabase();
+
+        // 3. Check offline access expiry
+        var accessValid = await checkOfflineAccessExpiry(db);
+        if (!accessValid) {
+            db.close();
+            throw new Error('Offline access has expired. Connect to the internet to re-authenticate.');
+        }
+
+        // 4. Read verification token
+        var cryptoTx = db.transaction('crypto', 'readonly');
+        var verifyEntry = await idbGet(cryptoTx.objectStore('crypto'), 'verify');
+        if (!verifyEntry || !verifyEntry.value) {
+            db.close();
+            throw new Error('No cached data available. Connect to internet for initial login.');
+        }
+
+        // 5. Derive key and verify
+        var key = await deriveSynapseKey(password, session.userId);
+        var isValid = await verifyEncryptionKey(key, verifyEntry.value);
+        if (!isValid) {
+            db.close();
+            throw new Error('Incorrect password');
+        }
+
+        // 6. Success — set up offline session
+        _db = db;
+        _cryptoKey = key;
+        _userId = session.userId;
+        _offlineMode = true;
+
+        // 7. Load cached tables from IndexedDB
+        var tablesTx = db.transaction('tables', 'readonly');
+        _tables = await idbGetAll(tablesTx.objectStore('tables'));
+        _tableIds = _tables.map(function(t) { return t.table_id; });
+
+        // Rebuild table-room map from cached tables
+        _tableRoomMap = {};
+        _roomTableMap = {};
+        for (var i = 0; i < _tables.length; i++) {
+            var t = _tables[i];
+            if (t.matrix_room_id) {
+                _tableRoomMap[t.table_id] = t.matrix_room_id;
+                _roomTableMap[t.matrix_room_id] = t.table_id;
+            }
+        }
+
+        _initialized = true;
+
+        // 8. Start connectivity monitoring
+        startConnectivityMonitor();
+
+        var lastSynced = await getLastSyncTime();
+
+        console.log('[AminoData] Offline unlock successful for', session.userId,
+            '(' + _tables.length + ' cached tables, last synced:', lastSynced + ')');
+
+        return {
+            userId: session.userId,
+            tables: _tables,
+            offlineMode: true,
+            lastSynced: lastSynced
+        };
+    }
+
+    // Get the most recent sync timestamp across all tables
+    async function getLastSyncTime() {
+        if (!_db) return null;
+        try {
+            var tx = _db.transaction('sync', 'readonly');
+            var allSync = await idbGetAll(tx.objectStore('sync'));
+            if (allSync.length === 0) return null;
+            var latest = allSync.reduce(function(max, entry) {
+                return entry.lastSynced > max ? entry.lastSynced : max;
+            }, allSync[0].lastSynced);
+            return latest;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // ============ Connectivity Monitor ============
+
+    function startConnectivityMonitor() {
+        if (_connectivityCheckTimer) return;
+
+        _connectivityCheckTimer = setInterval(async function() {
+            if (!_offlineMode) {
+                stopConnectivityMonitor();
+                return;
+            }
+            var online = await checkConnectivity();
+            if (online) {
+                window.dispatchEvent(new CustomEvent('amino:connectivity-restored'));
+            }
+        }, CONNECTIVITY_CHECK_INTERVAL);
+
+        // Also listen for browser online event
+        window.addEventListener('online', function onBrowserOnline() {
+            checkConnectivity().then(function(reachable) {
+                if (reachable) {
+                    window.dispatchEvent(new CustomEvent('amino:connectivity-restored'));
+                }
+            });
+        });
+
+        console.log('[AminoData] Connectivity monitor started (checking every', CONNECTIVITY_CHECK_INTERVAL / 1000 + 's)');
+    }
+
+    function stopConnectivityMonitor() {
+        if (_connectivityCheckTimer) {
+            clearInterval(_connectivityCheckTimer);
+            _connectivityCheckTimer = null;
+        }
+    }
+
+    // Transition from offline to online mode.
+    // Verifies session, flushes pending mutations, resumes sync.
+    async function transitionToOnline(password) {
+        if (!_offlineMode) return { alreadyOnline: true };
+
+        // Verify we can actually reach the homeserver
+        var online = await checkConnectivity();
+        if (!online) {
+            throw new Error('Homeserver still unreachable');
+        }
+
+        // Check if the cached access token is still valid
+        var session;
+        try {
+            session = JSON.parse(localStorage.getItem('matrix_session') || '{}');
+        } catch (e) {
+            throw new Error('No saved session');
+        }
+
+        var tokenValid = false;
+        if (session.accessToken && session.homeserverUrl) {
+            try {
+                var whoami = await fetch(session.homeserverUrl + '/_matrix/client/v3/account/whoami', {
+                    headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                });
+                tokenValid = whoami.ok;
+            } catch (e) {
+                tokenValid = false;
+            }
+        }
+
+        if (!tokenValid) {
+            // Token expired or revoked — need full re-login
+            // If password is provided, attempt fresh login
+            if (password && session.homeserverUrl && session.userId) {
+                var localpart = session.userId.split(':')[0].replace(/^@/, '');
+                try {
+                    var loginResult = await MatrixClient.login(session.homeserverUrl, localpart, password);
+                    session.accessToken = loginResult.accessToken;
+                    _accessToken = loginResult.accessToken;
+                } catch (loginErr) {
+                    throw new Error('Re-authentication failed: ' + loginErr.message);
+                }
+            } else {
+                throw new Error('Session expired. Please log in again.');
+            }
+        } else {
+            // Restore Matrix session
+            _accessToken = session.accessToken;
+            if (typeof MatrixClient !== 'undefined' && MatrixClient.setSession) {
+                MatrixClient.setSession(session.homeserverUrl, session.accessToken, session.userId, session.deviceId);
+            }
+        }
+
+        // Update last online auth timestamp
+        var authTx = _db.transaction('crypto', 'readwrite');
+        await idbPut(authTx.objectStore('crypto'), { key: 'lastOnlineAuth', value: Date.now() });
+        await idbTxDone(authTx);
+
+        // Flush pending mutations
+        var flushResult = await flushPendingMutations();
+
+        // Resume normal sync
+        _offlineMode = false;
+        stopConnectivityMonitor();
+
+        // Incremental sync all tables
+        var syncedRecords = 0;
+        for (var i = 0; i < _tableIds.length; i++) {
+            try {
+                syncedRecords += await syncTable(_tableIds[i]);
+            } catch (err) {
+                console.warn('[AminoData] Sync failed for table', _tableIds[i], 'during online transition:', err.message);
+            }
+        }
+
+        // Start real-time sync
+        var matrixSyncStarted = false;
+        try {
+            matrixSyncStarted = await startMatrixSync();
+        } catch (err) {
+            console.warn('[AminoData] Matrix sync failed to start after online transition:', err);
+        }
+        if (!matrixSyncStarted) {
+            startPolling();
+        }
+
+        console.log('[AminoData] Transitioned to online mode.',
+            'Flushed:', flushResult.flushed, 'mutations.',
+            'Synced:', syncedRecords, 'records.');
+
+        window.dispatchEvent(new CustomEvent('amino:online-transition', {
+            detail: {
+                flushed: flushResult.flushed,
+                flushFailed: flushResult.failed,
+                syncedRecords: syncedRecords,
+                usingMatrixSync: matrixSyncStarted
+            }
+        }));
+
+        return {
+            flushed: flushResult.flushed,
+            flushFailed: flushResult.failed,
+            syncedRecords: syncedRecords
+        };
+    }
+
+    // ============ Pending Mutations (Offline Write Queue) ============
+
+    // Queue a mutation for later sync. Applies optimistically to local IndexedDB.
+    async function queueOfflineMutation(tableId, recordId, fields, op) {
+        if (!_db) throw new Error('Database not open');
+
+        var mutId = 'mut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        var tx = _db.transaction('pending_mutations', 'readwrite');
+        await idbPut(tx.objectStore('pending_mutations'), {
+            id: mutId,
+            tableId: tableId,
+            recordId: recordId,
+            op: op || 'ALT',
+            fields: fields,
+            timestamp: Date.now(),
+            status: 'pending'
+        });
+        await idbTxDone(tx);
+
+        // Apply optimistically to local IndexedDB
+        await applyLocalMutation(tableId, recordId, fields, op);
+
+        var queueDepth = await getPendingMutationCount();
+
+        window.dispatchEvent(new CustomEvent('amino:offline-mutation-queued', {
+            detail: { tableId: tableId, recordId: recordId, op: op || 'ALT', queueDepth: queueDepth }
+        }));
+
+        return mutId;
+    }
+
+    // Apply a mutation directly to the local IndexedDB record (optimistic update)
+    async function applyLocalMutation(tableId, recordId, fields, op) {
+        op = op || 'ALT';
+
+        // Read existing record
+        var readTx = _db.transaction('records', 'readonly');
+        var existing = await idbGet(readTx.objectStore('records'), recordId);
+
+        var currentFields;
+        if (existing) {
+            currentFields = JSON.parse(await decrypt(_cryptoKey, existing.fields));
+        } else {
+            currentFields = {};
+        }
+
+        // Apply operation
+        if (op === 'ALT' || op === 'INS') {
+            var keys = Object.keys(fields);
+            for (var i = 0; i < keys.length; i++) {
+                currentFields[keys[i]] = fields[keys[i]];
+            }
+        } else if (op === 'NUL') {
+            var nulKeys = Array.isArray(fields) ? fields : Object.keys(fields);
+            for (var j = 0; j < nulKeys.length; j++) {
+                delete currentFields[nulKeys[j]];
+            }
+        }
+
+        // Encrypt and write back
+        var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(currentFields));
+        var writeTx = _db.transaction('records', 'readwrite');
+        await idbPut(writeTx.objectStore('records'), {
+            id: recordId,
+            tableId: tableId,
+            tableName: (existing && existing.tableName) || tableId,
+            fields: encryptedFields,
+            lastSynced: (existing && existing.lastSynced) || new Date().toISOString()
+        });
+        await idbTxDone(writeTx);
+
+        // Emit update event for UI
+        window.dispatchEvent(new CustomEvent('amino:record-update', {
+            detail: { recordId: recordId, tableId: tableId, source: 'offline-local' }
+        }));
+    }
+
+    // Flush all pending mutations to the server (oldest first).
+    // Returns { flushed, failed }.
+    async function flushPendingMutations() {
+        if (!_db) return { flushed: 0, failed: 0 };
+
+        var tx = _db.transaction('pending_mutations', 'readonly');
+        var pending = await idbGetAll(tx.objectStore('pending_mutations'));
+
+        if (pending.length === 0) return { flushed: 0, failed: 0 };
+
+        // Sort by timestamp (oldest first) to preserve operation order
+        pending.sort(function(a, b) { return a.timestamp - b.timestamp; });
+
+        var flushed = 0;
+        var failed = 0;
+
+        for (var i = 0; i < pending.length; i++) {
+            var mutation = pending[i];
+            try {
+                await sendEncryptedTableRecord(
+                    mutation.tableId,
+                    mutation.recordId,
+                    mutation.fields,
+                    mutation.op
+                );
+
+                // Remove from queue on success
+                var delTx = _db.transaction('pending_mutations', 'readwrite');
+                delTx.objectStore('pending_mutations').delete(mutation.id);
+                await idbTxDone(delTx);
+
+                flushed++;
+            } catch (err) {
+                console.error('[AminoData] Failed to flush mutation:', mutation.id, err.message || err);
+                failed++;
+                // Don't remove — will retry on next flush
+            }
+        }
+
+        if (flushed > 0 || failed > 0) {
+            window.dispatchEvent(new CustomEvent('amino:offline-mutations-flushed', {
+                detail: { flushed: flushed, failed: failed, remaining: failed }
+            }));
+        }
+
+        console.log('[AminoData] Flushed', flushed, 'pending mutations (' + failed + ' failed)');
+        return { flushed: flushed, failed: failed };
+    }
+
+    // Get count of pending offline mutations
+    async function getPendingMutationCount() {
+        if (!_db) return 0;
+        try {
+            var tx = _db.transaction('pending_mutations', 'readonly');
+            var all = await idbGetAll(tx.objectStore('pending_mutations'));
+            return all.length;
+        } catch (e) {
+            return 0;
+        }
+    }
+
+    // Get all pending mutations (for UI display)
+    async function getPendingMutations() {
+        if (!_db) return [];
+        try {
+            var tx = _db.transaction('pending_mutations', 'readonly');
+            var all = await idbGetAll(tx.objectStore('pending_mutations'));
+            all.sort(function(a, b) { return a.timestamp - b.timestamp; });
+            return all;
+        } catch (e) {
+            return [];
+        }
+    }
+
     // ============ State Getters ============
 
     function isInitialized() {
         return _initialized;
+    }
+
+    function isOffline() {
+        return _offlineMode;
     }
 
     function getTableList() {
@@ -1998,8 +2469,24 @@ var AminoData = (function() {
         logout: logout,
         destroy: destroy,
 
+        // Offline access
+        offlineUnlock: offlineUnlock,
+        checkConnectivity: checkConnectivity,
+        checkOfflineAccessExpiry: checkOfflineAccessExpiry,
+        transitionToOnline: transitionToOnline,
+        startConnectivityMonitor: startConnectivityMonitor,
+        stopConnectivityMonitor: stopConnectivityMonitor,
+        getLastSyncTime: getLastSyncTime,
+
+        // Offline write queue
+        queueOfflineMutation: queueOfflineMutation,
+        flushPendingMutations: flushPendingMutations,
+        getPendingMutationCount: getPendingMutationCount,
+        getPendingMutations: getPendingMutations,
+
         // State
         isInitialized: isInitialized,
+        isOffline: isOffline,
         getTableList: getTableList,
         getTableIds: getTableIds,
         getTableRoomMap: getTableRoomMap,
