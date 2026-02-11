@@ -4676,7 +4676,7 @@ var _sidebarCache = {
     eventsCount: 0,
     timestamp: 0
 };
-var SIDEBAR_CACHE_TTL = 5000; // 5 seconds
+var SIDEBAR_CACHE_TTL = 30000; // 30 seconds
 
 function invalidateSidebarCache() {
     _sidebarCache.tables = null;
@@ -9194,7 +9194,8 @@ function filterSidebarDOM(query) {
 
 async function renderSidebar(forceRefresh) {
     var tableList = document.getElementById('table-list');
-    tableList.innerHTML = '';
+    // Build new content into a DocumentFragment off-screen to avoid visible blink
+    var fragment = document.createDocumentFragment();
 
     var now = Date.now();
     var cacheValid = !forceRefresh && _sidebarCache.tables && (now - _sidebarCache.timestamp < SIDEBAR_CACHE_TTL);
@@ -9344,7 +9345,12 @@ async function renderSidebar(forceRefresh) {
         var viewsList = document.createElement('div');
         viewsList.className = 'table-views-list' + (isActive ? ' expanded' : '');
         viewsList.id = 'views-list-' + tableId;
-        viewsList.innerHTML = '<div class="table-view-item loading" style="color: #6b7280; font-style: italic;">Loading views...</div>';
+        // Use cached views for instant rendering instead of showing "Loading views..."
+        if (META_VIEWS[tableId] && Object.keys(META_VIEWS[tableId]).length > 0) {
+            viewsList.innerHTML = renderViewsListHTML(tableId);
+        } else {
+            viewsList.innerHTML = '<div class="table-view-item loading" style="color: #6b7280; font-style: italic;">Loading views...</div>';
+        }
         wrapper.appendChild(viewsList);
 
         return wrapper;
@@ -9363,6 +9369,9 @@ async function renderSidebar(forceRefresh) {
         header.onclick = () => toggleSidebarSection(sectionId);
         return header;
     }
+
+    // Collect table IDs that need views loaded (for after DOM swap)
+    var _viewLoadQueue = [];
 
     // If not searching, show pinned and recent sections
     if (!searchQuery) {
@@ -9383,7 +9392,7 @@ async function renderSidebar(forceRefresh) {
             '</span>';
         eventsDiv.onclick = () => showEventsView();
         eventsWrapper.appendChild(eventsDiv);
-        tableList.appendChild(eventsWrapper);
+        fragment.appendChild(eventsWrapper);
 
         // Sync Status (below Events Stream)
         var syncStatusWrapper = document.createElement('div');
@@ -9397,16 +9406,16 @@ async function renderSidebar(forceRefresh) {
             '<span class="table-name">Sync Status</span>';
         syncStatusDiv.onclick = () => showSyncStatusView();
         syncStatusWrapper.appendChild(syncStatusDiv);
-        tableList.appendChild(syncStatusWrapper);
+        fragment.appendChild(syncStatusWrapper);
 
         // Pinned Section
         var pinnedTables = tables.filter(t => SIDEBAR_STATE.pinnedTables.includes(t.tableId));
         if (pinnedTables.length > 0) {
-            tableList.appendChild(renderSectionHeader('pinned', 'Pinned', SIDEBAR_ICONS.starFilled, '#fbbf24', pinnedTables.length));
+            fragment.appendChild(renderSectionHeader('pinned', 'Pinned', SIDEBAR_ICONS.starFilled, '#fbbf24', pinnedTables.length));
             if (SIDEBAR_STATE.expandedSections.pinned) {
                 pinnedTables.forEach(table => {
-                    tableList.appendChild(renderTableItem(table));
-                    loadTableViewsAsync(table.tableId);
+                    fragment.appendChild(renderTableItem(table));
+                    _viewLoadQueue.push(table.tableId);
                 });
             }
         }
@@ -9417,11 +9426,11 @@ async function renderSidebar(forceRefresh) {
             .map(id => tables.find(t => t.tableId === id))
             .filter(t => t);
         if (recentTables.length > 0) {
-            tableList.appendChild(renderSectionHeader('recent', 'Recent', SIDEBAR_ICONS.clock, '#9ca3af', recentTables.length));
+            fragment.appendChild(renderSectionHeader('recent', 'Recent', SIDEBAR_ICONS.clock, '#9ca3af', recentTables.length));
             if (SIDEBAR_STATE.expandedSections.recent) {
                 recentTables.forEach(table => {
-                    tableList.appendChild(renderTableItem(table));
-                    loadTableViewsAsync(table.tableId);
+                    fragment.appendChild(renderTableItem(table));
+                    _viewLoadQueue.push(table.tableId);
                 });
             }
         }
@@ -9430,7 +9439,7 @@ async function renderSidebar(forceRefresh) {
         if (pinnedTables.length > 0 || recentTables.length > 0) {
             var divider = document.createElement('div');
             divider.className = 'sidebar-divider';
-            tableList.appendChild(divider);
+            fragment.appendChild(divider);
         }
     }
 
@@ -9453,15 +9462,22 @@ async function renderSidebar(forceRefresh) {
         if (sectionTables.length === 0 && !SIDEBAR_STATE.expandedSections[section.id]) return;
 
         var config = TABLE_TYPE_CONFIG[section.key] || TABLE_TYPE_CONFIG.operational;
-        tableList.appendChild(renderSectionHeader(section.id, section.label, config.icon, section.color, sectionTables.length));
+        fragment.appendChild(renderSectionHeader(section.id, section.label, config.icon, section.color, sectionTables.length));
 
         if (SIDEBAR_STATE.expandedSections[section.id] || searchQuery) {
             sectionTables.forEach(table => {
-                tableList.appendChild(renderTableItem(table));
-                loadTableViewsAsync(table.tableId);
+                fragment.appendChild(renderTableItem(table));
+                _viewLoadQueue.push(table.tableId);
             });
         }
     });
+
+    // Atomic DOM swap: replace all children at once to eliminate blink
+    tableList.innerHTML = '';
+    tableList.appendChild(fragment);
+
+    // Now load views for visible tables (after DOM is in place)
+    _viewLoadQueue.forEach(tid => loadTableViewsAsync(tid));
 
     // Update active indicator color using a single reusable style element
     var activeStyles = [];
@@ -9487,56 +9503,8 @@ async function renderSidebar(forceRefresh) {
     activeStyleEl.textContent = activeStyles.join('\n');
 }
 
-// Load views for a table and populate the views list
-async function loadTableViewsAsync(tableId) {
-    var viewsList = document.getElementById('views-list-' + tableId);
-    if (!viewsList) return;
-
-    var views = await getViewsForTable(tableId);
-    var folders = await getFoldersForTable(tableId);
-
-    // Cache views in META_VIEWS
-    if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
-    views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
-
-    // Load sharing metadata for views and attach as _sharing
-    try {
-        var sharedViews = await SharedViews.getVisibleViewsForTable(tableId);
-        var sharingMap = {};
-        sharedViews.forEach(function(sv) { sharingMap[sv.viewId] = sv; });
-
-        // Merge shared views that aren't in local DB yet (from other users)
-        sharedViews.forEach(function(sv) {
-            if (sv.viewId && !META_VIEWS[tableId][sv.viewId] && sv.viewName) {
-                // This is a view shared with us by someone else — add it
-                META_VIEWS[tableId][sv.viewId] = {
-                    tableId: sv.tableId,
-                    viewId: sv.viewId,
-                    viewName: sv.viewName,
-                    viewType: sv.viewType || 'grid',
-                    filters: sv.filters || [],
-                    sorts: sv.sorts || [],
-                    groupBy: sv.groupBy || null,
-                    hiddenFieldIds: sv.hiddenFieldIds || [],
-                    fieldOrder: sv.fieldOrder || [],
-                    tags: sv.tags || [],
-                    folderId: sv.folderId || null
-                };
-            }
-        });
-
-        // Attach sharing metadata to cached views for rendering
-        Object.keys(META_VIEWS[tableId]).forEach(function(vid) {
-            META_VIEWS[tableId][vid]._sharing = sharingMap[vid] || null;
-        });
-    } catch (e) {
-        console.warn('[loadTableViewsAsync] Failed to load sharing metadata:', e);
-    }
-
-    // Cache folders in VIEW_FOLDERS
-    if (!VIEW_FOLDERS[tableId]) VIEW_FOLDERS[tableId] = {};
-    folders.forEach(f => VIEW_FOLDERS[tableId][f.folderId] = f);
-
+// Render views list HTML from cached META_VIEWS (synchronous, no DB hit)
+function renderViewsListHTML(tableId) {
     var html = '';
 
     // Add "All Fields" default option first
@@ -9596,8 +9564,71 @@ async function loadTableViewsAsync(tableId) {
     html += '<span>New view</span>';
     html += '</div>';
 
+    return html;
+}
 
-    viewsList.innerHTML = html;
+// Load views for a table and populate the views list
+async function loadTableViewsAsync(tableId) {
+    var viewsList = document.getElementById('views-list-' + tableId);
+    if (!viewsList) return;
+
+    // If views are already cached, render immediately from cache (no blink)
+    if (META_VIEWS[tableId] && Object.keys(META_VIEWS[tableId]).length > 0) {
+        viewsList.innerHTML = renderViewsListHTML(tableId);
+        return;
+    }
+
+    // Fetch views and folders in parallel instead of sequentially
+    var results = await Promise.all([
+        getViewsForTable(tableId),
+        getFoldersForTable(tableId)
+    ]);
+    var views = results[0];
+    var folders = results[1];
+
+    // Cache views in META_VIEWS
+    if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+    views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+
+    // Load sharing metadata for views and attach as _sharing
+    try {
+        var sharedViews = await SharedViews.getVisibleViewsForTable(tableId);
+        var sharingMap = {};
+        sharedViews.forEach(function(sv) { sharingMap[sv.viewId] = sv; });
+
+        // Merge shared views that aren't in local DB yet (from other users)
+        sharedViews.forEach(function(sv) {
+            if (sv.viewId && !META_VIEWS[tableId][sv.viewId] && sv.viewName) {
+                // This is a view shared with us by someone else — add it
+                META_VIEWS[tableId][sv.viewId] = {
+                    tableId: sv.tableId,
+                    viewId: sv.viewId,
+                    viewName: sv.viewName,
+                    viewType: sv.viewType || 'grid',
+                    filters: sv.filters || [],
+                    sorts: sv.sorts || [],
+                    groupBy: sv.groupBy || null,
+                    hiddenFieldIds: sv.hiddenFieldIds || [],
+                    fieldOrder: sv.fieldOrder || [],
+                    tags: sv.tags || [],
+                    folderId: sv.folderId || null
+                };
+            }
+        });
+
+        // Attach sharing metadata to cached views for rendering
+        Object.keys(META_VIEWS[tableId]).forEach(function(vid) {
+            META_VIEWS[tableId][vid]._sharing = sharingMap[vid] || null;
+        });
+    } catch (e) {
+        console.warn('[loadTableViewsAsync] Failed to load sharing metadata:', e);
+    }
+
+    // Cache folders in VIEW_FOLDERS
+    if (!VIEW_FOLDERS[tableId]) VIEW_FOLDERS[tableId] = {};
+    folders.forEach(f => VIEW_FOLDERS[tableId][f.folderId] = f);
+
+    viewsList.innerHTML = renderViewsListHTML(tableId);
 }
 
 // Render a single view item
@@ -10417,10 +10448,10 @@ async function selectTableView(tableId, viewId) {
 
     // If switching to a different table, load it first
     if (currentTable !== tableId) {
-        // Release previous table's cached data to free memory
+        // Release previous table's field data to free memory
+        // Keep META_VIEWS cached since it's small and used by sidebar for instant rendering
         if (currentTable) {
             delete META_FIELDS[currentTable];
-            delete META_VIEWS[currentTable];
         }
         originalRecordIds = [];
         currentRecordIds = [];
@@ -10436,21 +10467,25 @@ async function selectTableView(tableId, viewId) {
         // Show loading state immediately
         showTableLoading('Loading table structure...');
 
-        // Load fields first (table structure)
-        var fields = await getFieldsForTable(tableId);
+        // Load fields, views, and record IDs in parallel
+        var parallelResults = await Promise.all([
+            getFieldsForTable(tableId),
+            getViewsForTable(tableId),
+            getRecordIdsForTable(tableId)
+        ]);
         if (navVersion !== myNav) return;
+
+        var fields = parallelResults[0];
+        var views = parallelResults[1];
+        var recordIds = parallelResults[2];
+
         META_FIELDS[tableId] = {};
         fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
 
-        // Load views for this table
-        var views = await getViewsForTable(tableId);
-        if (navVersion !== myNav) return;
         META_VIEWS[tableId] = {};
         views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
 
-        // Load record IDs
-        originalRecordIds = await getRecordIdsForTable(tableId);
-        if (navVersion !== myNav) return;
+        originalRecordIds = recordIds;
         currentRecordIds = originalRecordIds;
         totalRecords = currentRecordIds.length;
     }
@@ -10636,11 +10671,10 @@ async function showTable(tableId) {
     // Clean up special view state (Events, Sync Status)
     cleanupSpecialViewState();
 
-    // Release previous table's cached data to free memory
-    // META_FIELDS and META_VIEWS for non-current tables are re-loaded from IndexedDB on demand
+    // Release previous table's field data to free memory (re-loaded on demand)
+    // Keep META_VIEWS cached since it's small and used by sidebar for instant rendering
     if (currentTable && currentTable !== tableId) {
         delete META_FIELDS[currentTable];
-        delete META_VIEWS[currentTable];
     }
     // Release previous record IDs
     originalRecordIds = [];
@@ -10696,17 +10730,27 @@ async function showTable(tableId) {
     // Show loading state immediately
     showTableLoading('Loading table structure...');
 
-    // Load fields first (table structure)
-    var fields = await getFieldsForTable(tableId);
+    // Load fields, views, and record IDs in parallel instead of sequentially
+    var parallelResults = await Promise.all([
+        getFieldsForTable(tableId),
+        getViewsForTable(tableId),
+        getRecordIdsForTable(tableId)
+    ]);
     if (navVersion !== myNav) return;
+
+    var fields = parallelResults[0];
+    var views = parallelResults[1];
+    var recordIds = parallelResults[2];
+
     META_FIELDS[tableId] = {};
     fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
 
-    // Load views for this table
-    var views = await getViewsForTable(tableId);
-    if (navVersion !== myNav) return;
     META_VIEWS[tableId] = {};
     views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+
+    originalRecordIds = recordIds;
+    currentRecordIds = originalRecordIds;
+    totalRecords = currentRecordIds.length;
 
     // Set current view to the first available view or default
     var viewIds = Object.keys(META_VIEWS[tableId] || {});
@@ -10738,15 +10782,6 @@ async function showTable(tableId) {
 
     // Show table headers immediately with skeleton rows (even before data loads)
     renderTableHeaders();
-
-    // Update status (don't overwrite table headers with loading spinner)
-    updateStatus('Loading records...', false, null, null);
-
-    // Load record IDs
-    originalRecordIds = await getRecordIdsForTable(tableId);
-    if (navVersion !== myNav) return;
-    currentRecordIds = originalRecordIds;
-    totalRecords = currentRecordIds.length;
 
     // Now render full table with data
     await renderTable();
