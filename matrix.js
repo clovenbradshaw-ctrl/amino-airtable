@@ -825,14 +825,16 @@ var MatrixClient = (function() {
     }
 
     async function writeFieldSchema(roomId, fieldId, fieldMeta) {
-        await sendStateEvent(roomId, EVENT_TYPES.SCHEMA_FIELD, fieldId, {
+        var schemaContent = {
             field_id: fieldId,
             name: fieldMeta.fieldName || fieldId,
             table_id: fieldMeta.tableId,
             type: fieldMeta.fieldType || 'singleLineText',
             options: fieldMeta.options || {},
             client_visible: fieldMeta.client_visible !== false
-        });
+        };
+        if (fieldMeta.readOnly != null) schemaContent.readOnly = fieldMeta.readOnly;
+        await sendStateEvent(roomId, EVENT_TYPES.SCHEMA_FIELD, fieldId, schemaContent);
     }
 
     // ============ Record Helpers ============
