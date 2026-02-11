@@ -1970,6 +1970,24 @@
 
         /* Data table */
         .iface-table-wrapper { overflow-x: auto; }
+        .iface-page[data-page-id="clients"] .iface-data-table-block {
+            display: flex;
+            flex: 1;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .iface-page[data-page-id="clients"] .iface-data-table-block .iface-block-body {
+            display: flex;
+            flex: 1;
+            flex-direction: column;
+            max-height: none;
+            min-height: 0;
+        }
+        .iface-page[data-page-id="clients"] .iface-data-table-block .iface-table-wrapper {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+        }
         .iface-table {
             width: 100%; border-collapse: collapse; font-size: 13px;
         }
@@ -24341,7 +24359,7 @@ var InterfaceApp = (function() {
         var start = ps.page * ps.pageSize;
         var pageRecords = records.slice(start, start + ps.pageSize);
 
-        var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '">';
+        var html = '<div class="iface-block iface-data-table-block" data-block-id="' + _esc(block.id) + '">';
         html += '<div class="iface-block-drag-handle">Drag</div>';
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Table') + ' <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(' + total + ' records)</span></span>';
