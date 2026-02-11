@@ -19405,8 +19405,22 @@ var CaseNotesAPI = (function() {
         return _resolveTableId('client info', 'client');
     }
 
-    // Create a new case note and link to a client via client_airtable_id.
-    // Uses the same amino-write webhook as editRecord().
+    var CASE_NOTES_WEBHOOK = 'https://n8n.intelechia.com/webhook/caseNotes';
+
+    // Generate a unique ID for new case notes
+    function _generateNoteId() {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            return crypto.randomUUID();
+        }
+        // Fallback for older browsers
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0;
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    }
+
+    // Create a new case note by POSTing to the dedicated caseNotes webhook.
+    // Sends a flat JSON body — only "id" is required; all other fields are optional.
     async function createCaseNote(noteData) {
         if (!noteData || !noteData.client_airtable_id) {
             throw new Error('client_airtable_id is required to link the case note to a client');
@@ -19418,44 +19432,54 @@ var CaseNotesAPI = (function() {
         }
 
         var tableId = getCaseNotesTableId();
-        if (!tableId) {
-            throw new Error('Case Notes table not found — ensure data is synced');
-        }
 
-        // Build fields matching the Case Notes schema
-        var fields = {};
-        if (noteData.Activity) fields.Activity = noteData.Activity;
-        if (noteData.Type) fields.Type = noteData.Type;
-        if (noteData.Date) fields.Date = noteData.Date;
-        if (noteData.Description) fields.Description = noteData.Description;
-        if (noteData.Contact) fields.Contact = noteData.Contact;
-        if (noteData.matter_id) fields.matter_id = noteData.matter_id;
-        if (noteData.Due_Date) fields.Due_Date = noteData.Due_Date;
-        if (noteData.source) fields.source = noteData.source;
-        if (noteData.tags) fields.tags = noteData.tags;
-
-        // Link to client via airtable record ID
-        fields.client_airtable_id = noteData.client_airtable_id;
-        fields.Softr_Link_to_clients = noteData.client_airtable_id;
+        var now = new Date();
+        var noteId = _generateNoteId();
 
         // Set creation metadata
         var userId = session.userId || '';
-        fields.Created_By = userId.replace(/@([^:]+):.*/, '$1');
-        fields.Last_Update_By = fields.Created_By;
+        var createdBy = userId.replace(/@([^:]+):.*/, '$1');
 
-        // POST to amino-write webhook
-        var writeBody = JSON.stringify({ tableId: tableId, fields: fields, operation: 'create' });
+        // Build flat payload matching the caseNotes webhook schema.
+        // Only "id" is truly required; everything else defaults to empty string if missing.
+        var payload = {
+            id: noteId,
+            Activity: noteData.Activity || '',
+            Type: noteData.Type || '',
+            Date: noteData.Date || now.toISOString(),
+            Description: noteData.Description || '',
+            Contact: noteData.Contact || '',
+            Client_PP_ID: noteData.Client_PP_ID || '',
+            Matter: noteData.Matter || '',
+            RecordId: noteData.RecordId || '',
+            Created_By: createdBy,
+            Softr_Link_to_clients: noteData.client_airtable_id,
+            Updated: now.toISOString(),
+            Modified: now.toISOString(),
+            Due_Date: noteData.Due_Date || '',
+            Last_Update_By: createdBy,
+            unix_timestamp: String(Math.floor(now.getTime() / 1000)),
+            time_raw: now.toISOString(),
+            tags: Array.isArray(noteData.tags) ? noteData.tags.join(', ') : (noteData.tags || ''),
+            pp_note_id: noteData.pp_note_id || '',
+            matter_id: noteData.matter_id || '',
+            source: noteData.source || '',
+            client_airtable_id: noteData.client_airtable_id,
+            eventId: noteData.eventId || ''
+        };
+
+        // POST to the dedicated caseNotes webhook
         var response;
         try {
             response = await fetch(
-                WRITE_API_BASE + '?access_token=' + encodeURIComponent(session.accessToken),
-                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: writeBody }
+                CASE_NOTES_WEBHOOK + '?access_token=' + encodeURIComponent(session.accessToken),
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
             );
         } catch (fetchErr) {
-            response = await fetch(WRITE_API_BASE, {
+            response = await fetch(CASE_NOTES_WEBHOOK, {
                 method: 'POST',
                 headers: { 'Authorization': 'Bearer ' + session.accessToken, 'Content-Type': 'application/json' },
-                body: writeBody
+                body: JSON.stringify(payload)
             });
         }
 
@@ -19465,20 +19489,39 @@ var CaseNotesAPI = (function() {
             throw new Error('Failed to create case note: ' + response.status + (errText ? ' (' + errText.substring(0, 100) + ')' : ''));
         }
 
-        var result = await response.json();
+        var result;
+        try { result = await response.json(); } catch (e) { result = { id: noteId }; }
 
         // Store locally so it appears in the table immediately
-        if (result.recordId || result.id) {
-            var rid = result.recordId || result.id;
-            var finalFields = result.fields || fields;
+        var rid = result.recordId || result.id || noteId;
+        var localFields = {
+            Activity: payload.Activity,
+            Type: payload.Type,
+            Date: payload.Date,
+            Description: payload.Description,
+            Contact: payload.Contact,
+            Client_PP_ID: payload.Client_PP_ID,
+            Matter: payload.Matter,
+            Created_By: payload.Created_By,
+            Softr_Link_to_clients: payload.Softr_Link_to_clients,
+            Updated: payload.Updated,
+            Modified: payload.Modified,
+            Due_Date: payload.Due_Date,
+            Last_Update_By: payload.Last_Update_By,
+            tags: payload.tags,
+            matter_id: payload.matter_id,
+            source: payload.source,
+            client_airtable_id: payload.client_airtable_id
+        };
+        if (tableId) {
             try {
-                await saveDataRecord({ tableId: tableId, recordId: rid, fields: finalFields });
+                await saveDataRecord({ tableId: tableId, recordId: rid, fields: localFields });
                 if (window.IN_MEMORY_DATA) {
                     if (!window.IN_MEMORY_DATA[tableId]) window.IN_MEMORY_DATA[tableId] = {};
-                    window.IN_MEMORY_DATA[tableId][rid] = finalFields;
+                    window.IN_MEMORY_DATA[tableId][rid] = localFields;
                 }
                 window.dispatchEvent(new CustomEvent('amino:record-updated', {
-                    detail: { recordId: rid, tableId: tableId, fields: finalFields, optimistic: false }
+                    detail: { recordId: rid, tableId: tableId, fields: localFields, optimistic: false }
                 }));
             } catch (e) { /* non-fatal */ }
         }
@@ -19586,6 +19629,7 @@ var CaseNotesAPI = (function() {
         var tagsVal = document.getElementById('cn-tags').value.trim();
 
         try {
+            var matterVal = document.getElementById('cn-matter').value.trim();
             await createCaseNote({
                 client_airtable_id: clientId,
                 Activity: document.getElementById('cn-activity').value.trim(),
@@ -19593,8 +19637,9 @@ var CaseNotesAPI = (function() {
                 Date: dateVal ? new Date(dateVal).toISOString() : new Date().toISOString(),
                 Description: document.getElementById('cn-description').value.trim(),
                 Contact: document.getElementById('cn-contact').value.trim(),
-                matter_id: document.getElementById('cn-matter').value.trim(),
-                Due_Date: dueDateVal ? new Date(dueDateVal).toISOString() : null,
+                Matter: matterVal,
+                matter_id: matterVal,
+                Due_Date: dueDateVal ? new Date(dueDateVal).toISOString() : '',
                 source: document.getElementById('cn-source').value.trim() || 'Portal',
                 tags: tagsVal ? tagsVal.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : []
             });
