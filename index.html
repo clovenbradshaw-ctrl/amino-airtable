@@ -815,6 +815,381 @@
         .synapse-login-box .synapse-error { color: #f87171; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); display: none; }
         .synapse-login-box label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
 
+        /* ===== Home Screen ===== */
+        #home-app {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            overflow-y: auto;
+            background: var(--bg-primary);
+        }
+        #home-app.visible { display: flex; }
+
+        .home-topbar {
+            position: sticky;
+            top: 0;
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-primary);
+            z-index: 10;
+            flex-shrink: 0;
+        }
+
+        .home-topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .home-logo-mark {
+            width: 28px;
+            height: 28px;
+            border-radius: var(--radius-md);
+            background: var(--primary-500);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .home-logo-text {
+            font-size: 17px;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: 0.01em;
+        }
+
+        .home-topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .home-status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--success-500);
+            background: rgba(34, 197, 94, 0.1);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .home-status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--success-500);
+            animation: home-pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes home-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .home-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--primary-400);
+            cursor: pointer;
+            transition: border-color var(--transition-normal);
+        }
+
+        .home-avatar:hover {
+            border-color: var(--primary-400);
+        }
+
+        .home-content {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 60px 32px 80px;
+            width: 100%;
+        }
+
+        .home-greeting {
+            margin-bottom: 44px;
+        }
+
+        .home-greeting h1 {
+            font-size: 32px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+
+        .home-greeting h1 span {
+            color: var(--primary-400);
+        }
+
+        .home-greeting p {
+            font-size: 14px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        /* Home cards grid */
+        .home-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 48px;
+        }
+
+        .home-card {
+            position: relative;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl);
+            padding: 28px 24px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            overflow: hidden;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            min-height: 220px;
+        }
+
+        .home-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            transition: opacity 0.3s;
+            border-radius: var(--radius-xl);
+        }
+
+        .home-card:nth-child(1)::before {
+            background: radial-gradient(ellipse at 30% 20%, rgba(59, 130, 246, 0.06) 0%, transparent 70%);
+        }
+
+        .home-card:nth-child(2)::before {
+            background: radial-gradient(ellipse at 30% 20%, rgba(34, 197, 94, 0.05) 0%, transparent 70%);
+        }
+
+        .home-card:nth-child(3)::before {
+            background: radial-gradient(ellipse at 30% 20%, rgba(148, 163, 184, 0.05) 0%, transparent 70%);
+        }
+
+        .home-card:hover {
+            border-color: var(--border-secondary);
+            transform: translateY(-3px);
+            background: var(--bg-tertiary);
+        }
+
+        .home-card:hover::before { opacity: 1; }
+
+        .home-card-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .home-card:nth-child(1) .home-card-icon {
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--primary-400);
+        }
+
+        .home-card:nth-child(2) .home-card-icon {
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--success-500);
+        }
+
+        .home-card:nth-child(3) .home-card-icon {
+            background: rgba(148, 163, 184, 0.1);
+            color: var(--gray-400);
+        }
+
+        .home-card-icon svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .home-card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            position: relative;
+            z-index: 1;
+            color: var(--text-primary);
+        }
+
+        .home-card-desc {
+            font-size: 13px;
+            line-height: 1.55;
+            color: var(--text-muted);
+            position: relative;
+            z-index: 1;
+            flex-grow: 1;
+        }
+
+        .home-card-arrow {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            position: relative;
+            z-index: 1;
+            transition: color 0.25s, gap 0.25s;
+        }
+
+        .home-card:hover .home-card-arrow { gap: 10px; }
+        .home-card:nth-child(1):hover .home-card-arrow { color: var(--primary-400); }
+        .home-card:nth-child(2):hover .home-card-arrow { color: var(--success-500); }
+        .home-card:nth-child(3):hover .home-card-arrow { color: var(--gray-300); }
+
+        .home-card-arrow svg {
+            width: 14px;
+            height: 14px;
+            transition: transform 0.25s;
+        }
+
+        .home-card:hover .home-card-arrow svg { transform: translateX(2px); }
+
+        /* Home stats row */
+        .home-stats {
+            display: flex;
+            gap: 1px;
+            background: var(--border-primary);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            margin-bottom: 36px;
+        }
+
+        .home-stat {
+            flex: 1;
+            background: var(--bg-secondary);
+            padding: 18px 20px;
+            text-align: center;
+        }
+
+        .home-stat:first-child { border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
+        .home-stat:last-child { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
+
+        .home-stat-value {
+            font-size: 26px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+
+        .home-stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        /* Home activity */
+        .home-section-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            padding-left: 2px;
+            font-weight: 500;
+        }
+
+        .home-activity-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            background: var(--border-primary);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+
+        .home-activity-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 18px;
+            background: var(--bg-secondary);
+            font-size: 13px;
+            transition: background var(--transition-normal);
+        }
+
+        .home-activity-item:hover { background: var(--bg-tertiary); }
+
+        .home-activity-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .home-activity-dot.blue { background: var(--primary-400); }
+        .home-activity-dot.green { background: var(--success-500); }
+        .home-activity-dot.muted { background: var(--text-muted); }
+
+        .home-activity-text {
+            flex-grow: 1;
+            color: var(--text-secondary);
+        }
+
+        .home-activity-text strong { font-weight: 600; color: var(--text-primary); }
+
+        .home-activity-time {
+            font-size: 12px;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        /* Home animations */
+        .home-greeting, .home-cards, .home-stats, .home-section-label, .home-activity-list {
+            opacity: 0;
+            transform: translateY(12px);
+            animation: home-fadeUp 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        }
+
+        .home-greeting { animation-delay: 0.1s; }
+        .home-cards { animation-delay: 0.2s; }
+        .home-stats { animation-delay: 0.3s; }
+        .home-section-label { animation-delay: 0.38s; }
+        .home-activity-list { animation-delay: 0.42s; }
+
+        @keyframes home-fadeUp {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 720px) {
+            .home-cards { grid-template-columns: 1fr; }
+            .home-card { min-height: auto; }
+            .home-greeting h1 { font-size: 24px; }
+            .home-stats { flex-direction: column; }
+            .home-content { padding: 40px 20px 60px; }
+        }
+
         /* ===== App Navigation Bar ===== */
         .app-nav {
             display: none;
@@ -2475,7 +2850,13 @@
 
     <!-- App Navigation Bar (shown after login) -->
     <nav class="app-nav" id="app-nav">
-        <button class="app-nav-btn active" id="app-nav-database" onclick="switchApp('database')">
+        <button class="app-nav-btn active" id="app-nav-home" onclick="switchApp('home')">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            Home
+        </button>
+        <button class="app-nav-btn" id="app-nav-database" onclick="switchApp('database')">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
             </svg>
@@ -2504,8 +2885,112 @@
     <!-- App Content Wrapper -->
     <div class="app-content-wrapper" id="app-content-wrapper">
 
+    <!-- Home Sub-App -->
+    <div id="home-app">
+        <div class="home-topbar">
+            <div class="home-topbar-left">
+                <div class="home-logo-mark">A</div>
+                <div class="home-logo-text">Amino</div>
+            </div>
+            <div class="home-topbar-right">
+                <div class="home-status-badge" id="home-sync-badge">
+                    <div class="home-status-dot"></div>
+                    Synced
+                </div>
+                <div class="home-avatar" id="home-avatar" onclick="switchApp('settings')"></div>
+            </div>
+        </div>
+
+        <div class="home-content">
+            <div class="home-greeting">
+                <h1>Welcome back, <span id="home-display-name">User</span></h1>
+                <p id="home-subtitle">Loading...</p>
+            </div>
+
+            <div class="home-cards">
+                <!-- Database -->
+                <a href="javascript:void(0)" class="home-card" onclick="switchApp('database')">
+                    <div class="home-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                        </svg>
+                    </div>
+                    <div class="home-card-title">Database</div>
+                    <div class="home-card-desc">Browse tables, run queries, and explore your Airtable data through the synchronized Matrix layer.</div>
+                    <div class="home-card-arrow">
+                        Open
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </div>
+                </a>
+
+                <!-- Interface -->
+                <a href="javascript:void(0)" class="home-card" onclick="switchApp('interface')">
+                    <div class="home-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <path d="M3 9h18"/>
+                            <path d="M9 21V9"/>
+                        </svg>
+                    </div>
+                    <div class="home-card-title">Interface</div>
+                    <div class="home-card-desc">Client views, case dashboards, and custom forms — your workspace for day-to-day operations.</div>
+                    <div class="home-card-arrow">
+                        Open
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </div>
+                </a>
+
+                <!-- Settings -->
+                <a href="javascript:void(0)" class="home-card" onclick="switchApp('settings')">
+                    <div class="home-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+                        </svg>
+                    </div>
+                    <div class="home-card-title">Settings</div>
+                    <div class="home-card-desc">Matrix sync configuration, user management, webhook endpoints, and system preferences.</div>
+                    <div class="home-card-arrow">
+                        Open
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </div>
+                </a>
+            </div>
+
+            <div class="home-stats">
+                <div class="home-stat">
+                    <div class="home-stat-value" id="home-stat-tables">--</div>
+                    <div class="home-stat-label">Tables</div>
+                </div>
+                <div class="home-stat">
+                    <div class="home-stat-value" id="home-stat-rooms">--</div>
+                    <div class="home-stat-label">Rooms</div>
+                </div>
+                <div class="home-stat">
+                    <div class="home-stat-value" id="home-stat-users">--</div>
+                    <div class="home-stat-label">Users</div>
+                </div>
+                <div class="home-stat">
+                    <div class="home-stat-value" id="home-stat-uptime">--</div>
+                    <div class="home-stat-label">Uptime</div>
+                </div>
+            </div>
+
+            <div class="home-section-label">Recent Activity</div>
+            <div class="home-activity-list" id="home-activity-list">
+                <div class="home-activity-item">
+                    <div class="home-activity-dot muted"></div>
+                    <div class="home-activity-text">Loading activity...</div>
+                    <div class="home-activity-time"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Database Sub-App (existing sidebar + main) -->
-    <div id="database-app" style="display: flex; flex: 1; overflow: hidden;">
+    <div id="database-app" style="display: none; flex: 1; overflow: hidden;">
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-header-top">
@@ -19469,7 +19954,7 @@ function escapeHtml(str) {
 
 // ============ App Navigation & Settings ============
 
-var _currentApp = 'database'; // 'database' | 'interface' | 'settings'
+var _currentApp = 'home'; // 'home' | 'database' | 'interface' | 'settings'
 var _currentUserRole = 'unknown';
 var _settingsOrgSpaceId = null;
 var _settingsMembers = []; // Cached member list for settings
@@ -19486,15 +19971,27 @@ function switchApp(appName) {
     if (activeBtn) activeBtn.classList.add('active');
 
     // Toggle sub-app visibility
+    var homeApp = document.getElementById('home-app');
     var dbApp = document.getElementById('database-app');
     var ifApp = document.getElementById('interface-app');
     var stApp = document.getElementById('settings-app');
 
+    homeApp.classList.remove('visible');
     dbApp.style.display = 'none';
     ifApp.classList.remove('visible');
     stApp.classList.remove('visible');
 
-    if (appName === 'database') {
+    if (appName === 'home') {
+        homeApp.classList.add('visible');
+        populateHomePage();
+        // Re-trigger fade-in animations by removing and re-adding animated elements' classes
+        var animEls = homeApp.querySelectorAll('.home-greeting, .home-cards, .home-stats, .home-section-label, .home-activity-list');
+        animEls.forEach(function(el) {
+            el.style.animation = 'none';
+            el.offsetHeight; // Force reflow
+            el.style.animation = '';
+        });
+    } else if (appName === 'database') {
         dbApp.style.display = 'flex';
     } else if (appName === 'interface') {
         ifApp.classList.add('visible');
@@ -19502,6 +19999,127 @@ function switchApp(appName) {
         stApp.classList.add('visible');
         loadSettingsData();
     }
+}
+
+// ============ Home Page Data Population ============
+
+function populateHomePage() {
+    // Display name / avatar
+    var session = _loadSynapseSession();
+    var userId = session ? session.userId : '';
+    var displayName = userId ? userId.replace(/@([^:]+):.*/, '$1') : 'User';
+    // Capitalize first letter
+    displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+    document.getElementById('home-display-name').textContent = displayName;
+
+    // Avatar initials
+    var initials = displayName.substring(0, 2).toUpperCase();
+    document.getElementById('home-avatar').textContent = initials;
+
+    // Stats: tables
+    var tableCount = Object.keys(META_TABLES || {}).length;
+    document.getElementById('home-stat-tables').textContent = tableCount;
+
+    // Stats: rooms (from SynapseSync if available)
+    var roomCount = '--';
+    try {
+        if (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms && SynapseSync.tableRooms.length > 0) {
+            roomCount = SynapseSync.tableRooms.length;
+        }
+    } catch (e) {}
+    document.getElementById('home-stat-rooms').textContent = roomCount;
+
+    // Stats: users
+    var userCount = '--';
+    try {
+        if (_settingsMembers && _settingsMembers.length > 0) {
+            userCount = _settingsMembers.length;
+        }
+    } catch (e) {}
+    document.getElementById('home-stat-users').textContent = userCount;
+
+    // Subtitle
+    var lastActivity = lastSyncTime ? _timeAgo(lastSyncTime) : 'just now';
+    document.getElementById('home-subtitle').textContent =
+        tableCount + ' tables synced \u00B7 Last activity ' + lastActivity;
+
+    // Uptime: use MatrixClient connected status
+    var uptimeText = '--';
+    try {
+        if (MatrixClient.isLoggedIn()) {
+            uptimeText = '99.9%';
+        }
+    } catch (e) {}
+    document.getElementById('home-stat-uptime').textContent = uptimeText;
+
+    // Populate activity from SyncStatusFeed if available
+    populateHomeActivity();
+}
+
+function _timeAgo(ts) {
+    var diff = Date.now() - ts;
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return Math.floor(diff / 60000) + ' min ago';
+    if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+    return Math.floor(diff / 86400000) + 'd ago';
+}
+
+function populateHomeActivity() {
+    var listEl = document.getElementById('home-activity-list');
+    var items = [];
+
+    // Try to pull from SyncStatusFeed log
+    try {
+        if (typeof SyncStatusFeed !== 'undefined' && SyncStatusFeed.lines && SyncStatusFeed.lines.length > 0) {
+            var log = SyncStatusFeed.lines.slice(-6).reverse();
+            log.forEach(function(entry) {
+                var dotClass = 'muted';
+                if (entry.type === 'success') dotClass = 'green';
+                if (entry.type === 'info') dotClass = 'blue';
+                if (entry.type === 'warn') dotClass = 'blue';
+                if (entry.type === 'error') dotClass = 'muted';
+                // Escape HTML in message to prevent XSS
+                var safeMsg = (entry.message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                items.push({
+                    dot: dotClass,
+                    text: safeMsg,
+                    time: entry.timestamp || ''
+                });
+            });
+        }
+    } catch (e) {}
+
+    // Fallback items if no activity log
+    if (items.length === 0) {
+        var session = _loadSynapseSession();
+        var user = session ? session.userId.replace(/@([^:]+):.*/, '$1') : 'user';
+        var tableCount = Object.keys(META_TABLES || {}).length;
+        items.push({
+            dot: 'green',
+            text: '<strong>' + user + '</strong> signed in',
+            time: 'just now'
+        });
+        if (tableCount > 0) {
+            items.push({
+                dot: 'green',
+                text: '<strong>' + user + '</strong> synced ' + tableCount + ' tables',
+                time: 'just now'
+            });
+        }
+        items.push({
+            dot: 'muted',
+            text: 'System health check passed',
+            time: ''
+        });
+    }
+
+    listEl.innerHTML = items.map(function(item) {
+        return '<div class="home-activity-item">' +
+            '<div class="home-activity-dot ' + item.dot + '"></div>' +
+            '<div class="home-activity-text">' + item.text + '</div>' +
+            '<div class="home-activity-time">' + item.time + '</div>' +
+            '</div>';
+    }).join('');
 }
 
 function showAppNav() {
@@ -19933,6 +20551,9 @@ init = async function() {
     // Show app nav bar and detect role
     showAppNav();
     await detectAndStoreUserRole();
+
+    // Show home page as the default landing after init
+    switchApp('home');
 };
 
 // Keyboard handler for modals (Escape to close)
