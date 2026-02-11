@@ -721,6 +721,14 @@
         }
         th .readonly-icon svg { width: 11px; height: 11px; }
 
+        /* Display name icon in column headers */
+        th .display-name-icon {
+            display: inline-flex; align-items: center; margin-left: 4px;
+            color: #3b82f6; vertical-align: middle;
+        }
+        th .display-name-icon svg { width: 12px; height: 12px; }
+        html.light-theme th .display-name-icon { color: #2563eb; }
+
         /* Formula badge on profile field cards */
         .profile-field-name .formula-badge {
             font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
@@ -3754,6 +3762,10 @@
 
     <!-- Column Context Menu -->
     <div class="view-context-menu" id="column-context-menu">
+        <div class="view-context-menu-item" id="ctx-set-display-name" onclick="setDisplayNameFromContextMenu()">
+            <span>&#127991;</span> Set as display name
+        </div>
+        <div class="view-context-menu-separator"></div>
         <div class="view-context-menu-item" onclick="hideColumnFromContextMenu()">
             <span>&#128065;</span> Hide column
         </div>
@@ -9434,6 +9446,7 @@ async function processEventsMemoryOnly(events, onProgress) {
             applyPayloadFields(tableData, payload);
             if (payload.tableName) tableData.tableName = payload.tableName;
             if (payload.primaryFieldId) tableData.primaryFieldId = payload.primaryFieldId;
+            if (payload.displayNameFieldId) tableData.displayNameFieldId = payload.displayNameFieldId;
             if (payload.tableId) tableData.tableId = payload.tableId;
             META_TABLES[tableId] = tableData;
 
@@ -9619,6 +9632,7 @@ async function processEvents(events, options) {
             applyPayloadFields(tableData, payload);
             if (payload.tableName) tableData.tableName = payload.tableName;
             if (payload.primaryFieldId) tableData.primaryFieldId = payload.primaryFieldId;
+            if (payload.displayNameFieldId) tableData.displayNameFieldId = payload.displayNameFieldId;
             if (payload.tableId) tableData.tableId = payload.tableId;
             tables.push(tableData);
             META_TABLES[tableId] = tableData;
@@ -10519,6 +10533,15 @@ function showColumnContextMenu(event, fieldId) {
 
     contextMenuFieldId = fieldId;
 
+    // Update display name menu item label
+    var displayNameItem = document.getElementById('ctx-set-display-name');
+    if (displayNameItem) {
+        var isCurrentDisplayName = currentTable && META_TABLES[currentTable] && META_TABLES[currentTable].displayNameFieldId === fieldId;
+        displayNameItem.innerHTML = isCurrentDisplayName
+            ? '<span>&#127991;</span> Remove display name'
+            : '<span>&#127991;</span> Set as display name';
+    }
+
     var menu = document.getElementById('column-context-menu');
     menu.style.left = event.clientX + 'px';
     menu.style.top = event.clientY + 'px';
@@ -10538,6 +10561,39 @@ function hideColumnFromContextMenu() {
     var fieldId = contextMenuFieldId;
     closeColumnContextMenu();
     toggleFieldVisibility(fieldId);
+}
+
+// Get the display name field ID for a table (explicit setting or fallback to first visible field)
+function getDisplayNameFieldId(tableId) {
+    var table = META_TABLES[tableId];
+    if (table && table.displayNameFieldId) {
+        // Verify the field still exists
+        var fields = META_FIELDS[tableId] || {};
+        if (fields[table.displayNameFieldId]) {
+            return table.displayNameFieldId;
+        }
+    }
+    return null;
+}
+
+// Set a field as the display name for its table
+async function setDisplayNameFromContextMenu() {
+    if (!contextMenuFieldId || !currentTable) return;
+    var fieldId = contextMenuFieldId;
+    closeColumnContextMenu();
+
+    var table = META_TABLES[currentTable];
+    if (!table) return;
+
+    // Toggle: if already the display name, clear it
+    if (table.displayNameFieldId === fieldId) {
+        delete table.displayNameFieldId;
+    } else {
+        table.displayNameFieldId = fieldId;
+    }
+
+    await saveTable(table);
+    renderTable();
 }
 
 // Create view folder from table context menu
@@ -11611,17 +11667,22 @@ async function renderTable() {
     var groupFieldName = currentGroupBy ? (fields[currentGroupBy]?.fieldName || currentGroupBy) : null;
 
     // Build table with draggable headers
+    var displayNameFid = getDisplayNameFieldId(currentTable);
     var html = '<thead><tr><th style="width: 70px; cursor: default;">Actions</th>';
     colList.forEach((col, idx) => {
         var colField = fields[col];
         var colIsComputed = colField && isComputedFieldType(colField.fieldType);
         var colIsReadOnly = colField && isReadOnlyField(colField);
-        var colTitle = esc(col) + (colIsComputed ? ' (' + computedFieldLabel(colField.fieldType) + ')' : (colIsReadOnly ? ' (Read-only)' : ''));
+        var colIsDisplayName = col === displayNameFid;
+        var colTitle = esc(col) + (colIsDisplayName ? ' (Display name)' : '') + (colIsComputed ? ' (' + computedFieldLabel(colField.fieldType) + ')' : (colIsReadOnly ? ' (Read-only)' : ''));
         html += '<th draggable="true" data-field-id="' + esc(col) + '" data-field-index="' + idx + '" ' +
                 'ondragstart="handleColumnDragStart(event)" ondragover="handleColumnDragOver(event)" ' +
                 'ondrop="handleColumnDrop(event)" ondragend="handleColumnDragEnd(event)" ' +
                 'oncontextmenu="showColumnContextMenu(event, \'' + esc(col) + '\')" ' +
                 'title="' + colTitle + '">' + esc(colNames[col]);
+        if (colIsDisplayName) {
+            html += '<span class="display-name-icon" title="Display name field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>';
+        }
         if (colIsComputed) {
             html += '<span class="formula-icon" title="' + esc(computedFieldLabel(colField.fieldType)) + '">' +
                     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2H4a1 1 0 0 0-1 1v5"/><path d="M15 2h5a1 1 0 0 1 1 1v5"/><path d="M20 15v5a1 1 0 0 1-1 1h-5"/><path d="M4 15v5a1 1 0 0 0 1 1h5"/><path d="m9 12 2 2 4-4"/></svg></span>';
@@ -16064,9 +16125,23 @@ async function openRecordProfile(tableId, recordId, viewId) {
     var overlay = document.getElementById('record-profile-overlay');
     overlay.classList.add('open');
 
-    // Update header
+    // Update header - use display name field value if set, otherwise table name
     var tableName = META_TABLES[tableId]?.tableName || tableId;
-    document.getElementById('profile-title').textContent = tableName;
+    var profileDisplayTitle = tableName;
+    var dnFieldId = getDisplayNameFieldId(tableId);
+    if (dnFieldId) {
+        var dnRecords = await getRecordsByIds(tableId, [recordId]);
+        if (dnRecords.length > 0) {
+            var dnFields = dnRecords[0].fields || {};
+            var dnFieldMeta = (META_FIELDS[tableId] || {})[dnFieldId];
+            var dnValue = dnFields[dnFieldId];
+            if (dnValue === undefined && dnFieldMeta) dnValue = dnFields[dnFieldMeta.fieldName];
+            if (dnValue != null && dnValue !== '') {
+                profileDisplayTitle = String(dnValue);
+            }
+        }
+    }
+    document.getElementById('profile-title').textContent = profileDisplayTitle;
 
     // Show view name
     var actualViewId = viewId || currentView || '_default';
