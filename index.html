@@ -1402,6 +1402,26 @@
         .events-tab { padding: 10px 20px; font-size: 13px; font-weight: 500; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; user-select: none; }
         .events-tab:hover { color: var(--text-secondary); }
         .events-tab.active { color: var(--text-primary); border-bottom-color: var(--primary-500); }
+        .room-access-layout { display: flex; flex-direction: column; gap: 14px; padding: 16px 20px; }
+        .room-access-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .room-access-meta { font-size: 12px; color: var(--text-muted); }
+        .room-access-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+        .room-access-card { border: 1px solid var(--border-primary); border-radius: var(--radius-md); background: var(--bg-secondary); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+        .room-access-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+        .room-access-name { font-weight: 600; color: var(--text-primary); }
+        .room-access-id { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); word-break: break-all; }
+        .room-access-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+        .room-access-badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: var(--radius-sm); text-transform: uppercase; letter-spacing: 0.04em; }
+        .room-access-badge.space { background: rgba(124, 58, 237, 0.15); color: #a78bfa; }
+        .room-access-badge.table { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+        .room-access-badge.timeline { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+        .room-access-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; font-size: 12px; }
+        .room-access-summary .label { color: var(--text-muted); }
+        .room-access-summary .value { color: var(--text-secondary); font-family: var(--font-mono); }
+        .room-access-preview { margin-top: 4px; border-top: 1px solid var(--border-primary); padding-top: 8px; }
+        .room-access-preview h4 { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+        .room-access-preview-item { font-size: 11px; color: var(--text-secondary); line-height: 1.4; border-left: 2px solid var(--border-secondary); padding-left: 8px; margin-bottom: 6px; word-break: break-word; }
+        .room-access-preview-item:last-child { margin-bottom: 0; }
 
         /* Changelog styles */
         .changelog-list { padding: 0; }
@@ -3857,8 +3877,14 @@ var isLoadingMoreEvents = false; // Prevent multiple simultaneous loads
 var hasMoreEvents = true; // Whether there are more events to load
 var eventsScrollHandler = null; // Reference to scroll handler for cleanup
 
-// Events view tab state: 'events' or 'changelog'
+// Events view tab state: 'events', 'changelog', or 'room-access'
 var eventsActiveTab = 'events';
+
+// Room access tab state
+var roomAccessSnapshot = [];
+var roomAccessRefreshTimer = null;
+var roomAccessRefreshInFlight = false;
+var ROOM_ACCESS_REFRESH_MS = 5000;
 
 // Changelog state (drawn from Matrix room data)
 var changelogEntries = [];
@@ -11583,6 +11609,8 @@ async function showEventsView() {
 async function renderEventsView() {
     var container = document.querySelector('.table-container');
 
+    if (eventsActiveTab !== 'room-access') stopRoomAccessRefresh();
+
     // Clean up previous scroll handlers
     if (eventsScrollHandler) {
         container.removeEventListener('scroll', eventsScrollHandler);
@@ -11597,6 +11625,7 @@ async function renderEventsView() {
     var tabBarHtml = '<div class="events-tab-bar">';
     tabBarHtml += '<div class="events-tab' + (eventsActiveTab === 'events' ? ' active' : '') + '" onclick="switchEventsTab(\'events\')">Events</div>';
     tabBarHtml += '<div class="events-tab' + (eventsActiveTab === 'changelog' ? ' active' : '') + '" onclick="switchEventsTab(\'changelog\')">Changelog</div>';
+    tabBarHtml += '<div class="events-tab' + (eventsActiveTab === 'room-access' ? ' active' : '') + '" onclick="switchEventsTab(\'room-access\')">Room Access</div>';
     tabBarHtml += '</div>';
     tabBarHtml += '<div id="events-tab-content" style="flex:1; overflow-y: auto; display: flex; flex-direction: column;"></div>';
     container.innerHTML = tabBarHtml;
@@ -11604,6 +11633,8 @@ async function renderEventsView() {
     // Render the active tab's content
     if (eventsActiveTab === 'changelog') {
         await renderChangelogContent();
+    } else if (eventsActiveTab === 'room-access') {
+        await renderRoomAccessContent();
     } else {
         await renderEventsContent();
     }
@@ -11613,6 +11644,164 @@ function switchEventsTab(tab) {
     if (eventsActiveTab === tab) return;
     eventsActiveTab = tab;
     renderEventsView();
+}
+
+function stopRoomAccessRefresh() {
+    if (roomAccessRefreshTimer) {
+        clearTimeout(roomAccessRefreshTimer);
+        roomAccessRefreshTimer = null;
+    }
+}
+
+function scheduleRoomAccessRefresh() {
+    stopRoomAccessRefresh();
+    roomAccessRefreshTimer = setTimeout(async function() {
+        if (eventsActiveTab !== 'room-access') return;
+        await refreshRoomAccessSnapshot({ preserveSelection: true });
+        scheduleRoomAccessRefresh();
+    }, ROOM_ACCESS_REFRESH_MS);
+}
+
+function getRoomAccessTableMap() {
+    if (typeof SynapseSync !== 'undefined' && SynapseSync && typeof SynapseSync.getRoomTableMap === 'function') {
+        return SynapseSync.getRoomTableMap() || {};
+    }
+    if (typeof _getRoomTableMap === 'function') {
+        return _getRoomTableMap() || {};
+    }
+    return {};
+}
+
+async function refreshRoomAccessSnapshot(opts) {
+    opts = opts || {};
+    if (roomAccessRefreshInFlight) return;
+    roomAccessRefreshInFlight = true;
+    try {
+        var roomIds = MatrixClient.getJoinedRooms();
+        var roomTableMap = getRoomAccessTableMap();
+        var nextSnapshot = [];
+
+        for (var i = 0; i < roomIds.length; i++) {
+            var roomId = roomIds[i];
+            var state = MatrixClient.getRoomStateFromCache(roomId) || {};
+            var stateValues = Object.values(state);
+            var tableId = roomTableMap[roomId] || null;
+            var tableName = tableId && META_TABLES[tableId] ? (META_TABLES[tableId].tableName || tableId) : null;
+
+            var latestEvents = [];
+            try {
+                var msgRes = await MatrixClient.getRoomMessages(roomId, { dir: 'b', limit: 5 });
+                latestEvents = (msgRes && msgRes.chunk) ? msgRes.chunk : [];
+            } catch (err) {
+                latestEvents = [{ type: 'error', content: { message: err.message || 'Unable to fetch room timeline' } }];
+            }
+
+            nextSnapshot.push({
+                roomId: roomId,
+                roomName: MatrixClient.getRoomName(roomId) || roomId,
+                tableId: tableId,
+                tableName: tableName,
+                isSpace: MatrixClient.isSpace(roomId),
+                stateCount: stateValues.length,
+                timelinePreview: latestEvents
+            });
+        }
+
+        nextSnapshot.sort(function(a, b) {
+            return (a.roomName || '').localeCompare(b.roomName || '');
+        });
+        roomAccessSnapshot = nextSnapshot;
+
+        if (eventsActiveTab === 'room-access') {
+            renderRoomAccessSnapshot(opts.preserveSelection);
+        }
+    } finally {
+        roomAccessRefreshInFlight = false;
+    }
+}
+
+function renderRoomTimelinePreview(ev) {
+    if (!ev) return '<div class="room-access-preview-item">(empty)</div>';
+    var type = ev.type || 'unknown';
+    var sender = ev.sender || 'unknown';
+    var ts = ev.origin_server_ts ? formatTimestamp(ev.origin_server_ts) : 'unknown time';
+    var summary = '';
+
+    if (type === 'law.firm.schema.object' && ev.content) {
+        var c = ev.content;
+        summary = (c.tableId || '?') + ' • ' + (c.recordId || '?') + ' • ' + (c.op || 'ALT');
+    } else if (type === 'm.room.message' && ev.content) {
+        summary = (ev.content.body || '').slice(0, 120);
+    } else if (type === 'error' && ev.content) {
+        summary = ev.content.message || 'error';
+    } else {
+        summary = JSON.stringify(ev.content || {}).slice(0, 140);
+    }
+
+    return '<div class="room-access-preview-item"><strong>' + esc(type) + '</strong> · ' + esc(sender) + '<br><span style="color:var(--text-muted)">' + esc(ts) + '</span><br>' + esc(summary) + '</div>';
+}
+
+function renderRoomAccessSnapshot(preserveSelection) {
+    var container = document.getElementById('events-tab-content');
+    if (!container) return;
+
+    var connected = MatrixClient.isLoggedIn();
+    var html = '<div class="room-access-layout">';
+    html += '<div class="room-access-header">';
+    html += '<div><h3 style="margin:0; font-size:16px;">Matrix Rooms + Live Data</h3><div class="room-access-meta">Auto-refreshes every ' + Math.round(ROOM_ACCESS_REFRESH_MS / 1000) + 's while this tab is active.</div></div>';
+    html += '<div class="events-actions">';
+    html += '<button class="btn" onclick="refreshRoomAccessSnapshot()">Refresh now</button>';
+    html += '</div></div>';
+
+    if (!connected) {
+        html += '<div class="changelog-empty"><h3>Not connected</h3><p>Sign in with Synapse to inspect rooms and incoming timeline data.</p></div>';
+        html += '</div>';
+        container.innerHTML = html;
+        return;
+    }
+
+    html += '<div class="room-access-meta">Showing ' + roomAccessSnapshot.length.toLocaleString() + ' accessible room' + (roomAccessSnapshot.length === 1 ? '' : 's') + '.</div>';
+    html += '<div class="room-access-grid">';
+
+    for (var i = 0; i < roomAccessSnapshot.length; i++) {
+        var room = roomAccessSnapshot[i];
+        html += '<div class="room-access-card">';
+        html += '<div class="room-access-title"><div><div class="room-access-name">' + esc(room.roomName) + '</div><div class="room-access-id">' + esc(room.roomId) + '</div></div>';
+        html += '<div class="room-access-badges">';
+        if (room.isSpace) html += '<span class="room-access-badge space">Space</span>';
+        if (room.tableId) html += '<span class="room-access-badge table">Table</span>';
+        html += '<span class="room-access-badge timeline">Live</span>';
+        html += '</div></div>';
+
+        html += '<div class="room-access-summary">';
+        html += '<div class="label">Table</div><div class="value">' + esc(room.tableName || room.tableId || '—') + '</div>';
+        html += '<div class="label">State events</div><div class="value">' + room.stateCount.toLocaleString() + '</div>';
+        html += '</div>';
+
+        html += '<div class="room-access-preview"><h4>Recent timeline events</h4>';
+        if (!room.timelinePreview || room.timelinePreview.length === 0) {
+            html += '<div class="room-access-preview-item">No recent timeline events.</div>';
+        } else {
+            for (var t = 0; t < room.timelinePreview.length; t++) {
+                html += renderRoomTimelinePreview(room.timelinePreview[t]);
+            }
+        }
+        html += '</div>';
+        html += '</div>';
+    }
+
+    html += '</div></div>';
+    container.innerHTML = html;
+}
+
+async function renderRoomAccessContent() {
+    var container = document.getElementById('events-tab-content');
+    if (!container) return;
+
+    container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><h3>Loading accessible rooms...</h3></div>';
+    stopRoomAccessRefresh();
+    await refreshRoomAccessSnapshot();
+    scheduleRoomAccessRefresh();
 }
 
 async function renderEventsContent() {
