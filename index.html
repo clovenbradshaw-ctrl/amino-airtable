@@ -22145,6 +22145,12 @@ function updateAppNavUser() {
 async function detectAndStoreUserRole() {
     try {
         if (!MatrixClient.isLoggedIn()) return;
+
+        // Hardcoded admin users always get admin role, even before org space is found
+        if (MatrixClient.isHardcodedAdmin()) {
+            _currentUserRole = 'admin';
+        }
+
         var orgSpaceId = await MatrixClient.findOrgSpace();
         if (orgSpaceId) {
             _settingsOrgSpaceId = orgSpaceId;
