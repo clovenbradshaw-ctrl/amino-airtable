@@ -1205,6 +1205,13 @@
         .refresh-indicator.syncing .refresh-dot { background: var(--primary-500); animation: pulse-dot 1s ease-in-out infinite; }
         @keyframes pulse-dot { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: 0.5; } }
 
+        /* Airtable sync button states */
+        #airtable-sync-btn.syncing { color: var(--primary-400); border-color: var(--primary-500); }
+        #airtable-sync-btn.syncing #sync-icon { animation: spin-sync 1s linear infinite; }
+        #airtable-sync-btn.cooldown { opacity: 0.6; cursor: default; }
+        #airtable-sync-btn.cooldown:hover { background: var(--bg-tertiary); color: var(--text-secondary); border-color: var(--border-primary); }
+        @keyframes spin-sync { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
         .view-save-indicator { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); padding: 4px 10px; border-radius: var(--radius-sm); transition: all 0.3s; margin-left: 8px; }
         .view-save-indicator.dirty { color: var(--warning-500); background: rgba(245, 158, 11, 0.1); }
         .view-save-indicator.saving { color: var(--primary-400); background: rgba(59, 130, 246, 0.1); }
@@ -2334,7 +2341,10 @@
                 </div>
                 <button class="view-save-btn" id="manual-save-btn" onclick="saveViewToBackendNow()" style="display: none;">Save Now</button>
 
-                <button class="btn" onclick="manualSync()">Sync</button>
+                <button class="btn" id="airtable-sync-btn" onclick="manualAirtableSync()" title="Pull latest changes from Airtable">
+                    <svg id="sync-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6"/><path d="M2.5 11.5a10 10 0 0118.8-4.3L21.5 8M21.5 12.5a10 10 0 01-18.8 4.3L2.5 16"/></svg>
+                    <span id="sync-btn-text">Sync</span>
+                </button>
                 <button class="btn" id="connect-api-btn" onclick="showConnectApiModal()" style="display: none; background: #2d6cdf; color: #fff;">Connect API</button>
                 <button class="btn" onclick="logout()">Logout</button>
             </div>
@@ -7637,6 +7647,112 @@ async function manualSync() {
         SynapseSync.start();
     }
 }
+
+// ============ Airtable Manual Sync ============
+
+var _syncBtnCooldownTimer = null;
+
+async function manualAirtableSync() {
+    var btn = document.getElementById('airtable-sync-btn');
+    var textEl = document.getElementById('sync-btn-text');
+
+    // Check if still in cooldown
+    if (btn && btn.classList.contains('cooldown')) return;
+
+    // Visual: show syncing state
+    if (btn) btn.classList.add('syncing');
+    if (textEl) textEl.textContent = 'Syncing...';
+
+    try {
+        // 1. Trigger n8n to pull from Airtable
+        var result = await AminoData.triggerAirtableSync();
+
+        if (!result.triggered && result.cooldownRemaining > 0) {
+            // Was rate-limited — start cooldown UI
+            _startSyncCooldownUI(result.cooldownRemaining);
+            return;
+        }
+
+        if (result.error) {
+            console.warn('[ManualSync] Airtable trigger had error:', result.error);
+        }
+
+        // 2. Also ensure Synapse sync is running to pick up the changes
+        if (!SynapseSync.running) {
+            SynapseSync.start();
+        }
+
+        // 3. Brief delay for n8n to process, then show cooldown
+        if (btn) btn.classList.remove('syncing');
+        if (textEl) textEl.textContent = 'Triggered';
+
+        // Start cooldown countdown after a short feedback delay
+        setTimeout(function() {
+            _startSyncCooldownUI(result.cooldownRemaining || 60000);
+        }, 1500);
+
+    } catch (err) {
+        console.error('[ManualSync] Error:', err);
+        if (btn) btn.classList.remove('syncing');
+        if (textEl) textEl.textContent = 'Sync';
+    }
+}
+
+function _startSyncCooldownUI(remainingMs) {
+    var btn = document.getElementById('airtable-sync-btn');
+    var textEl = document.getElementById('sync-btn-text');
+
+    if (btn) {
+        btn.classList.remove('syncing');
+        btn.classList.add('cooldown');
+    }
+
+    if (_syncBtnCooldownTimer) clearInterval(_syncBtnCooldownTimer);
+
+    var endTime = Date.now() + remainingMs;
+
+    function tick() {
+        var left = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+        if (left <= 0) {
+            clearInterval(_syncBtnCooldownTimer);
+            _syncBtnCooldownTimer = null;
+            if (btn) btn.classList.remove('cooldown');
+            if (textEl) textEl.textContent = 'Sync';
+            return;
+        }
+        if (textEl) textEl.textContent = left + 's';
+    }
+
+    tick();
+    _syncBtnCooldownTimer = setInterval(tick, 1000);
+}
+
+// ============ Intelligent Auto-Sync on Tab Focus ============
+// When the user returns to the tab after being away, trigger an Airtable
+// sync if enough time has passed (respects the data-layer cooldown).
+
+(function() {
+    var IDLE_THRESHOLD = 60000; // 60s away before auto-triggering on return
+    var _lastHidden = 0;
+
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            _lastHidden = Date.now();
+            return;
+        }
+
+        // Tab became visible — check if we've been away long enough
+        var away = Date.now() - _lastHidden;
+        if (_lastHidden > 0 && away >= IDLE_THRESHOLD) {
+            // Check cooldown before triggering
+            var status = AminoData.getAirtableSyncStatus();
+            if (status.cooldownRemaining <= 0 && !status.inFlight) {
+                console.log('[AutoSync] Tab refocused after ' + Math.round(away / 1000) + 's — triggering Airtable sync');
+                manualAirtableSync();
+            }
+        }
+    });
+})();
 
 // Skip auth and go directly to CSV upload
 async function skipAuthAndUploadCSV() {

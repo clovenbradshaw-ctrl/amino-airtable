@@ -17,6 +17,8 @@ var AminoData = (function() {
     var DEFAULT_POLL_INTERVAL = 15000; // 15 seconds
     var SYNAPSE_SALT_PREFIX = 'amino-local-encrypt:';
     var ENCRYPTION_ALGORITHM = 'aes-gcm-256';
+    var AIRTABLE_SYNC_WEBHOOK = 'https://n8n.intelechia.com/webhook/c875f674-9228-45ae-b6ec-10870df8a403';
+    var AIRTABLE_SYNC_COOLDOWN = 60000; // 60 seconds minimum between triggers
 
     // ============ Internal State (memory only) ============
     var _db = null;
@@ -31,6 +33,8 @@ var AminoData = (function() {
     var _matrixSyncRunning = false;
     var _matrixSyncAbort = null;
     var _initialized = false;
+    var _lastAirtableSyncTrigger = 0;
+    var _airtableSyncInFlight = false;
 
     // ============ Encryption ============
 
@@ -899,6 +903,64 @@ var AminoData = (function() {
         return sendEncryptedRecord(roomId, recordId, fields, op);
     }
 
+    // ============ Airtable Manual Sync Trigger ============
+
+    // Trigger n8n to pull latest changes from Airtable.
+    // Rate-limited: enforces a minimum cooldown between calls to avoid flooding n8n.
+    // Returns { triggered: bool, cooldownRemaining: number (ms), error?: string }
+    async function triggerAirtableSync() {
+        var now = Date.now();
+        var elapsed = now - _lastAirtableSyncTrigger;
+        var remaining = Math.max(0, AIRTABLE_SYNC_COOLDOWN - elapsed);
+
+        // Rate limit: reject if still within cooldown
+        if (remaining > 0) {
+            console.log('[AminoData] Airtable sync throttled — ' + Math.ceil(remaining / 1000) + 's remaining');
+            return { triggered: false, cooldownRemaining: remaining };
+        }
+
+        // Deduplicate: don't send if a request is already in flight
+        if (_airtableSyncInFlight) {
+            console.log('[AminoData] Airtable sync already in progress');
+            return { triggered: false, cooldownRemaining: 0, inFlight: true };
+        }
+
+        _airtableSyncInFlight = true;
+        _lastAirtableSyncTrigger = now;
+
+        try {
+            console.log('[AminoData] Triggering Airtable sync via n8n webhook');
+            var response = await fetch(AIRTABLE_SYNC_WEBHOOK);
+
+            if (!response.ok) {
+                var errMsg = 'Airtable sync webhook returned ' + response.status;
+                console.warn('[AminoData] ' + errMsg);
+                return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN, error: errMsg };
+            }
+
+            console.log('[AminoData] Airtable sync triggered successfully');
+            return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN };
+        } catch (err) {
+            console.error('[AminoData] Airtable sync webhook failed:', err);
+            // Still count as a trigger attempt for cooldown purposes
+            return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN, error: err.message };
+        } finally {
+            _airtableSyncInFlight = false;
+        }
+    }
+
+    // Get current sync trigger status without triggering.
+    function getAirtableSyncStatus() {
+        var elapsed = Date.now() - _lastAirtableSyncTrigger;
+        var remaining = Math.max(0, AIRTABLE_SYNC_COOLDOWN - elapsed);
+        return {
+            cooldownRemaining: remaining,
+            inFlight: _airtableSyncInFlight,
+            lastTriggered: _lastAirtableSyncTrigger || null,
+            cooldownMs: AIRTABLE_SYNC_COOLDOWN
+        };
+    }
+
     // ============ Polling ============
 
     function startPolling(intervalMs) {
@@ -1497,6 +1559,8 @@ var AminoData = (function() {
         stopPolling: stopPolling,
         startMatrixSync: startMatrixSync,
         stopMatrixSync: stopMatrixSync,
+        triggerAirtableSync: triggerAirtableSync,
+        getAirtableSyncStatus: getAirtableSyncStatus,
 
         // Encrypted record writing (fields encrypted in Matrix events)
         sendEncryptedRecord: sendEncryptedRecord,
