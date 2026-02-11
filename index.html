@@ -8833,8 +8833,20 @@ async function processEventsMemoryOnly(events, onProgress) {
     if (onProgress) onProgress(total, total, Object.keys(META_TABLES).length);
 }
 
-async function processEvents(events) {
+// Process events into IndexedDB records, field history, and schema metadata.
+//
+// Options:
+//   historyOnly (boolean, default false) — when true, only builds field
+//       history entries and saves schema metadata (tables/fields/views).
+//       Data records are NOT written to IndexedDB, preserving the
+//       webhook-hydrated current state.  Record state is still tracked
+//       in memory (starting from {}) so that oldValue / newValue in
+//       history entries are accurate relative to the event sequence.
+async function processEvents(events, options) {
     if (!events || !Array.isArray(events)) return;
+
+    options = options || {};
+    var historyOnly = !!options.historyOnly;
 
     var tables = [];
     var fields = [];
@@ -8843,31 +8855,36 @@ async function processEvents(events) {
     var fieldHistoryEntries = [];
     var tableDataMap = {}; // tableId -> { recordId -> fields }
 
-    // Pre-load existing record states from IndexedDB for accurate history oldValue tracking
-    // First pass: collect all unique [tableId, recordId] pairs for data records
-    var recordsToLoad = {}; // tableId -> Set of recordIds
-    for (var e of events) {
-        if (!e || !e.set || !e.recordId) continue;
-        var payload = parsePayload(e.payload);
-        if (!payload || typeof payload !== 'object') continue;
-        var recordType = payload._set;
-        // Only load state for data records (not table/field/view metadata)
-        if (recordType !== 'table' && recordType !== 'field' && recordType !== 'view') {
-            var tableId = e.set.replace('airtable:', '');
-            if (!recordsToLoad[tableId]) recordsToLoad[tableId] = new Set();
-            recordsToLoad[tableId].add(e.recordId);
+    // Pre-load existing record states from IndexedDB for accurate history
+    // oldValue tracking.  In historyOnly mode we skip pre-loading so that
+    // the in-memory state starts from {} and history old/new values reflect
+    // the chronological event sequence rather than the current DB snapshot.
+    if (!historyOnly) {
+        // First pass: collect all unique [tableId, recordId] pairs for data records
+        var recordsToLoad = {}; // tableId -> Set of recordIds
+        for (var e of events) {
+            if (!e || !e.set || !e.recordId) continue;
+            var payload = parsePayload(e.payload);
+            if (!payload || typeof payload !== 'object') continue;
+            var recordType = payload._set;
+            // Only load state for data records (not table/field/view metadata)
+            if (recordType !== 'table' && recordType !== 'field' && recordType !== 'view') {
+                var tableId = e.set.replace('airtable:', '');
+                if (!recordsToLoad[tableId]) recordsToLoad[tableId] = new Set();
+                recordsToLoad[tableId].add(e.recordId);
+            }
         }
-    }
 
-    // Load existing records from IndexedDB
-    for (var tableId in recordsToLoad) {
-        var recordIds = Array.from(recordsToLoad[tableId]);
-        if (recordIds.length > 0) {
-            var existingRecords = await getRecordsByIds(tableId, recordIds);
-            if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
-            for (var rec of existingRecords) {
-                // Pre-populate with existing field values
-                tableDataMap[tableId][rec.recordId] = { ...rec.fields };
+        // Load existing records from IndexedDB
+        for (var tableId in recordsToLoad) {
+            var recordIds = Array.from(recordsToLoad[tableId]);
+            if (recordIds.length > 0) {
+                var existingRecords = await getRecordsByIds(tableId, recordIds);
+                if (!tableDataMap[tableId]) tableDataMap[tableId] = {};
+                for (var rec of existingRecords) {
+                    // Pre-populate with existing field values
+                    tableDataMap[tableId][rec.recordId] = { ...rec.fields };
+                }
             }
         }
     }
@@ -9081,25 +9098,37 @@ async function processEvents(events) {
         }
     }
 
-    // Convert tableDataMap to dataRecords array and save per-table to limit peak memory
-    var dataRecords = [];
-    for (var tableId in tableDataMap) {
-        for (var recordId in tableDataMap[tableId]) {
-            dataRecords.push({
-                tableId,
-                recordId,
-                fields: tableDataMap[tableId][recordId]
-            });
+    // In historyOnly mode, skip saving data records to IndexedDB — the
+    // webhook-hydrated current state is authoritative.  We still save
+    // schema metadata (tables/fields/views) since room state events carry
+    // richer schema info (field types, options, readOnly flags).
+    if (!historyOnly) {
+        // Convert tableDataMap to dataRecords array and save per-table to limit peak memory
+        var dataRecords = [];
+        for (var tableId in tableDataMap) {
+            for (var recordId in tableDataMap[tableId]) {
+                dataRecords.push({
+                    tableId,
+                    recordId,
+                    fields: tableDataMap[tableId][recordId]
+                });
+            }
+            // Free this table's data from the map after converting
+            delete tableDataMap[tableId];
         }
-        // Free this table's data from the map after converting
-        delete tableDataMap[tableId];
-    }
 
-    // Save batch
-    if (tables.length || fields.length || views.length || dataRecords.length) {
-        await saveBatch(tables, fields, views, dataRecords);
+        // Save batch (schema + data records)
+        if (tables.length || fields.length || views.length || dataRecords.length) {
+            await saveBatch(tables, fields, views, dataRecords);
+        }
+        dataRecords = null; // release
+    } else {
+        // historyOnly: save schema metadata only, no data records
+        if (tables.length || fields.length || views.length) {
+            await saveBatch(tables, fields, views, []);
+        }
+        tableDataMap = null; // release — not needed for storage
     }
-    dataRecords = null; // release
 
     // Save field history in batches to avoid peak memory from huge array
     if (fieldHistoryEntries.length > 0) {
@@ -11895,9 +11924,13 @@ async function hydrateFromSynapse() {
 
 // ============ Matrix History Backfill ============
 
-// After hydrating current record state from the DB API, replay Matrix room
-// timelines to build field-level change history.  This does NOT overwrite
-// current record data — it only writes to the fieldHistory IndexedDB store.
+// After hydrating current record state from the webhook DB API, replay
+// Matrix room timelines to build field-level change history.  Uses
+// processEvents({ historyOnly: true }) so that data records in IndexedDB
+// are NOT overwritten — the webhook-hydrated state remains authoritative.
+// Only field history entries and schema metadata are written.
+// Each room is processed in full (all pages collected first) so that
+// records spanning multiple pages have accurate oldValue tracking.
 async function backfillHistoryFromMatrix() {
     try {
         var session = _loadSynapseSession();
@@ -11956,9 +11989,13 @@ async function backfillHistoryFromMatrix() {
                 console.warn('[HistoryBackfill] State read failed for ' + tableName + ':', stateErr);
             }
 
-            // Paginate timeline to collect mutation events for field history
+            // Paginate the full timeline to collect ALL mutation events for
+            // this room, then process them in a single historyOnly call.
+            // Collecting all events first ensures that records spanning
+            // multiple pages have accurate oldValue tracking (the in-memory
+            // state is maintained across the full chronological sequence).
             var from = null;
-            var roomEvents = 0;
+            var allRoomEvents = [];
             while (true) {
                 try {
                     var msgUrl = SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/rooms/' + encodeURIComponent(tr.roomId) + '/messages?dir=f&limit=100';
@@ -11974,25 +12011,17 @@ async function backfillHistoryFromMatrix() {
                     var chunk = msgData.chunk || [];
                     if (chunk.length === 0) break;
 
-                    // Convert Matrix events to the format processEvents expects
-                    // and process them — processEvents writes field history entries
-                    var convertedEvents = [];
+                    // Convert Matrix events to the synthetic format
                     for (var j = 0; j < chunk.length; j++) {
                         var mevt = chunk[j];
                         if ((mevt.type === 'law.firm.schema.object' || mevt.type === 'law.firm.record.mutate') && mevt.content) {
                             var synEvent = SynapseSync._convertSchemaObjectEvent(mevt, tr.tableId);
-                            if (synEvent) convertedEvents.push(synEvent);
+                            if (synEvent) allRoomEvents.push(synEvent);
                         }
                     }
 
-                    if (convertedEvents.length > 0) {
-                        await processEvents(convertedEvents);
-                        roomEvents += convertedEvents.length;
-                        totalEvents += convertedEvents.length;
-                    }
-
-                    if (roomEvents % 50 === 0 && roomEvents > 0) {
-                        updateLoadingOverlay('Backfilling history — ' + tableName, 'Room ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, 0, totalEvents, roomEvents + ' events in this room...');
+                    if (allRoomEvents.length % 50 === 0 && allRoomEvents.length > 0) {
+                        updateLoadingOverlay('Backfilling history — ' + tableName, 'Room ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, 0, totalEvents + allRoomEvents.length, allRoomEvents.length + ' events collected...');
                     }
 
                     from = msgData.end;
@@ -12003,13 +12032,19 @@ async function backfillHistoryFromMatrix() {
                 }
             }
 
-            if (roomEvents > 0) {
-                console.log('[HistoryBackfill] ' + tableName + ': ' + roomEvents + ' events');
+            // Process all collected events for this room in one call with
+            // historyOnly: true — writes field history and schema metadata
+            // but does NOT overwrite the webhook-hydrated record data.
+            if (allRoomEvents.length > 0) {
+                await processEvents(allRoomEvents, { historyOnly: true });
+                totalEvents += allRoomEvents.length;
+                console.log('[HistoryBackfill] ' + tableName + ': ' + allRoomEvents.length + ' events (history only)');
             }
+            allRoomEvents = null; // release memory for this room
         }
 
         SyncStatusFeed.success('History backfill complete: ' + totalEvents + ' events from ' + tableRooms.length + ' rooms');
-        console.log('[HistoryBackfill] Complete: ' + totalEvents + ' total events');
+        console.log('[HistoryBackfill] Complete: ' + totalEvents + ' total events (history only — record data preserved from webhook)');
         return totalEvents > 0;
     } catch (err) {
         console.error('[HistoryBackfill] Failed:', err);
