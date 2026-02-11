@@ -35,6 +35,9 @@ var AminoData = (function() {
     var _initialized = false;
     var _lastAirtableSyncTrigger = 0;
     var _airtableSyncInFlight = false;
+    var _orgSpaceId = null;           // org space room ID for view deletion monitoring
+    var _viewSyncRunning = false;
+    var _viewSyncAbort = null;
 
     // ============ Encryption ============
 
@@ -871,6 +874,238 @@ var AminoData = (function() {
         }
     }
 
+    // ============ View Deletion Tracking & Propagation ============
+
+    // Process a law.firm.view.delete event received via sync.
+    // Emits amino:view-delete or amino:view-restore custom events
+    // so the UI can react (remove view from sidebar, show undo toast, etc.)
+    function processViewDeleteEvent(event) {
+        var content = event.content;
+        if (!content || !content.viewId || !content.tableId) return;
+
+        var op = content.op || 'NUL';
+
+        if (op === 'NUL') {
+            // View was deleted — notify UI
+            window.dispatchEvent(new CustomEvent('amino:view-delete', {
+                detail: {
+                    eventId: event.event_id || null,
+                    sender: event.sender || null,
+                    timestamp: event.origin_server_ts || Date.now(),
+                    tableId: content.tableId,
+                    viewId: content.viewId,
+                    deletedBy: content.deletedBy || event.sender || null,
+                    viewSnapshot: content.viewSnapshot || null
+                }
+            }));
+        } else if (op === 'INS') {
+            // View was restored — notify UI
+            window.dispatchEvent(new CustomEvent('amino:view-restore', {
+                detail: {
+                    eventId: event.event_id || null,
+                    sender: event.sender || null,
+                    timestamp: event.origin_server_ts || Date.now(),
+                    tableId: content.tableId,
+                    viewId: content.viewId,
+                    restoredBy: content.restoredBy || event.sender || null,
+                    viewSnapshot: content.viewSnapshot || null
+                }
+            }));
+        }
+    }
+
+    // Process timeline events from a Matrix /sync response scoped to the org space.
+    // Looks for law.firm.view.delete events and dispatches them.
+    function processViewSyncResponse(syncData) {
+        if (!syncData || !syncData.rooms || !syncData.rooms.join || !_orgSpaceId) return 0;
+
+        var joinedRooms = syncData.rooms.join;
+        var orgRoom = joinedRooms[_orgSpaceId];
+        if (!orgRoom || !orgRoom.timeline || !orgRoom.timeline.events) return 0;
+
+        var processed = 0;
+        var events = orgRoom.timeline.events;
+        for (var i = 0; i < events.length; i++) {
+            var event = events[i];
+            if (event.type === 'law.firm.view.delete') {
+                processViewDeleteEvent(event);
+                processed++;
+            }
+        }
+        return processed;
+    }
+
+    // Start a long-poll sync loop monitoring the org space for view deletion events.
+    // This runs alongside the main record sync loop but scoped to different
+    // event types in the org space room.
+    async function startViewDeletionSync(orgSpaceId) {
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
+            console.warn('[AminoData] MatrixClient not available, cannot monitor view deletions');
+            return false;
+        }
+
+        if (!orgSpaceId) {
+            console.warn('[AminoData] No org space ID provided, cannot monitor view deletions');
+            return false;
+        }
+
+        _orgSpaceId = orgSpaceId;
+        _viewSyncRunning = true;
+        console.log('[AminoData] Starting view deletion sync for org space:', orgSpaceId);
+
+        _runViewSyncLoop();
+        return true;
+    }
+
+    async function _runViewSyncLoop() {
+        var syncToken = null;
+        var homeserverUrl = MatrixClient.getHomeserverUrl();
+
+        // Build a filter scoped to the org space for view deletion events only
+        var filter = JSON.stringify({
+            room: {
+                rooms: [_orgSpaceId],
+                timeline: {
+                    types: ['law.firm.view.delete'],
+                    limit: 50
+                },
+                state: { lazy_load_members: true, types: [] },
+                ephemeral: { types: [] },
+                account_data: { types: [] }
+            },
+            presence: { types: [] },
+            account_data: { types: [] }
+        });
+
+        while (_viewSyncRunning) {
+            try {
+                var params = {
+                    filter: filter,
+                    timeout: '30000'
+                };
+                if (syncToken) {
+                    params.since = syncToken;
+                }
+
+                var url = homeserverUrl + '/_matrix/client/v3/sync?' + new URLSearchParams(params).toString();
+
+                var controller = new AbortController();
+                _viewSyncAbort = controller;
+
+                var response = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + MatrixClient.getAccessToken() },
+                    signal: controller.signal
+                });
+
+                if (!response.ok) {
+                    if (response.status === 429) {
+                        var retryData = await response.json().catch(function() { return {}; });
+                        var delay = (retryData.retry_after_ms || 5000);
+                        console.warn('[AminoData] View sync rate-limited, waiting', delay, 'ms');
+                        await new Promise(function(r) { setTimeout(r, delay); });
+                        continue;
+                    }
+                    throw new Error('View sync failed: ' + response.status);
+                }
+
+                var data = await response.json();
+                syncToken = data.next_batch;
+
+                var viewUpdates = processViewSyncResponse(data);
+                if (viewUpdates > 0) {
+                    window.dispatchEvent(new CustomEvent('amino:sync', {
+                        detail: { source: 'matrix-view-sync', updatedCount: viewUpdates }
+                    }));
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    break;
+                }
+                console.error('[AminoData] View deletion sync error:', err);
+                await new Promise(function(r) { setTimeout(r, 5000); });
+            }
+        }
+    }
+
+    function stopViewDeletionSync() {
+        _viewSyncRunning = false;
+        if (_viewSyncAbort) {
+            _viewSyncAbort.abort();
+            _viewSyncAbort = null;
+        }
+    }
+
+    // High-level view deletion: records the deletion in Matrix via EO NUL operator,
+    // soft-deletes the state event, and emits a local event for immediate UI update.
+    //
+    // Parameters:
+    //   tableId      — table the view belongs to
+    //   viewId       — view identifier
+    //   viewSnapshot — full view config to preserve for undo
+    //
+    // Returns the event_id from Matrix.
+    async function deleteView(tableId, viewId, viewSnapshot) {
+        if (!_orgSpaceId) throw new Error('Org space not configured for view deletion tracking');
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) throw new Error('MatrixClient not available');
+
+        var result = await MatrixClient.deleteView(_orgSpaceId, tableId, viewId, viewSnapshot);
+
+        // Emit local event immediately (don't wait for sync round-trip)
+        window.dispatchEvent(new CustomEvent('amino:view-delete', {
+            detail: {
+                eventId: (result && result.event_id) || null,
+                sender: MatrixClient.getUserId(),
+                timestamp: Date.now(),
+                tableId: tableId,
+                viewId: viewId,
+                deletedBy: MatrixClient.getUserId(),
+                viewSnapshot: viewSnapshot,
+                source: 'local'
+            }
+        }));
+
+        return result;
+    }
+
+    // High-level view restore: records the restoration in Matrix via EO INS operator,
+    // re-publishes the state event, and emits a local event for immediate UI update.
+    //
+    // Parameters:
+    //   tableId      — table the view belongs to
+    //   viewId       — view identifier
+    //   viewSnapshot — full view config to restore
+    //
+    // Returns the event_id from Matrix.
+    async function restoreView(tableId, viewId, viewSnapshot) {
+        if (!_orgSpaceId) throw new Error('Org space not configured for view restoration');
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) throw new Error('MatrixClient not available');
+
+        var result = await MatrixClient.restoreView(_orgSpaceId, tableId, viewId, viewSnapshot);
+
+        // Emit local event immediately
+        window.dispatchEvent(new CustomEvent('amino:view-restore', {
+            detail: {
+                eventId: (result && result.event_id) || null,
+                sender: MatrixClient.getUserId(),
+                timestamp: Date.now(),
+                tableId: tableId,
+                viewId: viewId,
+                restoredBy: MatrixClient.getUserId(),
+                viewSnapshot: viewSnapshot,
+                source: 'local'
+            }
+        }));
+
+        return result;
+    }
+
+    // Fetch the view deletion/restoration history for the org.
+    // Delegates to MatrixClient.getViewDeletionHistory.
+    async function getViewDeletionHistory(options) {
+        if (!_orgSpaceId) throw new Error('Org space not configured');
+        return MatrixClient.getViewDeletionHistory(_orgSpaceId, options);
+    }
+
     // ============ Encrypted Record Writing ============
 
     // Send an encrypted law.firm.record.mutate event to a Matrix room.
@@ -1183,11 +1418,13 @@ var AminoData = (function() {
     function logout(clearData) {
         stopPolling();
         stopMatrixSync();
+        stopViewDeletionSync();
         _cryptoKey = null;
         _accessToken = null;
         _userId = null;
         _tableRoomMap = {};
         _roomTableMap = {};
+        _orgSpaceId = null;
         _initialized = false;
 
         if (clearData && _db) {
@@ -1551,6 +1788,13 @@ var AminoData = (function() {
         stopMatrixSync: stopMatrixSync,
         triggerAirtableSync: triggerAirtableSync,
         getAirtableSyncStatus: getAirtableSyncStatus,
+
+        // View deletion tracking (EO NUL/INS operators via Matrix)
+        startViewDeletionSync: startViewDeletionSync,
+        stopViewDeletionSync: stopViewDeletionSync,
+        deleteView: deleteView,
+        restoreView: restoreView,
+        getViewDeletionHistory: getViewDeletionHistory,
 
         // Encrypted record writing (fields encrypted in Matrix events)
         sendEncryptedRecord: sendEncryptedRecord,
