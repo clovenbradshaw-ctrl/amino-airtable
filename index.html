@@ -2545,7 +2545,10 @@
 
         /* Revamped data table */
         .iface-table-revamp {
-            width: 100%; border-collapse: collapse; font-size: 13px;
+            width: max-content;
+            min-width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
         }
         .iface-table-revamp thead th {
             text-align: left; padding: 10px 16px;
@@ -2581,6 +2584,67 @@
         .iface-table-revamp td .status-dot.amber { background: var(--warning-500); }
         .iface-table-revamp td .status-dot.red { background: var(--danger-500); }
         .iface-table-revamp td .status-dot.slate { background: var(--text-muted); }
+
+        @media (max-width: 1024px) {
+            .iface-page[data-page-id="clients"] .iface-page-content.full-width {
+                padding: 20px 14px 16px;
+            }
+            .iface-clients-header {
+                flex-wrap: wrap;
+                gap: 10px;
+                align-items: flex-start;
+            }
+            .iface-clients-header h2 {
+                flex: 1 1 220px;
+            }
+            .iface-clients-header-actions {
+                flex: 1 1 320px;
+                width: 100%;
+            }
+            .iface-clients-header-actions .iface-block-search {
+                flex: 1;
+                min-width: 180px;
+                width: auto !important;
+                margin-right: 0 !important;
+            }
+            .iface-table-revamp thead th,
+            .iface-table-revamp td {
+                padding: 9px 12px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .iface-page[data-page-id="clients"] .iface-page-content.full-width {
+                padding: 14px 8px 12px;
+            }
+            .iface-clients-header h2 {
+                font-size: 15px;
+            }
+            .iface-clients-header h2 .muted {
+                display: block;
+                margin-top: 2px;
+                font-size: 12px;
+            }
+            .iface-clients-header-actions {
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            .iface-clients-header-actions > * {
+                width: 100%;
+            }
+            .iface-table-wrapper {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            .iface-table-revamp thead th,
+            .iface-table-revamp td {
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+            .iface-table-revamp td {
+                max-width: 180px;
+            }
+        }
 
         /* Events page layout */
         .iface-events-layout {
