@@ -1191,6 +1191,53 @@
             .home-content { padding: 40px 20px 60px; }
         }
 
+        /* ===== File Header Bar ===== */
+        .file-header {
+            display: none;
+            width: 100%;
+            height: 36px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-primary);
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            flex-shrink: 0;
+            z-index: 51;
+        }
+        .file-header.visible { display: flex; }
+        .file-header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .file-header-role {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+        .file-header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .file-header-theme-btn {
+            padding: 3px 10px;
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-family: var(--font-sans);
+            cursor: pointer;
+            transition: background var(--transition-fast), color var(--transition-fast);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .file-header-theme-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
         /* ===== App Navigation Bar ===== */
         .app-nav {
             display: none;
@@ -3218,6 +3265,19 @@
         </div>
     </div>
 
+    <!-- File Header Bar (shown after login) -->
+    <div class="file-header" id="file-header">
+        <div class="file-header-left">
+            <span class="file-header-role" id="file-header-role">admin</span>
+        </div>
+        <div class="file-header-right">
+            <button class="file-header-theme-btn" onclick="toggleTheme()" title="Toggle light/dark theme">
+                <span id="file-header-theme-icon">&#9788;</span>
+                <span id="file-header-theme-label">Light Mode</span>
+            </button>
+        </div>
+    </div>
+
     <!-- App Navigation Bar (shown after login) -->
     <nav class="app-nav" id="app-nav">
         <button class="app-nav-btn active" id="app-nav-home" onclick="switchApp('home')">
@@ -4096,6 +4156,10 @@ function toggleTheme() {
     var label = document.getElementById('theme-label');
     if (icon) icon.textContent = isLight ? '\u263E' : '\u2606';
     if (label) label.textContent = isLight ? 'Dark Mode' : 'Light Mode';
+    var fhIcon = document.getElementById('file-header-theme-icon');
+    var fhLabel = document.getElementById('file-header-theme-label');
+    if (fhIcon) fhIcon.textContent = isLight ? '\u263E' : '\u2606';
+    if (fhLabel) fhLabel.textContent = isLight ? 'Dark Mode' : 'Light Mode';
 }
 
 // ============ Tab Bar Management ============
@@ -4202,6 +4266,10 @@ function renderTabBar() {
     var label = document.getElementById('theme-label');
     if (icon) icon.textContent = saved === 'light' ? '\u263E' : '\u2606';
     if (label) label.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
+    var fhIcon = document.getElementById('file-header-theme-icon');
+    var fhLabel = document.getElementById('file-header-theme-label');
+    if (fhIcon) fhIcon.textContent = saved === 'light' ? '\u263E' : '\u2606';
+    if (fhLabel) fhLabel.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
 }
 
 var DB_NAME = 'amino';
@@ -20572,10 +20640,12 @@ function populateHomeActivity() {
 
 function showAppNav() {
     document.getElementById('app-nav').classList.add('visible');
+    document.getElementById('file-header').classList.add('visible');
 }
 
 function hideAppNav() {
     document.getElementById('app-nav').classList.remove('visible');
+    document.getElementById('file-header').classList.remove('visible');
 }
 
 function updateAppNavUser() {
@@ -20587,6 +20657,8 @@ function updateAppNavUser() {
     roleEl.className = 'app-nav-user-role';
     if (_currentUserRole === 'admin') roleEl.classList.add('admin');
     else if (_currentUserRole === 'staff') roleEl.classList.add('staff');
+    var fhRole = document.getElementById('file-header-role');
+    if (fhRole) fhRole.textContent = _currentUserRole || 'admin';
 }
 
 async function detectAndStoreUserRole() {
