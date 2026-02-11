@@ -23255,6 +23255,7 @@ var InterfaceApp = (function() {
     var _activePage = null;
     var _globalSearchQuery = '';
     var _tableDataCache = {};       // tableId -> { records: [], lastFetch: timestamp }
+    var _apiDataCache = {};         // sourceKey -> { records: [], lastFetch: timestamp }
     var _tablePaginationState = {}; // pageId -> { page: 0, pageSize: 50, sort: { field, dir } }
     var _blockSearchState = {};     // blockId -> searchQuery
 
@@ -23299,7 +23300,8 @@ var InterfaceApp = (function() {
                         source: {
                             op: 'DES',
                             tableNamePattern: 'case note',
-                            fallbackTablePattern: 'note'
+                            fallbackTablePattern: 'note',
+                            apiUrl: 'https://xvkq-pq7i-idtl.n7d.xano.io/api:l_gEBOGc/case_notes'
                         },
                         display: {
                             titleField: 'Activity',
@@ -23601,7 +23603,8 @@ var InterfaceApp = (function() {
                         source: {
                             op: 'DES',
                             tableNamePattern: 'case note',
-                            fallbackTablePattern: 'note'
+                            fallbackTablePattern: 'note',
+                            apiUrl: 'https://xvkq-pq7i-idtl.n7d.xano.io/api:l_gEBOGc/case_notes'
                         },
                         display: {
                             titleField: 'Activity',
@@ -23622,7 +23625,8 @@ var InterfaceApp = (function() {
                         source: {
                             op: 'DES',
                             tableNamePattern: 'case note',
-                            fallbackTablePattern: 'note'
+                            fallbackTablePattern: 'note',
+                            apiUrl: 'https://xvkq-pq7i-idtl.n7d.xano.io/api:l_gEBOGc/case_notes'
                         },
                         columns: [
                             { field: 'Activity', label: 'Activity', width: 180 },
@@ -23803,6 +23807,58 @@ var InterfaceApp = (function() {
             }
         }
         return null;
+    }
+
+    function _sourceCacheKey(source) {
+        if (!source) return '';
+        if (source.apiUrl) return 'api:' + source.apiUrl;
+        return 'table:' + (source.tableNamePattern || '') + ':' + (source.fallbackTablePattern || '');
+    }
+
+    function _normalizeSourceRecords(rawRecords) {
+        var rows = Array.isArray(rawRecords) ? rawRecords : [];
+        var normalized = [];
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            if (!row || typeof row !== 'object') continue;
+            var rid = row.id || row.recordId || row._id || ('row_' + i);
+            normalized.push({ recordId: String(rid), fields: row });
+        }
+        return normalized;
+    }
+
+    async function _getApiRecords(source) {
+        var apiUrl = source && source.apiUrl;
+        if (!apiUrl) return [];
+
+        var cacheKey = _sourceCacheKey(source);
+        var cached = _apiDataCache[cacheKey];
+        if (cached && (Date.now() - cached.lastFetch) < 10000) {
+            return cached.records;
+        }
+
+        try {
+            var response = await fetch(apiUrl, { method: 'GET' });
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+            var payload = await response.json();
+            var records = _normalizeSourceRecords(payload && payload.data ? payload.data : payload);
+            _apiDataCache[cacheKey] = { records: records, lastFetch: Date.now() };
+            return records;
+        } catch (e) {
+            console.warn('[Interface] API data fetch error for', apiUrl, ':', e.message);
+            return [];
+        }
+    }
+
+    async function _getSourceRecords(source) {
+        if (!source) return [];
+        if (source.apiUrl) {
+            return _getApiRecords(source);
+        }
+        var tableId = _resolveTableId(source);
+        return tableId ? _getTableRecords(tableId) : [];
     }
 
     // ============ Data Fetching ============
@@ -24622,15 +24678,15 @@ var InterfaceApp = (function() {
         allBlocks.forEach(function(b) { allBlocksMap[b.id] = b; });
 
         // Pre-fetch all needed tables
-        var tableIds = {};
+        var fetchWork = {};
         allBlocks.forEach(function(b) {
             if (b.source) {
-                var tid = _resolveTableId(b.source);
-                if (tid) tableIds[tid] = true;
+                var key = _sourceCacheKey(b.source);
+                if (key) fetchWork[key] = b.source;
             }
         });
-        var fetchPromises = Object.keys(tableIds).map(function(tid) {
-            return _getTableRecords(tid);
+        var fetchPromises = Object.keys(fetchWork).map(function(key) {
+            return _getSourceRecords(fetchWork[key]);
         });
         await Promise.all(fetchPromises);
 
@@ -24698,24 +24754,21 @@ var InterfaceApp = (function() {
                 break;
 
             case 'card-list':
-                tableId = _resolveTableId(block.source);
-                records = tableId ? await _getTableRecords(tableId) : [];
+                records = await _getSourceRecords(block.source);
                 searchQ = _blockSearchState[block.id] || '';
                 records = _applySegment(records, block.segment, searchQ, block._activeFilters);
                 html = _renderCardList(block, records);
                 break;
 
             case 'timeline':
-                tableId = _resolveTableId(block.source);
-                records = tableId ? await _getTableRecords(tableId) : [];
+                records = await _getSourceRecords(block.source);
                 searchQ = _blockSearchState[block.id] || '';
                 records = _applySegment(records, block.segment, searchQ, block._activeFilters);
                 html = _renderTimeline(block, records);
                 break;
 
             case 'data-table':
-                tableId = _resolveTableId(block.source);
-                var allTableRecords = tableId ? await _getTableRecords(tableId) : [];
+                var allTableRecords = await _getSourceRecords(block.source);
                 searchQ = _blockSearchState[block.id] || '';
                 records = _applySegment(allTableRecords, block.segment, searchQ, block._activeFilters);
                 pageState = _tablePaginationState[block.id] || { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
