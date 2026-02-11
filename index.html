@@ -14452,8 +14452,15 @@ async function webhookFetch(path) {
         try {
             return await safeResponseJson(response, 'Webhook API');
         } catch (parseErr) {
-            // Some n8n/proxy failures return HTTP 200 with non-JSON body.
-            // Treat parsing failures as transient so the retry/backoff loop can recover.
+            // n8n returns HTTP 200 with an empty body when there are no
+            // records to return (e.g. no changes since the given cursor).
+            // Treat this as a successful empty response, not a transient error.
+            if (parseErr.message && parseErr.message.indexOf('Empty response body') !== -1) {
+                console.log('[webhookFetch] Empty response for ' + path + ' — treating as empty result set');
+                return {};
+            }
+            // Other parse failures (non-JSON body from proxy, etc.) may be
+            // transient — retry with backoff.
             console.warn('[webhookFetch] JSON parse failed for ' + path + ': ' + parseErr.message);
             lastErr = parseErr;
             continue;
