@@ -157,23 +157,6 @@ var MatrixClient = (function() {
         return result;
     }
 
-    // ============ Well-Known Discovery ============
-
-    async function discoverHomeserver(domain) {
-        try {
-            var response = await fetch('https://' + domain + '/.well-known/matrix/client');
-            if (response.ok) {
-                var data = await response.json();
-                if (data['m.homeserver'] && data['m.homeserver'].base_url) {
-                    return data['m.homeserver'].base_url.replace(/\/$/, '');
-                }
-            }
-        } catch (e) {
-            // Well-known not available, try direct
-        }
-        return 'https://' + domain;
-    }
-
     // ============ Authentication ============
 
     async function login(homeserverUrl, username, password) {
@@ -632,24 +615,6 @@ var MatrixClient = (function() {
 
     // ============ User Management ============
 
-    async function registerUser(username, password) {
-        // Register a new user via the admin API or standard registration
-        // This requires the homeserver to allow registration
-        var body = {
-            auth: { type: 'm.login.dummy' },
-            username: username,
-            password: password,
-            inhibit_login: true
-        };
-
-        try {
-            return await _request('POST', '/register', body);
-        } catch (e) {
-            // If registration needs flows, try with shared secret or report error
-            throw e;
-        }
-    }
-
     async function getProfile(userId) {
         try {
             return await _request('GET', '/profile/' + encodeURIComponent(userId || _userId));
@@ -885,39 +850,10 @@ var MatrixClient = (function() {
     }
 
     // ============ EO Event Helpers (law.firm.schema.object) ============
-    // These methods work with the new n8n sync event format where each
-    // mutation is a law.firm.schema.object timeline event with EO operators.
 
     // Get vault room metadata (maps room to Airtable table)
     async function getVaultMetadata(roomId) {
         return getStateEvent(roomId, EVENT_TYPES.VAULT_METADATA, '');
-    }
-
-    // Paginate through all law.firm.schema.object events in a room
-    async function getSchemaObjectMessages(roomId, opts) {
-        opts = opts || {};
-        return getRoomMessages(roomId, {
-            dir: opts.dir || 'f',
-            limit: opts.limit || 100,
-            from: opts.from || undefined,
-            filter: { types: [EVENT_TYPES.SCHEMA_OBJECT] }
-        });
-    }
-
-    // Paginate through law.firm.record.mutate events in a room (forward/chronological)
-    async function getRecordMutateMessages(roomId, opts) {
-        opts = opts || {};
-        return getRoomMessages(roomId, {
-            dir: opts.dir || 'f',
-            limit: opts.limit || 100,
-            from: opts.from || undefined,
-            filter: { types: [EVENT_TYPES.RECORD_MUTATE] }
-        });
-    }
-
-    // Get joined rooms (via API, not just cache)
-    async function getJoinedRoomsFromServer() {
-        return _requestWithRetry('GET', '/joined_rooms');
     }
 
     // ============ Event Listener System ============
@@ -949,7 +885,6 @@ var MatrixClient = (function() {
         POWER_LEVELS: POWER_LEVELS,
 
         // Auth
-        discoverHomeserver: discoverHomeserver,
         login: login,
         logout: logout,
         isLoggedIn: isLoggedIn,
@@ -1009,7 +944,6 @@ var MatrixClient = (function() {
         getUserPowerLevel: getUserPowerLevel,
 
         // User management
-        registerUser: registerUser,
         getProfile: getProfile,
         setDisplayName: setDisplayName,
 
@@ -1041,11 +975,8 @@ var MatrixClient = (function() {
         getRecordsForTable: getRecordsForTable,
         writeProjectedRecord: writeProjectedRecord,
 
-        // EO Event helpers (law.firm.schema.object)
+        // EO Event helpers
         getVaultMetadata: getVaultMetadata,
-        getSchemaObjectMessages: getSchemaObjectMessages,
-        getRecordMutateMessages: getRecordMutateMessages,
-        getJoinedRoomsFromServer: getJoinedRoomsFromServer,
 
         // Events
         on: on,
@@ -1060,9 +991,6 @@ var MatrixClient = (function() {
 
 var MatrixBridge = (function() {
     'use strict';
-
-    var _bridgeInterval = null;
-    var _bridgeRunning = false;
 
     // Bridge configuration (stored in org space config)
     var _config = {
@@ -1288,51 +1216,6 @@ var MatrixBridge = (function() {
         };
     }
 
-    // ============ Bridge Mode (Deprecated — n8n handles sync) ============
-    // Data now flows: Airtable → n8n → Matrix Synapse
-    // The client no longer bridges data between APIs.
-
-    async function startBridge(aminoApiKey, endpoints) {
-        console.warn('[MatrixBridge] Client-side bridge deprecated — n8n handles Airtable → Matrix sync');
-    }
-
-    function stopBridge() {
-        _bridgeRunning = false;
-        if (_bridgeInterval) {
-            clearInterval(_bridgeInterval);
-            _bridgeInterval = null;
-        }
-    }
-
-    function _findRoomForRecord(tableId, recordId, data) {
-        // If this IS a client record, find by identifier
-        if (tableId === _config.clientTable) {
-            var clientName = data[_config.clientIdentifierField];
-            if (clientName && _config.clientRoomMap[clientName]) {
-                return _config.clientRoomMap[clientName].matterRoomId;
-            }
-        }
-
-        // Check linked record field
-        var linkedField = _config.linkedRecordTables[tableId];
-        if (linkedField && data[linkedField]) {
-            var linkedIds = Array.isArray(data[linkedField]) ? data[linkedField] : [data[linkedField]];
-            // Look up which client owns the linked record
-            // This requires us to have a reverse map of record_id -> clientName
-            // For now, scan the client room map
-            // TODO: maintain a reverse index for efficiency
-        }
-
-        return _config.firmRoomId || null;
-    }
-
-    function _getClientForRecord(tableId, recordId, data) {
-        if (tableId === _config.clientTable && data[_config.clientIdentifierField]) {
-            return data[_config.clientIdentifierField];
-        }
-        return null;
-    }
-
     // ============ Bulk Room Deletion ============
 
     async function deleteClientRooms(clientNames, onProgress) {
@@ -1420,14 +1303,6 @@ var MatrixBridge = (function() {
         });
 
         return { deleted: completed - failed.length, failed: failed };
-    }
-
-    // ============ Sever Connection ============
-
-    async function severLegacyConnection() {
-        stopBridge();
-        _config.mode = 'standalone';
-        await _saveBridgeConfig();
     }
 
     // ============ Config Persistence ============
@@ -1539,9 +1414,6 @@ var MatrixBridge = (function() {
         groupRecordsByClient: groupRecordsByClient,
         hydrateToMatrix: hydrateToMatrix,
         deleteClientRooms: deleteClientRooms,
-        startBridge: startBridge,
-        stopBridge: stopBridge,
-        severLegacyConnection: severLegacyConnection,
         loadBridgeConfig: loadBridgeConfig,
         enablePortalAccess: enablePortalAccess,
         disablePortalAccess: disablePortalAccess

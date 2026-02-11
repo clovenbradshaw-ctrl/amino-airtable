@@ -1045,12 +1045,6 @@ var AminoData = (function() {
         return idbGetAll(tx.objectStore('tables'));
     }
 
-    async function getRecordDirect(recordId) {
-        // Fetch a single record directly from the API (bypasses local cache)
-        var data = await apiFetch('/amino-record?recordId=' + encodeURIComponent(recordId));
-        return data.record || null;
-    }
-
     // ============ Initialization ============
 
     async function init(accessToken, userId, password) {
@@ -1547,7 +1541,6 @@ var AminoData = (function() {
         // Data access (decrypted)
         getTableRecords: getTableRecords,
         getRecord: getRecord,
-        getRecordDirect: getRecordDirect,
         searchRecords: searchRecords,
         getTables: getTables,
         getRecordMutationHistory: getRecordMutationHistory,
