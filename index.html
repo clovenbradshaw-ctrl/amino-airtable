@@ -2356,6 +2356,60 @@
         .iface-clients-header h2 { font-size: 17px; font-weight: 600; color: var(--text-primary); }
         .iface-clients-header h2 .muted { color: var(--text-muted); font-weight: 400; font-size: 14px; }
         .iface-clients-header-actions { display: flex; gap: 8px; }
+
+        .iface-client-graph-block {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl);
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .iface-client-graph-toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        .iface-client-graph-toolbar label {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+        .iface-client-graph-select {
+            min-width: 240px;
+            max-width: 420px;
+            font-size: 13px;
+            padding: 8px 10px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-primary);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            outline: none;
+        }
+        .iface-client-graph-select:focus { border-color: var(--primary-500); }
+        .iface-client-graph-summary {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+        .iface-client-graph-canvas-wrap {
+            width: 100%;
+            height: 460px;
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 25% 20%, rgba(59,130,246,0.10), transparent 55%),
+                radial-gradient(circle at 80% 75%, rgba(34,197,94,0.08), transparent 50%),
+                var(--bg-primary);
+        }
+        .iface-client-graph-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
         .iface-btn-secondary {
             font-family: var(--font-sans); font-size: 13px; font-weight: 500;
             padding: 7px 14px; border-radius: var(--radius-md);
@@ -24393,6 +24447,16 @@ var InterfaceApp = (function() {
                             sort: { field: 'Client Name', dir: 'asc' },
                             pageSize: 50
                         }
+                    },
+                    {
+                        id: 'clients-relationship-graph',
+                        type: 'client-relationship-graph',
+                        label: 'Client Relationship Graph',
+                        source: {
+                            op: 'DES',
+                            tableNamePattern: 'client info',
+                            fallbackTablePattern: 'client'
+                        }
                     }
                 ]
             },
@@ -25976,6 +26040,210 @@ var InterfaceApp = (function() {
         return html;
     }
 
+
+    function _normGraphToken(value) {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim();
+    }
+
+    function _pickClientNameField(fields) {
+        if (!fields) return null;
+        var keys = Object.keys(fields);
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i].toLowerCase();
+            if (k === 'client name' || k === 'name' || k.includes('client name')) return keys[i];
+        }
+        return keys.length ? keys[0] : null;
+    }
+
+    function _buildClientRelationshipGraph(records, selectedRecordId) {
+        var all = Array.isArray(records) ? records : [];
+        var entries = [];
+        for (var i = 0; i < all.length; i++) {
+            var rec = all[i] || {};
+            var fields = rec.fields || {};
+            var nameField = _pickClientNameField(fields);
+            var clientName = nameField ? _findFieldValue(fields, nameField) : null;
+            var displayName = Array.isArray(clientName) ? clientName[0] : clientName;
+            displayName = String(displayName || rec.recordId || '').trim();
+            if (!displayName) continue;
+            entries.push({ id: rec.recordId || ('client-' + i), name: displayName, fields: fields });
+        }
+
+        var nodes = [];
+        var links = [];
+        var options = entries.map(function(e) { return { id: e.id, label: e.name }; });
+        if (!entries.length) {
+            return { nodes: nodes, links: links, selectedId: null, selectedName: '', options: options };
+        }
+
+        var anchor = entries.find(function(e) { return e.id === selectedRecordId; }) || entries[0];
+        var selectedId = anchor.id;
+        var selectedName = anchor.name;
+        var centerNodeId = 'n-' + anchor.id;
+        nodes.push({ id: centerNodeId, label: anchor.name, role: 'center', x: 0, y: 0 });
+
+        var tableFieldWeights = {
+            'ich atty': 3,
+            'mch attny options': 3,
+            'case manager': 3,
+            'country': 2,
+            'file case status': 2,
+            'a#': 4
+        };
+
+        var edgeCount = 0;
+        var satellites = entries.filter(function(e) { return e.id !== anchor.id; }).slice(0, 26);
+        for (var j = 0; j < satellites.length; j++) {
+            var other = satellites[j];
+            var similarity = 0;
+            var reasons = [];
+            var keys = Object.keys(other.fields || {});
+            for (var k = 0; k < keys.length; k++) {
+                var key = keys[k];
+                var keyNorm = _normGraphToken(key);
+                if (!keyNorm) continue;
+                var av = _findFieldValue(anchor.fields, key);
+                var bv = other.fields[key];
+                if (av == null || bv == null || av === '' || bv === '') continue;
+                var aNorm = _normGraphToken(Array.isArray(av) ? av.join(' ') : av);
+                var bNorm = _normGraphToken(Array.isArray(bv) ? bv.join(' ') : bv);
+                if (!aNorm || !bNorm) continue;
+                if (aNorm === bNorm) {
+                    var weight = 1;
+                    Object.keys(tableFieldWeights).forEach(function(name) {
+                        if (keyNorm.indexOf(name) !== -1) weight = Math.max(weight, tableFieldWeights[name]);
+                    });
+                    similarity += weight;
+                    reasons.push(key + ': ' + (Array.isArray(bv) ? bv.join(', ') : bv));
+                }
+            }
+            if (similarity <= 0) continue;
+            edgeCount += 1;
+            var angle = (Math.PI * 2 * (edgeCount - 1)) / Math.max(1, satellites.length);
+            var radius = 165 + Math.min(110, similarity * 12);
+            var x = Math.cos(angle) * radius;
+            var y = Math.sin(angle) * radius;
+            var nodeId = 'n-' + other.id;
+            nodes.push({ id: nodeId, label: other.name, role: 'linked', x: x, y: y, meta: reasons.slice(0, 2).join(' • ') });
+            links.push({ from: centerNodeId, to: nodeId, weight: similarity });
+        }
+
+        return { nodes: nodes, links: links, selectedId: selectedId, selectedName: selectedName, options: options };
+    }
+
+    function _renderClientRelationshipGraph(block, records) {
+        var graph = _buildClientRelationshipGraph(records || [], block._selectedClientRecordId);
+        var blockId = _esc(block.id || 'client-graph');
+        var canvasId = 'iface-client-graph-canvas-' + blockId;
+        var summary = graph.links.length
+            ? ('Showing ' + graph.selectedName + ' with ' + graph.links.length + ' connected records.')
+            : 'No shared relationships were detected for this client.';
+
+        var html = '';
+        html += '<div class="iface-client-graph-block" data-client-graph-block="' + blockId + '">';
+        html += '<div class="iface-block-header"><h3>' + _esc(block.label || 'Client Relationship Graph') + '</h3></div>';
+        html += '<div class="iface-client-graph-toolbar">';
+        html += '<label>Client</label>';
+        html += '<select class="iface-client-graph-select" onchange="InterfaceApp.onClientGraphClientChange(\'' + blockId + '\', this.value)">';
+        if (!graph.options.length) {
+            html += '<option value="">No clients available</option>';
+        } else {
+            for (var i = 0; i < graph.options.length; i++) {
+                var opt = graph.options[i];
+                html += '<option value="' + _esc(opt.id) + '"' + (opt.id === graph.selectedId ? ' selected' : '') + '>' + _esc(opt.label) + '</option>';
+            }
+        }
+        html += '</select>';
+        html += '</div>';
+        html += '<div class="iface-client-graph-summary" id="' + _esc(canvasId) + '-summary">' + _esc(summary) + '</div>';
+        html += '<div class="iface-client-graph-canvas-wrap">';
+        html += '<canvas class="iface-client-graph-canvas" id="' + _esc(canvasId) + '"></canvas>';
+        html += '</div>';
+        html += '</div>';
+
+        setTimeout(function() { _drawClientRelationshipCanvas(blockId, graph); }, 0);
+        return html;
+    }
+
+    function _drawClientRelationshipCanvas(blockId, graph) {
+        var canvas = document.getElementById('iface-client-graph-canvas-' + blockId);
+        if (!canvas || !canvas.getContext) return;
+        var rect = canvas.getBoundingClientRect();
+        var dpr = window.devicePixelRatio || 1;
+        var width = Math.max(640, Math.floor(rect.width || 1200));
+        var height = Math.max(360, Math.floor(rect.height || 500));
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        var ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        var cx = width / 2;
+        var cy = height / 2;
+
+        var nodeById = {};
+        (graph.nodes || []).forEach(function(n) { nodeById[n.id] = n; });
+
+        (graph.links || []).forEach(function(link) {
+            var from = nodeById[link.from];
+            var to = nodeById[link.to];
+            if (!from || !to) return;
+            ctx.beginPath();
+            ctx.moveTo(cx + from.x, cy + from.y);
+            ctx.lineTo(cx + to.x, cy + to.y);
+            var alpha = Math.min(0.75, 0.2 + ((link.weight || 1) * 0.08));
+            ctx.strokeStyle = 'rgba(59, 130, 246, ' + alpha + ')';
+            ctx.lineWidth = Math.min(5, 1 + (link.weight || 1));
+            ctx.stroke();
+        });
+
+        (graph.nodes || []).forEach(function(node) {
+            var isCenter = node.role === 'center';
+            var r = isCenter ? 18 : 11;
+            var x = cx + (node.x || 0);
+            var y = cy + (node.y || 0);
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = isCenter ? '#22c55e' : '#3b82f6';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(15,23,42,0.45)';
+            ctx.stroke();
+
+            ctx.font = (isCenter ? '600 13px' : '500 12px') + ' IBM Plex Sans, sans-serif';
+            ctx.fillStyle = 'rgba(226,232,240,0.98)';
+            ctx.textAlign = 'center';
+            ctx.fillText(String(node.label || '').slice(0, 28), x, y - (isCenter ? 24 : 16));
+            if (node.meta) {
+                ctx.font = '11px IBM Plex Sans, sans-serif';
+                ctx.fillStyle = 'rgba(148,163,184,0.95)';
+                ctx.fillText(String(node.meta).slice(0, 42), x, y + 24);
+            }
+        });
+
+        if (!graph.nodes || !graph.nodes.length) {
+            ctx.font = '500 14px IBM Plex Sans, sans-serif';
+            ctx.fillStyle = 'rgba(148,163,184,0.95)';
+            ctx.textAlign = 'center';
+            ctx.fillText('No client relationship data found.', cx, cy);
+        }
+    }
+
+    function onClientGraphClientChange(blockId, selectedRecordId) {
+        if (!_schema || !_activePage) return;
+        var page = _schema.pages.find(function(p) { return p.id === _activePage; });
+        if (!page) return;
+        var block = page.blocks.find(function(b) { return b.id === blockId; });
+        if (!block) return;
+        block._selectedClientRecordId = selectedRecordId || '';
+        renderPage(_activePage);
+        if (_urlStateBootstrapped) persistUrlState();
+    }
+
+
     // ============ Google Calendar Block ============
 
     // Scoped state per block instance (keyed by block.id)
@@ -26514,6 +26782,13 @@ var InterfaceApp = (function() {
                 html = _renderGoogleCalendar(block);
                 break;
 
+            case 'client-relationship-graph':
+                records = await _getSourceRecords(block.source);
+                searchQ = _blockSearchState[block.id] || '';
+                records = _applySegment(records, null, searchQ, null);
+                html = _renderClientRelationshipGraph(block, records);
+                break;
+
             default:
                 html = '<div class="iface-block"><div class="iface-block-body"><div class="iface-empty">Unknown block type: ' + _esc(block.type) + '</div></div></div>';
         }
@@ -26821,6 +27096,7 @@ var InterfaceApp = (function() {
         onFilterChange: onFilterChange,
         onColumnSort: onColumnSort,
         onPageChange: onPageChange,
+        onClientGraphClientChange: onClientGraphClientChange,
         setUrlState: setUrlState,
         getUrlState: getUrlState,
         toggleEditMode: toggleEditMode,
