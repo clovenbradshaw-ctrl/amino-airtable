@@ -14396,6 +14396,11 @@ async function init() {
     totalRecords = 0;
     lastEventTimestamp = null;
 
+    // Show loading overlay immediately so user never sees a blank screen
+    // between login fading out and content appearing.
+    showLoadingOverlay();
+    updateLoadingOverlay('Initializing...', 'Loading local data...', 0, 0, 0, 0, null);
+
     // Load sidebar state (pinned, recent, expanded sections)
     loadSidebarState();
     initSidebarSearch();
@@ -14497,6 +14502,9 @@ async function init() {
         if (firstTable) {
             await showTable(firstTable);
         }
+
+        // Local data loaded — dismiss loading overlay
+        hideLoadingOverlay();
     } else {
         // Missing tables, records, or previous hydration was incomplete —
         // need hydration (retry on every load until it fully succeeds so
