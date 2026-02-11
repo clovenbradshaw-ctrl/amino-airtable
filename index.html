@@ -19889,14 +19889,12 @@ function computedFieldLabel(fieldType) {
 
 var _compiledFormulaCache = {};   // tableId -> { fieldId -> { fn, deps, fieldName } }
 var _compiledFormulaCacheKey = ''; // invalidation key
-// Temporary fail-open mode: prioritize table load speed and raw data visibility.
-// Formula evaluation can be re-enabled later once formula parity is stable.
-var _disableFormulaEvaluation = true;
+var _disableFormulaEvaluation = false;
 
 function _shouldSkipFormulaColumns(recordCount, formulaCount) {
     if (_disableFormulaEvaluation) return true;
-    // Additional budget guard for very large formula workloads.
-    return (recordCount * formulaCount) > 2500;
+    // Budget guard for very large formula workloads.
+    return (recordCount * formulaCount) > 50000;
 }
 
 function _applyFormulaColumns(tableId, fields, recordMap) {
