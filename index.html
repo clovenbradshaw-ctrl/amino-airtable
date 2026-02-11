@@ -1546,6 +1546,120 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        /* Settings: Invite User Form */
+        .settings-invite-form {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-primary);
+        }
+        .settings-invite-form h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .settings-invite-form p {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+        .settings-invite-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        .settings-invite-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+            min-width: 140px;
+        }
+        .settings-invite-field label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        .settings-invite-field input,
+        .settings-invite-field select {
+            padding: 7px 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: var(--font-sans);
+        }
+        .settings-invite-field input:focus,
+        .settings-invite-field select:focus {
+            outline: none;
+            border-color: var(--primary-500);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        .settings-invite-btn {
+            padding: 7px 18px;
+            background: var(--primary-500);
+            border: none;
+            border-radius: var(--radius-sm);
+            color: #fff;
+            font-size: 13px;
+            font-family: var(--font-sans);
+            font-weight: 500;
+            cursor: pointer;
+            transition: background var(--transition-fast);
+            white-space: nowrap;
+        }
+        .settings-invite-btn:hover { background: var(--primary-600); }
+        .settings-invite-btn:disabled { background: var(--gray-600); cursor: not-allowed; }
+
+        /* Login: Password Reset */
+        .synapse-login-box .synapse-forgot-link {
+            display: block;
+            margin-top: 12px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--primary-400);
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .synapse-login-box .synapse-forgot-link:hover { text-decoration: underline; }
+        #synapse-reset-form {
+            display: none;
+        }
+        #synapse-reset-form .synapse-reset-step {
+            display: none;
+        }
+        #synapse-reset-form .synapse-reset-step.active {
+            display: block;
+        }
+        .synapse-login-box .synapse-back-link {
+            display: block;
+            margin-top: 12px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+        .synapse-login-box .synapse-back-link:hover { color: var(--text-secondary); }
+        .synapse-login-box .synapse-info {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+        .synapse-login-box .synapse-success {
+            color: var(--success-500);
+            font-size: 13px;
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: var(--radius-sm);
+            display: none;
+        }
+
         /* Interface placeholder */
         #interface-app {
             display: none;
@@ -3129,14 +3243,45 @@
 
     <div id="synapse-login-screen">
         <div class="synapse-login-box">
-            <h2>Amino Viewer</h2>
-            <p>Sign in to your account at app.aminoimmigration.com</p>
-            <div id="synapse-login-error" class="synapse-error"></div>
-            <label for="synapse-username">Username</label>
-            <input type="text" id="synapse-username" placeholder="Username" autocomplete="username">
-            <label for="synapse-password">Password</label>
-            <input type="password" id="synapse-password" placeholder="Password" autocomplete="current-password">
-            <button id="synapse-login-btn">Sign In</button>
+            <!-- Login Form -->
+            <div id="synapse-login-form">
+                <h2>Amino Viewer</h2>
+                <p>Sign in to your account at app.aminoimmigration.com</p>
+                <div id="synapse-login-error" class="synapse-error"></div>
+                <label for="synapse-username">Username</label>
+                <input type="text" id="synapse-username" placeholder="Username" autocomplete="username">
+                <label for="synapse-password">Password</label>
+                <input type="password" id="synapse-password" placeholder="Password" autocomplete="current-password">
+                <button id="synapse-login-btn">Sign In</button>
+                <a class="synapse-forgot-link" onclick="showPasswordReset()">Forgot Password?</a>
+            </div>
+            <!-- Password Reset Form -->
+            <div id="synapse-reset-form">
+                <h2>Reset Password</h2>
+                <div id="synapse-reset-error" class="synapse-error"></div>
+                <div id="synapse-reset-success" class="synapse-success"></div>
+                <!-- Step 1: Enter email -->
+                <div id="synapse-reset-step1" class="synapse-reset-step active">
+                    <p class="synapse-info">Enter the email address associated with your account. We'll send a verification link to confirm your identity.</p>
+                    <label for="synapse-reset-email">Email Address</label>
+                    <input type="email" id="synapse-reset-email" placeholder="you@example.com" autocomplete="email">
+                    <button id="synapse-reset-send-btn" onclick="requestPasswordReset()">Send Reset Email</button>
+                </div>
+                <!-- Step 2: Enter new password after email verification -->
+                <div id="synapse-reset-step2" class="synapse-reset-step">
+                    <p class="synapse-info">A verification email has been sent. Click the link in the email, then enter your new password below and click "Reset Password".</p>
+                    <label for="synapse-reset-new-password">New Password</label>
+                    <input type="password" id="synapse-reset-new-password" placeholder="New password" autocomplete="new-password">
+                    <label for="synapse-reset-confirm-password">Confirm Password</label>
+                    <input type="password" id="synapse-reset-confirm-password" placeholder="Confirm new password" autocomplete="new-password">
+                    <button id="synapse-reset-confirm-btn" onclick="confirmPasswordReset()">Reset Password</button>
+                </div>
+                <!-- Step 3: Success -->
+                <div id="synapse-reset-step3" class="synapse-reset-step">
+                    <div class="synapse-success" style="display: block;">Your password has been reset successfully. You can now sign in with your new password.</div>
+                </div>
+                <a class="synapse-back-link" onclick="hidePasswordReset()">Back to Sign In</a>
+            </div>
         </div>
     </div>
 
@@ -4020,6 +4165,36 @@
                 </div>
                 <div id="settings-users-empty" style="display: none; padding: 16px 0; color: var(--text-muted); font-size: 13px;">
                     No members found. Ensure you are connected to an organization space.
+                </div>
+                <div id="settings-invite-section" class="settings-invite-form" style="display: none;">
+                    <h3>Invite New User</h3>
+                    <p>Create a new account and add them to the organization. They will receive access to the org space.</p>
+                    <div class="settings-invite-row">
+                        <div class="settings-invite-field">
+                            <label for="invite-username">Username</label>
+                            <input type="text" id="invite-username" placeholder="e.g. jsmith" autocomplete="off">
+                        </div>
+                        <div class="settings-invite-field">
+                            <label for="invite-display-name">Display Name</label>
+                            <input type="text" id="invite-display-name" placeholder="e.g. John Smith" autocomplete="off">
+                        </div>
+                        <div class="settings-invite-field">
+                            <label for="invite-email">Email</label>
+                            <input type="email" id="invite-email" placeholder="e.g. jsmith@example.com" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="settings-invite-row">
+                        <div class="settings-invite-field" style="max-width: 180px;">
+                            <label for="invite-role">Role</label>
+                            <select id="invite-role">
+                                <option value="staff">Staff (50)</option>
+                                <option value="client">Client (10)</option>
+                                <option value="admin">Admin (100)</option>
+                            </select>
+                        </div>
+                        <button class="settings-invite-btn" id="invite-submit-btn" onclick="inviteNewUser()">Invite User</button>
+                    </div>
+                    <div id="invite-status" style="font-size: 13px; margin-top: 8px;"></div>
                 </div>
             </div>
         </div>
@@ -8953,6 +9128,9 @@ function hideSynapseError() {
 function showSynapseLoginScreen() {
     var el = document.getElementById('synapse-login-screen');
     el.classList.remove('hidden', 'fading-out');
+    // Always show the login form, not the reset form
+    document.getElementById('synapse-login-form').style.display = 'block';
+    document.getElementById('synapse-reset-form').style.display = 'none';
 }
 
 function hideSynapseLoginScreen() {
@@ -8979,6 +9157,166 @@ async function initSynapseLogin() {
     // No valid session — show Synapse login screen
     showSynapseLoginScreen();
     return false;
+}
+
+// ============ Password Reset ============
+
+var _resetClientSecret = null;
+var _resetSid = null;
+
+function showPasswordReset() {
+    document.getElementById('synapse-login-form').style.display = 'none';
+    document.getElementById('synapse-reset-form').style.display = 'block';
+    _showResetStep(1);
+    _resetClientSecret = null;
+    _resetSid = null;
+    document.getElementById('synapse-reset-error').style.display = 'none';
+    document.getElementById('synapse-reset-success').style.display = 'none';
+}
+
+function hidePasswordReset() {
+    document.getElementById('synapse-reset-form').style.display = 'none';
+    document.getElementById('synapse-login-form').style.display = 'block';
+    document.getElementById('synapse-reset-email').value = '';
+    document.getElementById('synapse-reset-error').style.display = 'none';
+    document.getElementById('synapse-reset-success').style.display = 'none';
+}
+
+function _showResetStep(step) {
+    document.querySelectorAll('.synapse-reset-step').forEach(function(el) { el.classList.remove('active'); });
+    var stepEl = document.getElementById('synapse-reset-step' + step);
+    if (stepEl) stepEl.classList.add('active');
+}
+
+function _showResetError(msg) {
+    var el = document.getElementById('synapse-reset-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+
+function _hideResetError() {
+    document.getElementById('synapse-reset-error').style.display = 'none';
+}
+
+async function requestPasswordReset() {
+    var email = document.getElementById('synapse-reset-email').value.trim();
+    if (!email) {
+        _showResetError('Please enter your email address.');
+        return;
+    }
+
+    var btn = document.getElementById('synapse-reset-send-btn');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    _hideResetError();
+
+    try {
+        // Generate a unique client_secret for this reset flow
+        _resetClientSecret = 'amino_reset_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+
+        var response = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/account/password/email/requestToken', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email,
+                client_secret: _resetClientSecret,
+                send_attempt: 1
+            })
+        });
+
+        var data = await response.json().catch(function() { return {}; });
+
+        if (!response.ok) {
+            if (data.errcode === 'M_THREEPID_NOT_FOUND') {
+                throw new Error('No account found with that email address.');
+            }
+            throw new Error(data.error || 'Failed to send reset email (HTTP ' + response.status + ')');
+        }
+
+        _resetSid = data.sid;
+
+        // Move to step 2 — user must verify email then enter new password
+        _showResetStep(2);
+
+    } catch (e) {
+        console.error('[Reset] Failed to request password reset:', e);
+        _showResetError(e.message || 'Failed to send reset email.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send Reset Email';
+    }
+}
+
+async function confirmPasswordReset() {
+    var newPassword = document.getElementById('synapse-reset-new-password').value;
+    var confirmPassword = document.getElementById('synapse-reset-confirm-password').value;
+
+    if (!newPassword) {
+        _showResetError('Please enter a new password.');
+        return;
+    }
+    if (newPassword.length < 8) {
+        _showResetError('Password must be at least 8 characters.');
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        _showResetError('Passwords do not match.');
+        return;
+    }
+
+    if (!_resetSid || !_resetClientSecret) {
+        _showResetError('Reset session expired. Please start over.');
+        return;
+    }
+
+    var btn = document.getElementById('synapse-reset-confirm-btn');
+    btn.disabled = true;
+    btn.textContent = 'Resetting...';
+    _hideResetError();
+
+    try {
+        var response = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/account/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                new_password: newPassword,
+                logout_devices: false,
+                auth: {
+                    type: 'm.login.email.identity',
+                    threepid_creds: {
+                        sid: _resetSid,
+                        client_secret: _resetClientSecret
+                    },
+                    threepidCreds: {
+                        sid: _resetSid,
+                        client_secret: _resetClientSecret
+                    }
+                }
+            })
+        });
+
+        if (!response.ok) {
+            var data = await response.json().catch(function() { return {}; });
+            if (data.errcode === 'M_THREEPID_AUTH_FAILED') {
+                throw new Error('Email not yet verified. Please click the link in your email first, then try again.');
+            }
+            throw new Error(data.error || 'Failed to reset password (HTTP ' + response.status + ')');
+        }
+
+        // Success — show step 3
+        _showResetStep(3);
+        document.getElementById('synapse-reset-new-password').value = '';
+        document.getElementById('synapse-reset-confirm-password').value = '';
+        _resetClientSecret = null;
+        _resetSid = null;
+
+    } catch (e) {
+        console.error('[Reset] Failed to confirm password reset:', e);
+        _showResetError(e.message || 'Failed to reset password.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Reset Password';
+    }
 }
 
 // ============ View Selection ============
@@ -9023,6 +9361,11 @@ function synapseLogout() {
 document.getElementById('synapse-login-btn').onclick = trySynapseLogin;
 document.getElementById('synapse-username').onkeydown = function(e) { if (e.key === 'Enter') document.getElementById('synapse-password').focus(); };
 document.getElementById('synapse-password').onkeydown = function(e) { if (e.key === 'Enter') trySynapseLogin(); };
+
+// Wire up password reset UI
+document.getElementById('synapse-reset-email').onkeydown = function(e) { if (e.key === 'Enter') requestPasswordReset(); };
+document.getElementById('synapse-reset-new-password').onkeydown = function(e) { if (e.key === 'Enter') document.getElementById('synapse-reset-confirm-password').focus(); };
+document.getElementById('synapse-reset-confirm-password').onkeydown = function(e) { if (e.key === 'Enter') confirmPasswordReset(); };
 
 // Wire up view selection UI
 document.getElementById('view-as-database-btn').onclick = selectDatabaseView;
@@ -21234,8 +21577,12 @@ async function loadSettingsData() {
         document.getElementById('settings-users-loading').style.display = 'none';
         document.getElementById('settings-users-empty').style.display = 'block';
         document.getElementById('settings-users-empty').textContent = 'You need admin privileges to manage settings.';
+        document.getElementById('settings-invite-section').style.display = 'none';
         return;
     }
+
+    // Show invite section for admins
+    document.getElementById('settings-invite-section').style.display = 'block';
 
     await loadSettingsUsers();
     await loadSettingsRoomList();
@@ -21404,6 +21751,143 @@ async function kickUserFromOrg(userId) {
         console.error('[Settings] Failed to kick user:', e);
         showSettingsToast('error', 'Failed to remove user: ' + e.message);
     }
+}
+
+// ============ Settings: Invite User ============
+
+async function inviteNewUser() {
+    var username = document.getElementById('invite-username').value.trim();
+    var displayName = document.getElementById('invite-display-name').value.trim();
+    var email = document.getElementById('invite-email').value.trim();
+    var role = document.getElementById('invite-role').value;
+    var statusEl = document.getElementById('invite-status');
+    var btn = document.getElementById('invite-submit-btn');
+
+    if (!username) {
+        statusEl.textContent = 'Username is required.';
+        statusEl.style.color = 'var(--danger-500)';
+        return;
+    }
+    if (!email) {
+        statusEl.textContent = 'Email is required.';
+        statusEl.style.color = 'var(--danger-500)';
+        return;
+    }
+
+    // Basic email validation
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        statusEl.textContent = 'Please enter a valid email address.';
+        statusEl.style.color = 'var(--danger-500)';
+        return;
+    }
+
+    // Clean username: remove @ prefix and :domain suffix if given
+    username = username.replace(/^@/, '').split(':')[0].toLowerCase();
+
+    var session = _loadSynapseSession();
+    if (!session || !session.accessToken) {
+        statusEl.textContent = 'Not logged in.';
+        statusEl.style.color = 'var(--danger-500)';
+        return;
+    }
+
+    // Derive the server domain from current user's ID
+    var domain = session.userId.split(':')[1];
+    var fullUserId = '@' + username + ':' + domain;
+
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    statusEl.textContent = '';
+
+    try {
+        // Generate a temporary password the user must change
+        var tempPassword = _generateTempPassword();
+
+        // 1. Create user via Synapse Admin API
+        var encodedUserId = encodeURIComponent(fullUserId);
+        var createBody = {
+            password: tempPassword,
+            displayname: displayName || username,
+            threepids: [{
+                medium: 'email',
+                address: email
+            }],
+            admin: false,
+            deactivated: false
+        };
+
+        var createRes = await fetch(
+            SYNAPSE_HOMESERVER_URL + '/_synapse/admin/v2/users/' + encodedUserId,
+            {
+                method: 'PUT',
+                headers: {
+                    'Authorization': 'Bearer ' + session.accessToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(createBody)
+            }
+        );
+
+        if (!createRes.ok) {
+            var errData = await createRes.json().catch(function() { return {}; });
+            throw new Error(errData.error || 'Failed to create user (HTTP ' + createRes.status + ')');
+        }
+
+        // 2. Invite user to the organization space
+        if (_settingsOrgSpaceId) {
+            try {
+                await MatrixClient.inviteUser(_settingsOrgSpaceId, fullUserId);
+            } catch (inviteErr) {
+                // If already in space, that's fine
+                if (inviteErr.errcode !== 'M_FORBIDDEN') {
+                    console.warn('[Settings] Could not invite to org space:', inviteErr.message);
+                }
+            }
+
+            // 3. Set the user's power level based on selected role
+            var levelMap = { admin: 100, staff: 50, client: 10, default: 0 };
+            var level = levelMap[role] || 0;
+            try {
+                await MatrixClient.setUserPowerLevel(_settingsOrgSpaceId, fullUserId, level);
+            } catch (plErr) {
+                console.warn('[Settings] Could not set power level:', plErr.message);
+            }
+        }
+
+        // Clear form
+        document.getElementById('invite-username').value = '';
+        document.getElementById('invite-display-name').value = '';
+        document.getElementById('invite-email').value = '';
+
+        statusEl.innerHTML = 'User <strong>' + escapeHtml(fullUserId) + '</strong> created.<br>Temporary password: <code style="background:var(--bg-tertiary);padding:2px 6px;border-radius:3px;user-select:all;">' + escapeHtml(tempPassword) + '</code><br><span style="color:var(--text-muted);">Share these credentials with the user. They should change their password after first login.</span>';
+        statusEl.style.color = 'var(--success-500)';
+
+        showSettingsToast('success', 'User ' + fullUserId + ' created and invited to organization.');
+
+        // Reload member list
+        _settingsLoaded = false;
+        await loadSettingsData();
+
+    } catch (e) {
+        console.error('[Settings] Failed to invite user:', e);
+        statusEl.textContent = 'Failed: ' + e.message;
+        statusEl.style.color = 'var(--danger-500)';
+        showSettingsToast('error', 'Failed to create user: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Invite User';
+    }
+}
+
+function _generateTempPassword() {
+    var chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var password = '';
+    var array = new Uint8Array(16);
+    crypto.getRandomValues(array);
+    for (var i = 0; i < 16; i++) {
+        password += chars[array[i] % chars.length];
+    }
+    return password;
 }
 
 // ============ Settings: Room Access ============
