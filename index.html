@@ -4767,6 +4767,20 @@
                 <div id="settings-users-empty" style="display: none; padding: 16px 0; color: var(--text-muted); font-size: 13px;">
                     No members found. Ensure you are connected to an organization space.
                 </div>
+
+                <h2 style="margin-top: 22px;">Permissions Matrix</h2>
+                <p class="settings-section-desc">Read-only matrix of all users and their room memberships.</p>
+                <div id="settings-permissions-matrix-loading" class="settings-loading" style="display: none;">
+                    <div class="settings-spinner"></div>
+                    Loading permissions matrix...
+                </div>
+                <div id="settings-permissions-matrix-content" style="display: none; overflow-x: auto;">
+                    <table class="settings-room-access">
+                        <thead id="settings-permissions-matrix-head"></thead>
+                        <tbody id="settings-permissions-matrix-body"></tbody>
+                    </table>
+                </div>
+
                 <div id="settings-invite-section" class="settings-invite-form" style="display: none;">
                     <h3>Invite New User</h3>
                     <p>Create a new account and add them to the organization. They will receive access to the org space.</p>
@@ -4806,11 +4820,22 @@
                 <h2>Room Access Management</h2>
                 <p class="settings-section-desc">Control which users have access to which data rooms. Check a box to grant a user access (join them to the room), uncheck to revoke (kick from room).</p>
 
-                <div style="margin-bottom: 16px;">
-                    <label style="font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 6px;">Select user:</label>
-                    <select id="settings-room-user-select" class="settings-role-select" style="min-width: 260px;" onchange="loadRoomAccessForUser()">
-                        <option value="">-- Choose a user --</option>
-                    </select>
+                <div style="display: flex; gap: 16px; align-items: end; flex-wrap: wrap; margin-bottom: 16px;">
+                    <div>
+                        <label style="font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 6px;">Select user:</label>
+                        <select id="settings-room-user-select" class="settings-role-select" style="min-width: 260px;" onchange="loadRoomAccessForUser()">
+                            <option value="">-- Choose a user --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 6px;">Permission group:</label>
+                        <select id="settings-room-group-select" class="settings-role-select" style="min-width: 220px;">
+                            <option value="">-- No group --</option>
+                        </select>
+                    </div>
+                    <button class="settings-action-btn" onclick="assignSelectedUserToPermissionGroup()">Assign Group</button>
+                    <button class="settings-action-btn primary" onclick="applySelectedGroupPermissions()">Apply Group Rooms</button>
+                    <button class="settings-action-btn" onclick="createPermissionGroupFromSelectedUser()">Create Group From User</button>
                 </div>
 
                 <div id="settings-rooms-loading" class="settings-loading" style="display: none;">
@@ -24669,6 +24694,7 @@ var _currentUserRole = 'unknown';
 var _settingsOrgSpaceId = null;
 var _settingsMembers = []; // Cached member list for settings
 var _settingsRooms = []; // Cached room list (tables with matrix_room_id)
+var _settingsPermissionGroups = { groups: [], assignments: {} }; // Shared room permission structures
 
 function switchApp(appName) {
     _currentApp = appName;
@@ -25113,6 +25139,8 @@ async function loadSettingsData() {
 
     await loadSettingsUsers();
     await loadSettingsRoomList();
+    await loadPermissionGroups();
+    await loadPermissionsMatrix();
     _settingsLoaded = true;
 }
 
@@ -25592,6 +25620,202 @@ function _generateTempPassword() {
     return password;
 }
 
+
+async function loadPermissionsMatrix() {
+    var loadingEl = document.getElementById('settings-permissions-matrix-loading');
+    var contentEl = document.getElementById('settings-permissions-matrix-content');
+    if (!loadingEl || !contentEl) return;
+
+    loadingEl.style.display = 'flex';
+    contentEl.style.display = 'none';
+
+    try {
+        if (!_settingsRooms.length) await loadSettingsRoomList();
+
+        var roomMembersByRoomId = {};
+        for (var i = 0; i < _settingsRooms.length; i++) {
+            var room = _settingsRooms[i];
+            try {
+                var members = await MatrixClient.getRoomMembers(room.roomId);
+                roomMembersByRoomId[room.roomId] = members.map(function(m) { return m.userId; });
+            } catch (e) {
+                roomMembersByRoomId[room.roomId] = [];
+            }
+        }
+
+        renderPermissionsMatrix(roomMembersByRoomId);
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'block';
+    } catch (e) {
+        console.error('[Settings] Failed to load permissions matrix:', e);
+        loadingEl.style.display = 'none';
+    }
+}
+
+function renderPermissionsMatrix(roomMembersByRoomId) {
+    var head = document.getElementById('settings-permissions-matrix-head');
+    var body = document.getElementById('settings-permissions-matrix-body');
+    if (!head || !body) return;
+
+    var roomHeaders = _settingsRooms.map(function(room) {
+        return '<th>' + escapeHtml(room.name) + '</th>';
+    }).join('');
+
+    head.innerHTML = '<tr><th>User</th><th>Role</th><th>Group</th>' + roomHeaders + '</tr>';
+
+    body.innerHTML = _settingsMembers.map(function(member) {
+        var groupName = getPermissionGroupNameForUser(member.userId) || '--';
+        var cells = _settingsRooms.map(function(room) {
+            var users = roomMembersByRoomId[room.roomId] || [];
+            var hasAccess = users.indexOf(member.userId) !== -1;
+            return '<td style="text-align:center;">' + (hasAccess ? '✅' : '—') + '</td>';
+        }).join('');
+        return '<tr>' +
+            '<td class="user-id">' + escapeHtml(member.userId) + '</td>' +
+            '<td><span class="role-badge ' + member.role + '">' + member.role + '</span></td>' +
+            '<td>' + escapeHtml(groupName) + '</td>' +
+            cells +
+        '</tr>';
+    }).join('');
+}
+
+function getPermissionGroupNameForUser(userId) {
+    var groupId = _settingsPermissionGroups.assignments[userId];
+    if (!groupId) return '';
+    var group = (_settingsPermissionGroups.groups || []).find(function(g) { return g.id === groupId; });
+    return group ? group.name : '';
+}
+
+async function loadPermissionGroups() {
+    if (!_settingsOrgSpaceId) return;
+    try {
+        var evt = await MatrixClient.getStateEvent(_settingsOrgSpaceId, 'law.firm.permission.groups', '');
+        _settingsPermissionGroups = {
+            groups: (evt && evt.groups) || [],
+            assignments: (evt && evt.assignments) || {}
+        };
+    } catch (e) {
+        _settingsPermissionGroups = { groups: [], assignments: {} };
+    }
+    renderPermissionGroups();
+}
+
+async function savePermissionGroups() {
+    if (!_settingsOrgSpaceId) throw new Error('No organization space found');
+    await MatrixClient.sendStateEvent(_settingsOrgSpaceId, 'law.firm.permission.groups', '', _settingsPermissionGroups);
+}
+
+function renderPermissionGroups() {
+    var groupSelect = document.getElementById('settings-room-group-select');
+    if (!groupSelect) return;
+
+    var currentVal = groupSelect.value;
+    groupSelect.innerHTML = '<option value="">-- No group --</option>';
+    (_settingsPermissionGroups.groups || []).forEach(function(group) {
+        var opt = document.createElement('option');
+        opt.value = group.id;
+        opt.textContent = group.name + ' (' + (group.roomIds || []).length + ' rooms)';
+        groupSelect.appendChild(opt);
+    });
+    if (currentVal) groupSelect.value = currentVal;
+}
+
+async function createPermissionGroupFromSelectedUser() {
+    var userId = document.getElementById('settings-room-user-select').value;
+    if (!userId) {
+        showSettingsToast('error', 'Select a user first.');
+        return;
+    }
+
+    try {
+        if (!_settingsRooms.length) await loadSettingsRoomList();
+        var roomIds = [];
+        for (var i = 0; i < _settingsRooms.length; i++) {
+            var room = _settingsRooms[i];
+            try {
+                var members = await MatrixClient.getRoomMembers(room.roomId);
+                if (members.some(function(m) { return m.userId === userId; })) roomIds.push(room.roomId);
+            } catch (e) {}
+        }
+
+        var groupName = prompt('Group name?', 'Group for ' + userId);
+        if (!groupName) return;
+
+        var group = { id: 'grp_' + Date.now(), name: groupName, roomIds: roomIds };
+        _settingsPermissionGroups.groups.push(group);
+        await savePermissionGroups();
+        renderPermissionGroups();
+        showSettingsToast('success', 'Permission group created.');
+        await loadPermissionsMatrix();
+    } catch (e) {
+        showSettingsToast('error', 'Failed to create group: ' + e.message);
+    }
+}
+
+async function assignSelectedUserToPermissionGroup() {
+    var userId = document.getElementById('settings-room-user-select').value;
+    var groupId = document.getElementById('settings-room-group-select').value;
+    if (!userId) {
+        showSettingsToast('error', 'Select a user first.');
+        return;
+    }
+
+    if (groupId) _settingsPermissionGroups.assignments[userId] = groupId;
+    else delete _settingsPermissionGroups.assignments[userId];
+
+    try {
+        await savePermissionGroups();
+        showSettingsToast('success', groupId ? 'Group assigned.' : 'Group cleared.');
+        await loadPermissionsMatrix();
+    } catch (e) {
+        showSettingsToast('error', 'Failed to save group assignment: ' + e.message);
+    }
+}
+
+async function applySelectedGroupPermissions() {
+    var userId = document.getElementById('settings-room-user-select').value;
+    var groupId = document.getElementById('settings-room-group-select').value;
+    if (!userId || !groupId) {
+        showSettingsToast('error', 'Select both a user and a group.');
+        return;
+    }
+
+    var group = (_settingsPermissionGroups.groups || []).find(function(g) { return g.id === groupId; });
+    if (!group) {
+        showSettingsToast('error', 'Group not found.');
+        return;
+    }
+
+    try {
+        if (!_settingsRooms.length) await loadSettingsRoomList();
+        var roomSet = {};
+        (group.roomIds || []).forEach(function(rid) { roomSet[rid] = true; });
+
+        for (var i = 0; i < _settingsRooms.length; i++) {
+            var room = _settingsRooms[i];
+            var shouldHaveAccess = !!roomSet[room.roomId];
+            try {
+                var members = await MatrixClient.getRoomMembers(room.roomId);
+                var hasAccess = members.some(function(m) { return m.userId === userId; });
+                if (shouldHaveAccess && !hasAccess) {
+                    await MatrixClient.inviteUser(room.roomId, userId);
+                }
+                if (!shouldHaveAccess && hasAccess) {
+                    await MatrixClient.kickUser(room.roomId, userId, 'Removed by permission group application');
+                }
+            } catch (e) {
+                console.warn('[Settings] applySelectedGroupPermissions room failed:', room.roomId, e);
+            }
+        }
+
+        showSettingsToast('success', 'Applied group permissions to ' + userId + '.');
+        await loadRoomAccessForUser();
+        await loadPermissionsMatrix();
+    } catch (e) {
+        showSettingsToast('error', 'Failed to apply group: ' + e.message);
+    }
+}
+
 // ============ Settings: Room Access ============
 
 async function loadSettingsRoomList() {
@@ -25628,6 +25852,10 @@ function populateRoomUserSelect() {
 
 async function loadRoomAccessForUser() {
     var userId = document.getElementById('settings-room-user-select').value;
+    var groupSelect = document.getElementById('settings-room-group-select');
+    if (groupSelect) {
+        groupSelect.value = (_settingsPermissionGroups.assignments && _settingsPermissionGroups.assignments[userId]) || '';
+    }
     var loadingEl = document.getElementById('settings-rooms-loading');
     var contentEl = document.getElementById('settings-rooms-content');
     var emptyEl = document.getElementById('settings-rooms-empty');
@@ -25761,6 +25989,7 @@ async function toggleRoomAccess(userId, roomId, grant, checkbox) {
     }
 
     checkbox.disabled = false;
+    try { await loadPermissionsMatrix(); } catch (e) {}
 }
 
 // ============ Initialize Workspaces on Load ============
