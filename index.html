@@ -24520,12 +24520,23 @@ var InterfaceApp = (function() {
         await Promise.all(fetchPromises);
 
         // Render blocks
+        // Blocks referenced by containers/tabs should render only inside their parent
+        // and not again as top-level siblings.
+        var nestedBlockIds = {};
+        page.blocks.forEach(function(b) {
+            (b.children || []).forEach(function(cid) { nestedBlockIds[cid] = true; });
+            (b.tabs || []).forEach(function(tab) {
+                if (tab && tab.blockId) nestedBlockIds[tab.blockId] = true;
+            });
+        });
+        var rootBlocks = page.blocks.filter(function(b) { return !nestedBlockIds[b.id]; });
+
         var html = '<div class="iface-page active" data-page-id="' + _esc(page.id) + '">';
         var editClass = _editMode ? ' iface-editing' : '';
         html = '<div class="iface-page active' + editClass + '" data-page-id="' + _esc(page.id) + '">';
 
-        for (var i = 0; i < page.blocks.length; i++) {
-            var block = page.blocks[i];
+        for (var i = 0; i < rootBlocks.length; i++) {
+            var block = rootBlocks[i];
             html += await _renderBlock(block, allBlocksMap);
         }
 
@@ -24612,8 +24623,15 @@ var InterfaceApp = (function() {
 
     function _flattenBlocks(blocks) {
         var result = [];
-        (blocks || []).forEach(function(b) {
+        var seenIds = {};
+        function addBlock(b) {
+            if (!b || seenIds[b.id]) return;
+            seenIds[b.id] = true;
             result.push(b);
+        }
+
+        (blocks || []).forEach(function(b) {
+            addBlock(b);
             if (b.children) {
                 var page = _schema.pages.find(function(p) {
                     return p.blocks.some(function(pb) { return pb.id === b.id; });
@@ -24621,7 +24639,7 @@ var InterfaceApp = (function() {
                 if (page) {
                     b.children.forEach(function(cid) {
                         var cb = page.blocks.find(function(pb) { return pb.id === cid; });
-                        if (cb) result.push(cb);
+                        addBlock(cb);
                     });
                 }
             }
@@ -24632,7 +24650,7 @@ var InterfaceApp = (function() {
                 if (page2) {
                     b.tabs.forEach(function(tab) {
                         var tb = page2.blocks.find(function(pb) { return pb.id === tab.blockId; });
-                        if (tb) result.push(tb);
+                        addBlock(tb);
                     });
                 }
             }
