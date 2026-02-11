@@ -9782,26 +9782,38 @@ function getLocalStats() {
 // (e.g. an HTML error page from a reverse proxy), this throws a clear
 // error instead of the cryptic "Unexpected token '<'" message.
 async function safeResponseJson(response, context) {
-    var contentType = response.headers.get('content-type') || '';
-    if (contentType && !contentType.includes('application/json')) {
-        var preview = '';
-        try { preview = (await response.text()).substring(0, 120); } catch (e) {}
-        throw new Error(
-            (context ? context + ': ' : '') +
-            'Server returned ' + (contentType || 'unknown content type') +
-            ' instead of JSON (HTTP ' + response.status + ').' +
-            (preview.indexOf('<html') !== -1 || preview.indexOf('<!DOCTYPE') !== -1
-                ? ' The server may be down or the URL may be incorrect.'
-                : '')
-        );
-    }
+    var contentType = (response.headers.get('content-type') || '').toLowerCase();
+    var body = '';
+
     try {
-        return await response.json();
+        body = await response.text();
     } catch (e) {
         throw new Error(
             (context ? context + ': ' : '') +
+            'Could not read response body (HTTP ' + response.status + ').'
+        );
+    }
+
+    var preview = body.substring(0, 120).trim();
+    if (!preview) {
+        throw new Error(
+            (context ? context + ': ' : '') +
+            'Empty response body (HTTP ' + response.status + ').'
+        );
+    }
+
+    // Accept JSON payloads even when a proxy/webhook mislabels content-type.
+    // We still keep content-type in error messages for easier diagnostics.
+    try {
+        return JSON.parse(body);
+    } catch (e) {
+        var maybeHtml = preview.indexOf('<html') !== -1 || preview.indexOf('<!DOCTYPE') !== -1;
+        throw new Error(
+            (context ? context + ': ' : '') +
             'Invalid JSON response from server (HTTP ' + response.status + '). ' +
-            'The server may be down or misconfigured.'
+            'content-type=' + (contentType || 'unknown') +
+            ', body="' + preview.replace(/\s+/g, ' ') + '".' +
+            (maybeHtml ? ' The server may be down or the URL may be incorrect.' : '')
         );
     }
 }
@@ -14416,7 +14428,16 @@ async function webhookFetch(path) {
             try { errBody2 = await response.text(); } catch (e) {}
             throw new Error('Webhook API error: ' + response.status + (errBody2 ? ' (' + errBody2.substring(0, 100) + ')' : ''));
         }
-        return safeResponseJson(response, 'Webhook API');
+
+        try {
+            return await safeResponseJson(response, 'Webhook API');
+        } catch (parseErr) {
+            // Some n8n/proxy failures return HTTP 200 with non-JSON body.
+            // Treat parsing failures as transient so the retry/backoff loop can recover.
+            console.warn('[webhookFetch] JSON parse failed for ' + path + ': ' + parseErr.message);
+            lastErr = parseErr;
+            continue;
+        }
     }
 
     // All retries exhausted
