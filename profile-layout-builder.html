@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amino &middot; Profile Layout Builder</title>
+  <style>
+    :root {
+      --sans: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
+      --primary: #1b7a4a; --primary-light: #eefbf2; --primary-border: #1b7a4a40;
+      --bg-dark: #101020; --bg-panel: #14142a; --bg-panel-hover: #1e1e32;
+      --border-dark: #252540; --border-light: #e0ddd5;
+      --text-main: #1a1a2e; --text-muted: #888; --text-light: #ccc;
+      --canvas-bg: #edeae4; --canvas-preview: #f5f3ee;
+      --danger: #c0392b;
+    }
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--sans); background: var(--bg-dark); color: #ddd; height: 100vh; overflow: hidden; display: flex; }
+    ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #33334d; border-radius: 3px; }
+    button, input { font-family: var(--sans); outline: none; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; z-index: 9999; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .toast.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+    /* Loading overlay */
+    .loading-overlay { position: fixed; inset: 0; background: var(--bg-dark); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 3000; gap: 12px; }
+    .loading-spinner { width: 32px; height: 32px; border: 3px solid #33334d; border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Schema panel */
+    .schema-panel { width: 255px; background: var(--bg-panel); border-right: 1px solid var(--border-dark); display: flex; flex-direction: column; flex-shrink: 0; }
+    .schema-header { padding: 12px; border-bottom: 1px solid var(--border-dark); display: flex; align-items: center; gap: 6px; }
+    .schema-header .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 6px #1b7a4a80; }
+    .schema-search { width: 100%; background: #1a1a2e; border: 1px solid #33334d; border-radius: 6px; padding: 7px 10px; color: #e0e0e0; font-size: 11px; font-family: var(--mono); }
+    .table-group-btn { width: 100%; display: flex; align-items: center; gap: 6px; padding: 7px 12px; background: transparent; border: none; cursor: pointer; color: #ddd; text-align: left; font-size: 12px; }
+    .table-group-btn:hover, .table-group-btn.expanded { background: var(--bg-panel-hover); }
+    .field-chip { display: flex; align-items: center; gap: 5px; padding: 4px 6px; border-radius: 4px; cursor: grab; font-size: 11px; color: var(--text-light); font-family: var(--mono); transition: background 0.1s; }
+    .field-chip:hover { background: #262640; }
+    .field-chip .type-badge { font-size: 7px; font-weight: 700; padding: 0 3px; border-radius: 2px; min-width: 28px; text-align: center; }
+
+    /* Main area */
+    .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; padding: 7px 16px; background: #16162c; border-bottom: 1px solid var(--border-dark); }
+    .toolbar h1 { font-size: 14px; font-weight: 700; color: #e0e0e0; }
+    .toolbar .stats { font-size: 8px; color: #555; font-family: var(--mono); background: var(--bg-panel-hover); padding: 2px 7px; border-radius: 3px; }
+    .toolbar-btn { padding: 5px 12px; border-radius: 5px; border: 1px solid #33334d; background: transparent; color: #aaa; cursor: pointer; font-size: 11px; font-weight: 600; }
+    .toolbar-btn:hover { color: #ddd; border-color: #555; }
+    .toolbar-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .toolbar-btn.primary { border-color: var(--primary-border); background: #1b7a4a15; color: var(--primary); }
+
+    /* Canvas */
+    .canvas { flex: 1; overflow: auto; padding: 18px 20px; }
+    .canvas.preview { background: var(--canvas-preview); padding: 24px 28px; }
+    .canvas.edit { background: var(--canvas-bg); }
+
+    /* Profile header card */
+    .profile-card { background: #fff; border-radius: 12px; border: 1px solid var(--border-light); padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); border-left: 4px solid var(--primary); }
+    .profile-card h2 { font-size: 17px; font-weight: 700; color: var(--text-main); }
+    .profile-card .subtitle { font-size: 10px; color: #bbb; font-family: var(--mono); }
+
+    /* Summary bar */
+    .summary-bar { display: flex; gap: 10px; flex-wrap: wrap; padding: 10px; background: #fff; border: 1px solid var(--border-light); border-radius: 8px; min-height: 46px; transition: all 0.15s; }
+    .summary-bar.drop-hover { border-color: var(--primary); background: var(--primary-light); border-style: dashed; }
+    .summary-item { flex: 1 1 160px; max-width: 280px; background: #fafaf8; border: 1px solid var(--border-light); border-radius: 8px; padding: 7px 12px; display: flex; align-items: center; justify-content: space-between; }
+    .summary-item .label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-family: var(--mono); }
+    .summary-item .value { font-size: 14px; color: var(--text-main); margin-top: 1px; }
+
+    /* Tabs */
+    .tab-strip { display: flex; align-items: center; border-bottom: 2px solid #ddd9d0; margin-bottom: 14px; }
+    .tab-btn { padding: 8px 12px; border: none; background: transparent; font-size: 12px; color: #999; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 400; }
+    .tab-btn.active { color: var(--text-main); font-weight: 700; border-bottom-color: var(--primary); }
+    .tab-input { padding: 8px 12px; border: none; background: transparent; font-size: 12px; color: var(--text-main); border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; }
+    .tab-input.active { font-weight: 700; border-bottom-color: var(--primary); }
+    .tab-remove { position: absolute; top: 1px; right: -1px; background: none; border: none; cursor: pointer; color: #ccc; font-size: 9px; }
+    .tab-remove:hover { color: var(--danger); }
+    .add-tab-btn { padding: 5px 10px; border: none; background: transparent; color: var(--primary); cursor: pointer; font-size: 16px; }
+
+    /* Layout sections */
+    .layout-section { background: #fafaf8; border: 1px solid var(--border-light); border-radius: 10px; position: relative; }
+    .layout-section.preview { background: #fff; border-color: #e8e5dd; overflow: hidden; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; border-bottom: 1px solid #e8e5dd; background: #f5f4f0; border-radius: 10px 10px 0 0; }
+    .section-header .name { font-size: 12.5px; font-weight: 700; color: var(--text-main); }
+    .section-header .meta { font-size: 8px; font-family: var(--mono); color: #999; background: #eee; padding: 1px 5px; border-radius: 3px; }
+
+    /* Drop columns */
+    .drop-col { flex: 1; min-height: 44px; padding: 5px; border-radius: 5px; display: flex; flex-direction: column; gap: 3px; border: 2px dashed transparent; transition: all 0.15s; }
+    .drop-col.drop-hover { background: var(--primary-light); border-color: var(--primary); }
+    .drop-col-label { text-align: center; padding: 3px 0; font-size: 8px; color: #bbb; font-family: var(--mono); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+    .drop-placeholder { color: #ccc; font-size: 10px; text-align: center; padding: 12px 4px; font-style: italic; }
+
+    /* Placed field chips */
+    .placed-field { display: flex; align-items: center; gap: 6px; padding: 5px 7px; background: #fff; border: 1px solid transparent; border-radius: 6px; cursor: grab; font-size: 11px; transition: all 0.12s; }
+    .placed-field:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .placed-field .table-label { font-size: 8px; font-weight: 700; text-transform: uppercase; font-family: var(--mono); letter-spacing: 0.5px; opacity: 0.7; }
+    .placed-field .field-name { font-weight: 600; color: var(--text-main); margin-top: 1px; font-size: 11.5px; }
+    .placed-field .fk-btn { background: none; border: 1px solid transparent; border-radius: 3px; cursor: pointer; font-size: 9px; padding: 1px 4px; font-family: var(--mono); font-weight: 700; }
+    .placed-field .remove-btn { background: none; border: none; cursor: pointer; color: #ccc; font-size: 13px; padding: 0 2px; line-height: 1; }
+    .placed-field .remove-btn:hover { color: var(--danger); }
+
+    /* FK path badge */
+    .fk-path-badge { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; font-size: 8.5px; font-family: var(--mono); }
+    .fk-path-badge .step { padding: 0 3px; border-radius: 2px; font-weight: 600; }
+    .fk-path-badge .arrow { color: #bbb; }
+    .fk-path-badge .via { color: #999; }
+
+    /* Section settings dropdown */
+    .section-settings { position: absolute; top: 36px; right: 0; z-index: 100; background: #fff; border-radius: 10px; padding: 16px; width: 270px; box-shadow: 0 8px 30px rgba(0,0,0,0.15); border: 1px solid var(--border-light); }
+    .section-settings label { font-size: 11px; color: #666; display: block; margin-bottom: 4px; }
+    .section-settings input[type="text"] { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 5px; font-size: 12px; margin-bottom: 12px; }
+    .section-settings .col-btn { flex: 1; padding: 6px 0; border-radius: 5px; border: 1px solid #ddd; background: #fff; color: #666; font-weight: 700; font-size: 13px; cursor: pointer; font-family: var(--mono); }
+    .section-settings .col-btn.active { border: 2px solid var(--primary); background: var(--primary-light); color: var(--primary); }
+    .section-settings .width-btn { flex: 1; padding: 6px 0; border-radius: 5px; border: 1px solid #ddd; background: #fff; color: #666; font-weight: 600; font-size: 11px; cursor: pointer; font-family: var(--mono); }
+    .section-settings .width-btn.active { border: 2px solid var(--primary); background: var(--primary-light); color: var(--primary); }
+    .add-section-btn { flex: 1 1 calc(50% - 6px); min-width: 250px; min-height: 70px; background: transparent; border: 2px dashed #ccc8be; border-radius: 10px; cursor: pointer; color: #aaa; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 5px; transition: all 0.15s; }
+    .add-section-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+    /* FK Path Picker Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(10,10,20,0.6); display: flex; align-items: center; justify-content: center; z-index: 2000; backdrop-filter: blur(4px); }
+    .modal { background: #fff; border-radius: 14px; width: 540px; max-height: 85vh; overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,0.25); display: flex; flex-direction: column; }
+    .modal-header { padding: 18px 22px; border-bottom: 1px solid #eee; background: linear-gradient(135deg, #f8f7f4, #f0efeb); }
+    .modal-header h3 { font-size: 15px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; }
+    .modal-body { padding: 16px 22px; overflow: auto; flex: 1; }
+    .modal-footer { padding: 14px 22px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 8px; background: #fafaf8; }
+    .path-option { padding: 12px 14px; border: 1px solid var(--border-light); border-radius: 8px; margin-bottom: 8px; cursor: pointer; background: #fff; transition: all 0.15s; }
+    .path-option:hover { background: #fafaf8; }
+    .path-option.selected { border: 2px solid var(--primary); background: var(--primary-light); }
+    .path-chain { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-family: var(--mono); font-size: 11px; }
+    .path-chain .table-tag { padding: 3px 7px; border-radius: 4px; font-weight: 700; }
+    .path-chain .field-tag { background: #f5f4f0; padding: 3px 7px; border-radius: 4px; border: 1px solid var(--border-light); }
+    .path-chain .field-tag strong { color: #b45309; font-weight: 600; }
+    .path-chain .sep { color: #ccc; font-size: 13px; }
+
+    /* Resolver config in section settings */
+    .resolver-config { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
+    .resolver-config label { font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; margin-bottom: 4px; display: block; }
+    .resolver-config input { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 5px; font-size: 11px; font-family: var(--mono); }
+    .resolver-config .hint { font-size: 10px; color: #bbb; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+  <!-- Loading overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <div style="font-size:13px;color:#888;" id="loadingMsg">Initializing...</div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Schema Panel (left sidebar) -->
+  <div class="schema-panel" id="schemaPanel">
+    <div class="schema-header">
+      <div class="dot"></div>
+      <span style="font-weight:700;font-size:12px;color:#ddd;">Schema</span>
+      <span style="margin-left:auto;font-size:8px;color:#555;font-family:var(--mono);" id="rootTableLabel">loading...</span>
+    </div>
+    <div style="padding:10px 12px;border-bottom:1px solid #292940;">
+      <input class="schema-search" id="schemaSearch" placeholder="Search fields..." />
+    </div>
+    <div style="flex:1;overflow:auto;padding:4px 0;" id="schemaList">
+      <!-- Dynamically populated -->
+    </div>
+    <div style="padding:10px 12px;border-top:1px solid #292940;font-size:9px;color:#555;font-family:var(--mono);">
+      <div style="font-weight:700;margin-bottom:3px;color:#777;text-transform:uppercase;letter-spacing:1px;">Drag &rarr; canvas</div>
+      <div>Any field, any section. FK paths auto-resolved.</div>
+    </div>
+  </div>
+
+  <!-- Main area -->
+  <div class="main-area">
+    <div class="toolbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <h1>Profile Layout Builder</h1>
+        <span class="stats" id="statsLabel">loading</span>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="toolbar-btn" id="modeBtn" onclick="toggleMode()">Preview</button>
+        <button class="toolbar-btn primary" id="saveBtn" onclick="saveToMatrix()">Save to Matrix</button>
+        <button class="toolbar-btn" onclick="exportJSON()">Export JSON</button>
+      </div>
+    </div>
+    <div class="canvas edit" id="canvas">
+      <!-- Dynamically rendered -->
+    </div>
+  </div>
+
+  <!-- FK Path Picker (modal, hidden by default) -->
+  <div class="modal-overlay" id="fkModal" style="display:none;" onclick="closeFKModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Configure Foreign Key Path</h3>
+        <div style="font-size:12px;color:#888;" id="fkModalSubtitle"></div>
+      </div>
+      <div class="modal-body" id="fkModalBody"></div>
+      <div class="modal-footer">
+        <button class="toolbar-btn" onclick="closeFKModal()">Cancel</button>
+        <button class="toolbar-btn active" onclick="saveFKPath()">Save Path</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./matrix.js"></script>
+  <script src="./data-layer.js"></script>
+  <script>
+  (function() {
+    'use strict';
+
+    // ============ Constants ============
+    var SYNAPSE_HOMESERVER_URL = 'https://app.aminoimmigration.com';
+    var SYNAPSE_SESSION_KEY = 'amino_synapse_session';
+    var PROFILE_CONFIG_EVENT = 'law.firm.interface.profile';
+    var LOCAL_SCHEMA_KEY = 'amino.clientProfile.schema.v2';
+
+    // Table colors for visual distinction
+    var TABLE_COLORS = [
+      '#1b7a4a', '#7b2d8b', '#b45309', '#1a5276', '#c0392b',
+      '#6c3483', '#117864', '#a04000', '#2e4053', '#d4ac0d',
+      '#1abc9c', '#e74c3c', '#3498db', '#f39c12', '#9b59b6'
+    ];
+
+    var TYPE_BADGES = {
+      singleLineText: { label: 'TEXT', bg: '#e8f4f0' },
+      multilineText: { label: 'LONG', bg: '#e8f4f0' },
+      richText: { label: 'RICH', bg: '#e8f4f0' },
+      email: { label: 'EMAIL', bg: '#e8f0f4' },
+      url: { label: 'URL', bg: '#e8f0f4' },
+      phone: { label: 'PHONE', bg: '#f4f0e8' },
+      number: { label: 'NUM', bg: '#e8f4e8' },
+      currency: { label: '$', bg: '#e8f4e8' },
+      percent: { label: '%', bg: '#e8f4e8' },
+      date: { label: 'DATE', bg: '#fef3e2' },
+      dateTime: { label: 'DATE', bg: '#fef3e2' },
+      checkbox: { label: 'BOOL', bg: '#eee8f4' },
+      singleSelect: { label: 'SEL', bg: '#eee8f4' },
+      multipleSelects: { label: 'MULTI', bg: '#e8eef4' },
+      multipleRecordLinks: { label: 'FK', bg: '#fde8e8' },
+      multipleAttachments: { label: 'FILE', bg: '#f0e8f4' },
+      formula: { label: 'FX', bg: '#e8e8f4' },
+      rollup: { label: 'ROLL', bg: '#e8e8f4' },
+      lookup: { label: 'LOOK', bg: '#e8e8f4' },
+      autoNumber: { label: 'AUTO', bg: '#e8f4e8' },
+      barcode: { label: 'BAR', bg: '#f4f0e8' },
+      rating: { label: 'RATE', bg: '#fef3e2' },
+      count: { label: 'CNT', bg: '#e8f4e8' },
+      createdTime: { label: 'DATE', bg: '#fef3e2' },
+      lastModifiedTime: { label: 'DATE', bg: '#fef3e2' },
+      createdBy: { label: 'USER', bg: '#e8f0f4' },
+      lastModifiedBy: { label: 'USER', bg: '#e8f0f4' },
+    };
+    var DEFAULT_BADGE = { label: 'FIELD', bg: '#eee' };
+
+    // ============ State ============
+    var SCHEMA = {};           // tableKey -> { label, color, icon, fields: [{id, name, type, fk_target?}] }
+    var state = {
+      rootTable: null,         // tableKey of the root (client) table
+      rootTableName: '',
+      tabs: [],
+      activeTab: null,
+      summary: [],
+      mode: 'edit',            // 'edit' | 'preview'
+      orgSpaceId: null,
+      session: null,
+      tableIdToKey: {},        // tableId -> tableKey
+      tableKeyToId: {},        // tableKey -> tableId
+      tableKeyToName: {},      // tableKey -> original table name
+      fkEditor: null,          // { uid, fieldId, fkPath, sectionId? }
+      fkSelectedPath: null,
+      expandedTables: {},
+    };
+
+    // ============ Utilities ============
+    function uid() { return Math.random().toString(36).slice(2, 9); }
+    function esc(v) { var d = document.createElement('div'); d.textContent = v == null ? '' : v; return d.innerHTML; }
+    function norm(s) { return String(s || '').trim().toLowerCase(); }
+    function tableKey(name) { return norm(name).replace(/[^a-z0-9]+/g, '_'); }
+
+    function showToast(msg, type) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast show ' + (type || 'success');
+      clearTimeout(el._t);
+      el._t = setTimeout(function() { el.className = 'toast'; }, 3000);
+    }
+
+    // ============ Session ============
+    function loadSynapseSession() {
+      try {
+        var raw = localStorage.getItem(SYNAPSE_SESSION_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    }
+
+    // ============ Schema Discovery ============
+    // Build SCHEMA from AminoData tables + records (field names discovered from data)
+    async function discoverSchema() {
+      var tables = await AminoData.getTables();
+      if (!tables || !tables.length) throw new Error('No tables found in database');
+
+      var colorIdx = 0;
+      var clientTableKey = null;
+
+      for (var t = 0; t < tables.length; t++) {
+        var table = tables[t];
+        var tableId = table.table_id || table.id;
+        var tableName = table.table_name || table.name || tableId;
+        var key = tableKey(tableName);
+
+        state.tableIdToKey[tableId] = key;
+        state.tableKeyToId[key] = tableId;
+        state.tableKeyToName[key] = tableName;
+
+        var color = TABLE_COLORS[colorIdx % TABLE_COLORS.length];
+        colorIdx++;
+
+        SCHEMA[key] = {
+          label: tableName,
+          color: color,
+          icon: table.icon || '',
+          tableId: tableId,
+          fields: []
+        };
+
+        // Detect root table (Client Info / Clients)
+        var n = norm(tableName);
+        if (n === 'client info' || n === 'clients' || n === 'client') {
+          clientTableKey = key;
+        }
+      }
+
+      // Discover fields from record data
+      var fieldDiscoveryPromises = Object.keys(SCHEMA).map(function(key) {
+        var tableId = state.tableKeyToId[key];
+        var cached = typeof AminoData.getTableRecordsCached === 'function'
+          ? AminoData.getTableRecordsCached(tableId) : null;
+        var promise = cached ? Promise.resolve(cached) : AminoData.getTableRecords(tableId);
+        return promise.then(function(rows) {
+          var fieldSet = {};
+          var sample = rows.slice(0, Math.min(rows.length, 100));
+          sample.forEach(function(row) {
+            var fields = row.fields || {};
+            Object.keys(fields).forEach(function(fieldName) {
+              if (!fieldSet[fieldName]) {
+                fieldSet[fieldName] = { values: [] };
+              }
+              if (fieldSet[fieldName].values.length < 5) {
+                fieldSet[fieldName].values.push(fields[fieldName]);
+              }
+            });
+          });
+
+          // Build field list with type inference
+          var fieldNames = Object.keys(fieldSet).sort();
+          SCHEMA[key].fields = fieldNames.map(function(fieldName) {
+            var fieldId = key + '.' + tableKey(fieldName);
+            var type = inferFieldTypeFromValues(fieldSet[fieldName].values);
+            var field = { id: fieldId, name: fieldName, type: type, _key: key };
+
+            // Detect FK targets: if the field contains record IDs, try to find which table they belong to
+            if (type === 'multipleRecordLinks') {
+              var targetKey = detectFKTarget(fieldSet[fieldName].values, rows, key);
+              if (targetKey) {
+                field.fk_target = targetKey;
+              }
+            }
+            return field;
+          });
+        }).catch(function() {
+          // Table might be empty, that's ok
+          SCHEMA[key].fields = [];
+        });
+      });
+
+      await Promise.all(fieldDiscoveryPromises);
+
+      // Set root table
+      state.rootTable = clientTableKey || Object.keys(SCHEMA)[0];
+      state.rootTableName = SCHEMA[state.rootTable] ? SCHEMA[state.rootTable].label : '';
+    }
+
+    function inferFieldTypeFromValues(values) {
+      if (!values || !values.length) return 'singleLineText';
+      for (var i = 0; i < values.length; i++) {
+        var v = values[i];
+        if (v == null) continue;
+        if (Array.isArray(v)) {
+          if (v.length > 0 && typeof v[0] === 'string' && /^rec[a-zA-Z0-9]+$/.test(v[0])) return 'multipleRecordLinks';
+          if (v.length > 0 && typeof v[0] === 'object' && v[0].url) return 'multipleAttachments';
+          return 'multipleSelects';
+        }
+        if (typeof v === 'object') {
+          if (v.url) return 'multipleAttachments';
+          continue;
+        }
+        if (typeof v === 'boolean') return 'checkbox';
+        if (typeof v === 'number') return 'number';
+        if (typeof v === 'string') {
+          if (/^rec[a-zA-Z0-9]+$/.test(v)) return 'multipleRecordLinks';
+          if (/^\d{4}-\d{2}-\d{2}/.test(v)) return 'date';
+          if (v.length > 200) return 'multilineText';
+        }
+      }
+      return 'singleLineText';
+    }
+
+    function detectFKTarget(sampleValues, allRows, sourceKey) {
+      // Collect sample record IDs from this field
+      var sampleIds = new Set();
+      for (var i = 0; i < sampleValues.length && sampleIds.size < 10; i++) {
+        var v = sampleValues[i];
+        if (typeof v === 'string' && /^rec/.test(v)) sampleIds.add(v);
+        if (Array.isArray(v)) {
+          v.forEach(function(item) {
+            if (typeof item === 'string' && /^rec/.test(item)) sampleIds.add(item);
+          });
+        }
+      }
+      if (!sampleIds.size) return null;
+
+      // Check which table these IDs belong to by checking cached records
+      for (var key in SCHEMA) {
+        if (key === sourceKey) continue;
+        var tableId = state.tableKeyToId[key];
+        var cached = typeof AminoData.getTableRecordsCached === 'function'
+          ? AminoData.getTableRecordsCached(tableId) : null;
+        if (!cached) continue;
+        for (var r = 0; r < cached.length; r++) {
+          var recId = cached[r].recordId || cached[r].id;
+          if (sampleIds.has(recId)) return key;
+        }
+      }
+      return null;
+    }
+
+    // ============ FK Path Resolution ============
+    function getField(fieldId) {
+      var parts = fieldId.split('.');
+      var tKey = parts[0];
+      if (!SCHEMA[tKey]) return null;
+      return SCHEMA[tKey].fields.find(function(f) { return f.id === fieldId; });
+    }
+
+    function getTableKey(fieldId) { return fieldId.split('.')[0]; }
+
+    function findFKPaths(sourceKey, targetKey, maxDepth) {
+      maxDepth = maxDepth || 3;
+      if (sourceKey === targetKey) return [[]];
+
+      var paths = [];
+      var queue = [[sourceKey, []]];
+      var visited = {};
+
+      while (queue.length > 0) {
+        var item = queue.shift();
+        var current = item[0];
+        var path = item[1];
+        if (path.length >= maxDepth) continue;
+
+        var table = SCHEMA[current];
+        if (!table) continue;
+
+        // Forward: fields on current table that point elsewhere
+        for (var i = 0; i < table.fields.length; i++) {
+          var field = table.fields[i];
+          if (field.fk_target) {
+            var step = { from: current, field: field.id, fieldName: field.name, to: field.fk_target };
+            var newPath = path.concat([step]);
+            if (field.fk_target === targetKey) {
+              paths.push(newPath);
+            } else if (!path.some(function(p) { return p.to === field.fk_target; })) {
+              queue.push([field.fk_target, newPath]);
+            }
+          }
+        }
+
+        // Reverse: fields on other tables that point to current
+        for (var tKey in SCHEMA) {
+          if (tKey === current) continue;
+          var otherTable = SCHEMA[tKey];
+          for (var j = 0; j < otherTable.fields.length; j++) {
+            var f = otherTable.fields[j];
+            if (f.fk_target === current) {
+              var revStep = { from: tKey, field: f.id, fieldName: f.name, to: current, reverse: true };
+              var revPath = path.concat([revStep]);
+              if (tKey === targetKey) {
+                paths.push(revPath);
+              }
+            }
+          }
+        }
+      }
+
+      // Deduplicate
+      var seen = {};
+      return paths.filter(function(p) {
+        var key = JSON.stringify(p);
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
+    }
+
+    // ============ Schema to Profile Config Conversion ============
+    // Convert our internal builder state to the law.firm.interface.profile format
+    function buildProfileConfig() {
+      var config = {
+        version: 2,
+        summaryFields: state.summary.map(function(s) {
+          var field = getField(s.fieldId);
+          return field ? field.name : s.fieldId;
+        }),
+        linkResolvers: {},
+        tabs: state.tabs.map(function(tab) {
+          return {
+            id: tab.id,
+            label: tab.label,
+            sections: tab.sections.map(function(sec) {
+              // Determine the primary table for this section
+              var primaryTable = determineSectionTable(sec);
+              var tableName = state.tableKeyToName[primaryTable] || SCHEMA[primaryTable]?.label || primaryTable;
+
+              // Determine section type: 'fields' if same as root, 'related' otherwise
+              var sectionType = primaryTable === state.rootTable ? 'fields' : 'related';
+
+              // Collect field names
+              var fieldNames = sec.fields.map(function(f) {
+                var field = getField(f.fieldId);
+                return field ? field.name : f.fieldId;
+              });
+
+              // Build link resolver from FK paths
+              if (sectionType === 'related') {
+                var resolverKey = tableKey(tableName);
+                var preferredFields = [];
+                sec.fields.forEach(function(f) {
+                  if (f.fkPath && f.fkPath.length > 0) {
+                    var firstStep = f.fkPath[0];
+                    if (firstStep.fieldName && preferredFields.indexOf(firstStep.fieldName) === -1) {
+                      preferredFields.push(firstStep.fieldName);
+                    }
+                  }
+                });
+                if (preferredFields.length) {
+                  config.linkResolvers[resolverKey] = {
+                    preferredFields: preferredFields,
+                    idSource: 'client'
+                  };
+                }
+              }
+
+              return {
+                title: sec.label,
+                type: sectionType,
+                table: tableName,
+                fields: fieldNames,
+                // Preserve layout metadata for the builder
+                _builderMeta: {
+                  columns: sec.columns,
+                  width: sec.width,
+                  fieldPlacements: sec.fields.map(function(f) {
+                    return { fieldId: f.fieldId, column: f.column, fkPath: f.fkPath };
+                  })
+                }
+              };
+            })
+          };
+        })
+      };
+      return config;
+    }
+
+    function determineSectionTable(section) {
+      if (!section.fields.length) return state.rootTable;
+      // Use the table of the first field (considering FK path)
+      var first = section.fields[0];
+      return getTableKey(first.fieldId);
+    }
+
+    // Convert profile config (law.firm.interface.profile) back to builder state
+    function loadProfileConfig(config) {
+      if (!config || !Array.isArray(config.tabs)) return false;
+
+      state.summary = (config.summaryFields || []).map(function(fieldName) {
+        var fieldId = findFieldIdByName(state.rootTable, fieldName);
+        return { uid: uid(), fieldId: fieldId || state.rootTable + '.' + tableKey(fieldName), fkPath: [] };
+      });
+
+      state.tabs = config.tabs.map(function(tab) {
+        return {
+          id: tab.id || 'tab-' + uid(),
+          label: tab.label,
+          sections: (tab.sections || []).map(function(sec) {
+            var sectionTableKey = findTableKey(sec.table);
+            var meta = sec._builderMeta;
+            var columns = meta ? meta.columns : 2;
+            var width = meta ? meta.width : (sec.type === 'fields' ? 'half' : 'full');
+
+            var fields;
+            if (meta && meta.fieldPlacements) {
+              // Restore from builder metadata
+              fields = meta.fieldPlacements.map(function(fp) {
+                return { uid: uid(), fieldId: fp.fieldId, column: fp.column, fkPath: fp.fkPath || [] };
+              });
+            } else {
+              // Reconstruct from field names
+              fields = (sec.fields || []).map(function(fieldName, idx) {
+                var fieldId = findFieldIdByName(sectionTableKey, fieldName);
+                var col = idx % columns;
+                var fkPath = [];
+                if (sectionTableKey && sectionTableKey !== state.rootTable) {
+                  // Auto-resolve FK path
+                  var paths = findFKPaths(sectionTableKey, state.rootTable);
+                  if (paths.length > 0 && paths[0].length > 0) fkPath = paths[0];
+                }
+                return { uid: uid(), fieldId: fieldId || sectionTableKey + '.' + tableKey(fieldName), column: col, fkPath: fkPath };
+              });
+            }
+
+            return {
+              id: 'sec-' + uid(),
+              label: sec.title || 'Section',
+              columns: columns,
+              width: width,
+              fields: fields
+            };
+          })
+        };
+      });
+
+      state.activeTab = state.tabs.length ? state.tabs[0].id : null;
+      return true;
+    }
+
+    function findFieldIdByName(tKey, fieldName) {
+      if (!tKey || !SCHEMA[tKey]) {
+        // Search all tables
+        for (var k in SCHEMA) {
+          var found = SCHEMA[k].fields.find(function(f) { return norm(f.name) === norm(fieldName); });
+          if (found) return found.id;
+        }
+        return null;
+      }
+      var field = SCHEMA[tKey].fields.find(function(f) { return norm(f.name) === norm(fieldName); });
+      return field ? field.id : null;
+    }
+
+    function findTableKey(tableName) {
+      var n = norm(tableName);
+      for (var k in SCHEMA) {
+        if (norm(SCHEMA[k].label) === n || k === n) return k;
+      }
+      // Try fuzzy
+      var key = tableKey(tableName);
+      if (SCHEMA[key]) return key;
+      return null;
+    }
+
+    // ============ Schema Loading ============
+    async function loadSchemaFromMatrix() {
+      if (!state.orgSpaceId || !MatrixClient.isLoggedIn()) return null;
+      try {
+        var content = await MatrixClient.getStateEvent(state.orgSpaceId, PROFILE_CONFIG_EVENT, '');
+        if (content && Array.isArray(content.tabs)) return content;
+      } catch (e) {
+        console.warn('[Builder] Could not load schema from Matrix:', e.message);
+      }
+      return null;
+    }
+
+    function loadSchemaFromLocal() {
+      try {
+        var raw = localStorage.getItem(LOCAL_SCHEMA_KEY);
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.tabs)) return parsed;
+      } catch (e) {}
+      return null;
+    }
+
+    // ============ Rendering: Schema Panel ============
+    function renderSchemaPanel() {
+      var searchTerm = (document.getElementById('schemaSearch').value || '').toLowerCase();
+      var html = '';
+
+      Object.keys(SCHEMA).forEach(function(key) {
+        var table = SCHEMA[key];
+        var filtered = table.fields.filter(function(f) {
+          return !searchTerm || f.name.toLowerCase().indexOf(searchTerm) !== -1 || key.indexOf(searchTerm) !== -1;
+        });
+        if (searchTerm && !filtered.length) return;
+
+        var expanded = state.expandedTables[key] || searchTerm;
+        html += '<button class="table-group-btn' + (expanded ? ' expanded' : '') + '" data-table="' + key + '" style="border-left:3px solid ' + table.color + ';">';
+        html += '<span style="font-size:11px;">' + esc(table.icon || '📋') + '</span>';
+        html += '<span style="font-weight:600;">' + esc(table.label) + '</span>';
+        html += '<span style="margin-left:auto;font-size:9px;color:#666;font-family:var(--mono);">' + table.fields.length + '</span>';
+        html += '<span style="font-size:8px;transition:transform 0.15s;transform:rotate(' + (expanded ? '90' : '0') + 'deg);">▶</span>';
+        html += '</button>';
+
+        if (expanded) {
+          html += '<div style="padding:2px 6px 6px 16px;display:flex;flex-direction:column;gap:1px;">';
+          filtered.forEach(function(field) {
+            var badge = TYPE_BADGES[field.type] || DEFAULT_BADGE;
+            html += '<div class="field-chip" draggable="true" data-field-id="' + field.id + '">';
+            html += '<span class="type-badge" style="background:' + badge.bg + ';color:#666;">' + badge.label + '</span>';
+            html += '<span style="flex:1;">' + esc(field.name) + '</span>';
+            if (field.fk_target && SCHEMA[field.fk_target]) {
+              html += '<span style="font-size:8px;color:' + SCHEMA[field.fk_target].color + ';font-weight:600;">→' + esc(SCHEMA[field.fk_target].label) + '</span>';
+            }
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+      });
+
+      document.getElementById('schemaList').innerHTML = html;
+      document.getElementById('rootTableLabel').textContent = 'root: ' + (state.rootTableName || '?');
+
+      // Wire table expand/collapse
+      document.querySelectorAll('.table-group-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var key = btn.getAttribute('data-table');
+          state.expandedTables[key] = !state.expandedTables[key];
+          renderSchemaPanel();
+        });
+      });
+
+      // Wire drag
+      document.querySelectorAll('.field-chip[draggable]').forEach(function(chip) {
+        chip.addEventListener('dragstart', function(e) {
+          e.dataTransfer.setData('text/field-id', chip.getAttribute('data-field-id'));
+          e.dataTransfer.effectAllowed = 'copy';
+        });
+      });
+    }
+
+    // ============ Rendering: Canvas ============
+    function renderCanvas() {
+      var isPreview = state.mode === 'preview';
+      var canvas = document.getElementById('canvas');
+      canvas.className = 'canvas ' + state.mode;
+
+      var html = '';
+
+      // Profile card header
+      html += '<div class="profile-card">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">';
+      html += '<div>';
+      html += '<h2>' + (isPreview ? 'Client Name' : 'Client Profile') + '</h2>';
+      html += '<span class="subtitle">' + (isPreview ? 'rec00Fr5TBcrZSHFI' : 'Summary fields — drop here') + '</span>';
+      html += '</div>';
+      if (isPreview) {
+        html += '<button class="toolbar-btn" onclick="toggleMode()">⚙ Configure</button>';
+      }
+      html += '</div>';
+
+      // Summary bar
+      html += renderSummaryBar(isPreview);
+      html += '</div>';
+
+      // Tabs
+      html += renderTabStrip(isPreview);
+
+      // Current tab sections
+      var currentTab = state.tabs.find(function(t) { return t.id === state.activeTab; });
+      if (currentTab) {
+        html += '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;">';
+        currentTab.sections.forEach(function(sec) {
+          html += renderSection(sec, isPreview);
+        });
+        if (!isPreview) {
+          html += '<button class="add-section-btn" onclick="addSection()"><span style="font-size:16px;font-weight:300;">+</span> Add Section</button>';
+        }
+        html += '</div>';
+      }
+
+      canvas.innerHTML = html;
+
+      // Update stats
+      var totalSections = state.tabs.reduce(function(a, t) { return a + t.sections.length; }, 0);
+      document.getElementById('statsLabel').textContent = state.tabs.length + ' tabs · ' + totalSections + ' sec';
+
+      // Wire events
+      wireCanvasEvents(isPreview);
+    }
+
+    function renderSummaryBar(isPreview) {
+      var html = '<div class="summary-bar' + (!isPreview ? '' : '') + '" id="summaryBar">';
+      if (!state.summary.length && !isPreview) {
+        html += '<div style="color:#bbb;font-size:11px;font-style:italic;padding:6px;">Drag summary fields here</div>';
+      }
+      state.summary.forEach(function(item) {
+        var field = getField(item.fieldId);
+        var tKey = getTableKey(item.fieldId);
+        var color = SCHEMA[tKey] ? SCHEMA[tKey].color : '#999';
+        html += '<div class="summary-item" style="border-top:3px solid ' + color + ';">';
+        html += '<div>';
+        html += '<div class="label" style="color:' + color + ';">' + esc(field ? field.name : item.fieldId) + '</div>';
+        html += '<div class="value">' + (isPreview ? '—' : 'Unknown') + '</div>';
+        html += '</div>';
+        if (!isPreview) {
+          html += '<button class="remove-btn" data-remove-summary="' + item.uid + '" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:13px;">×</button>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+      return html;
+    }
+
+    function renderTabStrip(isPreview) {
+      var html = '<div class="tab-strip">';
+      state.tabs.forEach(function(tab) {
+        if (isPreview) {
+          html += '<button class="tab-btn' + (state.activeTab === tab.id ? ' active' : '') + '" data-tab="' + tab.id + '">' + esc(tab.label) + '</button>';
+        } else {
+          html += '<div style="position:relative;display:flex;align-items:center;">';
+          html += '<input class="tab-input' + (state.activeTab === tab.id ? ' active' : '') + '" data-tab="' + tab.id + '" value="' + esc(tab.label) + '" style="width:' + Math.max(65, tab.label.length * 8 + 20) + 'px;" />';
+          if (state.tabs.length > 1) {
+            html += '<button class="tab-remove" data-remove-tab="' + tab.id + '">×</button>';
+          }
+          html += '</div>';
+        }
+      });
+      if (!isPreview) {
+        html += '<button class="add-tab-btn" onclick="addTab()">+</button>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function renderSection(sec, isPreview) {
+      var widthMap = { full: '1 1 100%', half: '1 1 calc(50% - 8px)', third: '1 1 calc(33.33% - 11px)' };
+      var flex = widthMap[sec.width || 'full'];
+      var cols = sec.columns || 1;
+
+      var html = '<div class="layout-section' + (isPreview ? ' preview' : '') + '" style="flex:' + flex + ';min-width:250px;" data-section="' + sec.id + '">';
+
+      if (isPreview) {
+        html += '<div style="padding:11px 16px;border-bottom:1px solid #eee;font-weight:700;font-size:13px;color:var(--text-main);">' + esc(sec.label) + '</div>';
+      } else {
+        html += '<div class="section-header">';
+        html += '<div style="display:flex;align-items:center;gap:6px;">';
+        html += '<span class="name">' + esc(sec.label) + '</span>';
+        html += '<span class="meta">' + cols + 'col · ' + (sec.width || 'full') + '</span>';
+        html += '</div>';
+        html += '<button style="background:none;border:1px solid #ddd;border-radius:4px;cursor:pointer;color:#888;font-size:12px;padding:2px 7px;" data-settings-toggle="' + sec.id + '">⚙</button>';
+        html += '</div>';
+        // Settings dropdown (hidden by default)
+        html += '<div class="section-settings" id="settings-' + sec.id + '" style="display:none;">';
+        html += renderSectionSettings(sec);
+        html += '</div>';
+      }
+
+      // Column headers (edit mode)
+      if (!isPreview) {
+        html += '<div style="display:flex;padding:0 4px;border-bottom:1px solid #eee;">';
+        for (var c = 0; c < cols; c++) {
+          html += '<div class="drop-col-label" style="flex:1;">Col ' + (c + 1) + '</div>';
+        }
+        html += '</div>';
+      }
+
+      // Columns with fields
+      html += '<div style="display:flex;padding:' + (isPreview ? '4px 0' : '4px') + ';gap:3px;">';
+      for (var ci = 0; ci < cols; ci++) {
+        var colFields = sec.fields.filter(function(f) { return f.column === ci; });
+        html += renderColumn(sec.id, ci, colFields, isPreview);
+      }
+      html += '</div>';
+
+      html += '</div>';
+      return html;
+    }
+
+    function renderColumn(sectionId, colIndex, fields, isPreview) {
+      if (isPreview) {
+        var html = '<div style="flex:1;padding:0 12px;">';
+        fields.forEach(function(f) {
+          html += renderPlacedFieldPreview(f);
+        });
+        html += '</div>';
+        return html;
+      }
+
+      var html = '<div class="drop-col" data-section="' + sectionId + '" data-col="' + colIndex + '">';
+      if (!fields.length) {
+        html += '<div class="drop-placeholder">Drop here</div>';
+      }
+      fields.forEach(function(f) {
+        html += renderPlacedField(f, sectionId);
+      });
+      html += '</div>';
+      return html;
+    }
+
+    function renderPlacedField(item, sectionId) {
+      var field = getField(item.fieldId);
+      var tKey = getTableKey(item.fieldId);
+      var color = SCHEMA[tKey] ? SCHEMA[tKey].color : '#666';
+      var badge = TYPE_BADGES[field ? field.type : ''] || DEFAULT_BADGE;
+      var hasFKPath = item.fkPath && item.fkPath.length > 0;
+
+      var html = '<div class="placed-field" draggable="true" data-move-uid="' + item.uid + '" data-field-id="' + item.fieldId + '" data-section="' + sectionId + '" style="border-color:' + color + '25;border-left:3px solid ' + color + ';">';
+      html += '<div style="flex:1;min-width:0;">';
+      html += '<div style="display:flex;align-items:center;gap:4px;">';
+      html += '<span class="table-label" style="color:' + color + ';">' + esc(SCHEMA[tKey] ? SCHEMA[tKey].label : tKey) + '</span>';
+      html += '<span style="font-size:7px;font-weight:700;padding:0 3px;border-radius:2px;background:' + badge.bg + ';color:#666;font-family:var(--mono);">' + badge.label + '</span>';
+      html += '</div>';
+      html += '<div class="field-name">' + esc(field ? field.name : item.fieldId) + '</div>';
+      if (hasFKPath) {
+        html += '<div style="margin-top:2px;">' + renderFKPathBadge(item.fkPath) + '</div>';
+      }
+      html += '</div>';
+      html += '<div style="display:flex;gap:2px;flex-shrink:0;">';
+      html += '<button class="fk-btn" data-fk-uid="' + item.uid + '" data-fk-section="' + sectionId + '" style="color:' + color + ';border-color:' + color + '30;" title="Edit FK path">FK</button>';
+      html += '<button class="remove-btn" data-remove-field="' + item.uid + '" data-remove-section="' + sectionId + '">×</button>';
+      html += '</div>';
+      html += '</div>';
+      return html;
+    }
+
+    function renderPlacedFieldPreview(item) {
+      var field = getField(item.fieldId);
+      var tKey = getTableKey(item.fieldId);
+      var color = SCHEMA[tKey] ? SCHEMA[tKey].color : '#666';
+      var hasFKPath = item.fkPath && item.fkPath.length > 0;
+
+      var html = '<div style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid #f0efeb;font-size:13px;">';
+      html += '<span style="color:#555;width:45%;">' + esc(field ? field.name : item.fieldId) + '</span>';
+      html += '<span style="color:#ccc;flex:1;">—</span>';
+      if (hasFKPath) {
+        var firstTable = SCHEMA[item.fkPath[0].from];
+        html += '<span style="font-size:8px;color:' + color + ';background:' + color + '10;padding:2px 5px;border-radius:3px;font-family:var(--mono);font-weight:600;">via ' + esc(firstTable ? firstTable.label : item.fkPath[0].from) + '</span>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function renderFKPathBadge(fkPath) {
+      if (!fkPath || !fkPath.length) return '';
+      var html = '<div class="fk-path-badge">';
+      fkPath.forEach(function(step, i) {
+        if (i > 0) html += '<span class="arrow">→</span>';
+        var fromTable = SCHEMA[step.from];
+        var c = fromTable ? fromTable.color : '#666';
+        html += '<span class="step" style="background:' + c + '15;color:' + c + ';">' + esc(fromTable ? fromTable.label : step.from) + '</span>';
+        html += '<span class="via">.' + esc(step.fieldName) + '</span>';
+      });
+      var lastTo = SCHEMA[fkPath[fkPath.length - 1].to];
+      var lc = lastTo ? lastTo.color : '#666';
+      html += '<span class="arrow">→</span>';
+      html += '<span class="step" style="background:' + lc + '15;color:' + lc + ';">' + esc(lastTo ? lastTo.label : fkPath[fkPath.length - 1].to) + '</span>';
+      html += '</div>';
+      return html;
+    }
+
+    function renderSectionSettings(sec) {
+      var html = '';
+      html += '<div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Section Settings</div>';
+      html += '<label>Name</label>';
+      html += '<input type="text" value="' + esc(sec.label) + '" data-setting="label" data-section="' + sec.id + '" />';
+
+      html += '<label style="margin-bottom:6px;">Columns</label>';
+      html += '<div style="display:flex;gap:4px;margin-bottom:12px;">';
+      [1, 2, 3, 4].forEach(function(n) {
+        html += '<button class="col-btn' + (sec.columns === n ? ' active' : '') + '" data-set-cols="' + n + '" data-section="' + sec.id + '">' + n + '</button>';
+      });
+      html += '</div>';
+
+      html += '<label style="margin-bottom:6px;">Section Width</label>';
+      html += '<div style="display:flex;gap:4px;margin-bottom:16px;">';
+      [['full', 'Full'], ['half', '½'], ['third', '⅓']].forEach(function(pair) {
+        html += '<button class="width-btn' + ((sec.width || 'full') === pair[0] ? ' active' : '') + '" data-set-width="' + pair[0] + '" data-section="' + sec.id + '">' + pair[1] + '</button>';
+      });
+      html += '</div>';
+
+      html += '<div style="display:flex;gap:8px;">';
+      html += '<button style="flex:1;padding:7px 0;border-radius:5px;border:1px solid #e8c4c4;background:#fdf0f0;color:var(--danger);font-weight:600;font-size:11px;cursor:pointer;" data-delete-section="' + sec.id + '">Delete</button>';
+      html += '<button style="flex:1;padding:7px 0;border-radius:5px;border:1px solid #ddd;background:#f5f4f0;color:#555;font-weight:600;font-size:11px;cursor:pointer;" data-close-settings="' + sec.id + '">Close</button>';
+      html += '</div>';
+      return html;
+    }
+
+    // ============ Event Wiring ============
+    function wireCanvasEvents(isPreview) {
+      // Tab clicks
+      document.querySelectorAll('[data-tab]').forEach(function(el) {
+        if (el.tagName === 'BUTTON') {
+          el.addEventListener('click', function() {
+            state.activeTab = el.getAttribute('data-tab');
+            renderCanvas();
+          });
+        } else if (el.tagName === 'INPUT') {
+          el.addEventListener('click', function() {
+            state.activeTab = el.getAttribute('data-tab');
+            renderCanvas();
+          });
+          el.addEventListener('change', function() {
+            var tabId = el.getAttribute('data-tab');
+            var tab = state.tabs.find(function(t) { return t.id === tabId; });
+            if (tab) { tab.label = el.value; }
+          });
+        }
+      });
+
+      // Tab remove
+      document.querySelectorAll('[data-remove-tab]').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var tabId = btn.getAttribute('data-remove-tab');
+          if (state.tabs.length <= 1) return;
+          state.tabs = state.tabs.filter(function(t) { return t.id !== tabId; });
+          if (state.activeTab === tabId) state.activeTab = state.tabs[0].id;
+          renderCanvas();
+        });
+      });
+
+      // Summary remove
+      document.querySelectorAll('[data-remove-summary]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var uid = btn.getAttribute('data-remove-summary');
+          state.summary = state.summary.filter(function(s) { return s.uid !== uid; });
+          renderCanvas();
+        });
+      });
+
+      // Summary bar drop
+      var summaryBar = document.getElementById('summaryBar');
+      if (summaryBar && !isPreview) {
+        summaryBar.addEventListener('dragover', function(e) { e.preventDefault(); summaryBar.classList.add('drop-hover'); });
+        summaryBar.addEventListener('dragleave', function() { summaryBar.classList.remove('drop-hover'); });
+        summaryBar.addEventListener('drop', function(e) {
+          e.preventDefault();
+          summaryBar.classList.remove('drop-hover');
+          var fieldId = e.dataTransfer.getData('text/field-id');
+          if (fieldId) {
+            addSummaryField(fieldId);
+          }
+        });
+      }
+
+      // Section settings toggle
+      document.querySelectorAll('[data-settings-toggle]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var secId = btn.getAttribute('data-settings-toggle');
+          var el = document.getElementById('settings-' + secId);
+          if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        });
+      });
+
+      // Section settings actions
+      document.querySelectorAll('[data-setting="label"]').forEach(function(input) {
+        input.addEventListener('change', function() {
+          var secId = input.getAttribute('data-section');
+          updateSection(secId, { label: input.value });
+        });
+      });
+      document.querySelectorAll('[data-set-cols]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          updateSection(btn.getAttribute('data-section'), { columns: parseInt(btn.getAttribute('data-set-cols')) });
+          renderCanvas();
+        });
+      });
+      document.querySelectorAll('[data-set-width]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          updateSection(btn.getAttribute('data-section'), { width: btn.getAttribute('data-set-width') });
+          renderCanvas();
+        });
+      });
+      document.querySelectorAll('[data-delete-section]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          removeSection(btn.getAttribute('data-delete-section'));
+          renderCanvas();
+        });
+      });
+      document.querySelectorAll('[data-close-settings]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var el = document.getElementById('settings-' + btn.getAttribute('data-close-settings'));
+          if (el) el.style.display = 'none';
+        });
+      });
+
+      // Field remove
+      document.querySelectorAll('[data-remove-field]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var fUid = btn.getAttribute('data-remove-field');
+          var secId = btn.getAttribute('data-remove-section');
+          removeFieldFromSection(secId, fUid);
+          renderCanvas();
+        });
+      });
+
+      // FK edit button
+      document.querySelectorAll('[data-fk-uid]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var fUid = btn.getAttribute('data-fk-uid');
+          var secId = btn.getAttribute('data-fk-section');
+          openFKEditor(fUid, secId);
+        });
+      });
+
+      // Drop columns
+      document.querySelectorAll('.drop-col').forEach(function(col) {
+        col.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; col.classList.add('drop-hover'); });
+        col.addEventListener('dragleave', function() { col.classList.remove('drop-hover'); });
+        col.addEventListener('drop', function(e) {
+          e.preventDefault();
+          col.classList.remove('drop-hover');
+          var sectionId = col.getAttribute('data-section');
+          var colIndex = parseInt(col.getAttribute('data-col'));
+          var newFieldId = e.dataTransfer.getData('text/field-id');
+          if (newFieldId) {
+            dropFieldInSection(sectionId, colIndex, newFieldId);
+            return;
+          }
+          var moveData = e.dataTransfer.getData('application/field-move');
+          if (moveData) {
+            var item = JSON.parse(moveData);
+            dropFieldInSection(sectionId, colIndex, item.fieldId, item.uid, item.sectionId);
+          }
+        });
+      });
+
+      // Placed field drag
+      document.querySelectorAll('.placed-field[draggable]').forEach(function(el) {
+        el.addEventListener('dragstart', function(e) {
+          e.dataTransfer.setData('application/field-move', JSON.stringify({
+            uid: el.getAttribute('data-move-uid'),
+            fieldId: el.getAttribute('data-field-id'),
+            sectionId: el.getAttribute('data-section')
+          }));
+          e.dataTransfer.effectAllowed = 'move';
+        });
+      });
+    }
+
+    // ============ State Mutations ============
+    function addSummaryField(fieldId) {
+      var tKey = getTableKey(fieldId);
+      var paths = tKey !== state.rootTable ? findFKPaths(state.rootTable, tKey) : [];
+      state.summary.push({ uid: uid(), fieldId: fieldId, fkPath: paths.length > 0 ? paths[0] : [] });
+      renderCanvas();
+    }
+
+    function dropFieldInSection(sectionId, colIndex, fieldId, moveUid, fromSectionId) {
+      state.tabs.forEach(function(tab) {
+        tab.sections.forEach(function(sec) {
+          if (sec.id === sectionId) {
+            if (moveUid) {
+              // Move within same section
+              var existing = sec.fields.find(function(f) { return f.uid === moveUid; });
+              if (existing) {
+                existing.column = colIndex;
+              } else {
+                // Move from another section
+                var fromSec = null;
+                state.tabs.forEach(function(t) {
+                  t.sections.forEach(function(s) {
+                    if (s.id === fromSectionId) fromSec = s;
+                  });
+                });
+                if (fromSec) {
+                  var moved = fromSec.fields.find(function(f) { return f.uid === moveUid; });
+                  if (moved) {
+                    fromSec.fields = fromSec.fields.filter(function(f) { return f.uid !== moveUid; });
+                    moved.column = colIndex;
+                    sec.fields.push(moved);
+                  }
+                }
+              }
+            } else {
+              // New field from schema panel
+              var tKey = getTableKey(fieldId);
+              var paths = tKey !== state.rootTable ? findFKPaths(tKey, state.rootTable) : [];
+              sec.fields.push({
+                uid: uid(),
+                fieldId: fieldId,
+                column: colIndex,
+                fkPath: paths.length > 0 ? paths[0] : []
+              });
+            }
+          }
+        });
+      });
+      renderCanvas();
+    }
+
+    function removeFieldFromSection(sectionId, fUid) {
+      state.tabs.forEach(function(tab) {
+        tab.sections.forEach(function(sec) {
+          if (sec.id === sectionId) {
+            sec.fields = sec.fields.filter(function(f) { return f.uid !== fUid; });
+          }
+        });
+      });
+    }
+
+    function updateSection(sectionId, updates) {
+      state.tabs.forEach(function(tab) {
+        tab.sections.forEach(function(sec) {
+          if (sec.id === sectionId) {
+            Object.keys(updates).forEach(function(k) { sec[k] = updates[k]; });
+          }
+        });
+      });
+    }
+
+    function removeSection(sectionId) {
+      state.tabs.forEach(function(tab) {
+        tab.sections = tab.sections.filter(function(sec) { return sec.id !== sectionId; });
+      });
+    }
+
+    // ============ FK Path Editor ============
+    function openFKEditor(fUid, sectionId) {
+      var item = null;
+      if (sectionId) {
+        state.tabs.forEach(function(tab) {
+          tab.sections.forEach(function(sec) {
+            if (sec.id === sectionId) {
+              item = sec.fields.find(function(f) { return f.uid === fUid; });
+            }
+          });
+        });
+      } else {
+        item = state.summary.find(function(s) { return s.uid === fUid; });
+      }
+      if (!item) return;
+
+      state.fkEditor = { uid: fUid, fieldId: item.fieldId, fkPath: item.fkPath || [], sectionId: sectionId };
+
+      var targetKey = getTableKey(item.fieldId);
+      var field = getField(item.fieldId);
+      var paths = findFKPaths(state.rootTable, targetKey);
+      state.fkSelectedPath = item.fkPath || (paths.length > 0 ? paths[0] : []);
+
+      // Render modal
+      var targetTable = SCHEMA[targetKey];
+      var rootTableObj = SCHEMA[state.rootTable];
+      var subtitle = 'How should <strong style="color:' + (targetTable ? targetTable.color : '#666') + ';">' + esc(field ? field.name : item.fieldId) + '</strong> from <strong style="color:' + (targetTable ? targetTable.color : '#666') + ';">' + esc(targetTable ? targetTable.label : targetKey) + '</strong> be resolved from <strong style="color:' + (rootTableObj ? rootTableObj.color : '#666') + ';">' + esc(rootTableObj ? rootTableObj.label : state.rootTable) + '</strong>?';
+      document.getElementById('fkModalSubtitle').innerHTML = subtitle;
+
+      var bodyHtml = '';
+
+      // Direct option
+      if (targetKey === state.rootTable) {
+        var isSelected = state.fkSelectedPath.length === 0;
+        bodyHtml += '<div class="path-option' + (isSelected ? ' selected' : '') + '" data-path-idx="-1">';
+        bodyHtml += '<div style="font-size:13px;font-weight:600;color:var(--text-main);">Direct field (no join)</div>';
+        bodyHtml += '<div style="font-size:11px;color:#888;margin-top:2px;">Field lives on ' + esc(rootTableObj ? rootTableObj.label : '') + ' table</div>';
+        bodyHtml += '</div>';
+      }
+
+      // FK paths
+      var filteredPaths = paths.filter(function(p) { return p.length > 0; });
+      filteredPaths.forEach(function(path, idx) {
+        var isSelected = JSON.stringify(state.fkSelectedPath) === JSON.stringify(path);
+        bodyHtml += '<div class="path-option' + (isSelected ? ' selected' : '') + '" data-path-idx="' + idx + '">';
+        bodyHtml += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">';
+        bodyHtml += '<span style="font-size:11px;font-weight:600;color:' + (isSelected ? 'var(--primary)' : '#555') + ';">Path ' + (idx + 1) + '</span>';
+        if (path.length === 1) bodyHtml += '<span style="font-size:9px;background:#e8f4f0;color:var(--primary);padding:1px 6px;border-radius:3px;">Direct</span>';
+        bodyHtml += '</div>';
+
+        bodyHtml += '<div class="path-chain">';
+        var rc = rootTableObj ? rootTableObj.color : '#666';
+        bodyHtml += '<span class="table-tag" style="background:' + rc + '12;color:' + rc + ';">' + esc(rootTableObj ? rootTableObj.label : state.rootTable) + '</span>';
+        path.forEach(function(step) {
+          var toTable = SCHEMA[step.to];
+          var tc = toTable ? toTable.color : '#666';
+          bodyHtml += '<span class="sep">→</span>';
+          bodyHtml += '<span class="field-tag"><strong>' + esc(step.fieldName) + '</strong></span>';
+          bodyHtml += '<span class="sep">→</span>';
+          bodyHtml += '<span class="table-tag" style="background:' + tc + '12;color:' + tc + ';">' + esc(toTable ? toTable.label : step.to) + '</span>';
+        });
+        bodyHtml += '<span style="color:#ccc;">.</span>';
+        bodyHtml += '<span style="font-weight:600;color:var(--text-main);">' + esc(field ? field.name : '') + '</span>';
+        bodyHtml += '</div>';
+        bodyHtml += '</div>';
+      });
+
+      if (!filteredPaths.length && targetKey !== state.rootTable) {
+        bodyHtml += '<div style="padding:20px;text-align:center;color:#999;font-size:13px;">No FK path found between these tables. The builder will use auto-discovery at render time.</div>';
+      }
+
+      document.getElementById('fkModalBody').innerHTML = bodyHtml;
+      document.getElementById('fkModal').style.display = 'flex';
+
+      // Wire path selection
+      document.querySelectorAll('.path-option').forEach(function(opt) {
+        opt.addEventListener('click', function() {
+          document.querySelectorAll('.path-option').forEach(function(o) { o.classList.remove('selected'); });
+          opt.classList.add('selected');
+          var pathIdx = parseInt(opt.getAttribute('data-path-idx'));
+          if (pathIdx === -1) {
+            state.fkSelectedPath = [];
+          } else {
+            state.fkSelectedPath = filteredPaths[pathIdx] || [];
+          }
+        });
+      });
+    }
+
+    // ============ Global Functions (exposed for onclick handlers) ============
+    window.toggleMode = function() {
+      state.mode = state.mode === 'edit' ? 'preview' : 'edit';
+      var btn = document.getElementById('modeBtn');
+      btn.textContent = state.mode === 'preview' ? '← Edit' : 'Preview';
+      btn.className = 'toolbar-btn' + (state.mode === 'preview' ? ' active' : '');
+      document.getElementById('schemaPanel').style.display = state.mode === 'preview' ? 'none' : '';
+      renderCanvas();
+    };
+
+    window.addSection = function() {
+      var currentTab = state.tabs.find(function(t) { return t.id === state.activeTab; });
+      if (currentTab) {
+        currentTab.sections.push({
+          id: 'sec-' + uid(),
+          label: 'New Section',
+          columns: 2,
+          width: 'full',
+          fields: []
+        });
+        renderCanvas();
+      }
+    };
+
+    window.addTab = function() {
+      var id = 'tab-' + uid();
+      state.tabs.push({ id: id, label: 'New Tab', sections: [] });
+      state.activeTab = id;
+      renderCanvas();
+    };
+
+    window.closeFKModal = function() {
+      document.getElementById('fkModal').style.display = 'none';
+      state.fkEditor = null;
+      state.fkSelectedPath = null;
+    };
+
+    window.saveFKPath = function() {
+      if (!state.fkEditor) return;
+      var path = state.fkSelectedPath || [];
+      var fUid = state.fkEditor.uid;
+      var secId = state.fkEditor.sectionId;
+
+      if (secId) {
+        state.tabs.forEach(function(tab) {
+          tab.sections.forEach(function(sec) {
+            if (sec.id === secId) {
+              sec.fields.forEach(function(f) {
+                if (f.uid === fUid) f.fkPath = path;
+              });
+            }
+          });
+        });
+      } else {
+        state.summary.forEach(function(s) {
+          if (s.uid === fUid) s.fkPath = path;
+        });
+      }
+
+      closeFKModal();
+      renderCanvas();
+    };
+
+    window.saveToMatrix = async function() {
+      try {
+        if (!state.orgSpaceId || !MatrixClient.isLoggedIn()) {
+          throw new Error('Not connected to Matrix');
+        }
+        var config = buildProfileConfig();
+        await MatrixClient.sendStateEvent(state.orgSpaceId, PROFILE_CONFIG_EVENT, '', config);
+        localStorage.setItem(LOCAL_SCHEMA_KEY, JSON.stringify(config));
+        showToast('Profile layout saved to Matrix — all users will see this layout.', 'success');
+      } catch (e) {
+        // Fallback to localStorage
+        var config = buildProfileConfig();
+        localStorage.setItem(LOCAL_SCHEMA_KEY, JSON.stringify(config));
+        showToast('Saved locally (Matrix unavailable: ' + e.message + ')', 'error');
+      }
+    };
+
+    window.exportJSON = function() {
+      var config = buildProfileConfig();
+      var blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'profile-layout.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    // ============ Build Default Layout ============
+    function buildDefaultLayout() {
+      // Build a sensible default from the discovered schema
+      var rootFields = SCHEMA[state.rootTable] ? SCHEMA[state.rootTable].fields : [];
+
+      // Summary: pick first 3 select/status fields from root
+      state.summary = rootFields
+        .filter(function(f) { return f.type === 'singleSelect' || f.type === 'multipleSelects'; })
+        .slice(0, 3)
+        .map(function(f) { return { uid: uid(), fieldId: f.id, fkPath: [] }; });
+
+      // Build tabs
+      var overviewFields = rootFields.slice(0, 6).map(function(f, idx) {
+        return { uid: uid(), fieldId: f.id, column: idx % 2, fkPath: [] };
+      });
+
+      var overviewSection = {
+        id: 'sec-' + uid(),
+        label: SCHEMA[state.rootTable].label,
+        columns: 2,
+        width: 'half',
+        fields: overviewFields
+      };
+
+      var sections = [overviewSection];
+
+      // Add one section per related table (up to 4)
+      var relatedCount = 0;
+      Object.keys(SCHEMA).forEach(function(key) {
+        if (key === state.rootTable || relatedCount >= 4) return;
+        var table = SCHEMA[key];
+        // Check if this table has FK to root
+        var hasFK = table.fields.some(function(f) { return f.fk_target === state.rootTable; });
+        if (!hasFK) return;
+
+        var fkField = table.fields.find(function(f) { return f.fk_target === state.rootTable; });
+        var fkPath = fkField ? [{ from: key, field: fkField.id, fieldName: fkField.name, to: state.rootTable }] : [];
+
+        var displayFields = table.fields
+          .filter(function(f) { return f.type !== 'multipleRecordLinks'; })
+          .slice(0, 4)
+          .map(function(f, idx) {
+            return { uid: uid(), fieldId: f.id, column: idx % 2, fkPath: fkPath };
+          });
+
+        sections.push({
+          id: 'sec-' + uid(),
+          label: table.label,
+          columns: 2,
+          width: 'half',
+          fields: displayFields
+        });
+        relatedCount++;
+      });
+
+      state.tabs = [{
+        id: 'tab-overview',
+        label: 'Overview',
+        sections: sections
+      }];
+      state.activeTab = 'tab-overview';
+    }
+
+    // ============ Initialization ============
+    async function init() {
+      var loadingMsg = document.getElementById('loadingMsg');
+      var session = loadSynapseSession();
+      state.session = session;
+
+      if (!session || !session.accessToken || !session.userId) {
+        loadingMsg.textContent = 'No active session found. Please log in from the main app first.';
+        return;
+      }
+
+      // 1. Restore Matrix session
+      loadingMsg.textContent = 'Connecting to Matrix...';
+      try {
+        MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+      } catch (e) {
+        loadingMsg.textContent = 'Matrix connection failed: ' + e.message;
+        return;
+      }
+
+      // 2. Initialize AminoData for IndexedDB access
+      loadingMsg.textContent = 'Initializing data layer...';
+      try {
+        if (session.password) {
+          await AminoData.init(session.accessToken, session.userId, session.password);
+        } else if (AminoData.restoreSession) {
+          await AminoData.restoreSession(session.accessToken, session.userId, session.password || '');
+        }
+      } catch (e) {
+        loadingMsg.textContent = 'Data layer init failed: ' + e.message;
+        return;
+      }
+
+      // 3. Discover schema from IndexedDB records
+      loadingMsg.textContent = 'Discovering schema from database...';
+      try {
+        await discoverSchema();
+      } catch (e) {
+        loadingMsg.textContent = 'Schema discovery failed: ' + e.message;
+        return;
+      }
+
+      // 4. Find org space
+      try {
+        loadingMsg.textContent = 'Loading organization...';
+        await MatrixClient.initialSync();
+        state.orgSpaceId = await MatrixClient.findOrgSpace();
+      } catch (e) {
+        console.warn('[Builder] Org space lookup failed:', e.message);
+      }
+
+      // 5. Load existing profile config, or build default
+      loadingMsg.textContent = 'Loading profile configuration...';
+      var existingConfig = await loadSchemaFromMatrix();
+      if (!existingConfig) existingConfig = loadSchemaFromLocal();
+
+      if (existingConfig) {
+        loadProfileConfig(existingConfig);
+      } else {
+        buildDefaultLayout();
+      }
+
+      // 6. Expand root table by default
+      if (state.rootTable) {
+        state.expandedTables[state.rootTable] = true;
+      }
+
+      // 7. Render
+      document.getElementById('loadingOverlay').style.display = 'none';
+      renderSchemaPanel();
+      renderCanvas();
+
+      // Wire search
+      document.getElementById('schemaSearch').addEventListener('input', function() {
+        renderSchemaPanel();
+      });
+    }
+
+    // ============ Start ============
+    init().catch(function(err) {
+      console.error('[Builder] Init error:', err);
+      document.getElementById('loadingMsg').textContent = 'Error: ' + err.message;
+    });
+
+  })();
+  </script>
+</body>
+</html>
