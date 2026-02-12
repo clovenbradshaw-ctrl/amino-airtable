@@ -1,13 +1,13 @@
-const CACHE_NAME = 'amino-shell-v1';
+const CACHE_NAME = 'amino-shell-v2';
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/data-layer.js',
-  '/matrix.js',
-  '/src/formulas/bridge.js',
-  '/src/formulas/parser.js',
-  '/src/formulas/compiler.js',
-  '/src/formulas/ui.css'
+  './',
+  './index.html',
+  './data-layer.js',
+  './matrix.js',
+  './src/formulas/bridge.js',
+  './src/formulas/parser.js',
+  './src/formulas/compiler.js',
+  './src/formulas/ui.css'
 ];
 
 self.addEventListener('install', (event) => {
