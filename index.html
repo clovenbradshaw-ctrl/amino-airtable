@@ -6224,7 +6224,7 @@ function renderTabBar() {
 }
 
 var DB_NAME = 'amino';
-var DB_VERSION = 9;
+var DB_VERSION = 10;
 var PAGE_SIZE = 100;
 var N8N_WEBHOOK_BASE = 'https://n8n.intelechia.com/webhook';
 
@@ -8449,6 +8449,14 @@ function openDB() {
                 pendingStore.createIndex('by_record', ['tableId', 'recordId']);
                 pendingStore.createIndex('by_status', 'status');
             }
+
+            // Edges: derived link graph between tables, built from multipleRecordLinks field metadata
+            if (!db.objectStoreNames.contains('edges')) {
+                var edgesStore = db.createObjectStore('edges', { keyPath: 'edgeId' });
+                edgesStore.createIndex('by_from', 'fromTableId');
+                edgesStore.createIndex('by_to', 'toTableId');
+                edgesStore.createIndex('by_field', ['fromTableId', 'fieldId']);
+            }
         };
     });
 }
@@ -9143,7 +9151,10 @@ function saveField(field) {
     return new Promise((resolve, reject) => {
         var tx = db.transaction('fields', 'readwrite');
         tx.objectStore('fields').put(field);
-        tx.oncomplete = () => resolve();
+        tx.oncomplete = () => {
+            if (field.fieldType === 'multipleRecordLinks') scheduleEdgeRebuild();
+            resolve();
+        };
         tx.onerror = () => reject(tx.error);
     });
 }
@@ -9194,14 +9205,17 @@ async function saveBatch(tables, fields, views, dataRecords) {
         views.forEach(v => tx.objectStore('views').put(v));
         recordsToStore.forEach(d => tx.objectStore('data').put(d));
 
-        tx.oncomplete = () => resolve();
+        tx.oncomplete = () => {
+            if (fields.length) scheduleEdgeRebuild();
+            resolve();
+        };
         tx.onerror = () => reject(tx.error);
     });
 }
 
 function clearAllData() {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory', 'events'], 'readwrite');
+        var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory', 'events', 'edges'], 'readwrite');
         tx.objectStore('data').clear();
         tx.objectStore('tables').clear();
         tx.objectStore('fields').clear();
@@ -9209,6 +9223,7 @@ function clearAllData() {
         tx.objectStore('sync').clear();
         tx.objectStore('fieldHistory').clear();
         tx.objectStore('events').clear();
+        tx.objectStore('edges').clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
@@ -9223,6 +9238,208 @@ function saveFieldHistory(historyEntries) {
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
+}
+
+// ============ Edges: Local Link Graph ============
+// Edges are derived from multipleRecordLinks field metadata.
+// Each edge represents one linked-record field connecting two tables.
+// The edges store is local-only (IndexedDB) and auto-rebuilt when field metadata changes.
+
+var _edgesCache = null; // in-memory cache, invalidated on rebuild
+var _edgesRebuildPending = false;
+var _edgesRebuildTimer = null;
+
+// Schedule an edge rebuild with debounce (coalesces rapid field updates)
+function scheduleEdgeRebuild() {
+    _edgesCache = null; // invalidate cache immediately
+    if (_edgesRebuildTimer) clearTimeout(_edgesRebuildTimer);
+    _edgesRebuildTimer = setTimeout(function() {
+        _edgesRebuildTimer = null;
+        rebuildEdges();
+    }, 500);
+}
+
+function buildEdgesFromFields(metaFields) {
+    var edges = [];
+    var tableIds = Object.keys(metaFields || {});
+    for (var t = 0; t < tableIds.length; t++) {
+        var tableId = tableIds[t];
+        var fields = metaFields[tableId] || {};
+        var fieldIds = Object.keys(fields);
+        for (var f = 0; f < fieldIds.length; f++) {
+            var field = fields[fieldIds[f]];
+            if (field.fieldType !== 'multipleRecordLinks') continue;
+            var opts = field.options || {};
+            if (!opts.linkedTableId) continue;
+            edges.push({
+                edgeId: tableId + '|' + field.fieldId,
+                fromTableId: tableId,
+                fieldId: field.fieldId,
+                fieldName: field.fieldName || field.fieldId,
+                toTableId: opts.linkedTableId,
+                inverseFieldId: opts.inverseLinkFieldId || null,
+                prefersSingle: !!opts.prefersSingleRecordLink
+            });
+        }
+    }
+    return edges;
+}
+
+function saveEdges(edges) {
+    return new Promise(function(resolve, reject) {
+        var tx = db.transaction('edges', 'readwrite');
+        var store = tx.objectStore('edges');
+        store.clear();
+        for (var i = 0; i < edges.length; i++) {
+            store.put(edges[i]);
+        }
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function() { reject(tx.error); };
+    });
+}
+
+function getAllEdges() {
+    if (_edgesCache) return Promise.resolve(_edgesCache);
+    return new Promise(function(resolve, reject) {
+        var tx = db.transaction('edges', 'readonly');
+        var req = tx.objectStore('edges').getAll();
+        req.onsuccess = function() {
+            _edgesCache = req.result || [];
+            resolve(_edgesCache);
+        };
+        req.onerror = function() { reject(req.error); };
+    });
+}
+
+function getEdgesFromTable(tableId) {
+    return new Promise(function(resolve, reject) {
+        var tx = db.transaction('edges', 'readonly');
+        var index = tx.objectStore('edges').index('by_from');
+        var req = index.getAll(tableId);
+        req.onsuccess = function() { resolve(req.result || []); };
+        req.onerror = function() { reject(req.error); };
+    });
+}
+
+function getEdgesToTable(tableId) {
+    return new Promise(function(resolve, reject) {
+        var tx = db.transaction('edges', 'readonly');
+        var index = tx.objectStore('edges').index('by_to');
+        var req = index.getAll(tableId);
+        req.onsuccess = function() { resolve(req.result || []); };
+        req.onerror = function() { reject(req.error); };
+    });
+}
+
+// Rebuild edges from current META_FIELDS and persist to IndexedDB.
+// Called automatically when field metadata changes.
+async function rebuildEdges() {
+    if (_edgesRebuildPending) return;
+    _edgesRebuildPending = true;
+    try {
+        var edges = buildEdgesFromFields(META_FIELDS);
+        await saveEdges(edges);
+        _edgesCache = edges;
+        console.log('[Edges] Rebuilt ' + edges.length + ' edges from field metadata');
+    } catch (e) {
+        console.error('[Edges] Rebuild failed:', e);
+    } finally {
+        _edgesRebuildPending = false;
+    }
+}
+
+// Compute the shortest path from a given tableId to a target tableId using BFS.
+// Returns an array of edges forming the path, or null if unreachable.
+function findPathBetweenTables(edges, fromTableId, toTableId, maxHops) {
+    if (fromTableId === toTableId) return [];
+    maxHops = maxHops || 4;
+
+    // Build adjacency list: tableId -> [{edge, neighborTableId}]
+    var adj = {};
+    for (var i = 0; i < edges.length; i++) {
+        var e = edges[i];
+        if (!adj[e.fromTableId]) adj[e.fromTableId] = [];
+        adj[e.fromTableId].push({ edge: e, neighbor: e.toTableId });
+        // Also traverse inverse direction (toTable has a back-link field to fromTable)
+        if (e.inverseFieldId) {
+            if (!adj[e.toTableId]) adj[e.toTableId] = [];
+            adj[e.toTableId].push({ edge: { edgeId: e.toTableId + '|' + e.inverseFieldId, fromTableId: e.toTableId, fieldId: e.inverseFieldId, fieldName: e.fieldName + ' (inverse)', toTableId: e.fromTableId, inverseFieldId: e.fieldId, prefersSingle: false }, neighbor: e.fromTableId });
+        }
+    }
+
+    // BFS
+    var queue = [{ tableId: fromTableId, path: [] }];
+    var visited = {};
+    visited[fromTableId] = true;
+
+    while (queue.length > 0) {
+        var current = queue.shift();
+        if (current.path.length >= maxHops) continue;
+
+        var neighbors = adj[current.tableId] || [];
+        for (var n = 0; n < neighbors.length; n++) {
+            var next = neighbors[n];
+            if (visited[next.neighbor]) continue;
+
+            var newPath = current.path.concat([next.edge]);
+            if (next.neighbor === toTableId) return newPath;
+
+            visited[next.neighbor] = true;
+            queue.push({ tableId: next.neighbor, path: newPath });
+        }
+    }
+
+    return null; // unreachable
+}
+
+// For each table, compute the best link-field path to the client table.
+// Returns: { tableId -> { fieldId, hops, path[] } }
+function computeLinkedRecordTableMap(edges, clientTableId) {
+    var result = {};
+    if (!clientTableId || !edges || !edges.length) return result;
+
+    // Group edges by fromTableId for direct-link preference
+    var directEdges = {};
+    for (var i = 0; i < edges.length; i++) {
+        var e = edges[i];
+        if (!directEdges[e.fromTableId]) directEdges[e.fromTableId] = [];
+        directEdges[e.fromTableId].push(e);
+    }
+
+    // Collect all unique table IDs
+    var allTables = {};
+    for (var j = 0; j < edges.length; j++) {
+        allTables[edges[j].fromTableId] = true;
+        allTables[edges[j].toTableId] = true;
+    }
+
+    var tableIds = Object.keys(allTables);
+    for (var t = 0; t < tableIds.length; t++) {
+        var tid = tableIds[t];
+        if (tid === clientTableId) continue;
+
+        // Prefer direct link to client table (1 hop)
+        var directs = directEdges[tid] || [];
+        var bestDirect = null;
+        for (var d = 0; d < directs.length; d++) {
+            if (directs[d].toTableId === clientTableId) {
+                bestDirect = directs[d];
+                break;
+            }
+        }
+
+        if (bestDirect) {
+            result[tid] = { fieldId: bestDirect.fieldId, hops: 1, path: [bestDirect] };
+        } else {
+            // Multi-hop: find shortest path
+            var path = findPathBetweenTables(edges, tid, clientTableId, 4);
+            if (path && path.length > 0) {
+                result[tid] = { fieldId: path[0].fieldId, hops: path.length, path: path };
+            }
+        }
+    }
+
+    return result;
 }
 
 // Field history limit to prevent excessive memory usage
@@ -11724,6 +11941,9 @@ async function refreshLocalDB() {
                 if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
                 META_VIEWS[v.tableId][v.viewId] = v;
             });
+
+            // Rebuild edges after refresh
+            rebuildEdges();
 
             // Re-render UI
             await renderSidebar(true);
@@ -16597,6 +16817,9 @@ function _startBackgroundHydration() {
                 META_VIEWS[v.tableId][v.viewId] = v;
             });
 
+            // Rebuild edges after Synapse hydration
+            rebuildEdges();
+
             // Refresh sidebar/table once hydration completes.
             await renderSidebar(true);
             if (!currentTable) {
@@ -16696,6 +16919,9 @@ async function init() {
         if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
         META_VIEWS[v.tableId][v.viewId] = v;
     });
+
+    // Build edges from field metadata on startup
+    rebuildEdges();
 
     // Use in-memory META_TABLES as the authoritative table list. After Box
     // AMO hydration, processEventsMemoryOnly populates META_TABLES before
@@ -24742,26 +24968,73 @@ function renderWizardClientTable(container) {
         });
     }
 
+    // Build edges and auto-infer linked record paths
+    var wizEdges = buildEdgesFromFields(wizardData.legacyFields);
+    var autoLinkedMap = wizardData.clientTable ? computeLinkedRecordTableMap(wizEdges, wizardData.clientTable) : {};
+
+    // Auto-populate linkedRecordTables from edges for direct links (don't overwrite manual choices)
+    if (wizardData.clientTable) {
+        var autoIds = Object.keys(autoLinkedMap);
+        for (var ai = 0; ai < autoIds.length; ai++) {
+            var atid = autoIds[ai];
+            if (!wizardData.linkedRecordTables[atid] && autoLinkedMap[atid] && autoLinkedMap[atid].hops === 1) {
+                wizardData.linkedRecordTables[atid] = autoLinkedMap[atid].fieldId;
+            }
+        }
+    }
+
     // Linked record field detection per table
     var linkedHtml = '';
+    var directCount = 0;
+    var multiHopCount = 0;
+    var noLinkCount = 0;
     tableIds.forEach(function(tid) {
         if (tid === wizardData.clientTable) return;
         var t = wizardData.legacyTables[tid];
         var fields = wizardData.legacyFields[tid] || {};
         var fids = Object.keys(fields);
-        // Find fields that could be linked records (arrays or IDs referencing client table)
+        var autoInfo = autoLinkedMap[tid];
         var linkFieldOptions = '<option value="">-- No link --</option>';
         fids.forEach(function(fid) {
             var f = fields[fid];
             var selected = wizardData.linkedRecordTables[tid] === fid ? ' selected' : '';
             linkFieldOptions += '<option value="' + esc(fid) + '"' + selected + '>' + esc(f.fieldName || fid) + '</option>';
         });
+
+        // Show link status indicator
+        var statusHtml = '';
+        if (wizardData.linkedRecordTables[tid]) {
+            statusHtml = '<span style="color:var(--success-500,#22c55e);font-size:0.85em;margin-left:6px">\u2713 direct link</span>';
+            directCount++;
+        } else if (autoInfo && autoInfo.hops > 1) {
+            var pathNames = autoInfo.path.map(function(e) {
+                var tbl = wizardData.legacyTables[e.toTableId];
+                return tbl ? tbl.tableName : e.toTableId;
+            });
+            statusHtml = '<span style="color:var(--warning-500,#f59e0b);font-size:0.85em;margin-left:6px">\u2192 via ' + esc(pathNames.join(' \u2192 ')) + ' (' + autoInfo.hops + ' hops)</span>';
+            multiHopCount++;
+        } else {
+            statusHtml = '<span style="color:var(--neutral-400,#9ca3af);font-size:0.85em;margin-left:6px">no path found</span>';
+            noLinkCount++;
+        }
+
         linkedHtml +=
             '<div class="linked-record-row">' +
-                '<span class="table-name">' + esc(t.tableName || tid) + '</span>' +
+                '<span class="table-name">' + esc(t.tableName || tid) + statusHtml + '</span>' +
                 '<select onchange="wizardSetLinkedField(\'' + esc(tid) + '\', this.value)">' + linkFieldOptions + '</select>' +
             '</div>';
     });
+
+    var summaryHtml = '';
+    if (wizardData.clientTable) {
+        summaryHtml =
+            '<div class="wizard-info-box" style="margin-bottom:12px">' +
+                '<strong>Link summary:</strong> ' +
+                directCount + ' tables linked directly, ' +
+                multiHopCount + ' reachable via multi-hop, ' +
+                noLinkCount + ' with no path to client.' +
+            '</div>';
+    }
 
     container.innerHTML =
         '<div class="wizard-error" id="wizard-error"></div>' +
@@ -24773,20 +25046,22 @@ function renderWizardClientTable(container) {
             '<label>Which field identifies each client?</label>' +
             '<select id="wiz-client-field" onchange="wizardData.clientIdentifierField=this.value">' + fieldOptions + '</select>' +
         '</div>' +
+        summaryHtml +
         (linkedHtml ?
         '<div class="form-group">' +
-            '<label>Which field on each table links to a client record? <span class="label-hint">(the linked record field)</span></label>' +
+            '<label>Which field on each table links to a client record? <span class="label-hint">(auto-detected from linked record fields \u2014 override if needed)</span></label>' +
             '<div class="checkbox-group">' + linkedHtml + '</div>' +
         '</div>' : '') +
         '<div class="wizard-info-box">' +
             '<strong>This is how rooms get created.</strong> Each unique client gets their own Matrix Space with a Matter Room. ' +
-            'Other records are assigned to clients via the linked record field you select.' +
+            'Records are assigned to clients via direct links or multi-hop paths through the link graph.' +
         '</div>';
 }
 
 function wizardClientTableChanged(tableId) {
     wizardData.clientTable = tableId;
     wizardData.clientIdentifierField = '';
+    wizardData.linkedRecordTables = {}; // reset so auto-detection re-runs
     renderWizardStep(); // re-render to update field dropdown
 }
 
@@ -25013,6 +25288,31 @@ async function runHydration() {
 
         updateProgress(15, 'Grouping records by client...', allRecords.length + ' records found');
 
+        // Build edges from field metadata for multi-hop client resolution
+        var edgesForGrouping = buildEdgesFromFields(wizardData.legacyFields);
+        // Also auto-infer linkedRecordTables from edges (direct links to client table)
+        var autoLinked = computeLinkedRecordTableMap(edgesForGrouping, wizardData.clientTable);
+        // Merge auto-inferred with any manual overrides
+        var mergedLinkedRecordTables = {};
+        var autoTableIds = Object.keys(autoLinked);
+        for (var al = 0; al < autoTableIds.length; al++) {
+            var atid = autoTableIds[al];
+            // Manual config takes precedence if set
+            if (wizardData.linkedRecordTables[atid]) {
+                mergedLinkedRecordTables[atid] = wizardData.linkedRecordTables[atid];
+            } else if (autoLinked[atid].hops === 1) {
+                // Auto-inferred direct link
+                mergedLinkedRecordTables[atid] = autoLinked[atid].fieldId;
+            }
+        }
+        // Keep any manual entries not in auto
+        var manualTableIds = Object.keys(wizardData.linkedRecordTables);
+        for (var ml = 0; ml < manualTableIds.length; ml++) {
+            if (!mergedLinkedRecordTables[manualTableIds[ml]]) {
+                mergedLinkedRecordTables[manualTableIds[ml]] = wizardData.linkedRecordTables[manualTableIds[ml]];
+            }
+        }
+
         // Configure bridge
         MatrixBridge.setConfig({
             mode: 'bridge',
@@ -25023,18 +25323,20 @@ async function runHydration() {
             clientHiddenTables: tableIds.filter(function(t) {
                 return wizardData.clientVisibleTables.indexOf(t) === -1;
             }),
-            linkedRecordTables: wizardData.linkedRecordTables,
+            linkedRecordTables: mergedLinkedRecordTables,
+            edges: edgesForGrouping,
             clientRoomMap: {},
             lastSyncCursor: 0
         });
 
-        // Group records
+        // Group records (with edges for multi-hop resolution)
         var grouped = MatrixBridge.groupRecordsByClient(
             allRecords,
             wizardData.legacyFields,
             wizardData.clientTable,
             wizardData.clientIdentifierField,
-            wizardData.linkedRecordTables
+            mergedLinkedRecordTables,
+            edgesForGrouping
         );
 
         var clientNames = Object.keys(grouped.groups);
