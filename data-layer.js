@@ -48,6 +48,12 @@ var AminoData = (function() {
     var _tableCacheHydrated = {};    // tableId -> true when full table is cached
     var _keyDerivationCache = { fingerprint: null, key: null };
 
+    // ============ Search Index (Pre-built for fast local search) ============
+    // Maps recordId -> lowercased concatenated searchable text.
+    // Built lazily per-table when first searched, invalidated on record updates.
+    var _searchIndex = {};           // recordId -> lowercased searchable string
+    var _searchIndexVersion = 0;     // bumped on any index change so UI can detect staleness
+
     // ============ Encryption ============
 
     async function deriveKey(password, salt) {
@@ -531,6 +537,8 @@ var AminoData = (function() {
         _recordCacheById = {};
         _tableRecordIdIndex = {};
         _tableCacheHydrated = {};
+        _searchIndex = {};
+        _searchIndexVersion++;
     }
 
     function clearTableCache(tableId) {
@@ -538,9 +546,11 @@ var AminoData = (function() {
         var recordIds = Object.keys(tableIndex);
         for (var i = 0; i < recordIds.length; i++) {
             delete _recordCacheById[recordIds[i]];
+            delete _searchIndex[recordIds[i]];
         }
         delete _tableRecordIdIndex[tableId];
         delete _tableCacheHydrated[tableId];
+        _searchIndexVersion++;
     }
 
     function cacheRecord(record) {
@@ -550,6 +560,9 @@ var AminoData = (function() {
             _tableRecordIdIndex[record.tableId] = {};
         }
         _tableRecordIdIndex[record.tableId][record.id] = true;
+        // Build search index entry for this record
+        _searchIndex[record.id] = _buildSearchText(record);
+        _searchIndexVersion++;
     }
 
     function cacheFullTable(tableId, records) {
@@ -558,6 +571,73 @@ var AminoData = (function() {
             cacheRecord(records[i]);
         }
         _tableCacheHydrated[tableId] = true;
+    }
+
+    // ============ Search Index Helpers ============
+
+    // Recursively extract all searchable text from a value.
+    function _collectText(value) {
+        if (value == null) return '';
+        if (typeof value === 'string') return value;
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+        if (Array.isArray(value)) {
+            var parts = [];
+            for (var i = 0; i < value.length; i++) {
+                var p = _collectText(value[i]);
+                if (p) parts.push(p);
+            }
+            return parts.join(' ');
+        }
+        if (typeof value === 'object') {
+            var objParts = [];
+            for (var k in value) {
+                if (!Object.prototype.hasOwnProperty.call(value, k)) continue;
+                objParts.push(k);
+                var vp = _collectText(value[k]);
+                if (vp) objParts.push(vp);
+            }
+            return objParts.join(' ');
+        }
+        return String(value);
+    }
+
+    // Build a single lowercased searchable string for a record.
+    // Includes the record ID, all field names, and all field values.
+    function _buildSearchText(record) {
+        var parts = [record.id];
+        var fields = record.fields || {};
+        for (var key in fields) {
+            if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+            parts.push(key);
+            var text = _collectText(fields[key]);
+            if (text) parts.push(text);
+        }
+        return parts.join(' ').toLowerCase();
+    }
+
+    // Ensure the search index is built for a table. Uses the in-memory cache.
+    // Returns true if the index was ready, false if the table cache isn't hydrated.
+    function _ensureSearchIndex(tableId) {
+        if (!_tableCacheHydrated[tableId]) return false;
+        var tableIndex = _tableRecordIdIndex[tableId] || {};
+        var ids = Object.keys(tableIndex);
+        var needsRebuild = false;
+        for (var i = 0; i < ids.length; i++) {
+            if (_searchIndex[ids[i]] === undefined) {
+                needsRebuild = true;
+                break;
+            }
+        }
+        if (!needsRebuild) return true;
+
+        for (var j = 0; j < ids.length; j++) {
+            var rec = _recordCacheById[ids[j]];
+            if (rec && _searchIndex[ids[j]] === undefined) {
+                _searchIndex[ids[j]] = _buildSearchText(rec);
+            }
+        }
+        _searchIndexVersion++;
+        return true;
     }
 
     function normalizeFieldOps(content) {
@@ -1637,13 +1717,75 @@ var AminoData = (function() {
 
     async function searchRecords(tableId, fieldName, searchValue) {
         var records = await getTableRecords(tableId);
+        var lowerSearch = typeof searchValue === 'string' ? searchValue.toLowerCase() : null;
         return records.filter(function(r) {
             var val = r.fields[fieldName];
-            if (typeof val === 'string') {
-                return val.toLowerCase().indexOf(searchValue.toLowerCase()) !== -1;
+            if (typeof val === 'string' && lowerSearch !== null) {
+                return val.toLowerCase().indexOf(lowerSearch) !== -1;
             }
             return val === searchValue;
         });
+    }
+
+    // Fast full-text search across all fields of a table using the pre-built index.
+    // Returns matching records (cloned). Supports multi-word AND queries.
+    // Much faster than searchRecords() for general-purpose searching.
+    async function searchRecordsFast(tableId, query) {
+        if (!query || !query.trim()) return await getTableRecords(tableId);
+
+        // Ensure records are cached
+        if (!_tableCacheHydrated[tableId]) {
+            await getTableRecords(tableId); // populates cache
+        }
+        _ensureSearchIndex(tableId);
+
+        var tokens = query.toLowerCase().trim().split(/\s+/).filter(function(t) { return t.length > 0; });
+        if (!tokens.length) return await getTableRecords(tableId);
+
+        var tableIndex = _tableRecordIdIndex[tableId] || {};
+        var ids = Object.keys(tableIndex);
+        var results = [];
+
+        for (var i = 0; i < ids.length; i++) {
+            var haystack = _searchIndex[ids[i]];
+            if (!haystack) continue;
+            var match = true;
+            for (var t = 0; t < tokens.length; t++) {
+                if (haystack.indexOf(tokens[t]) === -1) { match = false; break; }
+            }
+            if (match) {
+                results.push(cloneRecord(_recordCacheById[ids[i]]));
+            }
+        }
+        return results;
+    }
+
+    // Get the pre-built search index for use by the UI layer.
+    // Returns { index: { recordId: searchText }, version: number }
+    // The UI can cache this and re-fetch only when version changes.
+    function getSearchIndex(tableId) {
+        if (tableId) {
+            _ensureSearchIndex(tableId);
+        }
+        return { index: _searchIndex, version: _searchIndexVersion };
+    }
+
+    // Get cached records without cloning (read-only, do not mutate!).
+    // For internal/UI use where performance matters and caller won't modify records.
+    function getTableRecordsCached(tableId) {
+        if (!_tableCacheHydrated[tableId]) return null;
+        var tableIndex = _tableRecordIdIndex[tableId] || {};
+        var ids = Object.keys(tableIndex);
+        var results = new Array(ids.length);
+        for (var i = 0; i < ids.length; i++) {
+            results[i] = _recordCacheById[ids[i]];
+        }
+        return results;
+    }
+
+    // Get a single cached record without cloning (read-only).
+    function getRecordCached(recordId) {
+        return _recordCacheById[recordId] || null;
     }
 
     async function getTables() {
@@ -2636,6 +2778,10 @@ var AminoData = (function() {
         getTableRecords: getTableRecords,
         getRecord: getRecord,
         searchRecords: searchRecords,
+        searchRecordsFast: searchRecordsFast,
+        getSearchIndex: getSearchIndex,
+        getTableRecordsCached: getTableRecordsCached,
+        getRecordCached: getRecordCached,
         getTables: getTables,
         getRecordMutationHistory: getRecordMutationHistory,
         getRoomChangelog: getRoomChangelog,
