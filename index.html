@@ -26053,6 +26053,41 @@ var InterfaceApp = (function() {
         return '';
     }
 
+    function _buildCaseNoteRecordId(note, indexHint) {
+        var directId = _pickCaseNoteValue(note, ['id', 'recordId', 'record_id', 'note_id', 'uuid']);
+        if (directId) return directId;
+        var client = _pickCaseNoteValue(note, ['client_airtable_id', 'Softr_Link_to_clients', 'Client_PP_ID', 'client_pp_id']) || 'unknown-client';
+        var date = _pickCaseNoteValue(note, ['Date', 'date', 'created_at', 'updated_at', 'Modified']) || 'unknown-date';
+        var text = _pickCaseNoteValue(note, ['Description', 'description', 'note', 'body', 'details']) || '';
+        var compact = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || ('row-' + String(indexHint || 0));
+        return ['casenote', client, date, compact].join(':');
+    }
+
+    async function _mirrorCaseNotesToLocalDb(items) {
+        var tableId = _resolveTableId({ tableNamePattern: 'case notes', fallbackTablePattern: 'note' });
+        if (!tableId || !Array.isArray(items) || !items.length || typeof saveDataRecord !== 'function') return 0;
+
+        var persisted = 0;
+        if (window.IN_MEMORY_DATA && !window.IN_MEMORY_DATA[tableId]) window.IN_MEMORY_DATA[tableId] = {};
+
+        for (var i = 0; i < items.length; i++) {
+            var note = items[i];
+            if (!note || typeof note !== 'object') continue;
+            var rid = _buildCaseNoteRecordId(note, i);
+            var fields = Object.assign({}, note);
+            try {
+                await saveDataRecord({ tableId: tableId, recordId: rid, fields: fields });
+                if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
+                    window.IN_MEMORY_DATA[tableId][rid] = fields;
+                }
+                persisted++;
+            } catch (e) {
+                // non-fatal: this is a best-effort mirror from the widget endpoint
+            }
+        }
+        return persisted;
+    }
+
     async function _fetchCaseNotesWidgetData(block, state) {
         var endpoint = block.endpoint || CASE_NOTES_WIDGET_ENDPOINT;
         var params = _buildCaseNotesWidgetParams(state);
@@ -26068,6 +26103,7 @@ var InterfaceApp = (function() {
 
         var json = await res.json();
         var normalized = _normalizeCaseNotesResponse(json, Number(state.filters.per_page || 20));
+        var mirroredCount = await _mirrorCaseNotesToLocalDb(normalized.items);
         var filteredItems = _caseNotesSearch(normalized.items, state.filters.search);
 
         state.items = filteredItems;
@@ -26076,7 +26112,7 @@ var InterfaceApp = (function() {
         state.count = filteredItems.length;
         state.page = normalized.page || state.page;
         state.lastQueryKey = queryKey;
-        state.status = 'Loaded ' + filteredItems.length + ' notes (page ' + state.page + ').';
+        state.status = 'Loaded ' + filteredItems.length + ' notes (page ' + state.page + '). Mirrored ' + mirroredCount + ' to DB table.';
         state.error = '';
     }
 
