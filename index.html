@@ -41,6 +41,12 @@
             --danger-500: #ef4444;
             --danger-600: #dc2626;
 
+            /* Amino brand tokens */
+            --amino-blue: #3b82f6;
+            --amino-green: #22c55e;
+            --amino-slate-300: #cbd5e1;
+            --amino-focus-ring: rgba(59, 130, 246, 0.24);
+
             /* Semantic Colors - Dark Theme Default */
             --bg-primary: #0f172a;
             --bg-secondary: #1e293b;
@@ -64,7 +70,7 @@
             --status-bar-height: 28px;
 
             /* Typography */
-            --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-sans: 'Inter', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             --font-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Consolas', monospace;
 
             /* Transitions */
@@ -2219,6 +2225,9 @@
         .gcal-container { display: flex; width: 100%; min-height: 860px; }
         .gcal-sidebar { width: 25%; background: var(--bg-secondary); border-right: 1px solid var(--border-primary); padding: 16px; overflow-y: auto; max-height: 860px; }
         .gcal-sidebar h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .gcal-sidebar-note { margin: -2px 0 10px; font-size: 11px; color: var(--text-muted); }
+        .gcal-sidebar-search { width: 100%; padding: 7px 10px; border-radius: var(--radius-md); border: 1px solid var(--border-primary); background: var(--bg-primary); color: var(--text-primary); font-size: 12px; margin-bottom: 12px; }
+        .gcal-sidebar-search:focus { outline: none; border-color: var(--amino-blue); box-shadow: 0 0 0 3px var(--amino-focus-ring); }
         .gcal-main { width: 75%; padding: 16px; overflow-y: auto; }
         .gcal-active-bar { display: flex; flex-wrap: wrap; gap: 6px; min-height: 42px; border: 2px dashed var(--border-secondary); padding: 8px; border-radius: 8px; background: var(--bg-primary); }
         .gcal-chip-pool { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
@@ -2556,11 +2565,13 @@
             display: flex; align-items: center; gap: 5px;
         }
         .iface-filter-pill:hover { border-color: var(--border-secondary); }
+        .iface-filter-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--amino-focus-ring); }
         .iface-filter-pill.active {
             background: rgba(59,130,246,0.12); border-color: var(--primary-300);
             color: var(--primary-500); font-weight: 600;
         }
-        .iface-filter-pill .pill-label { color: var(--text-muted); font-weight: 400; }
+        .iface-filter-pill .pill-label { color: var(--text-muted); font-weight: 500; }
+        .iface-filter-pill .pill-value { color: var(--text-secondary); font-weight: 500; }
         .iface-filter-pill.active .pill-label { color: var(--primary-500); opacity: .7; }
         .iface-filter-pill svg { width: 12px; height: 12px; }
         .iface-filter-clear {
@@ -2591,7 +2602,7 @@
             cursor: pointer; transition: background var(--transition-fast);
         }
         .iface-table-revamp tbody tr:nth-child(even) { background: var(--bg-primary); }
-        .iface-table-revamp tbody tr:hover { background: var(--bg-hover) !important; }
+        .iface-table-revamp tbody tr:hover { background: var(--bg-hover) !important; box-shadow: inset 3px 0 0 var(--amino-blue); }
         .iface-table-revamp tbody tr:last-child { border-bottom: none; }
         .iface-table-revamp td {
             padding: 11px 16px; color: var(--text-primary);
@@ -2600,7 +2611,7 @@
         }
         .iface-table-revamp td .client-name { font-weight: 500; }
         .iface-table-revamp td .cell-muted { color: var(--text-muted); font-size: 12px; }
-        .iface-table-revamp td .cell-empty { color: var(--border-primary); }
+        .iface-table-revamp td .cell-empty { color: var(--amino-slate-300); }
         .iface-table-revamp td .date-primary { font-size: 13px; color: var(--text-primary); }
         .iface-table-revamp td .date-relative { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
         .iface-table-revamp td .status-dot {
@@ -25317,7 +25328,7 @@ var InterfaceApp = (function() {
                 }
                 return v;
             }).filter(function(v) { return v != null; });
-            if (!resolved.length) return '<span class="cell-muted">assigned</span>';
+            if (!resolved.length) return '<span class="cell-empty">–</span>';
             return _esc(resolved.join(', '));
         }
         if (typeof val === 'object') {
@@ -25327,7 +25338,7 @@ var InterfaceApp = (function() {
         }
         // Resolve record IDs
         if (typeof val === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(val)) {
-            return '<span class="cell-muted">assigned</span>';
+            return '<span class="cell-empty">–</span>';
         }
         // Format dates
         if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
@@ -25381,7 +25392,9 @@ var InterfaceApp = (function() {
 
         // Header with title and actions
         html += '<div class="iface-clients-header">';
-        html += '<h2>' + _esc(block.label || 'Table') + ' <span class="muted">\u00B7 ' + total + ' records</span></h2>';
+        var allCount = Array.isArray(allRecords) ? allRecords.length : total;
+        var countLabel = total === allCount ? (total + ' records') : (total + ' of ' + allCount + ' records');
+        html += '<h2>' + _esc(block.label || 'Table') + ' <span class="muted">\u00B7 ' + countLabel + '</span></h2>';
         html += '<div class="iface-clients-header-actions">';
         html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<button class="iface-btn-secondary">';
@@ -25396,9 +25409,9 @@ var InterfaceApp = (function() {
                 var activeVal = (block._activeFilters && block._activeFilters[flt.id]) ? block._activeFilters[flt.id].value : '';
                 var isActive = !!activeVal;
                 html += '<span class="iface-filter-pill' + (isActive ? ' active' : '') + '" onclick="InterfaceApp._showFilterDropdown(\'' + _esc(block.id) + '\', \'' + _esc(flt.id) + '\', this)">';
-                html += '<span class="pill-label">' + _esc(flt.label) + (isActive ? ':' : '') + '</span>';
+                html += '<span class="pill-label">' + _esc(flt.label) + '</span>';
+                html += '<span class="pill-value">' + _esc(isActive ? activeVal : 'All') + '</span>';
                 if (isActive) {
-                    html += ' ' + _esc(activeVal);
                     html += ' <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" onclick="event.stopPropagation();InterfaceApp.onFilterChange(\'' + _esc(block.id) + '\', \'' + _esc(flt.id) + '\', \'\')"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
                 } else {
                     html += ' <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
@@ -26341,14 +26354,16 @@ var InterfaceApp = (function() {
 
         // Sidebar
         html += '<div class="gcal-sidebar">';
-        html += '<h4>Active Calendars</h4>';
+        html += '<h4>Visible Calendars</h4>';
+        html += '<p class="gcal-sidebar-note">Drag to reorder. Double-click to hide.</p>';
         html += '<div class="gcal-active-bar" id="gcal-active-' + bid + '"></div>';
         html += '<div class="gcal-bulk-buttons">';
         html += '<button data-gcal-action="add-attorneys" data-gcal-bid="' + bid + '">Add Attorneys</button>';
         html += '<button data-gcal-action="add-all" data-gcal-bid="' + bid + '">Add All</button>';
         html += '<button data-gcal-action="clear-all" data-gcal-bid="' + bid + '">Clear All</button>';
         html += '</div>';
-        html += '<h4 style="margin-top:16px">All Calendars</h4>';
+        html += '<h4 style="margin-top:16px">Calendar Roster</h4>';
+        html += '<input class="gcal-sidebar-search" id="gcal-search-' + bid + '" type="text" placeholder="Search calendars...">';
         html += '<div class="gcal-chip-pool" id="gcal-pool-' + bid + '"></div>';
         html += '</div>';
 
@@ -26420,7 +26435,21 @@ var InterfaceApp = (function() {
         var chipPool = document.getElementById('gcal-pool-' + bid);
         var iframesBox = document.getElementById('gcal-iframes-' + bid);
         var startInput = document.getElementById('gcal-start-' + bid);
+        var searchInput = document.getElementById('gcal-search-' + bid);
         if (!activeBar || !chipPool || !iframesBox) return;
+
+        function filterRosterChips() {
+            if (!chipPool) return;
+            var query = ((searchInput && searchInput.value) || '').toLowerCase().trim();
+            chipPool.querySelectorAll('.gcal-chip').forEach(function(ch) {
+                var matches = !query || (ch.textContent || '').toLowerCase().includes(query);
+                ch.style.display = matches ? '' : 'none';
+            });
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener('input', filterRosterChips);
+        }
 
         function createChip(cal) {
             var el = document.createElement('div');
@@ -26543,6 +26572,7 @@ var InterfaceApp = (function() {
                             if (state.attorneyColors[ch.dataset.id]) activeBar.appendChild(ch);
                         });
                         persistSel(); updateIframes();
+            filterRosterChips();
                     } else if (action === 'add-all') {
                         chipPool.querySelectorAll('.gcal-chip').forEach(function(ch) { activeBar.appendChild(ch); });
                         persistSel(); updateIframes();
@@ -26643,6 +26673,7 @@ var InterfaceApp = (function() {
         });
 
         updateIframes();
+        filterRosterChips();
         syncRemote();
     }
 
