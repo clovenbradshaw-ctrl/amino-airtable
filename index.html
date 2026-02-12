@@ -17277,9 +17277,6 @@ function _startBackgroundHydration() {
         var hydrated = false;
 
         // Primary source: Box AMO hydration (complete binary snapshot).
-        // This is the ONLY automatic data source. All other sources
-        // (Postgres webhook API, Synapse room replay) require manual
-        // user confirmation via a prompt.
         try {
             updateLoadingOverlay('Loading snapshot...', 'Downloading from Box...', 0, 0, 0, 0, null);
             var boxResult = await hydrateFromBoxAmoFile();
@@ -17294,12 +17291,35 @@ function _startBackgroundHydration() {
             console.warn('[BackgroundHydration] Box AMO hydration failed:', boxErr.message || boxErr);
         }
 
-        // Box failed — ask the user which fallback source to use.
-        // Do NOT auto-fall-through to Postgres or Synapse.
+        // Fallback: hydrate from current_state via Postgres webhook API.
         if (!hydrated) {
-            SyncStatusFeed.warn('Box snapshot unavailable. Use Settings → Refresh Database to load from an alternative source.');
-            updateLoadingOverlay('Box unavailable', 'Use Settings → Refresh Database to choose an alternative data source', 0, 0, 0, 0, null);
-            console.warn('[BackgroundHydration] Box hydration failed. Alternative sources available via manual refresh only.');
+            SyncStatusFeed.info('Box snapshot unavailable — falling back to current_state webhook API...');
+            updateLoadingOverlay('Loading from database...', 'Fetching from current_state webhooks...', 0, 0, 0, 0, null);
+            console.log('[BackgroundHydration] Box failed, attempting Postgres webhook hydration from current_state');
+            try {
+                var pgTotal = await AminoData.hydrateAllFromPostgres(function(progress) {
+                    updateLoadingOverlay(
+                        'Loading from database...',
+                        'Table ' + (progress.tableIndex + 1) + '/' + progress.tableCount + ': ' + (progress.tableName || progress.tableId),
+                        progress.tableIndex + 1, progress.tableCount, progress.recordCount, progress.totalRecords, null
+                    );
+                });
+                if (pgTotal > 0) {
+                    hydrated = true;
+                    SyncStatusFeed.success('Hydrated from current_state webhooks (' + pgTotal.toLocaleString() + ' records)');
+                    console.log('[BackgroundHydration] Postgres webhook hydration succeeded:', pgTotal, 'records');
+                    await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                    try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+                }
+            } catch (pgErr) {
+                console.warn('[BackgroundHydration] Postgres webhook hydration also failed:', pgErr.message || pgErr);
+            }
+        }
+
+        if (!hydrated) {
+            SyncStatusFeed.warn('All hydration sources unavailable. Use Settings → Refresh Database to retry.');
+            updateLoadingOverlay('Hydration failed', 'Use Settings → Refresh Database to retry', 0, 0, 0, 0, null);
+            console.warn('[BackgroundHydration] All hydration sources failed.');
         }
 
         if (hydrated) {
@@ -17416,7 +17436,7 @@ async function init() {
         }
     } catch (boxErr) {
         console.warn('[init] Box .amo hydration unavailable, continuing with local cache:', boxErr.message || boxErr);
-        SyncStatusFeed.warn('Box .amo hydration unavailable — using local cache. Use Settings → Refresh Database for alternative sources.');
+        SyncStatusFeed.warn('Box .amo hydration unavailable — will fall back to current_state webhooks if needed.');
     }
 
     // Load all metadata + max event ID in parallel — single IDB round-trip
