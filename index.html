@@ -20398,6 +20398,12 @@ async function editRecord(tableId, recordId, fieldChanges) {
         fields: optimisticFields
     });
 
+    // Track this write so the /sync echo from n8n can be suppressed —
+    // the room event will carry the same fields we already applied locally.
+    if (typeof AminoData !== 'undefined' && AminoData.trackOptimisticWrite) {
+        AminoData.trackOptimisticWrite(recordId, fieldChanges);
+    }
+
     // Update in-memory data if present
     if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
         for (var k3 in fieldChanges) {
