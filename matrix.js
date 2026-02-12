@@ -1237,7 +1237,57 @@ var MatrixBridge = (function() {
 
     // ============ Client Grouping ============
 
-    function groupRecordsByClient(records, fields, clientTable, clientIdField, linkedRecordTables) {
+    // Build a recordId -> { tableId, fields } index for multi-hop resolution
+    function _buildRecordIndex(records) {
+        var idx = {};
+        for (var i = 0; i < records.length; i++) {
+            idx[records[i].recordId] = records[i];
+        }
+        return idx;
+    }
+
+    // Follow a multi-hop edge path from a record to resolve which client it belongs to.
+    // path: array of edge objects from the edges graph (each has fromTableId, fieldId, toTableId)
+    // recordIndex: recordId -> { tableId, fields }
+    // clientLookup: recordId -> clientName (for client table records)
+    // Returns clientName or null if path doesn't resolve.
+    function _resolveClientViaPath(rec, path, recordIndex, clientLookup) {
+        if (!path || !path.length || !rec.fields) return null;
+
+        // Walk the edge path hop by hop
+        var currentRecordIds = [rec.recordId];
+
+        for (var hop = 0; hop < path.length; hop++) {
+            var edge = path[hop];
+            var nextRecordIds = [];
+
+            for (var r = 0; r < currentRecordIds.length; r++) {
+                var currentRec = recordIndex[currentRecordIds[r]];
+                if (!currentRec || !currentRec.fields) continue;
+
+                var linkedValue = currentRec.fields[edge.fieldId];
+                if (!linkedValue) continue;
+
+                var ids = Array.isArray(linkedValue) ? linkedValue : [linkedValue];
+                for (var id = 0; id < ids.length; id++) {
+                    if (ids[id]) nextRecordIds.push(ids[id]);
+                }
+            }
+
+            if (!nextRecordIds.length) return null;
+            currentRecordIds = nextRecordIds;
+        }
+
+        // At the end of the path, currentRecordIds should point to client table records
+        for (var c = 0; c < currentRecordIds.length; c++) {
+            var clientName = clientLookup[currentRecordIds[c]];
+            if (clientName) return clientName;
+        }
+
+        return null;
+    }
+
+    function groupRecordsByClient(records, fields, clientTable, clientIdField, linkedRecordTables, edges) {
         var groups = {}; // clientName -> { clientInfo: record, records: { tableId: [records] } }
         var unassigned = []; // records that don't belong to any client
 
@@ -1257,18 +1307,18 @@ var MatrixBridge = (function() {
             }
         });
 
-        // Second pass: assign other records to clients via linked record fields
+        // Second pass: assign records via direct linked record fields (1-hop, legacy config)
+        var pending = []; // records that couldn't be assigned in the direct pass
         records.forEach(function(rec) {
             if (rec.tableId === clientTable) return; // already handled
 
             var linkedField = linkedRecordTables[rec.tableId];
             if (!linkedField || !rec.fields) {
-                unassigned.push(rec);
+                pending.push(rec);
                 return;
             }
 
             var linkedValue = rec.fields[linkedField];
-            // linked record fields can be arrays of record IDs or a single ID
             var linkedIds = Array.isArray(linkedValue) ? linkedValue : [linkedValue];
             var assigned = false;
 
@@ -1285,9 +1335,93 @@ var MatrixBridge = (function() {
             }
 
             if (!assigned) {
-                unassigned.push(rec);
+                pending.push(rec);
             }
         });
+
+        // Third pass: use edges graph for multi-hop resolution on remaining records
+        if (edges && edges.length && pending.length) {
+            var recordIndex = _buildRecordIndex(records);
+
+            // Compute shortest path from each table to client table using BFS
+            // (uses findPathBetweenTables if available, otherwise inline BFS)
+            var pathCache = {}; // tableId -> path[] or null
+
+            function getPathToClient(tableId) {
+                if (tableId in pathCache) return pathCache[tableId];
+
+                // Build adjacency from edges
+                var adj = {};
+                for (var i = 0; i < edges.length; i++) {
+                    var e = edges[i];
+                    if (!adj[e.fromTableId]) adj[e.fromTableId] = [];
+                    adj[e.fromTableId].push({ edge: e, neighbor: e.toTableId });
+                    if (e.inverseFieldId) {
+                        if (!adj[e.toTableId]) adj[e.toTableId] = [];
+                        adj[e.toTableId].push({
+                            edge: {
+                                edgeId: e.toTableId + '|' + e.inverseFieldId,
+                                fromTableId: e.toTableId,
+                                fieldId: e.inverseFieldId,
+                                toTableId: e.fromTableId
+                            },
+                            neighbor: e.fromTableId
+                        });
+                    }
+                }
+
+                // BFS from tableId to clientTable
+                var queue = [{ tableId: tableId, path: [] }];
+                var visited = {};
+                visited[tableId] = true;
+
+                while (queue.length > 0) {
+                    var current = queue.shift();
+                    if (current.path.length >= 4) continue;
+
+                    var neighbors = adj[current.tableId] || [];
+                    for (var n = 0; n < neighbors.length; n++) {
+                        var next = neighbors[n];
+                        if (visited[next.neighbor]) continue;
+
+                        var newPath = current.path.concat([next.edge]);
+                        if (next.neighbor === clientTable) {
+                            pathCache[tableId] = newPath;
+                            return newPath;
+                        }
+
+                        visited[next.neighbor] = true;
+                        queue.push({ tableId: next.neighbor, path: newPath });
+                    }
+                }
+
+                pathCache[tableId] = null;
+                return null;
+            }
+
+            var stillPending = [];
+            for (var p = 0; p < pending.length; p++) {
+                var rec = pending[p];
+                var path = getPathToClient(rec.tableId);
+
+                if (path && path.length > 0) {
+                    var clientName = _resolveClientViaPath(rec, path, recordIndex, clientLookup);
+                    if (clientName && groups[clientName]) {
+                        if (!groups[clientName].records[rec.tableId]) {
+                            groups[clientName].records[rec.tableId] = [];
+                        }
+                        groups[clientName].records[rec.tableId].push(rec);
+                        continue;
+                    }
+                }
+
+                stillPending.push(rec);
+            }
+
+            unassigned = stillPending;
+        } else {
+            unassigned = pending;
+        }
 
         return { groups: groups, unassigned: unassigned };
     }
@@ -1321,13 +1455,14 @@ var MatrixBridge = (function() {
 
         onProgress({ phase: 'grouping', total: allRecords.length });
 
-        // Group records by client
+        // Group records by client (edges passed via _config for multi-hop resolution)
         var grouped = groupRecordsByClient(
             allRecords,
             fields,
             _config.clientTable,
             _config.clientIdentifierField,
-            _config.linkedRecordTables
+            _config.linkedRecordTables,
+            _config.edges || []
         );
 
         var clientNames = Object.keys(grouped.groups);
