@@ -8552,22 +8552,24 @@ function searchRawEvents(query, limit, offset) {
     var skipCount = offset || 0;
     var lowerQuery = query.toLowerCase();
 
+    // Shared match helper — avoids repeating logic in both code paths.
+    // Combines recordId + set + payload into a single string for one indexOf call.
+    function eventMatchesQuery(event) {
+        var combined = (event.recordId || '') + ' ' + (event.set || '') + ' ' +
+            (typeof event.payload === 'string' ? event.payload : JSON.stringify(event.payload || ''));
+        return combined.toLowerCase().indexOf(lowerQuery) !== -1;
+    }
+
     // Check in-memory events first (from CSV import)
     if (inMemoryEvents && inMemoryEvents.length > 0) {
         var results = [];
         var skipped = 0;
         for (var i = inMemoryEvents.length - 1; i >= 0 && results.length < maxLimit; i--) {
-            var event = inMemoryEvents[i];
-            var matchesRecord = event.recordId && event.recordId.toLowerCase().includes(lowerQuery);
-            var matchesSet = event.set && event.set.toLowerCase().includes(lowerQuery);
-            var payloadStr = typeof event.payload === 'string' ? event.payload : JSON.stringify(event.payload);
-            var matchesPayload = payloadStr && payloadStr.toLowerCase().includes(lowerQuery);
-
-            if (matchesRecord || matchesSet || matchesPayload) {
+            if (eventMatchesQuery(inMemoryEvents[i])) {
                 if (skipped < skipCount) {
                     skipped++;
                 } else {
-                    results.push(event);
+                    results.push(inMemoryEvents[i]);
                 }
             }
         }
@@ -8584,19 +8586,12 @@ function searchRawEvents(query, limit, offset) {
         req.onsuccess = (e) => {
             var cursor = e.target.result;
             if (cursor) {
-                var event = cursor.value;
-                // Search in recordId, set, and payload
-                var matchesRecord = event.recordId && event.recordId.toLowerCase().includes(lowerQuery);
-                var matchesSet = event.set && event.set.toLowerCase().includes(lowerQuery);
-                var payloadStr = typeof event.payload === 'string' ? event.payload : JSON.stringify(event.payload);
-                var matchesPayload = payloadStr && payloadStr.toLowerCase().includes(lowerQuery);
-
-                if (matchesRecord || matchesSet || matchesPayload) {
+                if (eventMatchesQuery(cursor.value)) {
                     if (skipped < skipCount) {
                         skipped++;
                         cursor.continue();
                     } else if (results.length < maxLimit) {
-                        results.push(event);
+                        results.push(cursor.value);
                         cursor.continue();
                     } else {
                         resolve(results);
@@ -8686,7 +8681,8 @@ function getAllCurrentRecords() {
     return getCurrentRecordsPaginated(0, 500); // Return max 500 records
 }
 
-// Memory-efficient paginated current records retrieval
+// Memory-efficient paginated current records retrieval.
+// Pre-builds search text per record to avoid repeated collectSearchableText() calls.
 function getCurrentRecordsPaginated(offset, limit, tableFilter, searchQuery) {
     return new Promise((resolve, reject) => {
         var tx = db.transaction('data', 'readonly');
@@ -8709,14 +8705,20 @@ function getCurrentRecordsPaginated(offset, limit, tableFilter, searchQuery) {
                     return;
                 }
 
-                // Apply search filter if set
+                // Apply search filter using pre-built search text
                 if (searchTokens.length) {
-                    var searchText = [
-                        rec.recordId || '',
-                        setVal,
-                        collectSearchableText(rec.fields || {})
-                    ].join(' ');
-                    if (!matchesSearchTokens(searchText, searchTokens)) {
+                    var searchText = getLocalSearchText(
+                        rec.tableId,
+                        rec.recordId,
+                        { recordId: rec.recordId, fields: rec.fields || {} }
+                    );
+                    // Also include set value in search
+                    var combined = searchText + ' ' + setVal.toLowerCase();
+                    var hit = true;
+                    for (var ti = 0; ti < searchTokens.length; ti++) {
+                        if (combined.indexOf(searchTokens[ti]) === -1) { hit = false; break; }
+                    }
+                    if (!hit) {
                         cursor.continue();
                         return;
                     }
@@ -8726,7 +8728,6 @@ function getCurrentRecordsPaginated(offset, limit, tableFilter, searchQuery) {
                     skipped++;
                     cursor.continue();
                 } else if (results.length < limit) {
-                    // Convert to synthetic event format
                     results.push({
                         id: 0,
                         recordId: rec.recordId,
@@ -8891,7 +8892,7 @@ var _recordCache = {};  // key: "tableId|recordId" -> record object
 var _recordCacheTable = null;
 var _RECORD_CACHE_MAX = 2000; // cap to avoid unbounded growth (raised from 600 for fewer IDB reads)
 function _rcKey(tid, rid) { return tid + '|' + rid; }
-function clearRecordCache() { _recordCache = {}; _recordCacheTable = null; }
+function clearRecordCache() { _recordCache = {}; _recordCacheTable = null; invalidateLocalSearchIndex(); }
 
 async function getRecordsByIds(tableId, recordIds) {
     if (!recordIds.length) return [];
@@ -20691,6 +20692,7 @@ window.addEventListener('amino:record-updated', function(e) {
 
     _recordSearchDataVersion++;
     invalidateFilterCache();
+    invalidateLocalSearchIndex(detail.tableId, detail.recordId);
 
     // Re-render the record profile if it's showing this record
     if (profileCurrentTableId === detail.tableId && profileCurrentRecordId === detail.recordId) {
@@ -22426,6 +22428,48 @@ var currentSearchQuery = '';
 var originalRecordIds = [];
 var _recordSearchDataVersion = 0;
 
+// ============ Pre-built Search Text Index (local, for records in index.html's own cache) ============
+// Maps "tableId|recordId" -> lowercased searchable text string.
+// Built once per record, invalidated when records change. Avoids re-computing
+// collectSearchableText() on every keystroke.
+var _localSearchIndex = {};          // cacheKey -> lowercased searchable string
+var _localSearchIndexVersion = 0;    // tracks staleness
+
+function _buildLocalSearchText(record) {
+    var parts = [record.recordId || ''];
+    var fields = record.fields || {};
+    for (var key in fields) {
+        if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
+        parts.push(key);
+        var text = collectSearchableText(fields[key]);
+        if (text) parts.push(text);
+    }
+    return parts.join(' ').toLowerCase();
+}
+
+function getLocalSearchText(tableId, recordId, record) {
+    var ck = tableId + '|' + recordId;
+    if (_localSearchIndex[ck] !== undefined) return _localSearchIndex[ck];
+    var text = _buildLocalSearchText(record);
+    _localSearchIndex[ck] = text;
+    return text;
+}
+
+function invalidateLocalSearchIndex(tableId, recordId) {
+    if (recordId) {
+        delete _localSearchIndex[tableId + '|' + recordId];
+    } else if (tableId) {
+        // Clear all entries for a table
+        var prefix = tableId + '|';
+        for (var k in _localSearchIndex) {
+            if (k.substring(0, prefix.length) === prefix) delete _localSearchIndex[k];
+        }
+    } else {
+        _localSearchIndex = {};
+    }
+    _localSearchIndexVersion++;
+}
+
 // Get cell value from a record for filtering/sorting
 function getCellValue(record, fieldId) {
     if (!record || !record.fields) return null;
@@ -22520,12 +22564,26 @@ function matchesFilter(record, filter) {
     }
 }
 
-// Check if a record matches search query
+// Check if a record matches search query.
+// Uses the pre-built local search index for fast substring matching.
+// Falls back to field-by-field scanning if index entry is missing.
 function matchesSearch(record, query) {
     var tokens = normalizeSearchTokens(query);
     if (!tokens.length) return true;
 
-    if (matchesSearchTokens(record.recordId, tokens)) return true;
+    // Try the pre-built search index first (single indexOf per token vs. per-field)
+    var tableId = record.tableId || currentTable;
+    var recordId = record.recordId || record.id;
+    if (tableId && recordId) {
+        var haystack = getLocalSearchText(tableId, recordId, record);
+        for (var i = 0; i < tokens.length; i++) {
+            if (haystack.indexOf(tokens[i]) === -1) return false;
+        }
+        return true;
+    }
+
+    // Fallback: scan fields directly
+    if (matchesSearchTokens(recordId, tokens)) return true;
     var fields = record.fields || {};
     for (var key in fields) {
         if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
@@ -22569,8 +22627,9 @@ function _filterCacheKey() {
 }
 function invalidateFilterCache() { _filterCache.key = null; _filterCache.result = null; }
 
-// Apply all filters, search, and sorts to get filtered record IDs
-// Processes records in batches to avoid loading entire dataset into memory at once
+// Apply all filters, search, and sorts to get filtered record IDs.
+// Uses pre-built search index for fast text search without loading records.
+// Processes records in batches to avoid loading entire dataset into memory at once.
 async function getFilteredSortedRecords() {
     if (!currentTable) return [];
 
@@ -22588,19 +22647,52 @@ async function getFilteredSortedRecords() {
     // If no filters/search/sorts, just return a copy
     if (!needsRecordData) return originalRecordIds.slice();
 
-    // Larger batches reduce IDB transaction overhead; safe because record cache
-    // prevents duplicate reads when the sort phase re-fetches the same records.
+    var filterCount = currentFilters.length;
+    var searchTokens = hasSearch ? normalizeSearchTokens(currentSearchQuery) : [];
+    hasSearch = searchTokens.length > 0;
+
+    // Phase 0: Pre-filter with search index (no record loading needed).
+    // This eliminates non-matching records before we load them for filters/sorts.
+    var candidateIds = originalRecordIds;
+    if (hasSearch) {
+        var narrowed = [];
+        for (var si = 0; si < candidateIds.length; si++) {
+            var rid = candidateIds[si];
+            var ck = currentTable + '|' + rid;
+            var haystack = _localSearchIndex[ck];
+            if (haystack !== undefined) {
+                var hit = true;
+                for (var ti = 0; ti < searchTokens.length; ti++) {
+                    if (haystack.indexOf(searchTokens[ti]) === -1) { hit = false; break; }
+                }
+                if (hit) narrowed.push(rid);
+            } else {
+                // Index miss — include as candidate (will verify when record is loaded)
+                narrowed.push(rid);
+            }
+        }
+        candidateIds = narrowed;
+
+        // If only search (no filters, no sorts), we're done
+        if (!hasFilters && !hasSorts) {
+            _filterCache.key = cacheKey;
+            _filterCache.result = candidateIds;
+            return candidateIds;
+        }
+    }
+
+    // Phase 1: Filter in batches — only load records that survived search pre-filter
     var BATCH_SIZE = 1000;
     var filteredIds = [];
-    var filterCount = currentFilters.length; // cache length outside loop
 
-    // Phase 1: Filter in batches — only load BATCH_SIZE records at a time
-    for (var batchStart = 0; batchStart < originalRecordIds.length; batchStart += BATCH_SIZE) {
-        var batchIds = originalRecordIds.slice(batchStart, batchStart + BATCH_SIZE);
+    for (var batchStart = 0; batchStart < candidateIds.length; batchStart += BATCH_SIZE) {
+        var batchIds = candidateIds.slice(batchStart, batchStart + BATCH_SIZE);
         var batchRecords = await getRecordsByIds(currentTable, batchIds);
         var batchById = {};
         for (var r = 0; r < batchRecords.length; r++) {
             batchById[batchRecords[r].recordId] = batchRecords[r];
+            // Ensure search index is populated for next search
+            getLocalSearchText(currentTable, batchRecords[r].recordId, batchRecords[r]);
         }
 
         for (var b = 0; b < batchIds.length; b++) {
@@ -22608,8 +22700,10 @@ async function getFilteredSortedRecords() {
             var record = batchById[id];
             if (!record) continue;
 
+            // Re-check search for records that didn't have an index entry
             if (hasSearch && !matchesSearch(record, currentSearchQuery)) continue;
-            // Inline filter check — avoids per-record closure allocation from .every()
+
+            // Inline filter check
             if (hasFilters) {
                 var pass = true;
                 for (var fi = 0; fi < filterCount; fi++) {
@@ -22620,12 +22714,10 @@ async function getFilteredSortedRecords() {
 
             filteredIds.push(id);
         }
-        // batchRecords and batchById go out of scope here — GC can reclaim
     }
 
     // Phase 2: Sort — only load the sort field values, not full records
     if (hasSorts && filteredIds.length > 1) {
-        // For sorting we need field values, but only for filtered records and only sort fields
         var sortCache = {};
         for (var s = 0; s < filteredIds.length; s += BATCH_SIZE) {
             var sortBatchIds = filteredIds.slice(s, s + BATCH_SIZE);
@@ -22633,8 +22725,8 @@ async function getFilteredSortedRecords() {
             for (var sr = 0; sr < sortBatchRecords.length; sr++) {
                 var rec = sortBatchRecords[sr];
                 var vals = {};
-                for (var si = 0; si < currentSorts.length; si++) {
-                    vals[currentSorts[si].fieldId] = getCellValue(rec, currentSorts[si].fieldId);
+                for (var ssi = 0; ssi < currentSorts.length; ssi++) {
+                    vals[currentSorts[ssi].fieldId] = getCellValue(rec, currentSorts[ssi].fieldId);
                 }
                 sortCache[rec.recordId] = vals;
             }
@@ -22650,7 +22742,7 @@ async function getFilteredSortedRecords() {
             }
             return 0;
         });
-        sortCache = null; // release
+        sortCache = null;
     }
 
     // Cache the result for subsequent renders with the same config
@@ -23240,7 +23332,8 @@ function setRowHeight(height) {
     }
 }
 
-// Handle view search (debounced to avoid per-keystroke re-renders)
+// Handle view search (debounced — reduced to 80ms since pre-built search index
+// makes filtering near-instant for local data)
 var _viewSearchTimer = null;
 function handleViewSearch(query) {
     clearTimeout(_viewSearchTimer);
@@ -23249,7 +23342,7 @@ function handleViewSearch(query) {
         currentSearchQuery = q;
         if (_urlStateBootstrapped) persistUrlState();
         renderTable();
-    }, 150);
+    }, 80);
 }
 
 // Update closeAllDropdowns to also close view control dropdowns
@@ -25825,23 +25918,43 @@ var InterfaceApp = (function() {
 
     // ============ Data Processing (SEG operations) ============
 
+    // Pre-built search text cache for InterfaceApp records.
+    // Maps "tableId:recordId" -> lowercased searchable text.
+    var _ifaceSearchTextCache = {};
+
+    function _getIfaceSearchText(record) {
+        var tableId = record.tableId || '';
+        var recordId = record.recordId || record.id || '';
+        var ck = tableId + ':' + recordId;
+        if (_ifaceSearchTextCache[ck] !== undefined) return _ifaceSearchTextCache[ck];
+
+        var parts = [recordId];
+        var fields = record.fields || {};
+        for (var k in fields) {
+            if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
+            parts.push(k);
+            var text = collectSearchableText(fields[k]);
+            if (text) parts.push(text);
+        }
+        var searchText = parts.join(' ').toLowerCase();
+        _ifaceSearchTextCache[ck] = searchText;
+        return searchText;
+    }
+
     function _applySegment(records, segment, blockSearchQuery, activeFilters) {
         if (!records || !records.length) return records;
         var result = records.slice();
 
-        // Apply search filter across the full in-memory/local record payload.
-        // Tokenized "AND" search improves matching quality for multi-word queries.
+        // Apply search filter using pre-built search text cache.
+        // Tokenized "AND" search — each token must appear in the record's text.
         var searchTokens = normalizeSearchTokens(blockSearchQuery);
         if (searchTokens.length) {
             result = result.filter(function(r) {
-                if (matchesSearchTokens(r.recordId, searchTokens)) return true;
-                var fields = r.fields || {};
-                for (var k in fields) {
-                    if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
-                    if (matchesSearchTokens(k, searchTokens)) return true;
-                    if (matchesSearchTokens(collectSearchableText(fields[k]), searchTokens)) return true;
+                var haystack = _getIfaceSearchText(r);
+                for (var i = 0; i < searchTokens.length; i++) {
+                    if (haystack.indexOf(searchTokens[i]) === -1) return false;
                 }
-                return false;
+                return true;
             });
         }
 
@@ -28410,12 +28523,12 @@ var InterfaceApp = (function() {
     function onBlockSearch(blockId, query) {
         _blockSearchState[blockId] = query;
         _tablePaginationState[blockId] = Object.assign({}, _tablePaginationState[blockId], { page: 0 });
-        // Debounce re-render
+        // Debounce re-render — 100ms is responsive enough for local data search
         clearTimeout(onBlockSearch._timer);
         onBlockSearch._timer = setTimeout(function() {
             renderPage(_activePage);
             if (_urlStateBootstrapped) persistUrlState();
-        }, 300);
+        }, 100);
     }
 
     function onGlobalSearch(query) {
@@ -28434,7 +28547,7 @@ var InterfaceApp = (function() {
         onGlobalSearch._timer = setTimeout(function() {
             renderPage(_activePage);
             if (_urlStateBootstrapped) persistUrlState();
-        }, 300);
+        }, 100);
     }
 
     function onFilterChange(blockId, filterId, value) {
@@ -28798,15 +28911,16 @@ var InterfaceApp = (function() {
 
         // Listen for data updates
         window.addEventListener('amino:record-update', function() {
-            _tableDataCache = {}; // Invalidate cache
+            _tableDataCache = {};
+            _ifaceSearchTextCache = {};
             if (_currentApp === 'interface' && _activePage) {
-                // Debounce re-render
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 1000);
             }
         });
         window.addEventListener('amino:record-updated', function() {
-            _tableDataCache = {}; // Invalidate cache after local/matrix updates
+            _tableDataCache = {};
+            _ifaceSearchTextCache = {};
             if (_currentApp === 'interface' && _activePage) {
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 400);
@@ -28814,6 +28928,7 @@ var InterfaceApp = (function() {
         });
         window.addEventListener('amino:sync', function() {
             _tableDataCache = {};
+            _ifaceSearchTextCache = {};
             if (_currentApp === 'interface' && _activePage) {
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 1000);
