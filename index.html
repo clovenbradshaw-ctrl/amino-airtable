@@ -7631,7 +7631,43 @@ async function hydrateFromBoxAmoFile() {
     }
 
     amoData.events.sort(function(a, b) { return (a.id || 0) - (b.id || 0); });
-    await backgroundSaveToIndexedDB(amoData.events);
+
+    // Restore table/field metadata embedded in the AMO file so that
+    // META_TABLES and META_FIELDS are populated before we replay events.
+    var savedMeta = amoData.meta || {};
+    if (savedMeta.tables) {
+        var savedTableIds = Object.keys(savedMeta.tables);
+        for (var m = 0; m < savedTableIds.length; m++) {
+            var tid = savedTableIds[m];
+            META_TABLES[tid] = savedMeta.tables[tid];
+        }
+    }
+    if (savedMeta.fields) {
+        var savedFieldTableIds = Object.keys(savedMeta.fields);
+        for (var m = 0; m < savedFieldTableIds.length; m++) {
+            var tid = savedFieldTableIds[m];
+            if (!META_FIELDS[tid]) META_FIELDS[tid] = {};
+            var fieldIds = Object.keys(savedMeta.fields[tid]);
+            for (var f = 0; f < fieldIds.length; f++) {
+                META_FIELDS[tid][fieldIds[f]] = savedMeta.fields[tid][fieldIds[f]];
+            }
+        }
+    }
+
+    // Replay the event stream into memory so META_TABLES, META_FIELDS,
+    // META_VIEWS, and IN_MEMORY_DATA are fully populated. Without this
+    // the init flow sees zero tables and falls through to webhook hydration,
+    // discarding the AMO data entirely.
+    inMemoryEvents = amoData.events;
+    inMemoryEventsByRecord = buildInMemoryEventsByRecord(amoData.events);
+    await processEventsMemoryOnly(amoData.events);
+
+    // Persist everything (events + now-populated metadata + records) to IndexedDB
+    // in the background so the next cold start has cached data.
+    backgroundSaveToIndexedDB(amoData.events).catch(function(err) {
+        console.warn('[BoxAmo] Background IndexedDB save failed:', err);
+    });
+
     return { importedEvents: amoData.events.length, cursor: amoData.cursor || 0 };
 }
 
@@ -16445,13 +16481,16 @@ async function init() {
     updateStatus('Loading local data...', false, null, null);
 
     // First-run optimization: attempt hydration from Box-hosted .amo binary snapshot.
-    // This is a stale-tolerant bootstrap and does not replace normal sync.
+    // When successful, processEventsMemoryOnly replays all events into META_TABLES,
+    // META_FIELDS, META_VIEWS, and IN_MEMORY_DATA so the UI can render immediately.
+    var _boxHydrationSucceeded = false;
     try {
         var existingTableCount = await getAllTables().then(function(ts) { return ts.length; }).catch(function() { return 0; });
         if (existingTableCount === 0) {
             updateStatus('Loading hydration snapshot...', false, null, 'Downloading .amo');
             var boxResult = await hydrateFromBoxAmoFile();
             if (boxResult && boxResult.importedEvents > 0) {
+                _boxHydrationSucceeded = Object.keys(META_TABLES).length > 0;
                 SyncStatusFeed.success('Hydrated from Box .amo snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
             }
         }
@@ -16474,7 +16513,8 @@ async function init() {
     // metaResults[3] = loadTableSettings (void)
     appOpenedEventId = metaResults[4];
 
-    // Load metadata into memory
+    // Merge IDB metadata into in-memory state (additive — preserves any
+    // entries already populated by Box AMO hydration above).
     tables.forEach(t => META_TABLES[t.tableId] = t);
     fields.forEach(f => {
         if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
@@ -16484,6 +16524,12 @@ async function init() {
         if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
         META_VIEWS[v.tableId][v.viewId] = v;
     });
+
+    // Use in-memory META_TABLES as the authoritative table list. After Box
+    // AMO hydration, processEventsMemoryOnly populates META_TABLES before
+    // the background IDB save finishes, so the IDB read above may return
+    // fewer tables than actually exist in memory.
+    var tableCount = Object.keys(META_TABLES).length;
 
     // Load user preferences (local-only, fast) — don't await network-dependent prefs yet
     try {
@@ -16502,10 +16548,24 @@ async function init() {
     hideAuthScreen();
 
     // Check if records actually exist AND previous hydration completed fully.
-    // Run record count + sync meta checks in parallel for speed.
+    // After Box AMO hydration, records live in IN_MEMORY_DATA (IDB save is
+    // still in flight), so check both IDB and memory.
     var hasRecords = false;
     var hydrationWasComplete = false;
-    if (tables.length > 0) {
+
+    // Box hydration is considered complete for rendering purposes — we have
+    // tables and records in memory and will catch up via room sync.
+    if (_boxHydrationSucceeded && window.IN_MEMORY_DATA) {
+        var inMemoryRecordCount = 0;
+        var memTableIds = Object.keys(window.IN_MEMORY_DATA);
+        for (var mt = 0; mt < memTableIds.length; mt++) {
+            inMemoryRecordCount += Object.keys(window.IN_MEMORY_DATA[memTableIds[mt]]).length;
+        }
+        hasRecords = inMemoryRecordCount > 0;
+        hydrationWasComplete = hasRecords;
+    }
+
+    if (!hasRecords && tableCount > 0) {
         try {
             var existenceResults = await Promise.all([
                 getCurrentRecordsCount().catch(function() { return 0; }),
@@ -16516,9 +16576,9 @@ async function init() {
         } catch (e) { /* treat as no records */ }
     }
 
-    if (tables.length > 0 && hasRecords && hydrationWasComplete) {
-        // Local data exists with actual records — render it
-        updateStatus('Found ' + tables.length + ' tables', false, null, 'Loading data...');
+    if (tableCount > 0 && hasRecords && hydrationWasComplete) {
+        // Data exists (from local IDB cache or Box AMO hydration) — render it
+        updateStatus('Found ' + tableCount + ' tables', false, null, 'Loading data...');
 
         // Determine the first table early so we can pre-warm its record IDs
         // in parallel with the sidebar render (sidebar counts + first table data)
@@ -16549,6 +16609,20 @@ async function init() {
         // Local data loaded — dismiss loading overlay
         hideLoadingOverlay();
 
+        // After Box hydration: kick off room-data catch-up in the background
+        // to apply any mutations that occurred after the AMO snapshot timestamp,
+        // and to backfill field-level edit history from room timelines.
+        if (_boxHydrationSucceeded) {
+            (async function _boxCatchUp() {
+                try {
+                    await ensureRoomMembership();
+                    await backfillHistoryFromMatrix();
+                } catch (err) {
+                    console.warn('[init] Post-Box room catch-up failed (non-fatal):', err);
+                }
+            })();
+        }
+
         // Defer non-critical network operations to AFTER the UI is visible.
         // These run in the background and don't block the user from interacting.
         _deferNetworkInit();
@@ -16556,12 +16630,12 @@ async function init() {
         // Missing tables, records, or previous hydration was incomplete —
         // need hydration (retry on every load until it fully succeeds so
         // transient API failures don't strand the user with partial data).
-        if (tables.length > 0 && hasRecords) {
+        if (tableCount > 0 && hasRecords) {
             console.log('[init] Tables and records exist but hydration was incomplete — retrying');
             SyncStatusFeed.info('Previous hydration incomplete — retrying...');
             // Render table sidebar immediately for better UX while hydrating
             await renderSidebar(true);
-        } else if (tables.length > 0) {
+        } else if (tableCount > 0) {
             console.log('[init] Tables exist but no records — retrying hydration');
             SyncStatusFeed.info('Records missing — retrying hydration...');
             // Render table sidebar immediately for better UX while hydrating
