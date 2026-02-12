@@ -3,444 +3,971 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Amino Client Profile</title>
+  <title>Amino &middot; Client Profile</title>
   <style>
+    /* ===== Noema Design System (matches index.html) ===== */
     :root {
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --line: #d7e0ea;
-      --text: #0f172a;
-      --muted: #64748b;
-      --accent: #2563eb;
-      --accent-2: #1d4ed8;
-      --pill: #eef2f7;
-      --success: #0f766e;
-      --topbar-bg: #1e293b;
-      --topbar-border: #334155;
-      --topbar-text: #f8fafc;
+      --primary-50: #eff6ff;
+      --primary-100: #dbeafe;
+      --primary-200: #bfdbfe;
+      --primary-300: #93c5fd;
+      --primary-400: #60a5fa;
+      --primary-500: #3b82f6;
+      --primary-600: #2563eb;
+      --primary-700: #1d4ed8;
+      --primary-800: #1e40af;
+
+      --gray-50: #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-300: #cbd5e1;
+      --gray-400: #94a3b8;
+      --gray-500: #64748b;
+      --gray-600: #475569;
+      --gray-700: #334155;
+      --gray-800: #1e293b;
+      --gray-900: #0f172a;
+      --gray-950: #020617;
+
+      --success-500: #22c55e;
+      --success-600: #16a34a;
+      --warning-500: #f59e0b;
+      --danger-500: #ef4444;
+
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary: #334155;
+      --bg-elevated: #1e293b;
+      --bg-hover: rgba(255,255,255,0.06);
+      --bg-active: rgba(255,255,255,0.1);
+
+      --text-primary: #f1f5f9;
+      --text-secondary: #cbd5e1;
+      --text-muted: #94a3b8;
+      --text-disabled: #475569;
+
+      --border-primary: #334155;
+      --border-secondary: #475569;
+
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'SF Mono', Monaco, 'Cascadia Code', Consolas, monospace;
+
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+      --radius-xl: 12px;
+
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
+
+      --transition-fast: 0.1s ease;
+      --transition-normal: 0.2s ease;
     }
-    * { box-sizing: border-box; }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      margin: 0;
-      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
+      font-family: var(--font-sans);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
     }
-    .topbar {
+
+    /* ===== App Nav (identical to index.html) ===== */
+    .app-nav {
       display: flex;
-      gap: 12px;
-      padding: 12px 18px;
-      background: var(--topbar-bg);
-      border-bottom: 1px solid var(--topbar-border);
-      position: sticky;
-      top: 0;
-      z-index: 10;
+      width: 100%;
+      height: 44px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-primary);
       align-items: center;
+      padding: 0 16px;
+      gap: 2px;
+      flex-shrink: 0;
+      z-index: 50;
+    }
+    .app-nav-btn {
+      padding: 6px 16px;
+      border: none;
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      text-decoration: none;
+    }
+    .app-nav-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+    .app-nav-btn.active { background: var(--bg-active); color: var(--text-primary); }
+    .app-nav-btn svg { width: 16px; height: 16px; }
+    .app-nav-spacer { flex: 1; }
+    .app-nav-user {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .app-nav-user-role {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--bg-tertiary);
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .app-nav-user-role.admin { background: rgba(59,130,246,0.15); color: var(--primary-400); }
+    .app-nav-user-role.staff { background: rgba(34,197,94,0.15); color: var(--success-500); }
+    .app-nav-back {
+      padding: 6px 12px;
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .app-nav-back:hover { background: var(--bg-hover); color: var(--text-secondary); }
+
+    /* ===== Page Layout ===== */
+    .page {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px 24px 40px;
+    }
+
+    /* ===== Loading State ===== */
+    .loading-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 24px;
+      gap: 16px;
+      color: var(--text-muted);
+    }
+    .loading-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border-primary);
+      border-top-color: var(--primary-500);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== Title Section ===== */
+    .profile-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
       flex-wrap: wrap;
     }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      color: var(--topbar-text);
+    .profile-header h1 {
+      font-size: 24px;
       font-weight: 700;
-      letter-spacing: .02em;
-      margin-right: 4px;
+      color: var(--text-primary);
+      line-height: 1.3;
     }
-    .brand-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      background: var(--accent);
-      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+    .profile-header .meta {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
     }
-    .nav-group {
+    .profile-header .meta strong { color: var(--text-secondary); }
+    .header-actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
     }
-    .nav-btn {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 9px;
-      padding: 8px 13px;
-      font-weight: 600;
-      cursor: pointer;
-      text-decoration: none;
-      color: var(--topbar-text);
+
+    /* ===== Buttons ===== */
+    .btn {
+      padding: 7px 14px;
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-md);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
       font-size: 13px;
-      transition: background .15s ease;
+      font-weight: 500;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
-    .nav-btn:hover { background: rgba(255, 255, 255, 0.16); }
-    .page {
-      padding: 12px 18px 26px;
-      max-width: 1400px;
-      margin: 0 auto;
+    .btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .btn.primary {
+      background: var(--primary-600);
+      border-color: var(--primary-600);
+      color: #fff;
     }
-    .title-card {
-      border: 1px solid var(--line);
-      background: var(--card);
-      border-radius: 10px;
-      padding: 14px;
-      display: flex;
-      justify-content: space-between;
-      align-items: start;
-      gap: 12px;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
+    .btn.primary:hover { background: var(--primary-700); }
+    .btn.active-toggle {
+      background: rgba(59,130,246,0.15);
+      border-color: var(--primary-500);
+      color: var(--primary-400);
     }
-    .title-main h1 {
-      margin: 0;
-      font-size: 28px;
-    }
-    .meta { color: var(--muted); font-size: 13px; }
+    .btn.danger { border-color: var(--danger-500); color: var(--danger-500); }
+    .btn.danger:hover { background: rgba(239,68,68,0.1); }
+    .btn svg { width: 14px; height: 14px; }
+
+    /* ===== Summary Cards ===== */
     .summary-row {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-      margin-bottom: 12px;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
     }
     .summary-card {
-      border: 1px solid var(--line);
-      background: var(--card);
-      border-radius: 10px;
-      padding: 12px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-lg);
+      padding: 14px 16px;
     }
-    .summary-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
-    .summary-value { font-weight: 700; margin-top: 4px; }
-    .btn {
-      background: var(--accent);
-      color: #fff;
-      border: 0;
-      border-radius: 8px;
-      padding: 8px 12px;
+    .summary-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .summary-value {
+      font-size: 16px;
       font-weight: 600;
-      cursor: pointer;
+      color: var(--text-primary);
     }
-    .btn:hover { background: var(--accent-2); }
-    .btn.secondary {
-      background: #fff;
-      color: var(--text);
-      border: 1px solid var(--line);
-    }
-    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* ===== Tabs ===== */
     .tab-strip {
       display: flex;
       gap: 2px;
-      flex-wrap: wrap;
-      border-bottom: 1px solid var(--line);
-      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border-primary);
+      margin-bottom: 20px;
+      overflow-x: auto;
     }
+    .tab-strip::-webkit-scrollbar { display: none; }
     .tab {
-      padding: 9px 11px;
+      padding: 10px 16px;
       font-size: 13px;
+      font-weight: 500;
       cursor: pointer;
-      color: #4b5563;
+      color: var(--text-muted);
+      border: none;
+      background: none;
       border-bottom: 2px solid transparent;
-      border-radius: 6px 6px 0 0;
+      white-space: nowrap;
+      font-family: var(--font-sans);
+      transition: color var(--transition-fast), border-color var(--transition-fast);
     }
+    .tab:hover { color: var(--text-secondary); }
     .tab.active {
-      color: var(--text);
-      background: #fff;
-      border: 1px solid var(--line);
-      border-bottom: 2px solid var(--accent);
+      color: var(--primary-400);
+      border-bottom-color: var(--primary-500);
     }
-    .layout {
+
+    /* ===== Content Layout ===== */
+    .tab-content-area {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      gap: 16px;
       align-items: start;
     }
+    .tab-content-area.single-col { grid-template-columns: 1fr; }
+
+    /* ===== Panels ===== */
     .panel {
-      border: 1px solid var(--line);
-      background: var(--card);
-      border-radius: 10px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-lg);
       overflow: hidden;
     }
-    .panel h3 {
-      margin: 0;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--line);
-      font-size: 18px;
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-primary);
+      background: var(--bg-elevated);
     }
-    .panel-body { padding: 10px 12px; }
-    .kv {
-      display: grid;
-      grid-template-columns: 180px 1fr;
-      gap: 8px;
+    .panel-header h3 {
       font-size: 14px;
-      padding: 6px 0;
-      border-bottom: 1px dashed #edf0f4;
+      font-weight: 600;
+      color: var(--text-primary);
     }
-    .kv .key { color: #4b5563; }
-    .muted { color: var(--muted); }
-    .record-pill {
-      display: inline-block;
-      font-size: 12px;
-      color: #374151;
-      background: var(--pill);
-      border: 1px solid #d7dfe8;
+    .panel-count {
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--bg-tertiary);
       padding: 2px 8px;
-      border-radius: 999px;
-      margin: 2px 6px 2px 0;
+      border-radius: 10px;
+    }
+    .panel-body { padding: 12px 16px; }
+    .panel-body.empty {
+      padding: 32px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* ===== Key-Value Rows ===== */
+    .kv-row {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-size: 13px;
+    }
+    .kv-row:last-child { border-bottom: none; }
+    .kv-key {
+      flex: 0 0 160px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    .kv-val { color: var(--text-primary); flex: 1; min-width: 0; word-break: break-word; }
+    .kv-val.empty { color: var(--text-disabled); }
+
+    /* ===== Pills ===== */
+    .pill {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      margin: 1px 4px 1px 0;
       vertical-align: middle;
     }
-    .record-pill.good {
-      color: #0f5132;
-      border-color: #8fd3b2;
-      background: #ecfdf3;
+    .pill.linked {
+      background: rgba(34,197,94,0.12);
+      color: var(--success-500);
     }
-    .list { display: grid; gap: 10px; }
-    .card {
-      border: 1px solid #e3e9ef;
-      border-radius: 10px;
-      padding: 10px;
-      background: #fff;
+    .pill.id {
+      background: rgba(59,130,246,0.12);
+      color: var(--primary-400);
+      font-family: var(--font-mono);
+      font-size: 10px;
     }
-    .card-head {
+    .pill.status-active { background: rgba(34,197,94,0.12); color: var(--success-500); }
+    .pill.status-pending { background: rgba(245,158,11,0.12); color: var(--warning-500); }
+
+    /* ===== Related Record Cards ===== */
+    .record-cards { display: flex; flex-direction: column; gap: 8px; }
+    .record-card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      transition: border-color var(--transition-fast);
+    }
+    .record-card:hover { border-color: var(--border-secondary); }
+    .record-card-head {
       display: flex;
       justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 7px;
       align-items: center;
+      margin-bottom: 6px;
+      gap: 8px;
     }
-    .card-title { font-weight: 700; }
-    .links a {
-      color: #245aa9;
-      text-decoration: none;
-      font-size: 12px;
-      margin-right: 8px;
+    .record-card-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text-primary);
     }
-    .pill-group { margin-top: 7px; }
-    .schema-drawer {
-      margin-top: 12px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #f8fafc;
+
+    /* ===== Admin Config Panel ===== */
+    .admin-panel {
+      margin-top: 24px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
       display: none;
-      padding: 10px;
     }
-    .schema-drawer.open { display: block; }
-    textarea {
-      width: 100%;
-      min-height: 220px;
-      resize: vertical;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      padding: 10px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    .admin-panel.open { display: block; }
+    .admin-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-primary);
+      background: rgba(59,130,246,0.06);
+    }
+    .admin-panel-header h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--primary-400);
+    }
+    .admin-panel-body { padding: 16px; }
+
+    /* Field visibility config */
+    .config-section {
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-primary);
+    }
+    .config-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .config-section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+    .config-tab-title {
       font-size: 12px;
+      font-weight: 600;
+      color: var(--primary-400);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      margin-top: 12px;
     }
-    .status {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 8px;
+    .config-tab-title:first-child { margin-top: 0; }
+    .field-toggle-list { display: flex; flex-direction: column; gap: 4px; }
+    .field-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background var(--transition-fast);
+      font-size: 13px;
+      color: var(--text-secondary);
     }
-    .status.success { color: var(--success); }
+    .field-toggle:hover { background: var(--bg-hover); }
+    .field-toggle input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--primary-500);
+      cursor: pointer;
+    }
+    .field-toggle .field-name { flex: 1; }
+    .field-toggle .field-table {
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--bg-tertiary);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 10px 18px;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-secondary);
+      border-radius: var(--radius-lg);
+      font-size: 13px;
+      z-index: 1000;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+    .toast.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .toast.success { border-color: var(--success-500); }
+    .toast.error { border-color: var(--danger-500); }
+
+    /* ===== Responsive ===== */
     @media (max-width: 980px) {
-      .layout { grid-template-columns: 1fr; }
+      .tab-content-area { grid-template-columns: 1fr; }
       .summary-row { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 640px) {
       .summary-row { grid-template-columns: 1fr; }
-      .kv { grid-template-columns: 1fr; }
+      .kv-key { flex: 0 0 120px; }
+      .page { padding: 12px 12px 32px; }
+      .app-nav { padding: 0 8px; overflow-x: auto; }
+      .app-nav-btn { padding: 6px 10px; font-size: 12px; }
     }
   </style>
 </head>
 <body>
-  <div class="topbar">
-    <div class="brand"><span class="brand-dot"></span>Amino</div>
-    <div class="nav-group">
-      <a class="nav-btn" href="./Home.html">Home</a>
-      <a class="nav-btn" href="./index.html">Clients</a>
-      <a class="nav-btn" href="./Events.html">Calendar</a>
-      <button class="nav-btn" type="button">Communications</button>
-      <button class="nav-btn" type="button">New Client Event</button>
-      <button class="nav-btn" type="button">New Case Note</button>
+
+  <!-- Nav Bar (matches index.html app-nav) -->
+  <nav class="app-nav" id="app-nav">
+    <a class="app-nav-btn" href="./index.html" onclick="navTo(event, 'home')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      Home
+    </a>
+    <a class="app-nav-btn" href="./index.html?app=database" onclick="navTo(event, 'database')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
+      </svg>
+      Database
+    </a>
+    <a class="app-nav-btn" href="./index.html?app=interface" onclick="navTo(event, 'interface')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
+      </svg>
+      Interface
+    </a>
+    <a class="app-nav-btn" href="./index.html?app=settings" onclick="navTo(event, 'settings')">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+      </svg>
+      Settings
+    </a>
+    <div class="app-nav-spacer"></div>
+    <button class="app-nav-back" onclick="history.back()">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px">
+        <path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/>
+      </svg>
+      Back
+    </button>
+    <div class="app-nav-user">
+      <span id="nav-username"></span>
+      <span class="app-nav-user-role" id="nav-role"></span>
     </div>
-  </div>
+  </nav>
 
   <div class="page">
-    <div class="title-card">
-      <div class="title-main">
-        <h1 id="clientName">Client</h1>
-        <div class="meta" id="clientMeta">recordId: -</div>
-      </div>
-      <div class="toolbar">
-        <button class="btn" id="adminToggle">Admin: Off</button>
-        <button class="btn secondary" id="schemaToggle">Schema Editor</button>
-      </div>
+    <!-- Loading -->
+    <div class="loading-state" id="loadingState">
+      <div class="loading-spinner"></div>
+      <div id="loadingMsg">Loading client profile&hellip;</div>
     </div>
 
-    <div class="summary-row" id="summaryRow"></div>
-    <div class="tab-strip" id="tabStrip"></div>
-    <div id="tabContent"></div>
-
-    <div class="schema-drawer" id="schemaDrawer" data-open="false">
-      <div class="toolbar">
-        <button class="btn" id="saveSchema">Save Schema</button>
-        <button class="btn secondary" id="resetSchema">Reset Default</button>
+    <!-- Profile Content (hidden until loaded) -->
+    <div id="profileContent" style="display:none;">
+      <div class="profile-header">
+        <div>
+          <h1 id="clientName">Client</h1>
+          <div class="meta" id="clientMeta"></div>
+        </div>
+        <div class="header-actions">
+          <button class="btn" id="adminToggle" style="display:none;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            Configure Profile
+          </button>
+        </div>
       </div>
-      <textarea id="schemaJson"></textarea>
-      <div class="status" id="schemaStatus"></div>
+
+      <div class="summary-row" id="summaryRow"></div>
+      <div class="tab-strip" id="tabStrip"></div>
+      <div id="tabContent"></div>
+
+      <!-- Admin Config Panel -->
+      <div class="admin-panel" id="adminPanel">
+        <div class="admin-panel-header">
+          <h3>Profile Field Configuration</h3>
+          <div style="display:flex;gap:8px;">
+            <button class="btn primary" id="saveConfigBtn">Save to Matrix</button>
+            <button class="btn" id="resetConfigBtn">Reset Defaults</button>
+            <button class="btn danger" id="closeConfigBtn">Close</button>
+          </div>
+        </div>
+        <div class="admin-panel-body" id="adminConfigBody">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
     </div>
   </div>
 
+  <div class="toast" id="toast"></div>
+
+  <script src="./matrix.js"></script>
   <script src="./data-layer.js"></script>
   <script>
-    const STORAGE_KEYS = {
-      schema: 'amino.clientProfile.schema.v1',
-      admin: 'amino.clientProfile.admin',
-      context: 'amino.clientProfile.context.v1'
-    };
+  (function() {
+    'use strict';
 
-    const defaultSchema = {
+    // ============ Constants ============
+    var SYNAPSE_HOMESERVER_URL = 'https://app.aminoimmigration.com';
+    var SYNAPSE_SESSION_KEY = 'amino_synapse_session';
+    var PROFILE_CONFIG_EVENT = 'law.firm.interface.profile';
+    var LOCAL_SCHEMA_KEY = 'amino.clientProfile.schema.v2';
+    var CONTEXT_KEY = 'amino.clientProfile.context.v1';
+
+    // ============ Default Schema ============
+    var DEFAULT_SCHEMA = {
+      version: 2,
+      summaryFields: ['Case Manager', 'Entry Status', 'Current Stage'],
       tabs: [
-        { id: 'client-info', label: 'Client Info', sections: [{ type: 'fields', tableId: 'Clients', title: 'Overview', fields: ['First Name', 'Last Name', 'Office', 'Client Tags', 'Entry Status', 'Case Manager'] }, { type: 'related-list', tableId: 'Addresses', title: 'Addresses', fields: ['Address', 'Address Change Date', 'Same Address Confirmed Date'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'at-a-glance', label: 'At-a-glance', sections: [{ type: 'fields', tableId: 'Clients', title: 'At-a-glance', fields: ['SIJ Case Status', 'Merits Atty', 'Current Stage', 'Priority', 'Notes'] }] },
-        { id: 'matters', label: 'Matters', sections: [{ type: 'related-list', tableId: 'Matters', title: 'Matters', fields: ['Matter', 'Description', 'Status', 'Created_By'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }, { type: 'related-list', tableId: 'Matter Notes', title: 'Matter Notes', fields: ['Matter', 'Description', 'Activity', 'Date', 'Created_By'], foreignKeys: ['Client', 'Client Record ID', 'clientId', 'Matter Record ID'] }] },
-        { id: 'case-notes', label: 'Case Notes', sections: [{ type: 'related-list', tableId: 'Case Notes', title: 'Case Notes', fields: ['Case Note', 'Category', 'Created', 'Created_By'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'ead', label: 'EAD', sections: [{ type: 'related-list', tableId: 'EAD', title: 'EAD', fields: ['Mail Tracking # EAD', 'EAD Stage', 'EAD Received', 'EAD Sent Date', 'EAD Approval Date'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'all-activities', label: 'All Activities', sections: [{ type: 'related-list', tableId: 'Activities', title: 'All Activity Notes', fields: ['Activity', 'Description', 'Date', 'Owner'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }, { type: 'related-list', tableId: 'Hearings/Interviews', title: 'Hearings/Interviews', fields: ['Event', 'Date', 'Judge', 'Location'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'comms', label: 'Comms', sections: [{ type: 'related-list', tableId: 'Communications', title: 'Communications', fields: ['Type', 'Date', 'Summary', 'Direction'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] }
+        {
+          id: 'overview', label: 'Overview',
+          sections: [
+            { title: 'Client Info', type: 'fields', table: 'Clients', fields: ['First Name', 'Last Name', 'Office', 'Client Tags', 'Entry Status', 'Case Manager'] },
+            { title: 'Addresses', type: 'related', table: 'Addresses', fields: ['Address', 'Address Change Date', 'Same Address Confirmed Date'] }
+          ]
+        },
+        {
+          id: 'at-a-glance', label: 'At a Glance',
+          sections: [
+            { title: 'At a Glance', type: 'fields', table: 'Clients', fields: ['SIJ Case Status', 'Merits Atty', 'Current Stage', 'Priority', 'Notes'] }
+          ]
+        },
+        {
+          id: 'matters', label: 'Matters',
+          sections: [
+            { title: 'Matters', type: 'related', table: 'Matters', fields: ['Matter', 'Description', 'Status', 'Created_By'] },
+            { title: 'Matter Notes', type: 'related', table: 'Matter Notes', fields: ['Matter', 'Description', 'Activity', 'Date', 'Created_By'] }
+          ]
+        },
+        {
+          id: 'case-notes', label: 'Case Notes',
+          sections: [
+            { title: 'Case Notes', type: 'related', table: 'Case Notes', fields: ['Case Note', 'Category', 'Created', 'Created_By'] }
+          ]
+        },
+        {
+          id: 'ead', label: 'EAD',
+          sections: [
+            { title: 'EAD', type: 'related', table: 'EAD', fields: ['Mail Tracking # EAD', 'EAD Stage', 'EAD Received', 'EAD Sent Date', 'EAD Approval Date'] }
+          ]
+        },
+        {
+          id: 'activities', label: 'Activities',
+          sections: [
+            { title: 'All Activity Notes', type: 'related', table: 'Activities', fields: ['Activity', 'Description', 'Date', 'Owner'] },
+            { title: 'Hearings / Interviews', type: 'related', table: 'Hearings/Interviews', fields: ['Event', 'Date', 'Judge', 'Location'] }
+          ]
+        },
+        {
+          id: 'comms', label: 'Communications',
+          sections: [
+            { title: 'Communications', type: 'related', table: 'Communications', fields: ['Type', 'Date', 'Summary', 'Direction'] }
+          ]
+        }
       ]
     };
 
-    const state = {
-      schema: loadSchema(),
-      admin: loadAdmin(),
+    // ============ State ============
+    var state = {
+      clientId: new URLSearchParams(location.search).get('clientId') || '',
+      clientRecord: null,
+      schema: null,
       activeTab: null,
-      data: {},
-      clientId: new URLSearchParams(location.search).get('clientId') || 'recClient001',
-      clientRecord: null
+      data: {},         // tableName -> rows[]
+      tableMap: {},     // tableId -> tableName
+      isAdmin: false,
+      adminOpen: false,
+      orgSpaceId: null,
+      session: null,
+      fkCache: {}       // tableName -> { fieldName: true } (discovered FK fields)
     };
 
-    function getClientContextSnapshot() {
+    // ============ Utilities ============
+    function esc(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function norm(s) { return String(s || '').trim().toLowerCase(); }
+
+    function showToast(msg, type) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast visible' + (type ? ' ' + type : '');
+      clearTimeout(el._t);
+      el._t = setTimeout(function() { el.className = 'toast'; }, 3000);
+    }
+
+    function deepClone(obj) {
+      return typeof structuredClone === 'function' ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
+    }
+
+    // ============ Navigation ============
+    window.navTo = function(event, appName) {
+      // Navigate back to index.html with the appropriate app
+      // Default link href handles it; this is for potential future SPA routing
+    };
+
+    // ============ Session Restore ============
+    function loadSynapseSession() {
       try {
-        const raw = sessionStorage.getItem(STORAGE_KEYS.context);
+        var raw = localStorage.getItem(SYNAPSE_SESSION_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    }
+
+    // ============ Schema Loading (Matrix > localStorage > default) ============
+    async function loadSchemaFromMatrix() {
+      if (!state.orgSpaceId || !MatrixClient.isLoggedIn()) return null;
+      try {
+        var content = await MatrixClient.getStateEvent(state.orgSpaceId, PROFILE_CONFIG_EVENT, '');
+        if (content && Array.isArray(content.tabs)) return content;
+      } catch (e) {
+        console.warn('[Profile] Could not load schema from Matrix:', e.message);
+      }
+      return null;
+    }
+
+    function loadSchemaFromLocal() {
+      try {
+        var raw = localStorage.getItem(LOCAL_SCHEMA_KEY);
         if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object') return null;
-        if (parsed.clientId && parsed.clientId !== state.clientId) return null;
-        if (!parsed.data || typeof parsed.data !== 'object') return null;
-        return parsed;
-      } catch {
-        return null;
-      }
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.tabs)) return parsed;
+      } catch (e) {}
+      return null;
     }
 
-    function loadSchema() {
-      const raw = localStorage.getItem(STORAGE_KEYS.schema);
-      if (!raw) return structuredClone(defaultSchema);
+    async function loadSchema() {
+      // Priority: Matrix state event > localStorage > defaults
+      var schema = await loadSchemaFromMatrix();
+      if (schema) {
+        localStorage.setItem(LOCAL_SCHEMA_KEY, JSON.stringify(schema));
+        return schema;
+      }
+      schema = loadSchemaFromLocal();
+      if (schema) return schema;
+      return deepClone(DEFAULT_SCHEMA);
+    }
+
+    async function saveSchemaToMatrix(schema) {
+      if (!state.orgSpaceId || !MatrixClient.isLoggedIn()) {
+        throw new Error('Not connected to Matrix');
+      }
+      await MatrixClient.sendStateEvent(state.orgSpaceId, PROFILE_CONFIG_EVENT, '', schema);
+      localStorage.setItem(LOCAL_SCHEMA_KEY, JSON.stringify(schema));
+    }
+
+    // ============ Context Snapshot (from index.html sessionStorage) ============
+    function loadContextSnapshot() {
       try {
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed.tabs)) throw new Error('tabs missing');
+        var raw = sessionStorage.getItem(CONTEXT_KEY);
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        if (!parsed || !parsed.data) return null;
+        // If context has a clientId, it should match our target
+        if (parsed.clientId && state.clientId && parsed.clientId !== state.clientId) return null;
         return parsed;
-      } catch {
-        return structuredClone(defaultSchema);
+      } catch (e) { return null; }
+    }
+
+    // ============ Data Loading ============
+    async function loadDataFromContext(ctx) {
+      state.data = {};
+      var data = ctx.data || {};
+      Object.keys(data).forEach(function(key) {
+        var rows = data[key];
+        if (!Array.isArray(rows)) return;
+        state.data[key] = rows;
+      });
+    }
+
+    async function loadDataFromAminoData() {
+      state.data = {};
+      try {
+        var tables = await AminoData.getTables();
+        for (var i = 0; i < tables.length; i++) {
+          var table = tables[i];
+          var tableId = table.table_id || table.id;
+          var tableName = table.table_name || table.name || tableId;
+          state.tableMap[tableId] = tableName;
+          state.tableMap[tableName] = tableName;
+          var rows = await AminoData.getTableRecords(tableId);
+          // Normalize rows: ensure each has a recordId
+          var normalized = rows.map(function(row) {
+            return {
+              recordId: row.recordId || row.id,
+              fields: row.fields || {}
+            };
+          });
+          state.data[tableName] = normalized;
+          if (tableId !== tableName) state.data[tableId] = normalized;
+        }
+      } catch (e) {
+        console.warn('[Profile] AminoData load failed:', e.message);
       }
     }
 
-    function loadAdmin() {
-      return localStorage.getItem(STORAGE_KEYS.admin) === 'true';
-    }
-
-    function saveAdmin(val) {
-      localStorage.setItem(STORAGE_KEYS.admin, String(val));
-    }
-
-    function normalizeTableName(name) {
-      return String(name || '').trim().toLowerCase();
-    }
-
-    function findRecordById(tableRows, recordId) {
-      return (tableRows || []).find(row => row.recordId === recordId || row.id === recordId || row.fields?.recordId === recordId);
-    }
-
-    function findClientRecord(tableRows, clientId) {
-      const needle = String(clientId || '').trim().toLowerCase();
-      if (!needle) return (tableRows || [])[0] || null;
-      return (tableRows || []).find(row => {
-        const fields = row.fields || {};
-        const candidates = [
-          row.recordId,
-          row.id,
-          fields.recordId,
-          fields.airtableId,
-          fields['Client Record ID'],
-          fields.clientId
-        ];
-        return candidates.some(v => String(v || '').trim().toLowerCase() === needle);
-      }) || null;
-    }
-
-    function collectRecordIds(value) {
-      if (value == null || value === '') return [];
-      if (Array.isArray(value)) return value.flatMap(collectRecordIds);
-      if (typeof value === 'object') return Object.values(value).flatMap(collectRecordIds);
-      if (typeof value === 'string' && /^rec[a-z0-9]+$/i.test(value.trim())) return [value.trim()];
+    // ============ Record Resolution ============
+    function resolveTable(name) {
+      // Fuzzy table name match
+      var n = norm(name);
+      var keys = Object.keys(state.data);
+      var exact = keys.find(function(k) { return norm(k) === n; });
+      if (exact) return state.data[exact];
+      // Partial match
+      var partial = keys.find(function(k) { return norm(k).indexOf(n) !== -1 || n.indexOf(norm(k)) !== -1; });
+      if (partial) return state.data[partial];
       return [];
     }
 
-    function escapeHtml(value) {
-      return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
+    function findClientRecord(rows) {
+      var needle = norm(state.clientId);
+      if (!needle) return rows[0] || null;
+      return rows.find(function(row) {
+        var f = row.fields || {};
+        var candidates = [
+          row.recordId, row.id,
+          f.recordId, f.airtableId,
+          f['Client Record ID'], f.clientId,
+          f['Record ID'], f['record_id']
+        ];
+        return candidates.some(function(v) { return norm(v) === needle; });
+      }) || null;
     }
 
-    function renderValue(value) {
-      if (value == null || value === '') return '<span class="muted">—</span>';
+    // ============ FK Discovery ============
+    // Instead of hardcoding foreign key field names, scan all fields in related
+    // table rows for values that match the client's record ID(s).
+    function getClientIds() {
+      var ids = new Set();
+      if (state.clientId) ids.add(state.clientId);
+      if (state.clientRecord) {
+        if (state.clientRecord.recordId) ids.add(state.clientRecord.recordId);
+        var f = state.clientRecord.fields || {};
+        ['recordId', 'airtableId', 'Client Record ID', 'Record ID', 'clientId'].forEach(function(k) {
+          if (f[k]) ids.add(String(f[k]));
+        });
+      }
+      return ids;
+    }
+
+    function valueContainsId(value, idSet) {
+      if (value == null || value === '') return false;
       if (Array.isArray(value)) {
-        return value.map(v => `<span class="record-pill">${escapeHtml(v)}</span>`).join('');
+        return value.some(function(v) { return valueContainsId(v, idSet); });
       }
-      if (typeof value === 'object') {
-        return `<code>${escapeHtml(JSON.stringify(value))}</code>`;
+      if (typeof value === 'string') return idSet.has(value.trim());
+      return false;
+    }
+
+    function discoverForeignKeyFields(tableName, rows, clientIds) {
+      // Scan a sample of rows to discover which fields contain the client's ID
+      var cacheKey = tableName;
+      if (state.fkCache[cacheKey]) return state.fkCache[cacheKey];
+
+      var fkFields = {};
+      var sample = rows.slice(0, Math.min(rows.length, 200));
+      sample.forEach(function(row) {
+        var fields = row.fields || {};
+        Object.keys(fields).forEach(function(fieldName) {
+          if (fkFields[fieldName]) return; // already found
+          if (valueContainsId(fields[fieldName], clientIds)) {
+            fkFields[fieldName] = true;
+          }
+        });
+      });
+
+      state.fkCache[cacheKey] = fkFields;
+      return fkFields;
+    }
+
+    function findRelatedRows(tableName) {
+      var rows = resolveTable(tableName);
+      if (!rows.length) return [];
+      var clientIds = getClientIds();
+      if (!clientIds.size) return [];
+
+      // Discover which fields link to this client
+      var fkFields = discoverForeignKeyFields(tableName, rows, clientIds);
+      var fkNames = Object.keys(fkFields);
+
+      if (!fkNames.length) {
+        // Fallback: try common FK field names
+        fkNames = ['Client', 'Client Record ID', 'clientId', 'client_airtable_id', 'Softr_Link_to_clients', 'Client_PP_ID'];
       }
-      return escapeHtml(value);
+
+      return rows.filter(function(row) {
+        var fields = row.fields || {};
+        return fkNames.some(function(fk) {
+          return valueContainsId(fields[fk], clientIds);
+        });
+      });
+    }
+
+    // ============ Rendering ============
+    function renderValue(value) {
+      if (value == null || value === '') return '<span class="kv-val empty">&mdash;</span>';
+      if (Array.isArray(value)) {
+        if (!value.length) return '<span class="kv-val empty">&mdash;</span>';
+        return value.map(function(v) {
+          if (typeof v === 'string' && /^rec[a-zA-Z0-9]+$/.test(v)) {
+            return '<span class="pill id">' + esc(v) + '</span>';
+          }
+          return '<span class="pill">' + esc(v) + '</span>';
+        }).join('');
+      }
+      if (typeof value === 'object') return '<code style="font-size:11px;color:var(--text-muted)">' + esc(JSON.stringify(value)) + '</code>';
+      return '<span>' + esc(value) + '</span>';
+    }
+
+    function renderNav() {
+      var session = loadSynapseSession();
+      var username = '';
+      var role = '';
+      if (session) {
+        username = session.userId ? session.userId.split(':')[0].replace('@', '') : '';
+        role = session.role || '';
+      }
+      document.getElementById('nav-username').textContent = username;
+      var roleEl = document.getElementById('nav-role');
+      if (role) {
+        roleEl.textContent = role;
+        roleEl.className = 'app-nav-user-role ' + norm(role);
+      }
     }
 
     function renderHeader() {
-      const record = state.clientRecord;
-      const fields = record?.fields || {};
-      const name = record
-        ? (fields['Display Name'] || fields['display name'] || `${fields['Last Name'] || ''}, ${fields['First Name'] || ''}`.trim().replace(/^,\s*/, '') || record.recordId)
-        : 'Client not found';
-
+      var rec = state.clientRecord;
+      var f = rec ? (rec.fields || {}) : {};
+      var name = 'Client not found';
+      if (rec) {
+        name = f['Display Name'] || f['display name']
+          || ((f['Last Name'] || '') + ', ' + (f['First Name'] || '')).replace(/^,\s*/, '').replace(/,\s*$/, '')
+          || rec.recordId || state.clientId;
+      }
       document.getElementById('clientName').textContent = name;
-      document.getElementById('clientMeta').innerHTML = `recordId: <strong>${escapeHtml(record?.recordId || state.clientId || '-')}</strong>`;
+      document.getElementById('clientMeta').innerHTML = rec
+        ? 'Record ID: <strong>' + esc(rec.recordId || state.clientId) + '</strong>'
+        : '<span style="color:var(--danger-500)">No client record found for ID: ' + esc(state.clientId) + '</span>';
 
-      const relatedRowsCount = state.clientRecord
-        ? state.schema.tabs
-            .flatMap(tab => tab.sections || [])
-            .filter(section => section.type === 'related-list')
-            .reduce((acc, section) => acc + resolveRelatedRows(section).length, 0)
-        : 0;
+      // Summary cards
+      var summaryFields = state.schema.summaryFields || ['Case Manager', 'Entry Status', 'Current Stage'];
+      var relatedCount = 0;
+      state.schema.tabs.forEach(function(tab) {
+        (tab.sections || []).forEach(function(sec) {
+          if (sec.type === 'related') relatedCount += findRelatedRows(sec.table).length;
+        });
+      });
 
-      const summaryItems = [
-        { label: 'Case Manager', value: fields['Case Manager'] || 'Unassigned' },
-        { label: 'Entry Status', value: fields['Entry Status'] || 'Unknown' },
-        { label: 'Current Stage', value: fields['Current Stage'] || 'Unknown' },
-        { label: 'Related Rows', value: relatedRowsCount }
-      ];
+      var items = summaryFields.map(function(fieldName) {
+        return { label: fieldName, value: f[fieldName] || 'Unknown' };
+      });
+      items.push({ label: 'Related Records', value: relatedCount });
 
-      document.getElementById('summaryRow').innerHTML = summaryItems
-        .map(item => `<div class="summary-card"><div class="summary-label">${escapeHtml(item.label)}</div><div class="summary-value">${escapeHtml(item.value)}</div></div>`)
-        .join('');
+      document.getElementById('summaryRow').innerHTML = items.map(function(item) {
+        var val = typeof item.value === 'number' ? item.value : esc(Array.isArray(item.value) ? item.value.join(', ') : item.value);
+        return '<div class="summary-card"><div class="summary-label">' + esc(item.label) + '</div><div class="summary-value">' + val + '</div></div>';
+      }).join('');
     }
 
     function renderTabs() {
-      if (!state.activeTab) state.activeTab = state.schema.tabs[0]?.id;
-      const html = state.schema.tabs.map(tab => {
-        const cls = tab.id === state.activeTab ? 'tab active' : 'tab';
-        return `<button class="${cls}" type="button" data-tab="${escapeHtml(tab.id)}">${escapeHtml(tab.label || tab.id)}</button>`;
+      if (!state.activeTab) state.activeTab = state.schema.tabs[0] ? state.schema.tabs[0].id : null;
+      document.getElementById('tabStrip').innerHTML = state.schema.tabs.map(function(tab) {
+        var cls = tab.id === state.activeTab ? 'tab active' : 'tab';
+        return '<button class="' + cls + '" data-tab="' + esc(tab.id) + '">' + esc(tab.label) + '</button>';
       }).join('');
-      const tabStrip = document.getElementById('tabStrip');
-      tabStrip.innerHTML = html;
-      tabStrip.querySelectorAll('[data-tab]').forEach(btn => {
-        btn.addEventListener('click', () => {
+
+      document.getElementById('tabStrip').querySelectorAll('[data-tab]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
           state.activeTab = btn.dataset.tab;
           renderTabs();
           renderTabContent();
@@ -448,200 +975,303 @@
       });
     }
 
-    function resolveTableRows(tableId) {
-      const keys = Object.keys(state.data);
-      const direct = state.data[tableId];
-      if (Array.isArray(direct)) return direct;
-      const byNormalized = keys.find(key => normalizeTableName(key) === normalizeTableName(tableId));
-      if (byNormalized) return state.data[byNormalized] || [];
-      return [];
-    }
-
-    function resolveRelatedRows(section) {
-      const rows = resolveTableRows(section.tableId);
-      const allowedIds = new Set([state.clientId, state.clientRecord?.recordId].filter(Boolean));
-      return rows.filter(row => {
-        const fields = row.fields || {};
-        const fkValues = (section.foreignKeys || ['Client', 'Client Record ID', 'clientId']).flatMap(key => collectRecordIds(fields[key]).concat(fields[key] || []));
-        return fkValues.some(v => allowedIds.has(String(v).trim()));
+    function renderFieldsSection(sec) {
+      var rec = state.clientRecord;
+      var f = rec ? (rec.fields || {}) : {};
+      var fields = sec.fields || [];
+      if (!fields.length) return '<div class="panel-body empty">No fields configured.</div>';
+      var html = '<div class="panel-body">';
+      fields.forEach(function(name) {
+        html += '<div class="kv-row"><div class="kv-key">' + esc(name) + '</div><div class="kv-val">' + renderValue(f[name]) + '</div></div>';
       });
+      html += '</div>';
+      return html;
     }
 
-    function buildCrossLinks(row) {
-      const rowIdCandidates = collectRecordIds(row.fields).filter(id => id !== row.recordId);
-      const links = [];
-      for (const [tableName, tableRows] of Object.entries(state.data)) {
-        if (!Array.isArray(tableRows)) continue;
-        for (const candidate of rowIdCandidates) {
-          const matched = findRecordById(tableRows, candidate);
-          if (matched && matched !== row) links.push({ tableName, recordId: candidate });
-        }
-      }
-      const deduped = [];
-      const seen = new Set();
-      for (const link of links) {
-        const key = `${link.tableName}:${link.recordId}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        deduped.push(link);
-      }
-      return deduped;
-    }
-
-    function renderSection(section) {
-      if (section.type === 'fields') {
-        const row = state.clientRecord;
-        const fieldsHtml = (section.fields || []).map(name => `<div class="kv"><div class="key">${escapeHtml(name)}</div><div>${renderValue(row?.fields?.[name])}</div></div>`).join('');
-        return `<section class="panel"><h3>${escapeHtml(section.title || 'Section')}</h3><div class="panel-body">${fieldsHtml || '<span class="muted">No fields configured.</span>'}</div></section>`;
-      }
-
-      if (section.type === 'related-list') {
-        const rows = resolveRelatedRows(section);
-        const cards = rows.map(row => {
-          const titleField = section.fields?.[0];
-          const title = row.fields?.[titleField] || row.recordId;
-          const fields = (section.fields || []).slice(1).map(name => `<div class="kv"><div class="key">${escapeHtml(name)}</div><div>${renderValue(row.fields?.[name])}</div></div>`).join('');
-          const links = buildCrossLinks(row)
-            .map(link => `<a href="?clientId=${encodeURIComponent(link.recordId)}" title="Open ${escapeHtml(link.recordId)}">${escapeHtml(link.tableName)}: ${escapeHtml(link.recordId)}</a>`)
-            .join('');
-          const fkPills = collectRecordIds(row.fields).map(id => `<span class="record-pill good">${escapeHtml(id)}</span>`).join('');
-          return `<article class="card"><div class="card-head"><div class="card-title">${escapeHtml(title)}</div><span class="record-pill">${escapeHtml(row.recordId || '-')}</span></div>${fields}<div class="pill-group">${fkPills}</div><div class="links">${links || '<span class="muted">No linked records found.</span>'}</div></article>`;
-        }).join('');
-
-        return `<section class="panel"><h3>${escapeHtml(section.title || 'Related')}</h3><div class="panel-body"><div class="list">${cards || '<div class="muted">No related records found for this client recordId.</div>'}</div></div></section>`;
-      }
-
-      return `<section class="panel"><h3>${escapeHtml(section.title || 'Unknown section')}</h3><div class="panel-body muted">Unsupported section type: ${escapeHtml(section.type || '-')}</div></section>`;
+    function renderRelatedSection(sec) {
+      var rows = findRelatedRows(sec.table);
+      if (!rows.length) return '<div class="panel-body empty">No related records found.</div>';
+      var displayFields = sec.fields || [];
+      var html = '<div class="panel-body"><div class="record-cards">';
+      rows.forEach(function(row) {
+        var f = row.fields || {};
+        var title = f[displayFields[0]] || row.recordId || '(record)';
+        html += '<div class="record-card">';
+        html += '<div class="record-card-head"><span class="record-card-title">' + esc(Array.isArray(title) ? title.join(', ') : title) + '</span>';
+        html += '<span class="pill id">' + esc(row.recordId || '-') + '</span></div>';
+        displayFields.slice(1).forEach(function(name) {
+          html += '<div class="kv-row"><div class="kv-key">' + esc(name) + '</div><div class="kv-val">' + renderValue(f[name]) + '</div></div>';
+        });
+        html += '</div>';
+      });
+      html += '</div></div>';
+      return html;
     }
 
     function renderTabContent() {
-      const tab = state.schema.tabs.find(t => t.id === state.activeTab) || state.schema.tabs[0];
-      const html = (tab?.sections || []).map(renderSection).join('');
-      const fallback = state.clientRecord
-        ? '<div class="muted">No sections configured.</div>'
-        : '<div class="muted">No client data found for this selection. Open the profile from the Clients page to load a scoped record context.</div>';
-      document.getElementById('tabContent').innerHTML = `<div class="layout">${html || fallback}</div>`;
+      var tab = state.schema.tabs.find(function(t) { return t.id === state.activeTab; }) || state.schema.tabs[0];
+      if (!tab) {
+        document.getElementById('tabContent').innerHTML = '<div style="color:var(--text-muted);padding:40px 0;text-align:center">No tabs configured.</div>';
+        return;
+      }
+
+      var sections = tab.sections || [];
+      var colClass = sections.length > 1 ? '' : ' single-col';
+      var html = '<div class="tab-content-area' + colClass + '">';
+      sections.forEach(function(sec) {
+        var count = '';
+        var body = '';
+        if (sec.type === 'related') {
+          var related = findRelatedRows(sec.table);
+          count = '<span class="panel-count">' + related.length + '</span>';
+          body = renderRelatedSection(sec);
+        } else {
+          body = renderFieldsSection(sec);
+        }
+        html += '<div class="panel"><div class="panel-header"><h3>' + esc(sec.title) + '</h3>' + count + '</div>' + body + '</div>';
+      });
+      html += '</div>';
+      document.getElementById('tabContent').innerHTML = html;
     }
 
-    function renderSchemaEditor() {
-      const drawer = document.getElementById('schemaDrawer');
-      drawer.classList.toggle('open', state.admin && drawer.dataset.open === 'true');
-      document.getElementById('schemaJson').value = JSON.stringify(state.schema, null, 2);
+    // ============ Admin Config ============
+    function renderAdminToggle() {
+      var btn = document.getElementById('adminToggle');
+      if (state.isAdmin) {
+        btn.style.display = '';
+        btn.className = state.adminOpen ? 'btn active-toggle' : 'btn';
+      } else {
+        btn.style.display = 'none';
+      }
+      document.getElementById('adminPanel').className = state.adminOpen ? 'admin-panel open' : 'admin-panel';
     }
 
-    function render() {
-      document.getElementById('adminToggle').textContent = `Admin: ${state.admin ? 'On' : 'Off'}`;
+    function renderAdminConfig() {
+      if (!state.adminOpen) return;
+      var html = '';
+      html += '<div class="config-section">';
+      html += '<div class="config-section-title">Summary Fields (shown at top of profile)</div>';
+      html += '<div class="field-toggle-list" id="summaryFieldToggles">';
+      var allClientFields = getAllFieldsForTable('Clients');
+      var currentSummary = new Set(state.schema.summaryFields || []);
+      allClientFields.forEach(function(fn) {
+        var checked = currentSummary.has(fn) ? ' checked' : '';
+        html += '<label class="field-toggle"><input type="checkbox" data-config="summary" data-field="' + esc(fn) + '"' + checked + '><span class="field-name">' + esc(fn) + '</span></label>';
+      });
+      html += '</div></div>';
+
+      html += '<div class="config-section">';
+      html += '<div class="config-section-title">Tab &amp; Section Field Visibility</div>';
+      state.schema.tabs.forEach(function(tab) {
+        html += '<div class="config-tab-title">' + esc(tab.label) + '</div>';
+        (tab.sections || []).forEach(function(sec, secIdx) {
+          html += '<div style="margin-left:12px;margin-bottom:8px;"><span style="font-size:12px;color:var(--text-muted);">' + esc(sec.title) + ' (' + esc(sec.table) + ')</span></div>';
+          var allFields = getAllFieldsForTable(sec.table);
+          var currentFields = new Set(sec.fields || []);
+          html += '<div class="field-toggle-list" style="margin-left:12px;">';
+          allFields.forEach(function(fn) {
+            var checked = currentFields.has(fn) ? ' checked' : '';
+            html += '<label class="field-toggle"><input type="checkbox" data-config="section" data-tab="' + esc(tab.id) + '" data-sec="' + secIdx + '" data-field="' + esc(fn) + '"' + checked + '><span class="field-name">' + esc(fn) + '</span><span class="field-table">' + esc(sec.table) + '</span></label>';
+          });
+          html += '</div>';
+        });
+      });
+      html += '</div>';
+
+      document.getElementById('adminConfigBody').innerHTML = html;
+
+      // Wire up change events
+      document.querySelectorAll('#adminConfigBody input[type="checkbox"]').forEach(function(cb) {
+        cb.addEventListener('change', function() { applyConfigChange(cb); });
+      });
+    }
+
+    function getAllFieldsForTable(tableName) {
+      var rows = resolveTable(tableName);
+      var fieldSet = {};
+      rows.forEach(function(row) {
+        Object.keys(row.fields || {}).forEach(function(k) { fieldSet[k] = true; });
+      });
+      // Also include fields from the current schema that might not appear in data sample
+      state.schema.tabs.forEach(function(tab) {
+        (tab.sections || []).forEach(function(sec) {
+          if (norm(sec.table) === norm(tableName)) {
+            (sec.fields || []).forEach(function(f) { fieldSet[f] = true; });
+          }
+        });
+      });
+      return Object.keys(fieldSet).sort();
+    }
+
+    function applyConfigChange(cb) {
+      var configType = cb.getAttribute('data-config');
+      var fieldName = cb.getAttribute('data-field');
+
+      if (configType === 'summary') {
+        var summaryFields = state.schema.summaryFields || [];
+        if (cb.checked) {
+          if (summaryFields.indexOf(fieldName) === -1) summaryFields.push(fieldName);
+        } else {
+          summaryFields = summaryFields.filter(function(f) { return f !== fieldName; });
+        }
+        state.schema.summaryFields = summaryFields;
+      } else if (configType === 'section') {
+        var tabId = cb.getAttribute('data-tab');
+        var secIdx = parseInt(cb.getAttribute('data-sec'), 10);
+        var tab = state.schema.tabs.find(function(t) { return t.id === tabId; });
+        if (tab && tab.sections[secIdx]) {
+          var sec = tab.sections[secIdx];
+          var fields = sec.fields || [];
+          if (cb.checked) {
+            if (fields.indexOf(fieldName) === -1) fields.push(fieldName);
+          } else {
+            fields = fields.filter(function(f) { return f !== fieldName; });
+          }
+          sec.fields = fields;
+        }
+      }
+
+      // Live preview
+      renderHeader();
+      renderTabContent();
+    }
+
+    async function saveConfig() {
+      try {
+        await saveSchemaToMatrix(state.schema);
+        showToast('Profile config saved to Matrix — all users will see this layout.', 'success');
+      } catch (e) {
+        // Fallback to localStorage
+        localStorage.setItem(LOCAL_SCHEMA_KEY, JSON.stringify(state.schema));
+        showToast('Saved locally (Matrix unavailable: ' + e.message + ')', 'error');
+      }
+    }
+
+    function resetConfig() {
+      state.schema = deepClone(DEFAULT_SCHEMA);
+      state.activeTab = state.schema.tabs[0] ? state.schema.tabs[0].id : null;
+      renderAll();
+      showToast('Reset to defaults. Save to apply for all users.', 'success');
+    }
+
+    // ============ Full Render ============
+    function renderAll() {
+      renderNav();
       renderHeader();
       renderTabs();
       renderTabContent();
-      renderSchemaEditor();
+      renderAdminToggle();
+      renderAdminConfig();
     }
 
-    async function loadData() {
-      const contextSnapshot = getClientContextSnapshot();
-      if (contextSnapshot) {
-        state.data = contextSnapshot.data;
-        const contextClients = resolveContextClients(state.data);
-        state.clientRecord = findClientRecord(contextClients, state.clientId) || contextClients[0] || null;
-        if (state.clientRecord?.recordId) state.clientId = state.clientRecord.recordId;
+    // ============ Initialization ============
+    async function init() {
+      var loadingMsg = document.getElementById('loadingMsg');
+      var session = loadSynapseSession();
+      state.session = session;
+
+      if (!state.clientId) {
+        loadingMsg.textContent = 'No clientId provided in URL.';
         return;
       }
 
-      const canUseAmino = typeof AminoData !== 'undefined' && typeof AminoData.getTables === 'function';
-      if (!canUseAmino) {
-        state.data = { Clients: [] };
-        state.clientRecord = null;
-        return;
+      // 1. Try context snapshot first (fast path from index.html)
+      var ctx = loadContextSnapshot();
+      var dataLoaded = false;
+
+      if (ctx) {
+        loadingMsg.textContent = 'Loading from session context...';
+        await loadDataFromContext(ctx);
+        dataLoaded = Object.keys(state.data).length > 0;
       }
 
-      try {
-        const tables = await AminoData.getTables();
-        const byTableName = {};
-        for (const table of tables) {
-          const tableId = table.table_id || table.id;
-          const tableName = table.table_name || table.name || tableId;
-          const rows = await AminoData.getTableRecords(tableId);
-          byTableName[tableName] = rows;
-          byTableName[tableId] = rows;
-        }
-
-        state.data = byTableName;
-        const clientTableMatch = Object.keys(byTableName).find(name => normalizeTableName(name) === 'clients')
-          || Object.keys(byTableName).find(name => normalizeTableName(name) === 'client info')
-          || 'Clients';
-        const clients = byTableName[clientTableMatch] || [];
-        state.clientRecord = findClientRecord(clients, state.clientId) || clients[0] || null;
-        if (state.clientRecord?.recordId) state.clientId = state.clientRecord.recordId;
-      } catch (err) {
-        console.warn('Failed loading AminoData:', err);
-        state.data = { Clients: [] };
-        state.clientRecord = null;
-      }
-    }
-
-    function resolveContextClients(data) {
-      const byName = Object.keys(data || {}).find(name => normalizeTableName(name) === 'clients')
-        || Object.keys(data || {}).find(name => normalizeTableName(name) === 'client info');
-      if (byName) return data[byName] || [];
-      return data?.Clients || [];
-    }
-
-    function wireEvents() {
-      const schemaDrawer = document.getElementById('schemaDrawer');
-      const schemaStatus = document.getElementById('schemaStatus');
-
-      document.getElementById('adminToggle').addEventListener('click', () => {
-        state.admin = !state.admin;
-        saveAdmin(state.admin);
-        if (!state.admin) schemaDrawer.dataset.open = 'false';
-        schemaStatus.className = 'status';
-        schemaStatus.textContent = '';
-        render();
-      });
-
-      document.getElementById('schemaToggle').addEventListener('click', () => {
-        if (!state.admin) {
-          schemaStatus.className = 'status';
-          schemaStatus.textContent = 'Enable Admin mode to edit schema.';
-          return;
-        }
-        schemaDrawer.dataset.open = schemaDrawer.dataset.open === 'true' ? 'false' : 'true';
-        renderSchemaEditor();
-      });
-
-      document.getElementById('saveSchema').addEventListener('click', () => {
-        if (!state.admin) return;
+      // 2. If no context or empty, try AminoData with restored session
+      if (!dataLoaded && session && session.accessToken && session.userId) {
+        loadingMsg.textContent = 'Connecting to data layer...';
         try {
-          const parsed = JSON.parse(document.getElementById('schemaJson').value);
-          if (!Array.isArray(parsed.tabs)) throw new Error('Schema must contain a tabs array.');
-          state.schema = parsed;
-          localStorage.setItem(STORAGE_KEYS.schema, JSON.stringify(parsed));
-          if (!state.schema.tabs.find(t => t.id === state.activeTab)) state.activeTab = state.schema.tabs[0]?.id;
-          schemaStatus.className = 'status success';
-          schemaStatus.textContent = 'Schema saved.';
-          render();
-        } catch (err) {
-          schemaStatus.className = 'status';
-          schemaStatus.textContent = `Schema error: ${err.message}`;
-        }
-      });
+          // Restore Matrix session for state event access
+          MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
 
-      document.getElementById('resetSchema').addEventListener('click', () => {
-        if (!state.admin) return;
-        state.schema = structuredClone(defaultSchema);
-        localStorage.removeItem(STORAGE_KEYS.schema);
-        state.activeTab = state.schema.tabs[0]?.id;
-        schemaStatus.className = 'status success';
-        schemaStatus.textContent = 'Schema reset to defaults.';
-        render();
-      });
+          // Initialize AminoData
+          if (typeof AminoData !== 'undefined' && AminoData.init) {
+            if (session.password) {
+              await AminoData.init(session.accessToken, session.userId, session.password);
+            } else if (AminoData.restoreSession) {
+              await AminoData.restoreSession(session.accessToken, session.userId, session.password || '');
+            }
+            loadingMsg.textContent = 'Loading tables...';
+            await loadDataFromAminoData();
+            dataLoaded = Object.keys(state.data).length > 0;
+          }
+        } catch (e) {
+          console.warn('[Profile] Session restore failed:', e.message);
+        }
+      }
+
+      // 3. Restore Matrix session even if data came from context (for schema + admin)
+      if (session && session.accessToken && !MatrixClient.isLoggedIn()) {
+        try {
+          MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+        } catch (e) {}
+      }
+
+      // 4. Find org space for schema storage
+      if (MatrixClient.isLoggedIn()) {
+        try {
+          loadingMsg.textContent = 'Loading organization...';
+          await MatrixClient.initialSync();
+          state.orgSpaceId = await MatrixClient.findOrgSpace();
+        } catch (e) {
+          console.warn('[Profile] Org space lookup failed:', e.message);
+        }
+
+        // Detect admin role
+        try {
+          var role = await MatrixClient.detectUserRole();
+          state.isAdmin = (role === 'admin');
+        } catch (e) {
+          state.isAdmin = false;
+        }
+      }
+
+      // 5. Load schema (Matrix > localStorage > default)
+      loadingMsg.textContent = 'Loading profile configuration...';
+      state.schema = await loadSchema();
+
+      // 6. Resolve client record
+      var clientRows = resolveTable('Clients');
+      if (!clientRows.length) clientRows = resolveTable('Client Info');
+      state.clientRecord = findClientRecord(clientRows);
+      if (state.clientRecord && state.clientRecord.recordId) {
+        state.clientId = state.clientRecord.recordId;
+      }
+
+      // 7. Render
+      document.getElementById('loadingState').style.display = 'none';
+      document.getElementById('profileContent').style.display = '';
+      state.activeTab = state.schema.tabs[0] ? state.schema.tabs[0].id : null;
+      renderAll();
     }
 
-    (async function init() {
-      await loadData();
-      wireEvents();
-      render();
-    })();
+    // ============ Event Wiring ============
+    document.getElementById('adminToggle').addEventListener('click', function() {
+      state.adminOpen = !state.adminOpen;
+      renderAdminToggle();
+      renderAdminConfig();
+    });
+    document.getElementById('saveConfigBtn').addEventListener('click', saveConfig);
+    document.getElementById('resetConfigBtn').addEventListener('click', resetConfig);
+    document.getElementById('closeConfigBtn').addEventListener('click', function() {
+      state.adminOpen = false;
+      renderAdminToggle();
+    });
+
+    // ============ Start ============
+    init().catch(function(err) {
+      console.error('[Profile] Init error:', err);
+      document.getElementById('loadingMsg').textContent = 'Error loading profile: ' + err.message;
+    });
+  })();
   </script>
 </body>
 </html>
