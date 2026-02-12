@@ -633,6 +633,7 @@
     var DEFAULT_SCHEMA = {
       version: 2,
       summaryFields: ['Case Manager', 'Entry Status', 'Current Stage'],
+      linkResolvers: {},
       tabs: [
         {
           id: 'overview', label: 'Overview',
@@ -695,6 +696,7 @@
       orgSpaceId: null,
       session: null,
       fkCache: {},      // tableName -> { fieldName: true } (discovered FK fields)
+      relatedCache: {}, // tableName -> resolved related rows + ambiguity details
       caseNotesSearch: ''
     };
 
@@ -748,6 +750,16 @@
 
     function deepClone(obj) {
       return typeof structuredClone === 'function' ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
+    }
+
+    function tableKey(name) {
+      return norm(name).replace(/\s+/g, ' ');
+    }
+
+    function getResolverConfig(tableName) {
+      var linkResolvers = state.schema && state.schema.linkResolvers;
+      if (!linkResolvers || typeof linkResolvers !== 'object') return null;
+      return linkResolvers[tableKey(tableName)] || null;
     }
 
     // ============ Navigation ============
@@ -903,6 +915,13 @@
       if (Array.isArray(value)) {
         return value.some(function(v) { return valueContainsId(v, idSet); });
       }
+      if (typeof value === 'object') {
+        if (typeof value.id === 'string' && idSet.has(value.id.trim())) return true;
+        if (typeof value.recordId === 'string' && idSet.has(value.recordId.trim())) return true;
+        if (typeof value.value === 'string' && idSet.has(value.value.trim())) return true;
+        if (typeof value.name === 'string' && idSet.has(value.name.trim())) return true;
+        return false;
+      }
       if (typeof value === 'string') return idSet.has(value.trim());
       return false;
     }
@@ -928,27 +947,61 @@
       return fkFields;
     }
 
-    function findRelatedRows(tableName) {
+    function resolveRelatedRows(tableName) {
+      var cacheKey = tableKey(tableName);
+      if (state.relatedCache[cacheKey]) return state.relatedCache[cacheKey];
+
       var rows = resolveTable(tableName);
-      if (!rows.length) return [];
+      if (!rows.length) {
+        return { rows: [], fkNames: [], matchedFkNames: [], ambiguous: false, note: 'No rows available in table.' };
+      }
       var clientIds = getClientIds();
-      if (!clientIds.size) return [];
+      if (!clientIds.size) {
+        return { rows: [], fkNames: [], matchedFkNames: [], ambiguous: false, note: 'No client identifiers available.' };
+      }
 
       // Discover which fields link to this client
       var fkFields = discoverForeignKeyFields(tableName, rows, clientIds);
       var fkNames = Object.keys(fkFields);
+      var resolver = getResolverConfig(tableName);
+      var preferred = resolver && Array.isArray(resolver.preferredFields)
+        ? resolver.preferredFields.map(function(f) { return String(f || '').trim(); }).filter(Boolean)
+        : [];
+
+      if (preferred.length) {
+        fkNames = preferred.slice();
+      }
 
       if (!fkNames.length) {
         // Fallback: try common FK field names
         fkNames = ['Client', 'Client Record ID', 'clientId', 'client_airtable_id', 'Softr_Link_to_clients', 'Client_PP_ID', 'recordId', 'Record ID', 'PP ID', 'PPID'];
       }
 
-      return rows.filter(function(row) {
+      var matchedRows = rows.filter(function(row) {
         var fields = row.fields || {};
         return fkNames.some(function(fk) {
           return valueContainsId(fields[fk], clientIds);
         });
       });
+
+      var matchedFkNames = fkNames.filter(function(fk) {
+        return matchedRows.some(function(row) {
+          return valueContainsId((row.fields || {})[fk], clientIds);
+        });
+      });
+      var result = {
+        rows: matchedRows,
+        fkNames: fkNames,
+        matchedFkNames: matchedFkNames,
+        ambiguous: matchedFkNames.length > 1,
+        note: matchedFkNames.length ? '' : ('No FK field matched. Tried: ' + fkNames.join(', '))
+      };
+      state.relatedCache[cacheKey] = result;
+      return result;
+    }
+
+    function findRelatedRows(tableName) {
+      return resolveRelatedRows(tableName).rows;
     }
 
     // ============ Rendering ============
@@ -1104,7 +1157,8 @@
     }
 
     function renderRelatedSection(sec) {
-      var rows = findRelatedRows(sec.table);
+      var resolution = resolveRelatedRows(sec.table);
+      var rows = resolution.rows;
       if (!rows.length) return '<div class="panel-body empty">No related records found.</div>';
       var isCaseNotesSection = norm(sec.table) === 'case notes' || norm(sec.title) === 'case notes';
 
@@ -1126,6 +1180,9 @@
 
       var displayFields = sec.fields || [];
       var html = '<div class="panel-body">';
+      if (resolution.ambiguous) {
+        html += '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:rgba(245,158,11,0.08);font-size:12px;color:var(--text-muted);">Ambiguous FK match: using any of these fields for this table: <strong>' + esc(resolution.matchedFkNames.join(', ')) + '</strong>.</div>';
+      }
 
       if (isCaseNotesSection) {
         html += '<div class="case-notes-search"><input id="caseNotesSearchInput" type="search" placeholder="Search by client or note content" value="' + esc(state.caseNotesSearch) + '"></div>';
@@ -1176,7 +1233,7 @@
         var count = '';
         var body = '';
         if (sec.type === 'related') {
-          var related = findRelatedRows(sec.table);
+          var related = resolveRelatedRows(sec.table).rows;
           count = '<span class="panel-count">' + related.length + '</span>';
           body = renderRelatedSection(sec);
         } else {
@@ -1233,11 +1290,35 @@
       });
       html += '</div>';
 
+      html += '<div class="config-section">';
+      html += '<div class="config-section-title">Relationship Resolver (FK fields by table)</div>';
+      html += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Set comma-separated FK field names per table. Leave blank to auto-discover from client IDs.</div>';
+      state.schema.tabs.forEach(function(tab) {
+        (tab.sections || []).forEach(function(sec) {
+          if (sec.type !== 'related') return;
+          var key = tableKey(sec.table);
+          var resolver = getResolverConfig(sec.table) || {};
+          var existing = Array.isArray(resolver.preferredFields) ? resolver.preferredFields.join(', ') : '';
+          var status = resolveRelatedRows(sec.table);
+          html += '<div style="margin:8px 0 12px;">';
+          html += '<label style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-muted);">' + esc(sec.table) + ' <span style="opacity:.8;">(' + esc(sec.title) + ')</span></label>';
+          html += '<input type="text" data-config="resolver" data-table="' + esc(key) + '" value="' + esc(existing) + '" placeholder="Client, Client Info, Subject Client" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-panel);color:var(--text-main);">';
+          if (status.ambiguous) {
+            html += '<div style="margin-top:4px;font-size:11px;color:var(--text-muted);">Auto-detected ambiguity: ' + esc(status.matchedFkNames.join(', ')) + '</div>';
+          }
+          html += '</div>';
+        });
+      });
+      html += '</div>';
+
       document.getElementById('adminConfigBody').innerHTML = html;
 
       // Wire up change events
       document.querySelectorAll('#adminConfigBody input[type="checkbox"]').forEach(function(cb) {
         cb.addEventListener('change', function() { applyConfigChange(cb); });
+      });
+      document.querySelectorAll('#adminConfigBody input[data-config="resolver"]').forEach(function(input) {
+        input.addEventListener('change', function() { applyResolverChange(input); });
       });
     }
 
@@ -1287,8 +1368,28 @@
       }
 
       // Live preview
+      state.relatedCache = {};
       renderHeader();
       renderTabContent();
+    }
+
+    function applyResolverChange(input) {
+      var table = input.getAttribute('data-table') || '';
+      if (!table) return;
+      if (!state.schema.linkResolvers || typeof state.schema.linkResolvers !== 'object') {
+        state.schema.linkResolvers = {};
+      }
+      var value = String(input.value || '').trim();
+      if (!value) {
+        delete state.schema.linkResolvers[table];
+      } else {
+        state.schema.linkResolvers[table] = {
+          preferredFields: value.split(',').map(function(v) { return v.trim(); }).filter(Boolean)
+        };
+      }
+      state.relatedCache = {};
+      renderTabContent();
+      renderAdminConfig();
     }
 
     async function saveConfig() {
@@ -1304,6 +1405,7 @@
 
     function resetConfig() {
       state.schema = deepClone(DEFAULT_SCHEMA);
+      state.relatedCache = {};
       state.activeTab = state.schema.tabs[0] ? state.schema.tabs[0].id : null;
       renderAll();
       showToast('Reset to defaults. Save to apply for all users.', 'success');
@@ -1392,6 +1494,9 @@
       // 5. Load schema (Matrix > localStorage > default)
       loadingMsg.textContent = 'Loading profile configuration...';
       state.schema = await loadSchema();
+      if (!state.schema.linkResolvers || typeof state.schema.linkResolvers !== 'object') {
+        state.schema.linkResolvers = {};
+      }
 
       // 6. Resolve client record
       var clientRows = resolveTable('Clients');
