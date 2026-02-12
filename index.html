@@ -24590,6 +24590,11 @@ var InterfaceApp = (function() {
                             op: 'DES',
                             tableNamePattern: 'client info',
                             fallbackTablePattern: 'client'
+                        },
+                        relationshipSource: {
+                            op: 'DES',
+                            tableNamePattern: 'client relationships',
+                            fallbackTablePattern: 'relationship'
                         }
                     }
                 ]
@@ -26506,7 +26511,67 @@ var InterfaceApp = (function() {
         return String(value).trim();
     }
 
-    function _buildClientRelationshipGraph(records, selectedRecordId) {
+    function _collectClientIdsFromValue(value, clientIdSet, out) {
+        if (!value) return;
+        if (Array.isArray(value)) {
+            value.forEach(function(item) { _collectClientIdsFromValue(item, clientIdSet, out); });
+            return;
+        }
+        if (typeof value === 'object') {
+            Object.keys(value).forEach(function(key) {
+                _collectClientIdsFromValue(value[key], clientIdSet, out);
+            });
+            return;
+        }
+        if (typeof value === 'string' && clientIdSet.has(value)) out.add(value);
+    }
+
+    function _pickRelationshipLabel(fields) {
+        var keys = Object.keys(fields || {});
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            var norm = _normGraphToken(key);
+            if (norm.includes('relationship') || norm === 'relation' || norm.includes('type')) {
+                var text = _clientGraphValueText(fields[key]);
+                if (text) return text;
+            }
+        }
+        return 'Related';
+    }
+
+    function _buildRelationshipAdjacency(clientEntries, relationshipRecords) {
+        var adjacency = new Map();
+        var clientIdSet = new Set(clientEntries.map(function(entry) { return entry.id; }));
+        (relationshipRecords || []).forEach(function(rec) {
+            var fields = (rec && rec.fields) || {};
+            var found = new Set();
+            Object.keys(fields).forEach(function(fieldKey) {
+                _collectClientIdsFromValue(fields[fieldKey], clientIdSet, found);
+            });
+            var ids = Array.from(found);
+            if (ids.length < 2) return;
+            var relationLabel = _pickRelationshipLabel(fields);
+            for (var i = 0; i < ids.length; i++) {
+                for (var j = i + 1; j < ids.length; j++) {
+                    var a = ids[i];
+                    var b = ids[j];
+                    if (!adjacency.has(a)) adjacency.set(a, new Map());
+                    if (!adjacency.has(b)) adjacency.set(b, new Map());
+                    if (!adjacency.get(a).has(b)) adjacency.get(a).set(b, { weight: 0, labels: [] });
+                    if (!adjacency.get(b).has(a)) adjacency.get(b).set(a, { weight: 0, labels: [] });
+                    var edgeAB = adjacency.get(a).get(b);
+                    var edgeBA = adjacency.get(b).get(a);
+                    edgeAB.weight += 1;
+                    edgeBA.weight += 1;
+                    edgeAB.labels.push(relationLabel);
+                    edgeBA.labels.push(relationLabel);
+                }
+            }
+        });
+        return adjacency;
+    }
+
+    function _buildClientRelationshipGraph(records, selectedRecordId, relationshipRecords) {
         var all = Array.isArray(records) ? records : [];
         var entries = [];
         for (var i = 0; i < all.length; i++) {
@@ -26543,6 +26608,42 @@ var InterfaceApp = (function() {
         };
 
         var satellites = entries.filter(function(e) { return e.id !== anchor.id; });
+        var adjacency = _buildRelationshipAdjacency(entries, relationshipRecords);
+        var adjacent = adjacency.get(anchor.id);
+        if (adjacent && adjacent.size) {
+            var relRanked = Array.from(adjacent.entries()).map(function(pair) {
+                var otherId = pair[0];
+                var info = pair[1];
+                var other = entries.find(function(e) { return e.id === otherId; });
+                return {
+                    other: other,
+                    similarity: info.weight,
+                    reasons: [Array.from(new Set(info.labels)).slice(0, 2).join(', ')]
+                };
+            }).filter(function(item) { return item.other; });
+            relRanked.sort(function(a, b) { return b.similarity - a.similarity; });
+            var relVisible = relRanked.slice(0, 14);
+            for (var r = 0; r < relVisible.length; r++) {
+                var relItem = relVisible[r];
+                var relAngle = (Math.PI * 2 * r) / Math.max(1, relVisible.length);
+                var relBand = Math.floor(r / 5);
+                var relRadius = 165 + (relBand * 42);
+                var relX = Math.cos(relAngle) * relRadius;
+                var relY = Math.sin(relAngle) * relRadius;
+                var relNodeId = 'n-' + relItem.other.id;
+                nodes.push({
+                    id: relNodeId,
+                    label: relItem.other.name,
+                    role: 'linked',
+                    x: relX,
+                    y: relY,
+                    weight: relItem.similarity,
+                    meta: relItem.reasons[0]
+                });
+                links.push({ from: centerNodeId, to: relNodeId, weight: relItem.similarity });
+            }
+            return { nodes: nodes, links: links, selectedId: selectedId, selectedName: selectedName, options: options };
+        }
         var ranked = [];
         for (var j = 0; j < satellites.length; j++) {
             var other = satellites[j];
@@ -26600,12 +26701,12 @@ var InterfaceApp = (function() {
         return { nodes: nodes, links: links, selectedId: selectedId, selectedName: selectedName, options: options };
     }
 
-    function _renderClientRelationshipGraph(block, records) {
-        var graph = _buildClientRelationshipGraph(records || [], block._selectedClientRecordId);
+    function _renderClientRelationshipGraph(block, records, relationshipRecords) {
+        var graph = _buildClientRelationshipGraph(records || [], block._selectedClientRecordId, relationshipRecords || []);
         var blockId = _esc(block.id || 'client-graph');
         var canvasId = 'iface-client-graph-canvas-' + blockId;
         var summary = graph.links.length
-            ? ('Showing top ' + graph.links.length + ' strongest relationships for ' + graph.selectedName + '.')
+            ? ('Showing ' + graph.links.length + ' linked clients for ' + graph.selectedName + '.')
             : 'No shared relationships were detected for this client.';
 
         var html = '';
@@ -27307,9 +27408,10 @@ var InterfaceApp = (function() {
 
             case 'client-relationship-graph':
                 records = await _getSourceRecords(block.source);
+                var relationshipRecords = await _getSourceRecords(block.relationshipSource || null);
                 searchQ = _blockSearchState[block.id] || '';
                 records = _applySegment(records, null, searchQ, null);
-                html = _renderClientRelationshipGraph(block, records);
+                html = _renderClientRelationshipGraph(block, records, relationshipRecords);
                 break;
 
             default:
