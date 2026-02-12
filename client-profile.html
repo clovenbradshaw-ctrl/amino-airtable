@@ -676,6 +676,18 @@
           ]
         },
         {
+          id: 'relationships', label: 'Related Individuals',
+          sections: [
+            { title: 'Related Individuals', type: 'related', table: 'Relationships', fields: ['Subject Client', 'Relationship Type', 'Case Master Client'] }
+          ]
+        },
+        {
+          id: 'deadlines', label: 'Deadlines',
+          sections: [
+            { title: 'Deadlines', type: 'related', table: 'Deadlines 2.0', fields: ['Deadline', 'Due Date', 'Status', 'Case Link Copy'] }
+          ]
+        },
+        {
           id: 'comms', label: 'Communications',
           sections: [
             { title: 'Communications', type: 'related', table: 'Support Comments', fields: ['Type', 'Date', 'Summary', 'Direction'] }
@@ -774,8 +786,122 @@
       'activities': ['imported table 4', 'events'],
       'hearings/interviews': ['events'],
       'communications': ['support comments'],
-      'addresses': ['client info']
+      'addresses': ['client info'],
+      'related individuals': ['relationships'],
+      'deadlines': ['deadlines 2.0']
     };
+
+    // ============ Linked Record Resolution ============
+    // Maps table names to preferred display field names (in priority order).
+    // Used to resolve linked record IDs to human-readable text.
+    var DISPLAY_FIELD_MAP = {
+      'users': ['Full Name', 'Name', 'Display Name', 'Email', 'Username'],
+      'client info': ['Full Name Client', 'Display Name', 'Last Name', 'First Name'],
+      'case master view': ['Case Name', 'Name', 'Case Number', 'Case'],
+      'locations': ['Name', 'Location Name', 'Location'],
+      'status': ['Name', 'Status'],
+      'event type': ['Name', 'Type'],
+      'hearing type': ['Name', 'Type', 'Hearing Type'],
+      'activity dictionary': ['Name', 'Activity'],
+      'activity sub types': ['Name', 'Sub Type'],
+      'templates': ['Name', 'Template Name'],
+      'office locations': ['Name', 'Office'],
+      'applications': ['Matter', 'Name', 'Application'],
+      'relationships': ['Relationship Type', 'Type', 'Name'],
+      'abandoning parent': ['Name', 'Full Name'],
+      'custodian': ['Name', 'Full Name'],
+      'events': ['Event', 'Name', 'Title'],
+      'global eads': ['EAD Stage', 'Name'],
+      'update tracker': ['Case Note', 'Note', 'Name'],
+      'imported table 4': ['Activity', 'Matter', 'Name'],
+      'deadlines 2.0': ['Deadline', 'Name', 'Title'],
+      'support comments': ['Summary', 'Type', 'Name'],
+      'foia request': ['Name', 'Title'],
+      'placeholder fields': ['Name', 'Field Name']
+    };
+
+    // Lazily-built lookup: recordId → { tableName, record }
+    function buildRecordIndex() {
+      if (state._recordIndex) return state._recordIndex;
+      var index = {};
+      Object.keys(state.data).forEach(function(tableName) {
+        // Skip table-ID keys (e.g. "tblXXXXX") to avoid duplicate indexing
+        if (/^tbl[a-zA-Z0-9]+$/.test(tableName)) return;
+        var rows = state.data[tableName];
+        if (!Array.isArray(rows)) return;
+        rows.forEach(function(row) {
+          var id = row.recordId || row.id;
+          if (id && !index[id]) {
+            index[id] = { tableName: tableName, record: row };
+          }
+        });
+      });
+      state._recordIndex = index;
+      return index;
+    }
+
+    function getDisplayValue(record, tableName) {
+      var fields = record.fields || {};
+      var key = tableKey(tableName);
+      var preferredFields = DISPLAY_FIELD_MAP[key] || [];
+
+      // Try preferred display fields for this table
+      for (var i = 0; i < preferredFields.length; i++) {
+        var val = fields[preferredFields[i]];
+        if (val != null && val !== '') {
+          if (typeof val === 'string') return val;
+          if (Array.isArray(val) && val.length) {
+            var first = val[0];
+            if (typeof first === 'string' && !/^rec[a-zA-Z0-9]+$/.test(first)) return first;
+          }
+        }
+      }
+
+      // Try common name-like field patterns
+      var commonNames = ['Name', 'Full Name', 'Display Name', 'Title', 'Label'];
+      for (var j = 0; j < commonNames.length; j++) {
+        var v = fields[commonNames[j]];
+        if (v != null && v !== '' && typeof v === 'string') return v;
+      }
+
+      // Fall back to first short, non-ID string field
+      var fieldNames = Object.keys(fields);
+      for (var k = 0; k < fieldNames.length; k++) {
+        var fv = fields[fieldNames[k]];
+        if (typeof fv === 'string' && fv.length > 0 && fv.length < 200 && !/^rec[a-zA-Z0-9]+$/.test(fv)) {
+          return fv;
+        }
+      }
+
+      return record.recordId || null;
+    }
+
+    function resolveRecordId(recordId) {
+      var index = buildRecordIndex();
+      var entry = index[recordId];
+      if (!entry) return null;
+      return getDisplayValue(entry.record, entry.tableName);
+    }
+
+    // Resolve a field value that may contain record ID(s), returning display text.
+    // Returns null if value is empty/null.
+    function resolveDisplayValue(value) {
+      if (value == null || value === '') return null;
+      if (Array.isArray(value)) {
+        if (!value.length) return null;
+        var resolved = value.map(function(v) {
+          if (typeof v === 'string' && /^rec[a-zA-Z0-9]+$/.test(v)) {
+            return resolveRecordId(v) || v;
+          }
+          return String(v);
+        });
+        return resolved.join(', ');
+      }
+      if (typeof value === 'string' && /^rec[a-zA-Z0-9]+$/.test(value)) {
+        return resolveRecordId(value) || value;
+      }
+      return null; // not a record ID, caller should use original value
+    }
 
     // ============ Navigation ============
     window.navTo = function(event, appName) {
@@ -856,6 +982,7 @@
     // ============ Data Loading ============
     async function loadDataFromContext(ctx) {
       state.data = {};
+      state._recordIndex = null; // invalidate resolution cache
       var data = ctx.data || {};
       Object.keys(data).forEach(function(key) {
         var rows = data[key];
@@ -866,6 +993,7 @@
 
     async function loadDataFromAminoData() {
       state.data = {};
+      state._recordIndex = null; // invalidate resolution cache
       try {
         var tables = await AminoData.getTables();
         for (var i = 0; i < tables.length; i++) {
@@ -1085,10 +1213,22 @@
         if (!value.length) return '<span class="kv-val empty">&mdash;</span>';
         return value.map(function(v) {
           if (typeof v === 'string' && /^rec[a-zA-Z0-9]+$/.test(v)) {
+            var resolved = resolveRecordId(v);
+            if (resolved) {
+              return '<span class="pill linked" title="' + esc(v) + '">' + esc(resolved) + '</span>';
+            }
             return '<span class="pill id">' + esc(v) + '</span>';
           }
           return '<span class="pill">' + esc(v) + '</span>';
         }).join('');
+      }
+      // Single string that is a record ID
+      if (typeof value === 'string' && /^rec[a-zA-Z0-9]+$/.test(value)) {
+        var resolved = resolveRecordId(value);
+        if (resolved) {
+          return '<span class="pill linked" title="' + esc(value) + '">' + esc(resolved) + '</span>';
+        }
+        return '<span class="pill id">' + esc(value) + '</span>';
       }
       if (typeof value === 'object') return '<code style="font-size:11px;color:var(--text-muted)">' + esc(JSON.stringify(value)) + '</code>';
       return '<span>' + esc(value) + '</span>';
@@ -1191,7 +1331,9 @@
       });
 
       var items = summaryFields.map(function(fieldName) {
-        return { label: fieldName, value: f[fieldName] || 'Unknown' };
+        var raw = f[fieldName];
+        var resolved = resolveDisplayValue(raw);
+        return { label: fieldName, value: resolved || raw || 'Unknown' };
       });
       items.push({ label: 'Related Records', value: relatedCount });
 
@@ -1268,7 +1410,8 @@
       html += '<div class="record-cards">';
       rows.forEach(function(row) {
         var f = row.fields || {};
-        var title = f[displayFields[0]] || row.recordId || '(record)';
+        var rawTitle = f[displayFields[0]];
+        var title = resolveDisplayValue(rawTitle) || rawTitle || row.recordId || '(record)';
         var createdDate = getCaseNoteCreatedDate(row);
         html += '<div class="record-card">';
         html += '<div class="record-card-head"><span class="record-card-title">' + esc(Array.isArray(title) ? title.join(', ') : title) + '</span>';
