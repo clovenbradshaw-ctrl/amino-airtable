@@ -26370,7 +26370,8 @@ var InterfaceApp = (function() {
         // Table wrapper
         html += '<div style="background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:var(--radius-xl);overflow:hidden;">';
         html += '<div class="iface-table-wrapper"><table class="iface-table-revamp">';
-        var includeRelationshipAction = block.id === 'clients-table';
+        // Temporarily hidden until the relationship graph experience is improved.
+        var includeRelationshipAction = false;
         html += '<thead><tr>';
         columns.forEach(function(col) {
             var sortIndicator = '';
