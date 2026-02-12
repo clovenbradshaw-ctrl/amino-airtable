@@ -5786,7 +5786,7 @@
                 </div>
             </div>
             <div class="iface-mainnav-right">
-                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search clients, events..." onkeydown="if(event.key==='Enter')InterfaceApp.onGlobalSearch(this.value)">
+                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search clients, events..." oninput="InterfaceApp.onGlobalSearch(this.value)">
                 <button class="iface-quick-action secondary" onclick="InterfaceApp.navigatePage('events')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                     New Event
@@ -23550,6 +23550,7 @@ async function getFilteredSortedRecords() {
     // Phase 0: Pre-filter with search index (no record loading needed).
     // This eliminates non-matching records before we load them for filters/sorts.
     var candidateIds = originalRecordIds;
+    var hasUnverifiedCandidates = false;
     if (hasSearch) {
         var narrowed = [];
         for (var si = 0; si < candidateIds.length; si++) {
@@ -23565,12 +23566,16 @@ async function getFilteredSortedRecords() {
             } else {
                 // Index miss — include as candidate (will verify when record is loaded)
                 narrowed.push(rid);
+                hasUnverifiedCandidates = true;
             }
         }
         candidateIds = narrowed;
 
-        // If only search (no filters, no sorts), we're done
-        if (!hasFilters && !hasSorts) {
+        // If only search (no filters, no sorts) AND all candidates were verified
+        // via the search index, we can skip Phase 1. If there are unverified
+        // candidates (index misses), we must fall through to Phase 1 to load
+        // records and verify them against the search query.
+        if (!hasFilters && !hasSorts && !hasUnverifiedCandidates) {
             _filterCache.key = cacheKey;
             _filterCache.result = candidateIds;
             return candidateIds;
@@ -27298,7 +27303,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'List') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" data-search-block="' + _esc(block.id) + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -27331,7 +27336,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Timeline') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" data-search-block="' + _esc(block.id) + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -27889,7 +27894,7 @@ var InterfaceApp = (function() {
         var countLabel = total === allCount ? (total + ' records') : (total + ' of ' + allCount + ' records');
         html += '<h2>' + _esc(block.label || 'Table') + ' <span class="muted">\u00B7 ' + countLabel + '</span></h2>';
         html += '<div class="iface-clients-header-actions">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" value="' + _esc(_blockSearchState[block.id] || '') + '" data-search-block="' + _esc(block.id) + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         if (_currentUserRole === 'admin') {
             html += '<button class="iface-table-settings-btn" onclick="InterfaceApp.toggleTableSettings(\'' + _esc(block.id) + '\')">';
             html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -28339,7 +28344,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Table') + ' <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(' + total + ' records)</span></span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" data-search-block="' + _esc(block.id) + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -29789,13 +29794,19 @@ var InterfaceApp = (function() {
 
     function onBlockSearch(blockId, query) {
         _blockSearchState[blockId] = query;
-        _tablePaginationState[blockId] = Object.assign({}, _tablePaginationState[blockId], { page: 0 });
-        // Debounce re-render — 100ms is responsive enough for local data search
+        // Preserve pageSize when resetting page to 0 — without pageSize,
+        // records.slice(NaN, NaN) returns [] and nothing renders.
+        var existing = _tablePaginationState[blockId] || {};
+        _tablePaginationState[blockId] = { page: 0, pageSize: existing.pageSize || 50 };
+        // Debounce re-render — 250ms avoids mid-typing DOM thrash while staying responsive
         clearTimeout(onBlockSearch._timer);
-        onBlockSearch._timer = setTimeout(function() {
-            renderPage(_activePage);
+        onBlockSearch._timer = setTimeout(async function() {
+            await renderPage(_activePage);
             if (_urlStateBootstrapped) persistUrlState();
-        }, 100);
+            // Restore focus to the search input that was replaced by renderPage
+            var el = document.querySelector('.iface-block-search[data-search-block="' + blockId + '"]');
+            if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+        }, 250);
     }
 
     function onGlobalSearch(query) {
@@ -29806,15 +29817,19 @@ var InterfaceApp = (function() {
             if (page) {
                 page.blocks.forEach(function(b) {
                     _blockSearchState[b.id] = query;
-                    _tablePaginationState[b.id] = Object.assign({}, _tablePaginationState[b.id], { page: 0 });
+                    var existing = _tablePaginationState[b.id] || {};
+                    _tablePaginationState[b.id] = { page: 0, pageSize: existing.pageSize || 50 };
                 });
             }
         }
         clearTimeout(onGlobalSearch._timer);
-        onGlobalSearch._timer = setTimeout(function() {
-            renderPage(_activePage);
+        onGlobalSearch._timer = setTimeout(async function() {
+            await renderPage(_activePage);
             if (_urlStateBootstrapped) persistUrlState();
-        }, 100);
+            // Restore focus to global search input after DOM replacement
+            var el = document.getElementById('iface-global-search');
+            if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+        }, 250);
     }
 
     function onFilterChange(blockId, filterId, value) {
