@@ -2248,6 +2248,32 @@ var AminoData = (function() {
         return init(accessToken, userId, password);
     }
 
+    // Lightweight init using a pre-derived CryptoKey (e.g. from sessionStorage).
+    // Skips PBKDF2 derivation and network calls — read-only local data access.
+    async function initWithKey(accessToken, userId, cryptoKey) {
+        if (!cryptoKey) throw new Error('CryptoKey is required');
+        _accessToken = accessToken || null;
+        _userId = userId || null;
+        _cryptoKey = cryptoKey;
+        clearRecordCache();
+        _db = await openDatabase();
+
+        // Verify the key matches stored verification token
+        var cryptoTx = _db.transaction('crypto', 'readonly');
+        var verifyEntry = await idbGet(cryptoTx.objectStore('crypto'), 'verify');
+        if (verifyEntry && verifyEntry.value) {
+            var keyValid = await verifyEncryptionKey(_cryptoKey, verifyEntry.value);
+            if (!keyValid) throw new Error('Session key does not match stored data');
+        }
+
+        // Load cached tables (no network)
+        await loadTablesFromCache();
+        _offlineMode = true;
+        _initialized = true;
+        console.log('[AminoData] Initialized with session key (' + _tables.length + ' cached tables, read-only)');
+        return _tables;
+    }
+
     function logout(clearData) {
         stopPolling();
         stopMatrixSync();
@@ -3072,6 +3098,7 @@ var AminoData = (function() {
     return {
         // Initialization
         init: init,
+        initWithKey: initWithKey,
         hydrateAll: hydrateAll,
         initAndHydrate: initAndHydrate,
         restoreSession: restoreSession,
