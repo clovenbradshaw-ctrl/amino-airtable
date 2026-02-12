@@ -134,6 +134,9 @@ assert(exec('NOT(TRUE())') === false, 'NOT true');
 assert(exec('NOT(FALSE())') === true, 'NOT false');
 assert(exec('REGEX_MATCH("abc-123", "[a-z]+-[0-9]+")') === true, 'REGEX_MATCH true');
 assert(exec('REGEX_REPLACE("(555) 123-4567", "[^0-9]", "")') === '5551234567', 'REGEX_REPLACE strips punctuation');
+assert(exec('REGEX_EXTRACT("Order #12345 received", "[0-9]+")') === '12345', 'REGEX_EXTRACT captures digits');
+assert(exec('REGEX_EXTRACT("no match here", "[0-9]+")') === null, 'REGEX_EXTRACT returns null on no match');
+assert(exec('REGEX_EXTRACT("John Smith - Attorney", "^[^-]+")').trim() === 'John Smith', 'REGEX_EXTRACT extracts before dash');
 assert(exec('ISERROR(ERROR())') === true, 'ISERROR catches error object');
 assert(exec('ISERROR(123)') === false, 'ISERROR false for scalar');
 
@@ -240,6 +243,22 @@ console.log('\n=== Error Handling Tests ===');
   const fn = compileFormula(ast);
   const result = fn({ A: 100, B: 0 });
   assert(result === null, 'Division by zero returns null');
+}
+
+{
+  // Unknown functions should compile gracefully and return null at runtime
+  const ast = parseAirtableFormula('SOME_FUTURE_FUNCTION({Name})');
+  const fn = compileFormula(ast);
+  const result = fn({ Name: 'test' });
+  assert(result === null, 'Unknown function returns null gracefully');
+}
+
+{
+  // Formulas mixing known + unknown functions should still compute known parts
+  const ast = parseAirtableFormula('IF(UNKNOWN_FN({A}), "yes", "no")');
+  const fn = compileFormula(ast);
+  const result = fn({ A: 'test' });
+  assert(result === 'no', 'Unknown fn returns null (falsy) so IF falls to else');
 }
 
 // ── Complex Formulas ──────────────────────────────────────────

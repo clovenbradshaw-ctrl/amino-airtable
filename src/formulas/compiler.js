@@ -96,6 +96,12 @@ export const FORMULA_RUNTIME = {
     const regex = new RegExp(pattern ?? '', 'g');
     return source.replace(regex, replacement ?? '');
   },
+  REGEX_EXTRACT: (text, pattern) => {
+    const source = String(text ?? '');
+    const regex = new RegExp(pattern ?? '');
+    const match = source.match(regex);
+    return match ? match[0] : null;
+  },
 
   // ── Logical ───────────────────────────────────────────────────
   IF: (condition, ifTrue, ifFalse) => condition ? ifTrue : ifFalse,
@@ -219,6 +225,41 @@ export const FORMULA_RUNTIME = {
   ARRAYFLATTEN: (arr) => (arr || []).flat(Infinity),
   ARRAYSLICE: (arr, start, end) => (arr || []).slice(start, end),
   ARRAYUNIQUE: (arr) => [...new Set(arr || [])],
+
+  // ── Numeric extras ─────────────────────────────────────────────
+  AVERAGE: (...args) => {
+    const nums = args.flat().filter(x => typeof x === 'number');
+    return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+  },
+  ROUNDDOWN: (x, digits) => {
+    digits = digits || 0;
+    const factor = Math.pow(10, digits);
+    return Math.floor(x * factor) / factor;
+  },
+  ROUNDUP: (x, digits) => {
+    digits = digits || 0;
+    const factor = Math.pow(10, digits);
+    return Math.ceil(x * factor) / factor;
+  },
+  EXP: (x) => Math.exp(x),
+
+  // ── Text extras ────────────────────────────────────────────────
+  EXACT: (a, b) => String(a ?? '') === String(b ?? ''),
+  TONUMBER: (x) => {
+    const n = parseFloat(x);
+    return isNaN(n) ? null : n;
+  },
+
+  // ── Logical extras ─────────────────────────────────────────────
+  XOR: (...args) => {
+    const vals = args.flat().map(Boolean);
+    return vals.filter(Boolean).length % 2 === 1;
+  },
+
+  // ── Record / special ───────────────────────────────────────────
+  RECORD_ID: () => null,       // Handled specially in compileNode
+  CREATED_TIME: () => null,    // Handled specially in compileNode
+  LAST_MODIFIED_TIME: () => null, // Handled specially in compileNode
 };
 
 // === AST → JS Compiler ===
@@ -286,7 +327,14 @@ function compileNode(node) {
       }
 
       const runtimeFn = FORMULA_RUNTIME[fnName];
-      if (!runtimeFn) throw new Error(`Unknown function: ${fnName}`);
+      if (!runtimeFn) {
+        // Gracefully handle unknown functions: warn once and return null at
+        // runtime instead of aborting the entire formula compilation.
+        if (typeof console !== 'undefined') {
+          console.warn(`Formula engine: unsupported function "${fnName}" — returning null`);
+        }
+        return () => null;
+      }
 
       return (r, m) => {
         const evaluatedArgs = args.map(a => a(r, m));

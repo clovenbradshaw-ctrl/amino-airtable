@@ -21299,6 +21299,11 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
                 compiledList.push(entry);
             } catch (e) {
                 console.warn('Formula compile error for ' + (f.fieldName || f.fieldId) + ':', e.message);
+                // Still register a no-op entry so dependent formulas can resolve
+                // their dependency chain (they'll just see null for this field).
+                var fallbackEntry = { fieldId: f.fieldId, fieldName: f.fieldName, fn: function() { return null; }, deps: [] };
+                cached[f.fieldId] = fallbackEntry;
+                compiledList.push(fallbackEntry);
             }
         }
 
