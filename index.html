@@ -8754,20 +8754,20 @@ async function getRecord(tableId, recordId) {
     return result;
 }
 
-// Short-lived record cache — keeps recently fetched records in memory so that
-// re-renders (same page, filter tweaks, view toggles) avoid hitting IndexedDB.
-// Evicted whenever the active table changes.
+// Multi-table record cache — keeps recently fetched records in memory so that
+// re-renders (same page, filter tweaks, view toggles, table back-nav) avoid
+// hitting IndexedDB.  Keyed by "tableId|recordId" and supports records from
+// multiple tables simultaneously.
 var _recordCache = {};  // key: "tableId|recordId" -> record object
 var _recordCacheTable = null;
-var _RECORD_CACHE_MAX = 600; // cap to avoid unbounded growth
+var _RECORD_CACHE_MAX = 2000; // cap to avoid unbounded growth (raised from 600 for fewer IDB reads)
 function _rcKey(tid, rid) { return tid + '|' + rid; }
 function clearRecordCache() { _recordCache = {}; _recordCacheTable = null; }
 
 async function getRecordsByIds(tableId, recordIds) {
     if (!recordIds.length) return [];
 
-    // Evict cache if table changed
-    if (_recordCacheTable && _recordCacheTable !== tableId) clearRecordCache();
+    // Track current table (no longer evicts — cache is multi-table now)
     _recordCacheTable = tableId;
 
     // Serve from cache where possible, only fetch missing IDs
@@ -8812,7 +8812,7 @@ async function getRecordsByIds(tableId, recordIds) {
     // Populate cache (cap size to avoid unbounded growth)
     var cacheKeys = Object.keys(_recordCache);
     if (cacheKeys.length + fetched.length > _RECORD_CACHE_MAX) {
-        // Evict oldest entries (simple FIFO: clear half)
+        // Evict oldest half of entries to make room
         var toRemove = cacheKeys.slice(0, Math.floor(cacheKeys.length / 2));
         for (var ri = 0; ri < toRemove.length; ri++) delete _recordCache[toRemove[ri]];
     }
@@ -12319,6 +12319,20 @@ function filterSidebarDOM(query) {
     }
 }
 
+// Update sidebar count badges in-place without full re-render
+function _updateSidebarCounts(tableCounts, maxCount, eventsCount) {
+    var wrappers = document.querySelectorAll('.table-wrapper[data-table-id]');
+    for (var i = 0; i < wrappers.length; i++) {
+        var tid = wrappers[i].getAttribute('data-table-id');
+        var count = tid === '_events' ? eventsCount : (tableCounts[tid] || 0);
+        var barWidth = Math.round(getCountBarWidth(count, maxCount) * 20);
+        var barEl = wrappers[i].querySelector('.count-bar');
+        var valEl = wrappers[i].querySelector('.count-value');
+        if (barEl) barEl.style.width = barWidth + 'px';
+        if (valEl) valEl.textContent = formatRecordCount(count);
+    }
+}
+
 async function renderSidebar(forceRefresh) {
     var tableList = document.getElementById('table-list');
     // Build new content into a DocumentFragment off-screen to avoid visible blink
@@ -12336,43 +12350,67 @@ async function renderSidebar(forceRefresh) {
         maxCount = _sidebarCache.maxCount;
         eventsCount = _sidebarCache.eventsCount;
     } else {
-        // Fetch fresh data from DB
-        tables = await getAllTables();
-
-        // Also get tables from META_TABLES (in-memory from current session)
+        // Use in-memory META_TABLES if already populated (avoids redundant IDB read)
         var metaTableIds = Object.keys(META_TABLES);
-        for (var i = 0; i < metaTableIds.length; i++) {
-            var tid = metaTableIds[i];
-            if (!tables.find(t => t.tableId === tid)) {
-                tables.push(META_TABLES[tid]);
+        if (metaTableIds.length > 0) {
+            tables = metaTableIds.map(function(tid) { return META_TABLES[tid]; });
+        } else {
+            tables = await getAllTables();
+            // Also merge any META_TABLES entries added after the IDB snapshot
+            metaTableIds = Object.keys(META_TABLES);
+            for (var i = 0; i < metaTableIds.length; i++) {
+                var tid = metaTableIds[i];
+                if (!tables.find(t => t.tableId === tid)) {
+                    tables.push(META_TABLES[tid]);
+                }
             }
         }
 
-        // Get record counts for all tables in parallel (for count bar visualization)
+        // Render sidebar immediately with zero counts — then backfill counts
+        // asynchronously so the sidebar paints without waiting for N IDB queries.
         tableCounts = {};
         maxCount = 0;
-        var countAndEvents = await Promise.all([
-            Promise.all(tables.map(function(table) {
-                return getRecordCountForTable(table.tableId).then(function(count) {
-                    return { tableId: table.tableId, count: count };
-                });
-            })),
-            getRawEventsCount()
-        ]);
-        var countResults = countAndEvents[0];
-        eventsCount = countAndEvents[1];
-        countResults.forEach(function(r) {
-            tableCounts[r.tableId] = r.count;
-            if (r.count > maxCount) maxCount = r.count;
-        });
-        if (eventsCount > maxCount) maxCount = eventsCount;
+        eventsCount = 0;
+        tables.forEach(function(t) { tableCounts[t.tableId] = 0; });
 
-        // Update cache
+        // Update cache with zero counts for now
         _sidebarCache.tables = tables;
         _sidebarCache.tableCounts = tableCounts;
         _sidebarCache.maxCount = maxCount;
         _sidebarCache.eventsCount = eventsCount;
         _sidebarCache.timestamp = now;
+
+        // Deferred count backfill — runs after sidebar is painted
+        var _countTables = tables;
+        queueMicrotask(function() {
+            Promise.all([
+                Promise.all(_countTables.map(function(table) {
+                    return getRecordCountForTable(table.tableId).then(function(count) {
+                        return { tableId: table.tableId, count: count };
+                    });
+                })),
+                getRawEventsCount()
+            ]).then(function(countAndEvents) {
+                var countResults = countAndEvents[0];
+                var deferredEventsCount = countAndEvents[1];
+                var deferredMax = 0;
+                var deferredCounts = {};
+                countResults.forEach(function(r) {
+                    deferredCounts[r.tableId] = r.count;
+                    if (r.count > deferredMax) deferredMax = r.count;
+                });
+                if (deferredEventsCount > deferredMax) deferredMax = deferredEventsCount;
+                // Update cache and re-render sidebar with real counts
+                _sidebarCache.tableCounts = deferredCounts;
+                _sidebarCache.maxCount = deferredMax;
+                _sidebarCache.eventsCount = deferredEventsCount;
+                _sidebarCache.timestamp = Date.now();
+                // Update count badges in-place (no full re-render needed)
+                _updateSidebarCounts(deferredCounts, deferredMax, deferredEventsCount);
+            }).catch(function(e) {
+                console.warn('[Sidebar] Deferred count backfill failed:', e);
+            });
+        });
     }
 
     // Filter tables by search query
@@ -14031,7 +14069,9 @@ async function showTable(tableId) {
     currentView = null; // Reset view when switching tables
     currentPage = 0;
     invalidateFilterCache(); // New table — stale cache
-    clearRecordCache();      // New table — stale records
+    // Don't clear the record cache here — getRecordsByIds() already handles
+    // table-change eviction internally, and clearing proactively destroys
+    // cached records that are reusable when navigating back to the same table.
 
     if (_urlStateBootstrapped) persistUrlState();
 
@@ -14086,23 +14126,32 @@ async function showTable(tableId) {
     // Show loading state immediately
     showTableLoading('Loading table structure...');
 
-    // Load fields, views, and record IDs in parallel instead of sequentially
-    var parallelResults = await Promise.all([
-        getFieldsForTable(tableId),
-        getViewsForTable(tableId),
+    // Use cached metadata when available (populated during init) to skip IDB reads.
+    // Only fall back to IDB for fields/views that aren't in memory yet.
+    var cachedFields = META_FIELDS[tableId] && Object.keys(META_FIELDS[tableId]).length > 0;
+    var cachedViews = META_VIEWS[tableId] && Object.keys(META_VIEWS[tableId]).length > 0;
+
+    // Load only what's missing, always need record IDs from IDB
+    var parallelPromises = [
+        cachedFields ? Promise.resolve(null) : getFieldsForTable(tableId),
+        cachedViews ? Promise.resolve(null) : getViewsForTable(tableId),
         getRecordIdsForTable(tableId)
-    ]);
+    ];
+    var parallelResults = await Promise.all(parallelPromises);
     if (navVersion !== myNav) return;
 
     var fields = parallelResults[0];
     var views = parallelResults[1];
     var recordIds = parallelResults[2];
 
-    META_FIELDS[tableId] = {};
-    fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
-
-    META_VIEWS[tableId] = {};
-    views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+    if (fields) {
+        META_FIELDS[tableId] = {};
+        fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
+    }
+    if (views) {
+        META_VIEWS[tableId] = {};
+        views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+    }
 
     originalRecordIds = recordIds;
     currentRecordIds = originalRecordIds;
@@ -16061,6 +16110,47 @@ async function ensureRoomMembership() {
     }
 }
 
+// ============ Deferred Network Init ============
+// Runs non-critical network operations in the background after the UI is
+// already visible and interactive. This avoids blocking the initial render
+// on slow network calls (ensureRoomMembership, SharedViews, OrgSpace discovery).
+var _deferredNetworkInitDone = false;
+function _deferNetworkInit() {
+    if (_deferredNetworkInitDone) return;
+    _deferredNetworkInitDone = true;
+
+    // Use requestIdleCallback if available, else setTimeout(0)
+    var schedule = window.requestIdleCallback || function(cb) { setTimeout(cb, 0); };
+    schedule(function() {
+        (async function() {
+            // 1. Populate room mappings (ensureRoomMembership)
+            try {
+                await ensureRoomMembership();
+            } catch (e) {
+                console.warn('[DeferredInit] ensureRoomMembership failed:', e);
+            }
+
+            // 2. Initialize shared views module (requires network)
+            try {
+                if (MatrixClient.isLoggedIn()) {
+                    var orgSpaceId = await MatrixClient.findOrgSpace();
+                    if (orgSpaceId) {
+                        SharedViews.setOrgSpaceId(orgSpaceId);
+                        try {
+                            AminoData.startViewDeletionSync(orgSpaceId);
+                        } catch (vdsErr) {
+                            console.warn('[DeferredInit] Failed to start view deletion sync:', vdsErr);
+                        }
+                    }
+                }
+                await SharedViews.load();
+            } catch (e) {
+                console.warn('[DeferredInit] Failed to load shared views:', e);
+            }
+        })();
+    });
+}
+
 // ============ Init ============
 
 async function init() {
@@ -16087,14 +16177,21 @@ async function init() {
 
     db = await openDB();
 
-    // Capture the highest event ID at app open time for "new" event indicators
-    appOpenedEventId = await getMaxEventId();
-
     updateStatus('Loading local data...', false, null, null);
 
-    var tables = await getAllTables();
-    var fields = await getAllFields();
-    var views = await getAllViews();
+    // Load all metadata + max event ID in parallel — single IDB round-trip
+    var metaResults = await Promise.all([
+        getAllTables(),
+        getAllFields(),
+        getAllViews(),
+        loadTableSettings(),
+        getMaxEventId()
+    ]);
+    var tables = metaResults[0];
+    var fields = metaResults[1];
+    var views = metaResults[2];
+    // metaResults[3] = loadTableSettings (void)
+    appOpenedEventId = metaResults[4];
 
     // Load metadata into memory
     tables.forEach(t => META_TABLES[t.tableId] = t);
@@ -16107,10 +16204,7 @@ async function init() {
         META_VIEWS[v.tableId][v.viewId] = v;
     });
 
-    // Load user-specific table settings
-    await loadTableSettings();
-
-    // Load user preferences from local + Synapse account data
+    // Load user preferences (local-only, fast) — don't await network-dependent prefs yet
     try {
         await UserPreferences.load();
         // Apply stored table settings from user preferences if they exist
@@ -16124,67 +16218,59 @@ async function init() {
         console.warn('[init] Failed to load user preferences:', e);
     }
 
-    // Initialize shared views module
-    try {
-        if (MatrixClient.isLoggedIn()) {
-            var orgSpaceId = await MatrixClient.findOrgSpace();
-            if (orgSpaceId) {
-                SharedViews.setOrgSpaceId(orgSpaceId);
-
-                // Start monitoring for view deletions/restorations from other clients
-                try {
-                    AminoData.startViewDeletionSync(orgSpaceId);
-                } catch (vdsErr) {
-                    console.warn('[init] Failed to start view deletion sync:', vdsErr);
-                }
-            }
-        }
-        await SharedViews.load();
-    } catch (e) {
-        console.warn('[init] Failed to load shared views:', e);
-    }
-
     hideAuthScreen();
 
-    // Populate room mappings early so _getRoomForTable() works as soon as the
-    // UI is interactive (History modal, etc.). ensureRoomMembership() fetches
-    // /amino-tables, populates SynapseSync.tableRooms / roomToTable, and joins
-    // any rooms the user hasn't joined yet. On subsequent loads where rooms are
-    // already joined, this returns quickly after two lightweight API calls.
-    await ensureRoomMembership();
-
     // Check if records actually exist AND previous hydration completed fully.
-    // Tables may have been saved by a partial hydration (some tables got
-    // records, others failed).  The lastWebhookSync cursor is only set when
-    // hydration succeeds for ALL tables, so its absence means we must retry.
+    // Run record count + sync meta checks in parallel for speed.
     var hasRecords = false;
     var hydrationWasComplete = false;
     if (tables.length > 0) {
         try {
-            var recordCount = await getCurrentRecordsCount();
-            hasRecords = recordCount > 0;
+            var existenceResults = await Promise.all([
+                getCurrentRecordsCount().catch(function() { return 0; }),
+                getSyncMeta('lastWebhookSync').catch(function() { return null; })
+            ]);
+            hasRecords = existenceResults[0] > 0;
+            hydrationWasComplete = hasRecords && !!existenceResults[1];
         } catch (e) { /* treat as no records */ }
-        if (hasRecords) {
-            try {
-                var lastSync = await getSyncMeta('lastWebhookSync');
-                hydrationWasComplete = !!lastSync;
-            } catch (e) { /* treat as incomplete */ }
-        }
     }
 
     if (tables.length > 0 && hasRecords && hydrationWasComplete) {
         // Local data exists with actual records — render it
         updateStatus('Found ' + tables.length + ' tables', false, null, 'Loading data...');
-        await renderSidebar(true);
 
-        // Auto-select first table
+        // Determine the first table early so we can pre-warm its record IDs
+        // in parallel with the sidebar render (sidebar counts + first table data)
         var firstTable = Object.keys(META_TABLES)[0];
+        var preWarmPromise = firstTable
+            ? getRecordIdsForTable(firstTable).catch(function() { return []; })
+            : Promise.resolve([]);
+
+        // Render sidebar and pre-warm first table concurrently
+        var sidebarAndWarm = await Promise.all([
+            renderSidebar(true),
+            preWarmPromise
+        ]);
+        var preWarmedRecordIds = sidebarAndWarm[1];
+
+        // Pre-load first page of records into cache while we still have time
+        if (firstTable && preWarmedRecordIds.length > 0) {
+            var firstPageIds = preWarmedRecordIds.slice(0, PAGE_SIZE);
+            // Fire-and-forget: warm the cache so showTable finds records already loaded
+            getRecordsByIds(firstTable, firstPageIds).catch(function() {});
+        }
+
+        // Auto-select first table (will be faster since records are pre-cached)
         if (firstTable) {
             await showTable(firstTable);
         }
 
         // Local data loaded — dismiss loading overlay
         hideLoadingOverlay();
+
+        // Defer non-critical network operations to AFTER the UI is visible.
+        // These run in the background and don't block the user from interacting.
+        _deferNetworkInit();
     } else {
         // Missing tables, records, or previous hydration was incomplete —
         // need hydration (retry on every load until it fully succeeds so
@@ -16231,10 +16317,11 @@ async function init() {
         }
 
         if (hydrated) {
-            // Reload metadata after hydration
-            tables = await getAllTables();
-            fields = await getAllFields();
-            views = await getAllViews();
+            // Reload metadata after hydration — in parallel
+            var reloadResults = await Promise.all([getAllTables(), getAllFields(), getAllViews()]);
+            tables = reloadResults[0];
+            fields = reloadResults[1];
+            views = reloadResults[2];
             tables.forEach(t => META_TABLES[t.tableId] = t);
             fields.forEach(f => {
                 if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
@@ -16268,6 +16355,9 @@ async function init() {
         }
 
         hideLoadingOverlay();
+
+        // Defer non-critical network operations for the hydration path too
+        _deferNetworkInit();
     }
 
     updateStatus('Up to date', true, null, null);
