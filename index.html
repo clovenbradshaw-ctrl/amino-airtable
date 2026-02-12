@@ -5598,6 +5598,16 @@
                         <span class="settings-toggle-switch"></span>
                     </label>
                 </div>
+                <div class="settings-pref-row">
+                    <label class="settings-toggle-label" for="pref-confirm-inline-cell-edit">
+                        <span class="settings-toggle-text">
+                            <strong>Confirm inline cell edit</strong>
+                            <span class="settings-toggle-desc">Ask for confirmation before opening inline editing so values are not accidentally cleared</span>
+                        </span>
+                        <input type="checkbox" id="pref-confirm-inline-cell-edit" class="settings-toggle-checkbox" onchange="toggleConfirmInlineCellEdit(this.checked)">
+                        <span class="settings-toggle-switch"></span>
+                    </label>
+                </div>
             </div>
 
             <div class="settings-section">
@@ -9192,7 +9202,8 @@ var UserPreferences = (function() {
         pageSize: 100,
         dateFormat: 'relative',      // 'relative', 'absolute', 'iso'
         timezone: null,              // null = browser default
-        showOfflineSyncToasts: true  // show toast when offline-queued edits sync
+        showOfflineSyncToasts: true, // show toast when offline-queued edits sync
+        confirmInlineCellEdit: true  // require confirmation before opening inline edit
     };
 
     var _prefs = Object.assign({}, _defaults);
@@ -20842,6 +20853,17 @@ async function startInlineCellEdit(event, td) {
     // Already editing this cell
     if (td.classList.contains('inline-editing')) return;
 
+    var shouldConfirmInlineEdit = UserPreferences.get('confirmInlineCellEdit') !== false;
+    if (shouldConfirmInlineEdit) {
+        var confirmResult = await showAppDialog({
+            title: 'Start editing cell?',
+            message: 'This cell will enter inline edit mode. Continue?',
+            confirmText: 'Edit',
+            cancelText: 'Cancel'
+        });
+        if (!confirmResult.confirmed) return;
+    }
+
     // Close any other inline edit first
     if (_inlineEditingCell && _inlineEditingCell !== td) {
         commitInlineCellEdit(_inlineEditingCell);
@@ -28117,6 +28139,10 @@ function initPreferencesTab() {
     if (cb) {
         cb.checked = UserPreferences.get('showOfflineSyncToasts') !== false;
     }
+    var confirmInlineEditCb = document.getElementById('pref-confirm-inline-cell-edit');
+    if (confirmInlineEditCb) {
+        confirmInlineEditCb.checked = UserPreferences.get('confirmInlineCellEdit') !== false;
+    }
     loadUserProfile();
 }
 
@@ -28306,6 +28332,10 @@ function refreshDisplayName(displayName) {
 
 function toggleOfflineSyncToasts(enabled) {
     UserPreferences.set('showOfflineSyncToasts', enabled);
+}
+
+function toggleConfirmInlineCellEdit(enabled) {
+    UserPreferences.set('confirmInlineCellEdit', enabled);
 }
 
 // ============ Settings: Toast ============
