@@ -11632,6 +11632,9 @@ async function trySynapseLogin() {
         // NOTE: AminoData layer is not used for the main hydration flow —
         // hydrateFromWebhooks() handles fetching from n8n directly.
         // Skipping AminoData.init() here to avoid a redundant /api/tables call.
+        // However, sub-pages (layout builder, client profile) need the derived
+        // encryption key to initialize AminoData. Pre-store it for them.
+        await AminoData.prepareKey(password, data.user_id);
 
         // Password no longer needed
         password = null;
@@ -11925,6 +11928,8 @@ function synapseLogout() {
         }).catch(function() {});
     }
     _clearSynapseSession();
+    // Clear the stored AminoData encryption key used by sub-pages
+    localStorage.removeItem('amino_data_layer_key');
 }
 
 // Wire up Synapse login UI

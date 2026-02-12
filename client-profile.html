@@ -1782,8 +1782,8 @@
           if (typeof AminoData !== 'undefined' && AminoData.init) {
             if (session.password) {
               await AminoData.init(session.accessToken, session.userId, session.password);
-            } else if (AminoData.restoreSession) {
-              await AminoData.restoreSession(session.accessToken, session.userId, session.password || '');
+            } else if (AminoData.initWithKey) {
+              await AminoData.initWithKey(session.accessToken, session.userId);
             }
             loadingMsg.textContent = 'Loading tables...';
             await loadDataFromAminoData();
