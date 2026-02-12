@@ -26486,6 +26486,26 @@ var InterfaceApp = (function() {
         return keys.length ? keys[0] : null;
     }
 
+    function _clientGraphValueText(value) {
+        if (value == null) return '';
+        if (Array.isArray(value)) {
+            return value.map(_clientGraphValueText).filter(Boolean).join(', ');
+        }
+        if (typeof value === 'object') {
+            var preferred = ['name', 'label', 'title', 'id', 'value'];
+            for (var i = 0; i < preferred.length; i++) {
+                var key = preferred[i];
+                if (Object.prototype.hasOwnProperty.call(value, key)) {
+                    var picked = _clientGraphValueText(value[key]);
+                    if (picked) return picked;
+                }
+            }
+            var values = Object.keys(value).map(function(k) { return _clientGraphValueText(value[k]); }).filter(Boolean);
+            return values.slice(0, 2).join(', ');
+        }
+        return String(value).trim();
+    }
+
     function _buildClientRelationshipGraph(records, selectedRecordId) {
         var all = Array.isArray(records) ? records : [];
         var entries = [];
@@ -26522,8 +26542,8 @@ var InterfaceApp = (function() {
             'a#': 4
         };
 
-        var edgeCount = 0;
-        var satellites = entries.filter(function(e) { return e.id !== anchor.id; }).slice(0, 26);
+        var satellites = entries.filter(function(e) { return e.id !== anchor.id; });
+        var ranked = [];
         for (var j = 0; j < satellites.length; j++) {
             var other = satellites[j];
             var similarity = 0;
@@ -26536,8 +26556,10 @@ var InterfaceApp = (function() {
                 var av = _findFieldValue(anchor.fields, key);
                 var bv = other.fields[key];
                 if (av == null || bv == null || av === '' || bv === '') continue;
-                var aNorm = _normGraphToken(Array.isArray(av) ? av.join(' ') : av);
-                var bNorm = _normGraphToken(Array.isArray(bv) ? bv.join(' ') : bv);
+                var avText = _clientGraphValueText(av);
+                var bvText = _clientGraphValueText(bv);
+                var aNorm = _normGraphToken(avText);
+                var bNorm = _normGraphToken(bvText);
                 if (!aNorm || !bNorm) continue;
                 if (aNorm === bNorm) {
                     var weight = 1;
@@ -26545,18 +26567,34 @@ var InterfaceApp = (function() {
                         if (keyNorm.indexOf(name) !== -1) weight = Math.max(weight, tableFieldWeights[name]);
                     });
                     similarity += weight;
-                    reasons.push(key + ': ' + (Array.isArray(bv) ? bv.join(', ') : bv));
+                    reasons.push(key + ': ' + bvText);
                 }
             }
             if (similarity <= 0) continue;
-            edgeCount += 1;
-            var angle = (Math.PI * 2 * (edgeCount - 1)) / Math.max(1, satellites.length);
-            var radius = 165 + Math.min(110, similarity * 12);
+            ranked.push({ other: other, similarity: similarity, reasons: reasons });
+        }
+
+        ranked.sort(function(a, b) { return b.similarity - a.similarity; });
+        var maxNodes = 14;
+        var visible = ranked.slice(0, maxNodes);
+        for (var n = 0; n < visible.length; n++) {
+            var item = visible[n];
+            var angle = (Math.PI * 2 * n) / Math.max(1, visible.length);
+            var rankBand = Math.floor(n / 5);
+            var radius = 165 + (rankBand * 42);
             var x = Math.cos(angle) * radius;
             var y = Math.sin(angle) * radius;
-            var nodeId = 'n-' + other.id;
-            nodes.push({ id: nodeId, label: other.name, role: 'linked', x: x, y: y, meta: reasons.slice(0, 2).join(' • ') });
-            links.push({ from: centerNodeId, to: nodeId, weight: similarity });
+            var nodeId = 'n-' + item.other.id;
+            nodes.push({
+                id: nodeId,
+                label: item.other.name,
+                role: 'linked',
+                x: x,
+                y: y,
+                weight: item.similarity,
+                meta: item.reasons.slice(0, 1).join(' • ')
+            });
+            links.push({ from: centerNodeId, to: nodeId, weight: item.similarity });
         }
 
         return { nodes: nodes, links: links, selectedId: selectedId, selectedName: selectedName, options: options };
@@ -26567,7 +26605,7 @@ var InterfaceApp = (function() {
         var blockId = _esc(block.id || 'client-graph');
         var canvasId = 'iface-client-graph-canvas-' + blockId;
         var summary = graph.links.length
-            ? ('Showing ' + graph.selectedName + ' with ' + graph.links.length + ' connected records.')
+            ? ('Showing top ' + graph.links.length + ' strongest relationships for ' + graph.selectedName + '.')
             : 'No shared relationships were detected for this client.';
 
         var html = '';
@@ -26630,7 +26668,7 @@ var InterfaceApp = (function() {
 
         (graph.nodes || []).forEach(function(node) {
             var isCenter = node.role === 'center';
-            var r = isCenter ? 18 : 11;
+            var r = isCenter ? 19 : Math.min(14, 8 + Math.max(0, (node.weight || 1) * 0.6));
             var x = cx + (node.x || 0);
             var y = cy + (node.y || 0);
             ctx.beginPath();
@@ -26641,14 +26679,32 @@ var InterfaceApp = (function() {
             ctx.strokeStyle = 'rgba(15,23,42,0.45)';
             ctx.stroke();
 
+            var label = String(node.label || '').slice(0, 28);
+            var angle = Math.atan2((node.y || 0), (node.x || 0));
+            var labelRadius = isCenter ? 0 : (r + 22);
+            var lx = isCenter ? x : x + Math.cos(angle) * labelRadius;
+            var ly = isCenter ? (y - 30) : y + Math.sin(angle) * labelRadius;
+            var align = isCenter ? 'center' : (Math.cos(angle) >= 0 ? 'left' : 'right');
             ctx.font = (isCenter ? '600 13px' : '500 12px') + ' IBM Plex Sans, sans-serif';
+            ctx.textAlign = align;
+            var textWidth = ctx.measureText(label).width;
+            var padX = 8;
+            var boxX = align === 'center' ? lx - (textWidth / 2) - padX : (align === 'left' ? lx - padX : lx - textWidth - padX);
+            var boxY = ly - 11;
+            var boxW = textWidth + (padX * 2);
+            var boxH = 18;
+            ctx.fillStyle = 'rgba(15,23,42,0.86)';
+            ctx.beginPath();
+            ctx.roundRect(boxX, boxY, boxW, boxH, 8);
+            ctx.fill();
             ctx.fillStyle = 'rgba(226,232,240,0.98)';
-            ctx.textAlign = 'center';
-            ctx.fillText(String(node.label || '').slice(0, 28), x, y - (isCenter ? 24 : 16));
+            ctx.fillText(label, lx, ly + 3);
             if (node.meta) {
                 ctx.font = '11px IBM Plex Sans, sans-serif';
                 ctx.fillStyle = 'rgba(148,163,184,0.95)';
-                ctx.fillText(String(node.meta).slice(0, 42), x, y + 24);
+                ctx.textAlign = align;
+                var metaText = String(node.meta).slice(0, 42);
+                ctx.fillText(metaText, lx, ly + 19);
             }
         });
 
