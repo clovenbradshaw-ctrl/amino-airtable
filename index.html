@@ -28903,6 +28903,7 @@ var InterfaceApp = (function() {
     }
 
     function _resolveCaseNoteClientInfo(note, clientIndex) {
+        var contactName = _pickCaseNoteValue(note, ['Contact', 'contact']);
         var joinKey = _pickCaseNoteValue(note, ['join', 'Join', 'client_airtable_id', 'Softr_Link_to_clients', 'airtableId', 'clientId', 'client_id', 'Client Record ID']);
         var resolved = null;
         if (joinKey) {
@@ -28916,10 +28917,12 @@ var InterfaceApp = (function() {
             }
         }
 
+        var displayName = contactName || (resolved ? resolved.displayName : '');
+
         return {
             joinKey: joinKey,
             recordId: resolved ? resolved.recordId : '',
-            displayName: resolved ? resolved.displayName : ''
+            displayName: displayName
         };
     }
 
