@@ -14,6 +14,7 @@
       --accent: #a77653;
       --accent-2: #8f6243;
       --pill: #eef2f7;
+      --success: #0f766e;
     }
     * { box-sizing: border-box; }
     body {
@@ -31,6 +32,7 @@
       position: sticky;
       top: 0;
       z-index: 5;
+      flex-wrap: wrap;
     }
     .nav-btn {
       background: var(--card);
@@ -39,9 +41,14 @@
       padding: 10px 14px;
       font-weight: 600;
       cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      font-size: 14px;
     }
     .page {
       padding: 12px 18px 26px;
+      max-width: 1400px;
+      margin: 0 auto;
     }
     .title-card {
       border: 1px solid var(--line);
@@ -53,12 +60,27 @@
       align-items: start;
       gap: 12px;
       margin-bottom: 12px;
+      flex-wrap: wrap;
     }
     .title-main h1 {
       margin: 0;
       font-size: 28px;
     }
     .meta { color: var(--muted); font-size: 13px; }
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .summary-card {
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .summary-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+    .summary-value { font-weight: 700; margin-top: 4px; }
     .btn {
       background: var(--accent);
       color: #fff;
@@ -74,6 +96,7 @@
       color: var(--text);
       border: 1px solid var(--line);
     }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
     .tab-strip {
       display: flex;
       gap: 2px;
@@ -133,11 +156,14 @@
       padding: 2px 8px;
       border-radius: 999px;
       margin: 2px 6px 2px 0;
+      vertical-align: middle;
     }
-    .list {
-      display: grid;
-      gap: 10px;
+    .record-pill.good {
+      color: #0f5132;
+      border-color: #8fd3b2;
+      background: #ecfdf3;
     }
+    .list { display: grid; gap: 10px; }
     .card {
       border: 1px solid #e3e9ef;
       border-radius: 10px;
@@ -178,30 +204,30 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 12px;
     }
-    .toolbar {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 8px;
-      flex-wrap: wrap;
-    }
     .status {
       font-size: 12px;
       color: var(--muted);
       margin-top: 8px;
     }
+    .status.success { color: var(--success); }
     @media (max-width: 980px) {
       .layout { grid-template-columns: 1fr; }
+      .summary-row { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 640px) {
+      .summary-row { grid-template-columns: 1fr; }
+      .kv { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="topbar">
-    <button class="nav-btn">Home</button>
-    <button class="nav-btn">Clients</button>
-    <button class="nav-btn">Calendar</button>
-    <button class="nav-btn">Communications</button>
-    <button class="nav-btn">New Client Event</button>
-    <button class="nav-btn">New Case Note</button>
+    <a class="nav-btn" href="./Home.html">Home</a>
+    <a class="nav-btn" href="./index.html">Clients</a>
+    <a class="nav-btn" href="./Events.html">Calendar</a>
+    <button class="nav-btn" type="button">Communications</button>
+    <button class="nav-btn" type="button">New Client Event</button>
+    <button class="nav-btn" type="button">New Case Note</button>
   </div>
 
   <div class="page">
@@ -216,10 +242,11 @@
       </div>
     </div>
 
+    <div class="summary-row" id="summaryRow"></div>
     <div class="tab-strip" id="tabStrip"></div>
     <div id="tabContent"></div>
 
-    <div class="schema-drawer" id="schemaDrawer">
+    <div class="schema-drawer" id="schemaDrawer" data-open="false">
       <div class="toolbar">
         <button class="btn" id="saveSchema">Save Schema</button>
         <button class="btn secondary" id="resetSchema">Reset Default</button>
@@ -244,18 +271,12 @@
         { id: 'case-notes', label: 'Case Notes', sections: [{ type: 'related-list', tableId: 'Case Notes', title: 'Case Notes', fields: ['Case Note', 'Category', 'Created', 'Created_By'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
         { id: 'ead', label: 'EAD', sections: [{ type: 'related-list', tableId: 'EAD', title: 'EAD', fields: ['Mail Tracking # EAD', 'EAD Stage', 'EAD Received', 'EAD Sent Date', 'EAD Approval Date'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
         { id: 'all-activities', label: 'All Activities', sections: [{ type: 'related-list', tableId: 'Activities', title: 'All Activity Notes', fields: ['Activity', 'Description', 'Date', 'Owner'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }, { type: 'related-list', tableId: 'Hearings/Interviews', title: 'Hearings/Interviews', fields: ['Event', 'Date', 'Judge', 'Location'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'comms', label: 'Comms', sections: [{ type: 'related-list', tableId: 'Communications', title: 'Communications', fields: ['Type', 'Date', 'Summary', 'Direction'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'record-requests', label: 'Record Requests', sections: [{ type: 'related-list', tableId: 'Record Requests', title: 'Record Requests', fields: ['Request Type', 'Status', 'Requested Date', 'Received Date'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'deadlines', label: 'Deadlines', sections: [{ type: 'related-list', tableId: 'Deadlines', title: 'Deadlines', fields: ['Deadline Name', 'Due Date', 'Status', 'Assigned To'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'box', label: 'Box', sections: [{ type: 'related-list', tableId: 'Box Files', title: 'Box Files', fields: ['File Name', 'Folder', 'Status'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'related-individuals', label: 'Related Individuals', sections: [{ type: 'related-list', tableId: 'Related Individuals', title: 'Related Individuals', fields: ['Name', 'Relation', 'Phone', 'Email'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'applications', label: 'Applications', sections: [{ type: 'related-list', tableId: 'Applications', title: 'Applications', fields: ['Application Type', 'Status', 'Filed Date', 'Decision Date'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] },
-        { id: 'dedupe', label: 'Deduplication History', sections: [{ type: 'related-list', tableId: 'Deduplication History', title: 'Deduplication History', fields: ['Merged On', 'Source Record ID', 'Target Record ID', 'Action'], foreignKeys: ['Client', 'Client Record ID', 'clientId', 'Target Record ID', 'Source Record ID'] }] }
+        { id: 'comms', label: 'Comms', sections: [{ type: 'related-list', tableId: 'Communications', title: 'Communications', fields: ['Type', 'Date', 'Summary', 'Direction'], foreignKeys: ['Client', 'Client Record ID', 'clientId'] }] }
       ]
     };
 
     const mockData = {
-      Clients: [{ recordId: 'recClient001', fields: { 'First Name': 'Robert', 'Last Name': 'Lacy', 'Office': 'Lacy, Robert Offices', 'Client Tags': ['SIJ', 'Priority'], 'Entry Status': 'Active', 'Case Manager': 'Ana Garcia', 'SIJ Case Status': 'Awaiting hearing', 'Merits Atty': 'Padilla Rivera', 'Current Stage': 'Evidence Collection', 'Priority': 'High', 'Notes': 'Client prefers Spanish calls after 2pm.' } }],
+      Clients: [{ recordId: 'recClient001', fields: { 'First Name': 'Robert', 'Last Name': 'Lacy', Office: 'Lacy, Robert Offices', 'Client Tags': ['SIJ', 'Priority'], 'Entry Status': 'Active', 'Case Manager': 'Ana Garcia', 'SIJ Case Status': 'Awaiting hearing', 'Merits Atty': 'Padilla Rivera', 'Current Stage': 'Evidence Collection', Priority: 'High', Notes: 'Client prefers Spanish calls after 2pm.' } }],
       Addresses: [{ recordId: 'recAddr1', fields: { 'Client Record ID': 'recClient001', Address: '123 Main St, Houston TX', 'Address Change Date': '2026-01-02', 'Same Address Confirmed Date': '2026-02-05' } }],
       Matters: [{ recordId: 'recMat1', fields: { 'Client Record ID': 'recClient001', Matter: 'SIJ Petition', Description: 'Primary SIJ filing', Status: 'In Progress', Created_By: 'Ana' } }],
       'Matter Notes': [{ recordId: 'recMN1', fields: { 'Client Record ID': 'recClient001', Matter: 'SIJ Petition', Description: 'Collected school records', Activity: 'Records Intake', Date: '2026-02-01', Created_By: 'Ana', 'Matter Record ID': 'recMat1' } }],
@@ -263,16 +284,10 @@
       EAD: [{ recordId: 'recEAD1', fields: { 'Client Record ID': 'recClient001', 'Mail Tracking # EAD': 'USPS-1234', 'EAD Stage': 'Mailed', 'EAD Received': '2026-01-20', 'EAD Sent Date': '2026-01-28', 'EAD Approval Date': '2026-02-10' } }],
       Activities: [{ recordId: 'recAct1', fields: { 'Client Record ID': 'recClient001', Activity: 'Intake Call', Description: 'Completed full intake', Date: '2026-01-03', Owner: 'Ana' } }],
       'Hearings/Interviews': [{ recordId: 'recHear1', fields: { 'Client Record ID': 'recClient001', Event: 'Master Calendar', Date: '2026-03-10', Judge: 'Ramirez', Location: 'Houston' } }],
-      Communications: [{ recordId: 'recCom1', fields: { 'Client Record ID': 'recClient001', Type: 'Phone', Date: '2026-02-05', Summary: 'Reminder call', Direction: 'Outbound' } }],
-      'Record Requests': [{ recordId: 'recRR1', fields: { 'Client Record ID': 'recClient001', 'Request Type': 'School Records', Status: 'Pending', 'Requested Date': '2026-02-01', 'Received Date': '' } }],
-      Deadlines: [{ recordId: 'recDL1', fields: { 'Client Record ID': 'recClient001', 'Deadline Name': 'I-360 filing', 'Due Date': '2026-04-15', Status: 'Open', 'Assigned To': 'Ana' } }],
-      'Box Files': [{ recordId: 'recBX1', fields: { 'Client Record ID': 'recClient001', 'File Name': 'Passport Scan.pdf', Folder: '/Robert Lacy', Status: 'Uploaded' } }],
-      'Related Individuals': [{ recordId: 'recRI1', fields: { 'Client Record ID': 'recClient001', Name: 'Maria Lacy', Relation: 'Mother', Phone: '555-1809', Email: 'maria@example.com' } }],
-      Applications: [{ recordId: 'recAPP1', fields: { 'Client Record ID': 'recClient001', 'Application Type': 'SIJ', Status: 'Drafting', 'Filed Date': '', 'Decision Date': '' } }],
-      'Deduplication History': [{ recordId: 'recDD1', fields: { 'Target Record ID': 'recClient001', 'Source Record ID': 'recClient001_dup', Action: 'Manual Merge', 'Merged On': '2026-01-10' } }]
+      Communications: [{ recordId: 'recCom1', fields: { 'Client Record ID': 'recClient001', Type: 'Phone', Date: '2026-02-05', Summary: 'Reminder call', Direction: 'Outbound' } }]
     };
 
-    let state = {
+    const state = {
       schema: loadSchema(),
       admin: loadAdmin(),
       activeTab: null,
@@ -283,8 +298,14 @@
 
     function loadSchema() {
       const raw = localStorage.getItem(STORAGE_KEYS.schema);
-      if (!raw) return JSON.parse(JSON.stringify(defaultSchema));
-      try { return JSON.parse(raw); } catch { return JSON.parse(JSON.stringify(defaultSchema)); }
+      if (!raw) return structuredClone(defaultSchema);
+      try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed.tabs)) throw new Error('tabs missing');
+        return parsed;
+      } catch {
+        return structuredClone(defaultSchema);
+      }
     }
 
     function loadAdmin() {
@@ -313,11 +334,8 @@
           row.id,
           fields.recordId,
           fields.airtableId,
-          fields.Airtable_ID,
-          fields.airtable_id,
           fields['Client Record ID'],
-          fields.clientId,
-          fields.client_id
+          fields.clientId
         ];
         return candidates.some(v => String(v || '').trim().toLowerCase() === needle);
       }) || null;
@@ -326,14 +344,146 @@
     function collectRecordIds(value) {
       if (value == null || value === '') return [];
       if (Array.isArray(value)) return value.flatMap(collectRecordIds);
-      if (typeof value === 'object') {
-        if (typeof value.id === 'string' && /^rec/i.test(value.id)) return [value.id];
-        return Object.values(value).flatMap(collectRecordIds);
-      }
-      if (typeof value === 'string') {
-        if (/^rec[a-z0-9]+$/i.test(value.trim())) return [value.trim()];
-      }
+      if (typeof value === 'object') return Object.values(value).flatMap(collectRecordIds);
+      if (typeof value === 'string' && /^rec[a-z0-9]+$/i.test(value.trim())) return [value.trim()];
       return [];
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function renderValue(value) {
+      if (value == null || value === '') return '<span class="muted">—</span>';
+      if (Array.isArray(value)) {
+        return value.map(v => `<span class="record-pill">${escapeHtml(v)}</span>`).join('');
+      }
+      if (typeof value === 'object') {
+        return `<code>${escapeHtml(JSON.stringify(value))}</code>`;
+      }
+      return escapeHtml(value);
+    }
+
+    function renderHeader() {
+      const record = state.clientRecord;
+      const fields = record?.fields || {};
+      const name = record
+        ? (fields['Display Name'] || fields['display name'] || `${fields['Last Name'] || ''}, ${fields['First Name'] || ''}`.trim().replace(/^,\s*/, '') || record.recordId)
+        : 'Client not found';
+
+      document.getElementById('clientName').textContent = name;
+      document.getElementById('clientMeta').innerHTML = `recordId: <strong>${escapeHtml(record?.recordId || state.clientId || '-')}</strong>`;
+
+      const summaryItems = [
+        { label: 'Case Manager', value: fields['Case Manager'] || 'Unassigned' },
+        { label: 'Entry Status', value: fields['Entry Status'] || 'Unknown' },
+        { label: 'Current Stage', value: fields['Current Stage'] || 'Unknown' },
+        { label: 'Related Rows', value: Object.values(state.data).reduce((acc, rows) => acc + (Array.isArray(rows) ? rows.length : 0), 0) }
+      ];
+
+      document.getElementById('summaryRow').innerHTML = summaryItems
+        .map(item => `<div class="summary-card"><div class="summary-label">${escapeHtml(item.label)}</div><div class="summary-value">${escapeHtml(item.value)}</div></div>`)
+        .join('');
+    }
+
+    function renderTabs() {
+      if (!state.activeTab) state.activeTab = state.schema.tabs[0]?.id;
+      const html = state.schema.tabs.map(tab => {
+        const cls = tab.id === state.activeTab ? 'tab active' : 'tab';
+        return `<button class="${cls}" type="button" data-tab="${escapeHtml(tab.id)}">${escapeHtml(tab.label || tab.id)}</button>`;
+      }).join('');
+      const tabStrip = document.getElementById('tabStrip');
+      tabStrip.innerHTML = html;
+      tabStrip.querySelectorAll('[data-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.activeTab = btn.dataset.tab;
+          renderTabs();
+          renderTabContent();
+        });
+      });
+    }
+
+    function resolveTableRows(tableId) {
+      const keys = Object.keys(state.data);
+      const direct = state.data[tableId];
+      if (Array.isArray(direct)) return direct;
+      const byNormalized = keys.find(key => normalizeTableName(key) === normalizeTableName(tableId));
+      if (byNormalized) return state.data[byNormalized] || [];
+      return [];
+    }
+
+    function resolveRelatedRows(section) {
+      const rows = resolveTableRows(section.tableId);
+      const allowedIds = new Set([state.clientId, state.clientRecord?.recordId].filter(Boolean));
+      return rows.filter(row => {
+        const fields = row.fields || {};
+        const fkValues = (section.foreignKeys || ['Client', 'Client Record ID', 'clientId']).flatMap(key => collectRecordIds(fields[key]).concat(fields[key] || []));
+        return fkValues.some(v => allowedIds.has(String(v).trim()));
+      });
+    }
+
+    function buildCrossLinks(row) {
+      const rowIdCandidates = collectRecordIds(row.fields).filter(id => id !== row.recordId);
+      const links = [];
+      for (const [tableName, tableRows] of Object.entries(state.data)) {
+        if (!Array.isArray(tableRows)) continue;
+        for (const candidate of rowIdCandidates) {
+          const matched = findRecordById(tableRows, candidate);
+          if (matched && matched !== row) links.push({ tableName, recordId: candidate });
+        }
+      }
+      const deduped = [];
+      const seen = new Set();
+      for (const link of links) {
+        const key = `${link.tableName}:${link.recordId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(link);
+      }
+      return deduped;
+    }
+
+    function renderSection(section) {
+      if (section.type === 'fields') {
+        const row = state.clientRecord;
+        const fieldsHtml = (section.fields || []).map(name => `<div class="kv"><div class="key">${escapeHtml(name)}</div><div>${renderValue(row?.fields?.[name])}</div></div>`).join('');
+        return `<section class="panel"><h3>${escapeHtml(section.title || 'Section')}</h3><div class="panel-body">${fieldsHtml || '<span class="muted">No fields configured.</span>'}</div></section>`;
+      }
+
+      if (section.type === 'related-list') {
+        const rows = resolveRelatedRows(section);
+        const cards = rows.map(row => {
+          const titleField = section.fields?.[0];
+          const title = row.fields?.[titleField] || row.recordId;
+          const fields = (section.fields || []).slice(1).map(name => `<div class="kv"><div class="key">${escapeHtml(name)}</div><div>${renderValue(row.fields?.[name])}</div></div>`).join('');
+          const links = buildCrossLinks(row)
+            .map(link => `<a href="?clientId=${encodeURIComponent(link.recordId)}" title="Open ${escapeHtml(link.recordId)}">${escapeHtml(link.tableName)}: ${escapeHtml(link.recordId)}</a>`)
+            .join('');
+          const fkPills = collectRecordIds(row.fields).map(id => `<span class="record-pill good">${escapeHtml(id)}</span>`).join('');
+          return `<article class="card"><div class="card-head"><div class="card-title">${escapeHtml(title)}</div><span class="record-pill">${escapeHtml(row.recordId || '-')}</span></div>${fields}<div class="pill-group">${fkPills}</div><div class="links">${links || '<span class="muted">No linked records found.</span>'}</div></article>`;
+        }).join('');
+
+        return `<section class="panel"><h3>${escapeHtml(section.title || 'Related')}</h3><div class="panel-body"><div class="list">${cards || '<div class="muted">No related records found for this client recordId.</div>'}</div></div></section>`;
+      }
+
+      return `<section class="panel"><h3>${escapeHtml(section.title || 'Unknown section')}</h3><div class="panel-body muted">Unsupported section type: ${escapeHtml(section.type || '-')}</div></section>`;
+    }
+
+    function renderTabContent() {
+      const tab = state.schema.tabs.find(t => t.id === state.activeTab) || state.schema.tabs[0];
+      const html = (tab?.sections || []).map(renderSection).join('');
+      document.getElementById('tabContent').innerHTML = `<div class="layout">${html || '<div class="muted">No sections configured.</div>'}</div>`;
+    }
+
+    function renderSchemaEditor() {
+      const drawer = document.getElementById('schemaDrawer');
+      drawer.classList.toggle('open', state.admin && drawer.dataset.open === 'true');
+      document.getElementById('schemaJson').value = JSON.stringify(state.schema, null, 2);
     }
 
     function render() {
@@ -342,113 +492,6 @@
       renderTabs();
       renderTabContent();
       renderSchemaEditor();
-    }
-
-    function renderHeader() {
-      const record = state.clientRecord;
-      const fields = record?.fields || {};
-      const name = record
-        ? (fields['display name'] || fields['Display Name'] || `${fields?.['Last Name'] || ''}, ${fields?.['First Name'] || ''} ${fields?.Office || ''}`.replace(/\s+/g, ' ').trim() || 'Unknown Client')
-        : 'Unknown Client';
-      document.getElementById('clientName').textContent = name;
-      document.getElementById('clientMeta').textContent = `recordId: ${record?.recordId || state.clientId}`;
-    }
-
-    function renderTabs() {
-      const strip = document.getElementById('tabStrip');
-      if (!state.activeTab) state.activeTab = state.schema.tabs[0]?.id;
-      strip.innerHTML = state.schema.tabs.map(tab => `<button class="tab ${tab.id === state.activeTab ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('');
-      strip.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', () => {
-        state.activeTab = btn.dataset.tab;
-        render();
-      }));
-    }
-
-    function renderValue(val) {
-      if (Array.isArray(val)) return val.map(v => `<span class="record-pill">${String(v)}</span>`).join('');
-      if (val == null || val === '') return '<span class="muted">-</span>';
-      return String(val);
-    }
-
-    function resolveRelatedRows(section) {
-      const rows = state.data[section.tableId] || [];
-      const fkCandidates = section.foreignKeys || [];
-      return rows.filter(row => {
-        const fields = row.fields || {};
-        for (const fk of fkCandidates) {
-          const ids = collectRecordIds(fields[fk]);
-          if (ids.includes(state.clientId)) return true;
-        }
-        return Object.values(fields).some(v => collectRecordIds(v).includes(state.clientId));
-      });
-    }
-
-    function buildCrossLinks(row) {
-      const links = [];
-      const allTables = Object.entries(state.data);
-      const rowFields = row.fields || {};
-      const rowIdCandidates = new Set([row.recordId, row.id].filter(Boolean));
-
-      for (const value of Object.values(rowFields)) {
-        collectRecordIds(value).forEach(id => rowIdCandidates.add(id));
-      }
-
-      for (const [tableName, tableRows] of allTables) {
-        for (const candidate of rowIdCandidates) {
-          const matched = findRecordById(tableRows, candidate);
-          if (matched && matched !== row) {
-            links.push({ tableName, recordId: candidate });
-          }
-        }
-      }
-
-      const deduped = [];
-      const seen = new Set();
-      for (const l of links) {
-        const key = `${l.tableName}:${l.recordId}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        deduped.push(l);
-      }
-      return deduped;
-    }
-
-    function renderSection(section) {
-      if (section.type === 'fields') {
-        const row = state.clientRecord;
-        const fieldsHtml = (section.fields || []).map(name => `<div class="kv"><div class="key">${name}</div><div>${renderValue(row?.fields?.[name])}</div></div>`).join('');
-        return `<section class="panel"><h3>${section.title}</h3><div class="panel-body">${fieldsHtml || '<span class="muted">No fields configured.</span>'}</div></section>`;
-      }
-
-      if (section.type === 'related-list') {
-        const rows = resolveRelatedRows(section);
-        const cards = rows.map(row => {
-          const titleField = section.fields?.[0];
-          const title = row.fields?.[titleField] || row.recordId;
-          const fields = (section.fields || []).slice(1).map(name => `<div class="kv"><div class="key">${name}</div><div>${renderValue(row.fields?.[name])}</div></div>`).join('');
-          const links = buildCrossLinks(row)
-            .map(link => `<a href="?clientId=${encodeURIComponent(link.recordId)}" title="Open ${link.recordId}">${link.tableName}: ${link.recordId}</a>`)
-            .join('');
-          const fkPills = collectRecordIds(row.fields).map(id => `<span class="record-pill">${id}</span>`).join('');
-          return `<article class="card"><div class="card-head"><div class="card-title">${title}</div><span class="record-pill">${row.recordId || '-'}</span></div>${fields}<div class="pill-group">${fkPills}</div><div class="links">${links || '<span class="muted">No linked records found.</span>'}</div></article>`;
-        }).join('');
-
-        return `<section class="panel"><h3>${section.title}</h3><div class="panel-body"><div class="list">${cards || '<div class="muted">No related records found for this client recordId.</div>'}</div></div></section>`;
-      }
-
-      return `<section class="panel"><h3>${section.title || 'Unknown section'}</h3><div class="panel-body muted">Unsupported section type: ${section.type}</div></section>`;
-    }
-
-    function renderTabContent() {
-      const tab = state.schema.tabs.find(t => t.id === state.activeTab) || state.schema.tabs[0];
-      const html = (tab.sections || []).map(renderSection).join('');
-      document.getElementById('tabContent').innerHTML = `<div class="layout">${html}</div>`;
-    }
-
-    function renderSchemaEditor() {
-      const drawer = document.getElementById('schemaDrawer');
-      drawer.classList.toggle('open', state.admin && drawer.dataset.open === 'true');
-      document.getElementById('schemaJson').value = JSON.stringify(state.schema, null, 2);
     }
 
     async function loadData() {
@@ -469,16 +512,14 @@
           byTableName[tableName] = rows;
           byTableName[tableId] = rows;
         }
-        state.data = byTableName;
 
-        const clientTableMatch = Object.keys(byTableName).find(name => normalizeTableName(name) === 'client info')
-          || Object.keys(byTableName).find(name => normalizeTableName(name) === 'clients')
-          || 'clientInfo';
+        state.data = byTableName;
+        const clientTableMatch = Object.keys(byTableName).find(name => normalizeTableName(name) === 'clients')
+          || Object.keys(byTableName).find(name => normalizeTableName(name) === 'client info')
+          || 'Clients';
         const clients = byTableName[clientTableMatch] || [];
         state.clientRecord = findClientRecord(clients, state.clientId) || clients[0] || null;
-        if (state.clientRecord?.recordId) {
-          state.clientId = state.clientRecord.recordId;
-        }
+        if (state.clientRecord?.recordId) state.clientId = state.clientRecord.recordId;
       } catch (err) {
         console.warn('Failed loading AminoData, falling back to mock data:', err);
         state.data = mockData;
@@ -494,11 +535,14 @@
         state.admin = !state.admin;
         saveAdmin(state.admin);
         if (!state.admin) schemaDrawer.dataset.open = 'false';
+        schemaStatus.className = 'status';
+        schemaStatus.textContent = '';
         render();
       });
 
       document.getElementById('schemaToggle').addEventListener('click', () => {
         if (!state.admin) {
+          schemaStatus.className = 'status';
           schemaStatus.textContent = 'Enable Admin mode to edit schema.';
           return;
         }
@@ -513,21 +557,22 @@
           if (!Array.isArray(parsed.tabs)) throw new Error('Schema must contain a tabs array.');
           state.schema = parsed;
           localStorage.setItem(STORAGE_KEYS.schema, JSON.stringify(parsed));
-          if (!state.schema.tabs.find(t => t.id === state.activeTab)) {
-            state.activeTab = state.schema.tabs[0]?.id;
-          }
+          if (!state.schema.tabs.find(t => t.id === state.activeTab)) state.activeTab = state.schema.tabs[0]?.id;
+          schemaStatus.className = 'status success';
           schemaStatus.textContent = 'Schema saved.';
           render();
         } catch (err) {
+          schemaStatus.className = 'status';
           schemaStatus.textContent = `Schema error: ${err.message}`;
         }
       });
 
       document.getElementById('resetSchema').addEventListener('click', () => {
         if (!state.admin) return;
-        state.schema = JSON.parse(JSON.stringify(defaultSchema));
+        state.schema = structuredClone(defaultSchema);
         localStorage.removeItem(STORAGE_KEYS.schema);
         state.activeTab = state.schema.tabs[0]?.id;
+        schemaStatus.className = 'status success';
         schemaStatus.textContent = 'Schema reset to defaults.';
         render();
       });
