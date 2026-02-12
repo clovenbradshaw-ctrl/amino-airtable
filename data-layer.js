@@ -48,6 +48,19 @@ var AminoData = (function() {
     var _tableCacheHydrated = {};    // tableId -> true when full table is cached
     var _keyDerivationCache = { fingerprint: null, key: null };
 
+    // ============ Sync Deduplication ============
+    // Tracks Matrix event_ids already applied to IndexedDB so duplicate
+    // deliveries (own echo via /sync, HTTP polling overlap) are skipped.
+    var _processedEventIds = {};         // event_id -> timestamp (ms)
+    var PROCESSED_EVENT_TTL = 300000;    // 5 minutes
+    var MAX_PROCESSED_EVENTS = 5000;
+
+    // Records recently written optimistically by editRecord() so that
+    // the /sync echo of the same mutation can skip the redundant
+    // decrypt → merge → encrypt → write cycle.
+    var _optimisticWrites = {};          // recordId -> { fields, ts }
+    var OPTIMISTIC_WRITE_TTL = 30000;    // 30 seconds
+
     // ============ Search Index (Pre-built for fast local search) ============
     // Maps recordId -> lowercased concatenated searchable text.
     // Built lazily per-table when first searched, invalidated on record updates.
@@ -323,6 +336,88 @@ var AminoData = (function() {
             tx.onerror = function() { reject(tx.error); };
             tx.onabort = function() { reject(tx.error || new Error('Transaction aborted')); };
         });
+    }
+
+    // ============ Sync Dedup Helpers ============
+
+    // Returns true if this event_id was already processed; marks it as seen.
+    function _markEventProcessed(eventId) {
+        if (!eventId) return false;
+        if (_processedEventIds[eventId]) return true; // already seen
+        _processedEventIds[eventId] = Date.now();
+        _pruneProcessedEvents();
+        return false;
+    }
+
+    // Evict stale entries so the map doesn't grow unbounded.
+    function _pruneProcessedEvents() {
+        var ids = Object.keys(_processedEventIds);
+        if (ids.length <= MAX_PROCESSED_EVENTS) return;
+        var now = Date.now();
+        for (var i = 0; i < ids.length; i++) {
+            if (now - _processedEventIds[ids[i]] > PROCESSED_EVENT_TTL) {
+                delete _processedEventIds[ids[i]];
+            }
+        }
+        // If still over limit after TTL prune, drop oldest half
+        ids = Object.keys(_processedEventIds);
+        if (ids.length > MAX_PROCESSED_EVENTS) {
+            ids.sort(function(a, b) { return _processedEventIds[a] - _processedEventIds[b]; });
+            var dropCount = Math.floor(ids.length / 2);
+            for (var j = 0; j < dropCount; j++) {
+                delete _processedEventIds[ids[j]];
+            }
+        }
+    }
+
+    // Record an optimistic write so the /sync echo can be detected.
+    function _trackOptimisticWrite(recordId, changedFields) {
+        _optimisticWrites[recordId] = {
+            fields: changedFields,
+            ts: Date.now()
+        };
+    }
+
+    // Check if an incoming mutation is a redundant echo of a recent
+    // optimistic write. Returns true if the event can be safely skipped
+    // (same fields already applied locally).
+    function _isOptimisticEcho(recordId, incomingFieldOps) {
+        var entry = _optimisticWrites[recordId];
+        if (!entry) return false;
+        if (Date.now() - entry.ts > OPTIMISTIC_WRITE_TTL) {
+            delete _optimisticWrites[recordId];
+            return false;
+        }
+
+        // Compare ALT fields — if every field in the incoming ALT matches
+        // what we wrote optimistically, it's an echo.
+        var alt = incomingFieldOps.ALT;
+        if (!alt) return false;
+
+        var optimistic = entry.fields;
+        var altKeys = Object.keys(alt);
+        for (var i = 0; i < altKeys.length; i++) {
+            var key = altKeys[i];
+            // Stringify comparison handles objects/arrays
+            if (JSON.stringify(alt[key]) !== JSON.stringify(optimistic[key])) {
+                return false;
+            }
+        }
+
+        // Match — clear the entry and signal skip
+        delete _optimisticWrites[recordId];
+        return true;
+    }
+
+    // Prune expired optimistic writes (called periodically).
+    function _pruneOptimisticWrites() {
+        var now = Date.now();
+        var ids = Object.keys(_optimisticWrites);
+        for (var i = 0; i < ids.length; i++) {
+            if (now - _optimisticWrites[ids[i]].ts > OPTIMISTIC_WRITE_TTL) {
+                delete _optimisticWrites[ids[i]];
+            }
+        }
     }
 
     // ============ API Client ============
@@ -839,15 +934,32 @@ var AminoData = (function() {
 
     async function hydrateTable(tableId) {
         console.log('[AminoData] Hydrating table:', tableId);
+
+        // ── Prefer room-based hydration (Given-Log) when Matrix is available.
+        // The room timeline is the append-only source of truth. amino.current_state
+        // (served by /amino-records) is a materialized projection that may be stale
+        // or lag behind n8n processing. Rebuilding from the room guarantees the
+        // client sees every event the Given-Log contains.
+        if (_tableRoomMap[tableId] && MatrixClient && MatrixClient.isLoggedIn()) {
+            try {
+                var roomCount = await rebuildTableFromRoom(tableId);
+                console.log('[AminoData] Hydrated', roomCount, 'records from room for table', tableId);
+                return roomCount;
+            } catch (roomErr) {
+                console.warn('[AminoData] Room-based hydration failed for table ' + tableId +
+                    ', falling back to amino.current_state:', roomErr.message || roomErr);
+            }
+        }
+
+        // ── Fallback: hydrate from amino.current_state via n8n API.
+        // Used when Matrix is unavailable (no room mapping, not logged in,
+        // or room rebuild failed).
         var records = [];
         try {
             var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId), 'fullBackfill');
             records = data.records || [];
         } catch (err) {
-            console.warn('[AminoData] API hydrate failed for table ' + tableId + ', attempting room rebuild:', err.message || err);
-            if (_tableRoomMap[tableId] && MatrixClient && MatrixClient.isLoggedIn()) {
-                return rebuildTableFromRoom(tableId);
-            }
+            console.warn('[AminoData] API hydrate also failed for table ' + tableId + ':', err.message || err);
             throw err;
         }
 
@@ -888,7 +1000,7 @@ var AminoData = (function() {
             };
         }));
 
-        console.log('[AminoData] Hydrated', records.length, 'records for table', tableId);
+        console.log('[AminoData] Hydrated', records.length, 'records from API for table', tableId);
         return records.length;
     }
 
@@ -1036,6 +1148,12 @@ var AminoData = (function() {
         var content = event.content;
         if (!content) return;
 
+        // ── Dedup: skip events already processed via another sync channel ──
+        var eventId = event.event_id;
+        if (_markEventProcessed(eventId)) {
+            return; // Already applied
+        }
+
         // Skip metadata records (table/field/view definitions) — only process data records
         var payloadSet = content.payload && content.payload._set;
         if (payloadSet === 'table' || payloadSet === 'field' || payloadSet === 'view' || payloadSet === 'viewConfig' || payloadSet === 'tableSettings') {
@@ -1090,6 +1208,30 @@ var AminoData = (function() {
         var rawFieldOps = payload.fields || {};
         var hadFlatOps = !rawFieldOps.ALT && !rawFieldOps.INS && !rawFieldOps.NUL && content.op && content.fields;
         var fieldOps = normalizeFieldOps(content);
+
+        // ── Echo suppression: skip if this is the /sync echo of a recent
+        // optimistic write — the local state already has these values.
+        if (_isOptimisticEcho(recordId, fieldOps)) {
+            console.log('[AminoData] Skipping echo for optimistic write:', recordId);
+            // Still emit the mutation event so field history records the event_id,
+            // but skip the redundant decrypt→merge→encrypt→write cycle.
+            window.dispatchEvent(new CustomEvent('amino:record-mutate', {
+                detail: {
+                    recordId: recordId,
+                    tableId: tableId,
+                    eventId: eventId,
+                    sender: event.sender || null,
+                    timestamp: event.origin_server_ts || Date.now(),
+                    fieldOps: fieldOps,
+                    source: content.source || null,
+                    sourceTimestamp: content.sourceTimestamp || null,
+                    actor: (payload && payload._a) || null,
+                    device: (payload && payload._d) || content.device || null,
+                    echoSuppressed: true
+                }
+            }));
+            return;
+        }
 
         // ALT — merge altered fields over existing values
         if (fieldOps.ALT) {
@@ -1980,6 +2122,8 @@ var AminoData = (function() {
         _offlineMode = false;
         _initialized = false;
         _keyDerivationCache = { fingerprint: null, key: null };
+        _processedEventIds = {};
+        _optimisticWrites = {};
         clearRecordCache();
 
         if (clearData && _db) {
@@ -2858,6 +3002,9 @@ var AminoData = (function() {
         getRoomForTable: getRoomForTable,
         getTableForRoom: getTableForRoom,
         isMatrixSyncActive: isMatrixSyncActive,
+
+        // Sync deduplication (called by editRecord in index.html)
+        trackOptimisticWrite: _trackOptimisticWrite,
 
         // Constants (read-only access)
         WEBHOOK_BASE_URL: WEBHOOK_BASE_URL
