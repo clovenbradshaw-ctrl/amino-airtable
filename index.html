@@ -5841,7 +5841,7 @@
                                 <th>Display Name</th>
                                 <th>Current Role</th>
                                 <th>Change Role</th>
-                                <th></th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="settings-users-tbody">
@@ -5853,7 +5853,7 @@
                 </div>
 
                 <h2 style="margin-top: 22px;">Permissions Matrix</h2>
-                <p class="settings-section-desc">Read-only matrix of all users and their room memberships.</p>
+                <p class="settings-section-desc">Toggle checkboxes to grant or revoke room access for each user. Use the buttons to bulk-remove access.</p>
                 <div id="settings-permissions-matrix-loading" class="settings-loading" style="display: none;">
                     <div class="settings-spinner"></div>
                     Loading permissions matrix...
@@ -5920,6 +5920,7 @@
                     <button class="settings-action-btn" onclick="assignSelectedUserToPermissionGroup()">Assign Group</button>
                     <button class="settings-action-btn primary" onclick="applySelectedGroupPermissions()">Apply Group Rooms</button>
                     <button class="settings-action-btn" onclick="createPermissionGroupFromSelectedUser()">Create Group From User</button>
+                    <button class="settings-action-btn danger" onclick="revokeAllRoomsForSelectedUser()">Revoke All Rooms</button>
                 </div>
 
                 <div id="settings-rooms-loading" class="settings-loading" style="display: none;">
@@ -30953,8 +30954,11 @@ function renderSettingsUsers() {
                     '</select>'
                 ) +
             '</td>' +
-            '<td>' +
-                (isSelf ? '' : '<button class="settings-action-btn danger" onclick="kickUserFromOrg(\'' + escapeHtml(m.userId).replace(/'/g, "\\'") + '\')">Remove</button>') +
+            '<td style="white-space: nowrap;">' +
+                (isSelf ? '' :
+                    '<button class="settings-action-btn danger" style="margin-right:4px;" onclick="revokeAllRoomAccessForUser(\'' + escapeHtml(m.userId).replace(/'/g, "\\'") + '\')" title="Remove from all data rooms but keep in org">Revoke Rooms</button>' +
+                    '<button class="settings-action-btn danger" onclick="kickUserFromOrg(\'' + escapeHtml(m.userId).replace(/'/g, "\\'") + '\')" title="Remove from organization and all rooms">Remove</button>'
+                ) +
             '</td>' +
         '</tr>';
     }).join('');
@@ -31383,31 +31387,125 @@ async function loadPermissionsMatrix() {
     }
 }
 
+// Cache for the last permissions matrix data so we can re-render without re-fetching
+var _permissionsMatrixData = null;
+
 function renderPermissionsMatrix(roomMembersByRoomId) {
+    _permissionsMatrixData = roomMembersByRoomId;
     var head = document.getElementById('settings-permissions-matrix-head');
     var body = document.getElementById('settings-permissions-matrix-body');
     if (!head || !body) return;
+
+    var session = _loadSynapseSession();
+    var myUserId = session ? session.userId : '';
 
     var roomHeaders = _settingsRooms.map(function(room) {
         return '<th>' + escapeHtml(room.name) + '</th>';
     }).join('');
 
-    head.innerHTML = '<tr><th>User</th><th>Role</th><th>Group</th>' + roomHeaders + '</tr>';
+    head.innerHTML = '<tr><th>User</th><th>Role</th><th>Group</th>' + roomHeaders + '<th></th></tr>';
 
     body.innerHTML = _settingsMembers.map(function(member) {
+        var isSelf = member.userId === myUserId;
         var groupName = getPermissionGroupNameForUser(member.userId) || '--';
+        var escapedUserId = escapeHtml(member.userId).replace(/'/g, "\\'");
         var cells = _settingsRooms.map(function(room) {
             var users = roomMembersByRoomId[room.roomId] || [];
             var hasAccess = users.indexOf(member.userId) !== -1;
-            return '<td style="text-align:center;">' + (hasAccess ? '✅' : '—') + '</td>';
+            var escapedRoomId = escapeHtml(room.roomId).replace(/'/g, "\\'");
+            if (isSelf) {
+                return '<td style="text-align:center;">' + (hasAccess ? '&#10003;' : '—') + '</td>';
+            }
+            return '<td style="text-align:center;">' +
+                '<input type="checkbox"' + (hasAccess ? ' checked' : '') +
+                ' onchange="toggleMatrixRoomAccess(\'' + escapedUserId + '\', \'' + escapedRoomId + '\', this.checked, this)"' +
+                ' title="' + (hasAccess ? 'Revoke' : 'Grant') + ' access">' +
+            '</td>';
         }).join('');
+        var revokeBtn = isSelf ? '' :
+            '<button class="settings-action-btn danger" style="white-space:nowrap;font-size:11px;padding:3px 8px;" ' +
+            'onclick="revokeAllRoomAccessForUser(\'' + escapedUserId + '\')" title="Remove from all data rooms">Revoke All</button>';
         return '<tr>' +
             '<td class="user-id">' + escapeHtml(member.userId) + '</td>' +
             '<td><span class="role-badge ' + member.role + '">' + member.role + '</span></td>' +
             '<td>' + escapeHtml(groupName) + '</td>' +
             cells +
+            '<td>' + revokeBtn + '</td>' +
         '</tr>';
     }).join('');
+}
+
+async function toggleMatrixRoomAccess(userId, roomId, grant, checkbox) {
+    checkbox.disabled = true;
+    try {
+        var session = _loadSynapseSession();
+        if (!session || !session.accessToken) throw new Error('Not logged in');
+
+        if (grant) {
+            var encodedRoomId = encodeURIComponent(roomId);
+            var res = await fetch(
+                SYNAPSE_HOMESERVER_URL + '/_synapse/admin/v1/join/' + encodedRoomId,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + session.accessToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ user_id: userId })
+                }
+            );
+            if (!res.ok) {
+                var errData = await res.json().catch(function() { return {}; });
+                if (res.status === 403 || (errData.errcode && errData.errcode === 'M_FORBIDDEN')) {
+                    await MatrixClient.inviteUser(roomId, userId);
+                    showSettingsToast('info', 'Invited ' + userId + ' to room (they must accept).');
+                    checkbox.disabled = false;
+                    return;
+                }
+                throw new Error(errData.error || 'Admin join failed (' + res.status + ')');
+            }
+            showSettingsToast('success', 'Joined ' + userId + ' to room');
+        } else {
+            await MatrixClient.kickUser(roomId, userId, 'Access revoked by admin');
+            showSettingsToast('success', 'Removed ' + userId + ' from room');
+        }
+    } catch (e) {
+        console.error('[Settings] toggleMatrixRoomAccess failed:', e);
+        checkbox.checked = !grant;
+        showSettingsToast('error', 'Failed: ' + e.message);
+    }
+    checkbox.disabled = false;
+}
+
+async function revokeAllRoomAccessForUser(userId) {
+    if (!confirm('Remove ' + userId + ' from ALL data rooms? They will remain in the organization but lose access to all table data.')) return;
+
+    try {
+        if (!_settingsRooms.length) await loadSettingsRoomList();
+
+        var removed = 0;
+        var failed = 0;
+        for (var i = 0; i < _settingsRooms.length; i++) {
+            var room = _settingsRooms[i];
+            try {
+                var members = await MatrixClient.getRoomMembers(room.roomId);
+                var isMember = members.some(function(m) { return m.userId === userId; });
+                if (isMember) {
+                    await MatrixClient.kickUser(room.roomId, userId, 'All room access revoked by admin');
+                    removed++;
+                }
+            } catch (e) {
+                console.warn('[Settings] revokeAllRoomAccessForUser room failed:', room.roomId, e);
+                failed++;
+            }
+        }
+
+        showSettingsToast('success', 'Removed ' + userId + ' from ' + removed + ' room' + (removed !== 1 ? 's' : '') + (failed > 0 ? ' (' + failed + ' failed)' : ''));
+        await loadPermissionsMatrix();
+    } catch (e) {
+        console.error('[Settings] revokeAllRoomAccessForUser failed:', e);
+        showSettingsToast('error', 'Failed to revoke room access: ' + e.message);
+    }
 }
 
 function getPermissionGroupNameForUser(userId) {
@@ -31721,6 +31819,43 @@ async function toggleRoomAccess(userId, roomId, grant, checkbox) {
 
     checkbox.disabled = false;
     try { await loadPermissionsMatrix(); } catch (e) {}
+}
+
+async function revokeAllRoomsForSelectedUser() {
+    var userId = document.getElementById('settings-room-user-select').value;
+    if (!userId) {
+        showSettingsToast('error', 'Select a user first.');
+        return;
+    }
+    if (!confirm('Remove ' + userId + ' from ALL data rooms? They will remain in the organization but lose access to all table data.')) return;
+
+    try {
+        if (!_settingsRooms.length) await loadSettingsRoomList();
+
+        var removed = 0;
+        var failed = 0;
+        for (var i = 0; i < _settingsRooms.length; i++) {
+            var room = _settingsRooms[i];
+            try {
+                var members = await MatrixClient.getRoomMembers(room.roomId);
+                var isMember = members.some(function(m) { return m.userId === userId; });
+                if (isMember) {
+                    await MatrixClient.kickUser(room.roomId, userId, 'All room access revoked by admin');
+                    removed++;
+                }
+            } catch (e) {
+                console.warn('[Settings] revokeAllRoomsForSelectedUser room failed:', room.roomId, e);
+                failed++;
+            }
+        }
+
+        showSettingsToast('success', 'Removed ' + userId + ' from ' + removed + ' room' + (removed !== 1 ? 's' : '') + (failed > 0 ? ' (' + failed + ' failed)' : ''));
+        await loadRoomAccessForUser();
+        try { await loadPermissionsMatrix(); } catch (e) {}
+    } catch (e) {
+        console.error('[Settings] revokeAllRoomsForSelectedUser failed:', e);
+        showSettingsToast('error', 'Failed to revoke room access: ' + e.message);
+    }
 }
 
 // ============ Initialize Workspaces on Load ============
