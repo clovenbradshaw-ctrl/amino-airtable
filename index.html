@@ -6017,7 +6017,7 @@
                 <h2>Local Data</h2>
                 <p class="settings-section-desc">Manage the local database stored on this device. Your data is encrypted at rest and synced from the server.</p>
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <button class="settings-action-btn" id="refresh-db-btn" onclick="refreshLocalDB()">
+                    <button class="settings-action-btn" id="refresh-db-btn" onclick="refreshLocalDB('box')">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
                             <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
                         </svg>
@@ -6026,8 +6026,18 @@
                     <span id="refresh-db-status" style="font-size: 12px; color: var(--text-muted);"></span>
                 </div>
                 <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
-                    Clears all locally cached records and re-downloads the full dataset from the server. Use this if data appears out of sync or corrupted.
+                    Default source: <strong>Box webhook</strong>. Clears locally cached records and re-downloads the full dataset.
                 </p>
+                <details style="margin-top: 8px;">
+                    <summary style="font-size: 12px; color: var(--text-muted); cursor: pointer;">Alternative data sources (manual)</summary>
+                    <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+                        <button class="settings-action-btn" style="font-size: 12px; padding: 4px 10px;" onclick="refreshLocalDB('postgres')">Postgres API</button>
+                        <button class="settings-action-btn" style="font-size: 12px; padding: 4px 10px;" onclick="refreshLocalDB('synapse')">Synapse Replay</button>
+                    </div>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+                        Use these only if the Box snapshot is unavailable or producing incorrect data. Postgres API fetches table-by-table from the database. Synapse Replay rebuilds state from Matrix room events.
+                    </p>
+                </details>
             </div>
         </div>
     </div>
@@ -9437,6 +9447,8 @@ async function saveBatch(tables, fields, views, dataRecords) {
 }
 
 function clearAllData() {
+    // Clear the localStorage hydration flag so the app knows to re-hydrate
+    try { localStorage.removeItem('amino_hydration_complete'); } catch(e) {}
     return new Promise((resolve, reject) => {
         var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory', 'events', 'edges'], 'readwrite');
         tx.objectStore('data').clear();
@@ -12112,14 +12124,24 @@ async function clearLocalAndReset() {
 }
 
 // Refresh the entire local database by clearing all cached data and
-// re-downloading everything from the PostgreSQL-backed webhook API.
-async function refreshLocalDB() {
-    if (!confirm('Refresh local database?\n\nThis will clear all locally cached data and re-download everything from the server. The app will be unavailable during the refresh.')) return;
+// re-downloading from the selected source. Box webhook is default;
+// Postgres webhook API and Synapse room replay are manual options.
+async function refreshLocalDB(sourceOverride) {
+    // sourceOverride: 'box' (default), 'postgres', or 'synapse'
+    var source = sourceOverride || 'box';
+
+    if (source === 'box') {
+        if (!confirm('Refresh local database from Box snapshot?\n\nThis will clear all locally cached data and re-download from the Box webhook. The app will be unavailable during the refresh.')) return;
+    } else if (source === 'postgres') {
+        if (!confirm('Refresh from Postgres webhook API?\n\nThis will clear all locally cached data and re-download table-by-table from the Postgres-backed API. This is slower than the Box snapshot.')) return;
+    } else if (source === 'synapse') {
+        if (!confirm('Refresh from Synapse room replay?\n\nThis will clear all locally cached data and rebuild state by replaying Matrix room events. This is the slowest method.')) return;
+    }
 
     var btn = document.getElementById('refresh-db-btn');
     var statusEl = document.getElementById('refresh-db-status');
     if (btn) btn.disabled = true;
-    if (statusEl) statusEl.textContent = 'Refreshing...';
+    if (statusEl) statusEl.textContent = 'Refreshing (' + source + ')...';
 
     // Switch to the home/database view so the loading overlay is visible
     switchApp('home');
@@ -12147,29 +12169,92 @@ async function refreshLocalDB() {
         totalRecords = 0;
         lastEventTimestamp = null;
 
-        // Re-hydrate from webhook API (PostgreSQL)
-        updateLoadingOverlay('Refreshing database...', 'Downloading from server...', 0, 0, 0, 0, null);
-        var webhookHydration = await hydrateFromWebhooks();
-        var hydrated = !!(webhookHydration && webhookHydration.success);
+        var hydrated = false;
+
+        if (source === 'box') {
+            // Default: Box AMO snapshot
+            updateLoadingOverlay('Refreshing database...', 'Downloading Box snapshot...', 0, 0, 0, 0, null);
+            try {
+                var boxResult = await hydrateFromBoxAmoFile();
+                if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
+                    hydrated = true;
+                    await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                    SyncStatusFeed.success('Refreshed from Box snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
+                    console.log('[RefreshDB] Box hydration succeeded:', boxResult.importedEvents, 'events');
+                    if (statusEl) {
+                        statusEl.style.color = 'var(--success-500, #22c55e)';
+                        statusEl.textContent = 'Refreshed from Box — ' + boxResult.importedEvents.toLocaleString() + ' events';
+                    }
+                }
+            } catch (boxErr) {
+                console.error('[RefreshDB] Box hydration failed:', boxErr);
+                SyncStatusFeed.error('Box refresh failed: ' + boxErr.message + '. Try an alternative source via the dropdown.');
+                if (statusEl) {
+                    statusEl.style.color = 'var(--danger-500, #ef4444)';
+                    statusEl.textContent = 'Box refresh failed — try Postgres or Synapse source';
+                }
+            }
+        } else if (source === 'postgres') {
+            // Manual: Postgres webhook API
+            updateLoadingOverlay('Refreshing database...', 'Downloading from Postgres API...', 0, 0, 0, 0, null);
+            var webhookHydration = await hydrateFromWebhooks();
+            hydrated = !!(webhookHydration && webhookHydration.success);
+            if (hydrated) {
+                var hydrationCursor = webhookHydration.nextCursor || new Date().toISOString();
+                await setSyncMeta('lastWebhookSync', hydrationCursor);
+                if (statusEl) {
+                    statusEl.style.color = 'var(--success-500, #22c55e)';
+                    statusEl.textContent = 'Refreshed — ' + (webhookHydration.totalRecords || 0).toLocaleString() + ' records downloaded';
+                }
+                console.log('[RefreshDB] Postgres: ' + (webhookHydration.totalRecords || 0) + ' records across ' + (webhookHydration.totalTables || 0) + ' tables');
+                SyncStatusFeed.success('Database refresh complete: ' + (webhookHydration.totalRecords || 0) + ' records');
+            }
+        } else if (source === 'synapse') {
+            // Manual: Synapse room replay
+            updateLoadingOverlay('Refreshing database...', 'Replaying Synapse rooms...', 0, 0, 0, 0, null);
+            hydrated = await hydrateFromSynapse();
+            if (hydrated) {
+                await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                if (statusEl) {
+                    statusEl.style.color = 'var(--success-500, #22c55e)';
+                    statusEl.textContent = 'Refreshed from Synapse room replay';
+                }
+                SyncStatusFeed.success('Database refresh complete via Synapse replay');
+            }
+        }
 
         if (hydrated) {
-            // Save webhook sync cursor for future incremental syncs
-            var hydrationCursor = webhookHydration.nextCursor || new Date().toISOString();
-            await setSyncMeta('lastWebhookSync', hydrationCursor);
+            // Mark hydration complete in localStorage (survives IDB transaction races)
+            try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
 
             // Reload metadata into memory
-            var tables = await getAllTables();
-            var fields = await getAllFields();
-            var views = await getAllViews();
-            tables.forEach(function(t) { META_TABLES[t.tableId] = t; });
-            fields.forEach(function(f) {
-                if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-                META_FIELDS[f.tableId][f.fieldId] = f;
-            });
-            views.forEach(function(v) {
-                if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-                META_VIEWS[v.tableId][v.viewId] = v;
-            });
+            var reloadResults = await Promise.all([getAllTables(), getAllFields(), getAllViews()]);
+            var tables = reloadResults[0];
+            var fields = reloadResults[1];
+            var views = reloadResults[2];
+
+            // For Box hydration, merge additively (Box populates META_* in memory)
+            if (source === 'box') {
+                tables.forEach(function(t) { META_TABLES[t.tableId] = META_TABLES[t.tableId] || t; });
+                fields.forEach(function(f) {
+                    if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+                    META_FIELDS[f.tableId][f.fieldId] = META_FIELDS[f.tableId][f.fieldId] || f;
+                });
+                views.forEach(function(v) {
+                    if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+                    META_VIEWS[v.tableId][v.viewId] = META_VIEWS[v.tableId][v.viewId] || v;
+                });
+            } else {
+                tables.forEach(function(t) { META_TABLES[t.tableId] = t; });
+                fields.forEach(function(f) {
+                    if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+                    META_FIELDS[f.tableId][f.fieldId] = f;
+                });
+                views.forEach(function(v) {
+                    if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+                    META_VIEWS[v.tableId][v.viewId] = v;
+                });
+            }
 
             // Rebuild edges after refresh
             rebuildEdges();
@@ -12181,20 +12266,18 @@ async function refreshLocalDB() {
                 await showTable(firstTable);
             }
 
-            if (statusEl) {
-                statusEl.style.color = 'var(--success-500, #22c55e)';
-                statusEl.textContent = 'Refreshed — ' + (webhookHydration.totalRecords || 0).toLocaleString() + ' records downloaded';
-            }
-            console.log('[RefreshDB] Complete: ' + (webhookHydration.totalRecords || 0) + ' records across ' + (webhookHydration.totalTables || 0) + ' tables');
-            SyncStatusFeed.success('Database refresh complete: ' + (webhookHydration.totalRecords || 0) + ' records');
+            // Notify listeners
+            window.dispatchEvent(new CustomEvent('amino:sync', {
+                detail: { source: 'refresh-' + source, tables: Object.keys(META_TABLES).length }
+            }));
         } else {
             // Hydration failed — try rendering whatever we have
             await renderSidebar(true);
-            if (statusEl) {
+            if (statusEl && !statusEl.textContent.includes('failed')) {
                 statusEl.style.color = 'var(--danger-500, #ef4444)';
                 statusEl.textContent = 'Refresh failed — could not download data from server';
             }
-            SyncStatusFeed.error('Database refresh failed — no data returned from server');
+            SyncStatusFeed.error('Database refresh failed — no data returned from ' + source);
         }
 
         hideLoadingOverlay();
@@ -17076,11 +17159,10 @@ function _startBackgroundHydration() {
     _backgroundHydrationInFlight = (async function() {
         var hydrated = false;
 
-        // Step 0: Try Box AMO hydration first (complete binary snapshot).
-        // This is the most reliable source for the full dataset (~70k records).
-        // The Box AMO file is a pre-built snapshot that replays all events into
-        // memory, giving the Interface and table views immediate access to the
-        // complete record set.
+        // Primary source: Box AMO hydration (complete binary snapshot).
+        // This is the ONLY automatic data source. All other sources
+        // (Postgres webhook API, Synapse room replay) require manual
+        // user confirmation via a prompt.
         try {
             updateLoadingOverlay('Loading snapshot...', 'Downloading from Box...', 0, 0, 0, 0, null);
             var boxResult = await hydrateFromBoxAmoFile();
@@ -17089,36 +17171,18 @@ function _startBackgroundHydration() {
                 SyncStatusFeed.success('Hydrated from Box snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
                 console.log('[BackgroundHydration] Box AMO hydration succeeded:', boxResult.importedEvents, 'events');
                 await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
             }
         } catch (boxErr) {
-            console.warn('[BackgroundHydration] Box AMO hydration failed, trying webhook API:', boxErr.message || boxErr);
+            console.warn('[BackgroundHydration] Box AMO hydration failed:', boxErr.message || boxErr);
         }
 
-        // Step 1: Hydrate current record state from DB API (fast, REST)
+        // Box failed — ask the user which fallback source to use.
+        // Do NOT auto-fall-through to Postgres or Synapse.
         if (!hydrated) {
-            var webhookHydration = null;
-            try {
-                updateLoadingOverlay('Connecting to API...', 'Fetching tables...', 0, 0, 0, 0, null);
-                webhookHydration = await hydrateFromWebhooks();
-                hydrated = !!(webhookHydration && webhookHydration.success);
-                if (hydrated) {
-                    // Save webhook sync cursor so future incremental syncs work
-                    var hydrationCursor = webhookHydration.nextCursor || new Date().toISOString();
-                    await setSyncMeta('lastWebhookSync', hydrationCursor);
-                    if (webhookHydration.partial) {
-                        SyncStatusFeed.warn('Webhook hydration was partial (' + webhookHydration.failedTables + ' table' + (webhookHydration.failedTables !== 1 ? 's' : '') + ' failed) — backfilling from Synapse');
-                    }
-                }
-            } catch (webhookErr) {
-                console.warn('[init] Webhook hydration failed, trying Synapse rooms:', webhookErr);
-                SyncStatusFeed.warn('Webhook hydration failed: ' + webhookErr.message + ' — trying Synapse rooms');
-            }
-
-            if (!hydrated || (webhookHydration && webhookHydration.partial)) {
-                // Fall back to Synapse room replay (gets both records + history)
-                updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
-                hydrated = await hydrateFromSynapse();
-            }
+            SyncStatusFeed.warn('Box snapshot unavailable. Use Settings → Refresh Database to load from an alternative source.');
+            updateLoadingOverlay('Box unavailable', 'Use Settings → Refresh Database to choose an alternative data source', 0, 0, 0, 0, null);
+            console.warn('[BackgroundHydration] Box hydration failed. Alternative sources available via manual refresh only.');
         }
 
         if (hydrated) {
@@ -17228,11 +17292,14 @@ async function init() {
             if (_boxHydrationSucceeded) {
                 SyncStatusFeed.success('Hydrated from Box .amo snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
                 await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                // Also persist to localStorage (synchronous, survives page navigation
+                // before IDB transactions complete) to prevent re-hydration on next load.
+                try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
             }
         }
     } catch (boxErr) {
-        console.warn('[init] Box .amo hydration unavailable, continuing with local/normal hydration:', boxErr.message || boxErr);
-        SyncStatusFeed.warn('Box .amo hydration unavailable — falling back to local cache/webhook/Synapse sync');
+        console.warn('[init] Box .amo hydration unavailable, continuing with local cache:', boxErr.message || boxErr);
+        SyncStatusFeed.warn('Box .amo hydration unavailable — using local cache. Use Settings → Refresh Database for alternative sources.');
     }
 
     // Load all metadata + max event ID in parallel — single IDB round-trip
@@ -17325,7 +17392,12 @@ async function init() {
                 getSyncMeta('lastWebhookSync').catch(function() { return null; })
             ]);
             hasRecords = existenceResults[0] > 0;
-            hydrationWasComplete = hasRecords && !!existenceResults[1];
+            // Check both IDB sync meta AND localStorage flag (localStorage is more
+            // reliable since it persists synchronously even if IDB transactions were
+            // still in-flight when the page was navigated away).
+            var lsHydrationComplete = false;
+            try { lsHydrationComplete = !!localStorage.getItem('amino_hydration_complete'); } catch(e) {}
+            hydrationWasComplete = hasRecords && (!!existenceResults[1] || lsHydrationComplete);
         } catch (e) { /* treat as no records */ }
     }
 
