@@ -27920,6 +27920,19 @@ var _settingsRooms = []; // Cached room list (tables with matrix_room_id)
 var _settingsPermissionGroups = { groups: [], assignments: {} }; // Shared room permission structures
 var _urlStateBootstrapped = false;
 
+function canAccessDatabaseApp() {
+    var role = String(_currentUserRole || '').toLowerCase();
+    return role === 'admin' || role === 'staff';
+}
+
+function applyAppNavPermissions() {
+    var dbBtn = document.getElementById('app-nav-database');
+    if (!dbBtn) return;
+    var allowed = canAccessDatabaseApp();
+    dbBtn.style.display = allowed ? '' : 'none';
+    dbBtn.setAttribute('aria-hidden', allowed ? 'false' : 'true');
+}
+
 function _setUrlParam(params, key, value) {
     if (value == null || value === '') params.delete(key);
     else params.set(key, String(value));
@@ -27983,6 +27996,10 @@ function getUrlState() {
 }
 
 function switchApp(appName) {
+    if (appName === 'database' && !canAccessDatabaseApp()) {
+        appName = 'interface';
+    }
+
     _currentApp = appName;
 
     // Update nav button states
@@ -28172,6 +28189,7 @@ function updateAppNavUser() {
     else if (_currentUserRole === 'staff') roleEl.classList.add('staff');
     var fhRole = document.getElementById('file-header-role');
     if (fhRole) fhRole.textContent = _currentUserRole || 'admin';
+    applyAppNavPermissions();
 }
 
 async function detectAndStoreUserRole() {
@@ -29372,14 +29390,16 @@ init = async function() {
         await renderTable();
     } else if (state.app === 'interface') {
         switchApp('interface');
-        InterfaceApp.setUrlState({ page: state.ifacePage, search: state.ifaceSearch });
+        InterfaceApp.setUrlState({ page: state.ifacePage || 'clients', search: state.ifaceSearch });
         if (InterfaceApp.activePage) await InterfaceApp.renderPage(InterfaceApp.activePage);
     } else if (state.app === 'settings') {
         switchApp('settings');
     } else if (state.app === 'database') {
         switchApp('database');
     } else {
-        switchApp('database');
+        switchApp('interface');
+        InterfaceApp.setUrlState({ page: 'clients', search: '' });
+        if (InterfaceApp.activePage) await InterfaceApp.renderPage(InterfaceApp.activePage);
     }
 
     persistUrlState();
