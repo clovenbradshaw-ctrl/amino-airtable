@@ -7579,6 +7579,134 @@ var AmoFormat = {
     }
 };
 
+// ============ Box .amo Hydration Snapshot Sync ============
+var BOX_AMO_UPLOAD_URL = 'https://n8n.intelechia.com/webhook/box-upload';
+var BOX_AMO_DOWNLOAD_URL = 'https://n8n.intelechia.com/webhook/box-download';
+var BOX_AMO_DEFAULT_API_KEY = '7aea6b6c-ce2b-48ce-9909-9cae15cdb220';
+var BOX_AMO_FILENAME = 'amino-hydration.amo';
+var BOX_AMO_UPLOAD_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+var BOX_AMO_INITIAL_UPLOAD_DELAY_MS = 2 * 60 * 1000; // 2 minutes after app init
+var _boxAmoUploadTimer = null;
+var _boxAmoUploadInFlight = false;
+
+function getBoxAmoApiKey() {
+    return localStorage.getItem('amino_box_api_key') || BOX_AMO_DEFAULT_API_KEY;
+}
+
+async function hydrateFromBoxAmoFile() {
+    var apiKey = getBoxAmoApiKey();
+    var url = BOX_AMO_DOWNLOAD_URL + '?api_key=' + encodeURIComponent(apiKey);
+
+    // Keep startup resilient: fail fast if Box is unreachable so normal hydration can continue.
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timeoutId = null;
+    if (controller) {
+        timeoutId = setTimeout(function() { controller.abort(); }, 12000);
+    }
+
+    var res;
+    try {
+        res = await fetch(url, {
+            method: 'GET',
+            signal: controller ? controller.signal : undefined
+        });
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+    }
+
+    if (!res.ok) {
+        throw new Error('Box snapshot download failed (' + res.status + ')');
+    }
+
+    var buffer = await res.arrayBuffer();
+    var format = AmoFormat.detectFormat(buffer);
+    if (format !== 'amo') {
+        throw new Error('Box hydration file format was "' + format + '" (expected "amo")');
+    }
+
+    var amoData = AmoFormat.read(buffer);
+    if (!amoData || !Array.isArray(amoData.events) || amoData.events.length === 0) {
+        var amoType = amoData && amoData.type ? amoData.type : 'unknown';
+        throw new Error('Box .amo file contained "' + amoType + '" payload; expected non-empty event stream');
+    }
+
+    amoData.events.sort(function(a, b) { return (a.id || 0) - (b.id || 0); });
+    await backgroundSaveToIndexedDB(amoData.events);
+    return { importedEvents: amoData.events.length, cursor: amoData.cursor || 0 };
+}
+
+
+async function uploadAmoSnapshotToBox(reason) {
+    if (_boxAmoUploadInFlight) return false;
+    _boxAmoUploadInFlight = true;
+
+    try {
+        var allEvents = [];
+        var batchSize = 1000;
+        var offset = 0;
+
+        while (true) {
+            var batch = await getRawEventsPaginated(offset, batchSize);
+            if (!batch || batch.length === 0) break;
+            for (var i = 0; i < batch.length; i++) allEvents.push(batch[i]);
+            offset += batch.length;
+        }
+
+        if (allEvents.length === 0) return false;
+
+        if (encryptionEnabled && encryptionKey) {
+            allEvents = await Promise.all(allEvents.map(function(e) { return decryptEventFromStorage(e); }));
+        }
+
+        var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS });
+        var apiKey = getBoxAmoApiKey();
+        var url = BOX_AMO_UPLOAD_URL + '?api_key=' + encodeURIComponent(apiKey);
+        var formData = new FormData();
+        formData.append('file', new Blob([binary], { type: 'application/octet-stream' }), BOX_AMO_FILENAME);
+
+        var uploadRes = await fetch(url, {
+            method: 'POST',
+            headers: { 'x-file-name': BOX_AMO_FILENAME, 'x-upload-reason': reason || 'scheduled' },
+            body: formData
+        });
+
+        if (!uploadRes.ok) {
+            throw new Error('Upload failed (' + uploadRes.status + ')');
+        }
+
+        localStorage.setItem('amino_box_amo_last_upload', String(Date.now()));
+        return true;
+    } finally {
+        _boxAmoUploadInFlight = false;
+    }
+}
+
+function startBoxAmoSnapshotUploads() {
+    if (_boxAmoUploadTimer) return;
+
+    var schedule = function(delay) {
+        if (_boxAmoUploadTimer) clearTimeout(_boxAmoUploadTimer);
+        _boxAmoUploadTimer = setTimeout(async function runUploadLoop() {
+            _boxAmoUploadTimer = null;
+            try {
+                if (!document.hidden && navigator.onLine) {
+                    await uploadAmoSnapshotToBox('scheduled');
+                }
+            } catch (err) {
+                console.warn('[BoxAmo] Scheduled upload failed:', err.message || err);
+            }
+            schedule(BOX_AMO_UPLOAD_INTERVAL_MS);
+        }, delay);
+    };
+
+    schedule(BOX_AMO_INITIAL_UPLOAD_DELAY_MS);
+
+    window.addEventListener('beforeunload', function() {
+        // Best-effort last save when user leaves.
+        uploadAmoSnapshotToBox('beforeunload').catch(function() {});
+    });
+}
+
 // ============ Sync Status Feed ============
 // Terminal-style log for sync activity visibility
 
@@ -16301,6 +16429,22 @@ async function init() {
 
     updateStatus('Loading local data...', false, null, null);
 
+    // First-run optimization: attempt hydration from Box-hosted .amo binary snapshot.
+    // This is a stale-tolerant bootstrap and does not replace normal sync.
+    try {
+        var existingTableCount = await getAllTables().then(function(ts) { return ts.length; }).catch(function() { return 0; });
+        if (existingTableCount === 0) {
+            updateStatus('Loading hydration snapshot...', false, null, 'Downloading .amo');
+            var boxResult = await hydrateFromBoxAmoFile();
+            if (boxResult && boxResult.importedEvents > 0) {
+                SyncStatusFeed.success('Hydrated from Box .amo snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
+            }
+        }
+    } catch (boxErr) {
+        console.warn('[init] Box .amo hydration unavailable, continuing with normal hydration:', boxErr.message || boxErr);
+        SyncStatusFeed.warn('Box .amo hydration unavailable — falling back to webhook/Synapse sync');
+    }
+
     // Load all metadata + max event ID in parallel — single IDB round-trip
     var metaResults = await Promise.all([
         getAllTables(),
@@ -16477,6 +16621,9 @@ async function init() {
             }
         }
     });
+
+    // Start periodic client-side .amo snapshot uploads for future hydrations.
+    startBoxAmoSnapshotUploads();
 
     // Drain any offline-queued edits from a previous session
     try {
