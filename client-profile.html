@@ -1790,27 +1790,18 @@
           // Restore Matrix session for state event access
           MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
 
-          // Initialize AminoData — try password first, then session key from sessionStorage
+          // Initialize AminoData — try password first, then stored key from localStorage
           if (typeof AminoData !== 'undefined' && AminoData.init) {
             var aminoInited = false;
             if (session.password) {
               await AminoData.init(session.accessToken, session.userId, session.password);
               aminoInited = true;
-            } else {
-              // No password stored — try the session key from sessionStorage
-              // (index.html exports the derived AES-GCM key there)
-              var sessionKeyB64 = sessionStorage.getItem('amino_session_key');
-              if (sessionKeyB64 && AminoData.initWithKey) {
-                try {
-                  var rawKey = Uint8Array.from(atob(sessionKeyB64), function(c) { return c.charCodeAt(0); });
-                  var cryptoKey = await crypto.subtle.importKey(
-                    'raw', rawKey, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
-                  );
-                  await AminoData.initWithKey(session.accessToken, session.userId, cryptoKey);
-                  aminoInited = true;
-                } catch (keyErr) {
-                  console.warn('[Profile] Session key restore failed:', keyErr.message);
-                }
+            } else if (AminoData.initWithKey) {
+              try {
+                await AminoData.initWithKey(session.accessToken, session.userId);
+                aminoInited = true;
+              } catch (keyErr) {
+                console.warn('[Profile] Key-based init failed:', keyErr.message);
               }
             }
             if (aminoInited) {
