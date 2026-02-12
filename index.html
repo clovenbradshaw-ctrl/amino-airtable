@@ -1914,50 +1914,106 @@
             flex: 1;
             flex-direction: column;
             overflow: hidden;
-            background: var(--bg-primary);
+            /* Warm theme matching Softr sample */
+            background: #f0f4f8;
+            color: #232120;
+            font-family: Inter, system-ui, -apple-system, sans-serif;
+            --iface-accent: #a77653;
+            --iface-accent-hover: #8f6243;
+            --iface-accent-dark: #644631;
+            --iface-bg: #f0f4f8;
+            --iface-surface: #ffffff;
+            --iface-border: #d9e0e8;
+            --iface-text: #232120;
+            --iface-text-secondary: #4b5563;
+            --iface-text-muted: #6b7280;
+            --iface-text-light: #94a3b8;
+            --iface-brand: #a77653;
+            --iface-brand-subtle: rgba(167, 118, 83, 0.08);
+            --iface-blue: #2563eb;
+            --iface-green: #10b981;
+            --iface-danger: #ef4444;
+            --iface-radius: 10px;
         }
         #interface-app.visible { display: flex; }
 
-        /* Interface top bar */
-        .iface-topbar {
+        /* Branded main navigation bar (Softr-style) */
+        .iface-mainnav {
             display: flex; align-items: center; justify-content: space-between;
-            height: var(--header-height); min-height: var(--header-height);
-            padding: 0 20px; background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border-primary);
+            height: 60px; min-height: 60px;
+            padding: 0 20px;
+            background: var(--iface-surface);
+            border-bottom: 1px solid var(--iface-border);
+            flex-shrink: 0;
         }
-        .iface-topbar-left { display: flex; align-items: center; gap: 12px; }
-        .iface-topbar-right { display: flex; align-items: center; gap: 10px; }
+        .iface-mainnav-left { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
+        .iface-mainnav-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .iface-nav-logo {
+            display: flex; align-items: center; gap: 9px;
+            text-decoration: none; cursor: pointer; flex-shrink: 0;
+        }
+        .iface-logo-mark {
+            width: 32px; height: 32px; border-radius: 8px;
+            background: linear-gradient(135deg, #92703A 0%, #B8923E 50%, #D4A843 100%);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 15px; font-weight: 800;
+            letter-spacing: -.02em;
+            box-shadow: 0 1px 3px rgba(146,112,58,.3);
+        }
+        .iface-logo-text { display: flex; flex-direction: column; line-height: 1.15; }
+        .iface-logo-firm { font-size: 14px; font-weight: 700; color: var(--iface-text); letter-spacing: -.01em; }
+        .iface-logo-sub { font-size: 10px; font-weight: 500; color: var(--iface-text-muted); letter-spacing: .02em; text-transform: uppercase; }
+        .iface-nav-divider { width: 1px; height: 28px; background: var(--iface-border); flex-shrink: 0; }
+
+        /* Quick action buttons in nav */
+        .iface-quick-action {
+            font-family: inherit; font-size: 12px; font-weight: 600;
+            padding: 7px 14px; border-radius: 8px;
+            border: none; cursor: pointer; transition: all 150ms ease;
+            display: flex; align-items: center; gap: 6px; white-space: nowrap;
+        }
+        .iface-quick-action.primary { background: var(--iface-accent); color: white; }
+        .iface-quick-action.primary:hover { background: var(--iface-accent-hover); }
+        .iface-quick-action.secondary {
+            background: var(--iface-surface); color: var(--iface-text-secondary);
+            border: 1px solid var(--iface-border);
+        }
+        .iface-quick-action.secondary:hover { background: #f8fafc; border-color: #cbd5e1; }
+        .iface-quick-action svg { width: 14px; height: 14px; }
+
         .iface-edit-toggle {
             display: none; padding: 5px 12px; font-size: 12px; font-weight: 600;
-            border: 1px solid var(--border-secondary); border-radius: var(--radius-md);
-            background: transparent; color: var(--text-secondary); cursor: pointer;
-            transition: all var(--transition-fast);
+            border: 1px solid var(--iface-border); border-radius: 8px;
+            background: transparent; color: var(--iface-text-secondary); cursor: pointer;
+            transition: all 150ms ease;
         }
-        .iface-edit-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
-        .iface-edit-toggle.active { background: var(--primary-500); color: #fff; border-color: var(--primary-500); }
+        .iface-edit-toggle:hover { background: rgba(0,0,0,0.04); color: var(--iface-text); }
+        .iface-edit-toggle.active { background: var(--iface-accent); color: #fff; border-color: var(--iface-accent); }
         .iface-edit-toggle.is-admin { display: inline-flex; }
         .iface-global-search {
-            width: 200px; padding: 6px 12px; font-size: 13px;
-            background: var(--bg-primary); border: 1px solid var(--border-primary);
-            border-radius: var(--radius-md); color: var(--text-primary); outline: none;
+            width: 180px; padding: 7px 12px; font-size: 12px;
+            background: #f8fafc; border: 1px solid var(--iface-border);
+            border-radius: 8px; color: var(--iface-text); outline: none;
+            font-family: inherit;
         }
-        .iface-global-search::placeholder { color: var(--text-muted); }
-        .iface-global-search:focus { border-color: var(--primary-500); }
+        .iface-global-search::placeholder { color: var(--iface-text-light); }
+        .iface-global-search:focus { border-color: var(--iface-accent); box-shadow: 0 0 0 2px rgba(167,118,83,0.15); background: white; }
 
-        /* Interface page tabs (nav) */
+        /* Interface page tabs (inside mainnav) */
         .iface-page-tabs {
-            display: flex; align-items: center; gap: 0;
-            background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary);
-            padding: 0 16px; min-height: 38px; overflow-x: auto;
+            display: flex; align-items: center; gap: 2px;
+            padding: 0; min-height: 38px; overflow-x: auto;
+            background: transparent; border: none;
         }
+        .iface-page-tabs::-webkit-scrollbar { display: none; }
         .iface-page-tab {
-            padding: 8px 16px; font-size: 13px; font-weight: 500;
-            color: var(--text-muted); cursor: pointer; border: none; background: none;
+            padding: 8px 14px; font-size: 13px; font-weight: 500;
+            color: var(--iface-text-muted); cursor: pointer; border: none; background: none;
             border-bottom: 2px solid transparent; white-space: nowrap;
-            transition: all var(--transition-fast);
+            transition: all 150ms ease; border-radius: 8px;
         }
-        .iface-page-tab:hover { color: var(--text-secondary); background: var(--bg-hover); }
-        .iface-page-tab.active { color: var(--primary-500); border-bottom-color: var(--primary-500); }
+        .iface-page-tab:hover { color: var(--iface-text-secondary); background: rgba(0,0,0,0.04); }
+        .iface-page-tab.active { color: var(--iface-accent); background: var(--iface-brand-subtle); border-bottom-color: transparent; }
         .iface-page-tab-wrap { display: inline-flex; align-items: center; gap: 4px; }
         .iface-page-access-btn {
             display: none;
@@ -1992,9 +2048,9 @@
         /* Interface page container */
         .iface-page-container {
             flex: 1; overflow-y: auto; padding: 0;
-            background: var(--bg-primary);
+            background: var(--iface-bg, #f0f4f8);
         }
-        html.light-theme .iface-page-container { background: #f8fafc; }
+        html.light-theme .iface-page-container { background: #f0f4f8; }
 
         .iface-page { display: none; flex-direction: column; min-height: 100%; }
         .iface-page.active { display: flex; }
@@ -2013,16 +2069,16 @@
         }
         .iface-quick-link {
             display: flex; flex-direction: column; align-items: center; gap: 8px;
-            padding: 16px 8px; background: var(--bg-secondary);
-            border: 1px solid var(--border-primary); border-radius: var(--radius-lg);
-            cursor: pointer; text-decoration: none; color: var(--text-primary);
-            transition: all var(--transition-fast); font-size: 12px; font-weight: 500;
+            padding: 16px 8px; background: var(--iface-surface);
+            border: 1px solid var(--iface-border); border-radius: var(--iface-radius);
+            cursor: pointer; text-decoration: none; color: var(--iface-text);
+            transition: all 150ms ease; font-size: 12px; font-weight: 500;
             text-align: center;
         }
-        .iface-quick-link:hover { background: var(--bg-hover); border-color: var(--primary-400); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+        .iface-quick-link:hover { border-color: var(--iface-accent); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
         .iface-quick-link-icon {
-            width: 40px; height: 40px; border-radius: var(--radius-md);
-            background: var(--primary-500); color: #fff;
+            width: 40px; height: 40px; border-radius: 8px;
+            background: var(--iface-accent); color: #fff;
             display: flex; align-items: center; justify-content: center; font-size: 18px;
         }
 
@@ -2030,47 +2086,48 @@
         .iface-section {
             padding: 20px 24px 8px; display: flex; align-items: center; justify-content: space-between;
         }
-        .iface-section-title { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+        .iface-section-title { font-size: 16px; font-weight: 600; color: var(--iface-text); }
         .iface-section-actions { display: flex; gap: 8px; }
 
-        /* Block containers */
+        /* Block containers - warm card style */
         .iface-block {
-            margin: 0 24px 16px; background: var(--bg-secondary);
-            border: 1px solid var(--border-primary); border-radius: var(--radius-lg);
+            margin: 0 24px 16px; background: var(--iface-surface);
+            border: 1px solid var(--iface-border); border-radius: var(--iface-radius);
             overflow: hidden; position: relative;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
         .iface-block-header {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 16px; border-bottom: 1px solid var(--border-primary);
+            padding: 12px 16px; border-bottom: 1px solid var(--iface-border);
         }
-        .iface-block-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .iface-block-title { font-size: 14px; font-weight: 600; color: var(--iface-text); }
         .iface-block-search {
             width: 180px; padding: 5px 10px; font-size: 12px;
-            background: var(--bg-primary); border: 1px solid var(--border-primary);
-            border-radius: var(--radius-sm); color: var(--text-primary); outline: none;
+            background: #f8fafc; border: 1px solid var(--iface-border);
+            border-radius: 8px; color: var(--iface-text); outline: none;
+            font-family: inherit;
         }
-        .iface-block-search::placeholder { color: var(--text-muted); }
-        .iface-block-search:focus { border-color: var(--primary-500); }
+        .iface-block-search::placeholder { color: var(--iface-text-light); }
+        .iface-block-search:focus { border-color: var(--iface-accent); }
         .iface-block-body { padding: 0; max-height: 400px; overflow-y: auto; }
 
         /* Card list (for case notes, communications) */
         .iface-card-list { display: flex; flex-direction: column; }
         .iface-card {
             display: flex; align-items: flex-start; gap: 12px;
-            padding: 12px 16px; border-bottom: 1px solid var(--border-primary);
-            cursor: pointer; transition: background var(--transition-fast);
+            padding: 12px 16px; border-bottom: 1px dashed #edf0f4;
+            cursor: pointer; transition: background 150ms ease;
         }
         .iface-card:last-child { border-bottom: none; }
-        .iface-card:hover { background: var(--bg-hover); }
-        .iface-card-icon { width: 32px; height: 32px; border-radius: 50%; background: var(--primary-100); color: var(--primary-600); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
-        html:not(.light-theme) .iface-card-icon { background: rgba(59,130,246,0.15); color: var(--primary-400); }
+        .iface-card:hover { background: rgba(167,118,83,0.04); }
+        .iface-card-icon { width: 32px; height: 32px; border-radius: 50%; background: rgba(167,118,83,0.1); color: var(--iface-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
         .iface-card-content { flex: 1; min-width: 0; }
-        .iface-card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .iface-card-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .iface-card-meta { font-size: 11px; color: var(--text-disabled); margin-top: 4px; }
+        .iface-card-title { font-size: 13px; font-weight: 600; color: var(--iface-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .iface-card-subtitle { font-size: 12px; color: var(--iface-text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .iface-card-meta { font-size: 11px; color: var(--iface-text-light); margin-top: 4px; }
 
-        /* Case notes widget */
-        .iface-case-notes-widget { max-height: none; }
+        /* Case notes widget (inbox layout) */
+        .iface-case-notes-widget { max-height: none; padding: 0; }
         .iface-case-notes-controls { padding: 14px 16px; border-bottom: 1px solid var(--border-primary); display: grid; gap: 10px; }
         .iface-case-notes-actions { display: flex; flex-wrap: wrap; gap: 8px; }
         .iface-case-notes-actions button, .iface-case-notes-pager button, .iface-case-note-link-btn { padding: 7px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-primary); background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
@@ -2121,18 +2178,34 @@
         }
         .iface-table th {
             text-align: left; padding: 8px 12px; font-weight: 600; font-size: 12px;
-            color: var(--text-muted); background: var(--bg-tertiary);
-            border-bottom: 1px solid var(--border-primary); white-space: nowrap;
+            color: var(--iface-text-secondary); background: #f6f2ef;
+            border-bottom: 1px solid var(--iface-border); white-space: nowrap;
             position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none;
+            text-transform: uppercase; letter-spacing: 0.03em;
         }
-        .iface-table th:hover { color: var(--text-primary); }
+        .iface-table th:hover { color: var(--iface-text); }
         .iface-table td {
-            padding: 8px 12px; border-bottom: 1px solid var(--border-primary);
-            color: var(--text-primary); white-space: nowrap; overflow: hidden;
+            padding: 8px 12px; border-bottom: 1px solid #edf0f4;
+            color: var(--iface-text); white-space: nowrap; overflow: hidden;
             text-overflow: ellipsis;
         }
-        .iface-table tr:hover td { background: var(--bg-hover); }
+        .iface-table tr:hover td { background: rgba(167,118,83,0.04); }
         .iface-table tr:last-child td { border-bottom: none; }
+        .iface-table tr { cursor: pointer; }
+
+        /* Responsive mainnav */
+        @media (max-width: 900px) {
+            .iface-mainnav { flex-wrap: wrap; height: auto; padding: 8px 14px; gap: 6px; }
+            .iface-mainnav-left { flex-wrap: wrap; }
+            .iface-logo-text { display: none; }
+            .iface-nav-divider { display: none; }
+            .iface-quick-action span:not(svg) { display: none; }
+            .iface-global-search { width: 140px; }
+        }
+        @media (max-width: 600px) {
+            .iface-quick-action { display: none; }
+            .iface-mainnav-right { gap: 6px; }
+        }
 
         /* Responsive table: hide less important columns at smaller breakpoints */
         @media (max-width: 1200px) {
@@ -2171,44 +2244,44 @@
         /* Status badges */
         .iface-badge {
             display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 600;
-            border-radius: 10px; white-space: nowrap;
+            border-radius: 999px; white-space: nowrap;
         }
-        .iface-badge-green { background: rgba(34, 197, 94, 0.15); color: var(--success-500); }
-        .iface-badge-red { background: rgba(239, 68, 68, 0.15); color: var(--danger-500); }
-        .iface-badge-yellow { background: rgba(245, 158, 11, 0.15); color: var(--warning-500); }
-        .iface-badge-blue { background: rgba(59, 130, 246, 0.15); color: var(--primary-500); }
-        .iface-badge-gray { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
+        .iface-badge-green { background: #ecfdf3; color: #0f766e; border: 1px solid #8fd3b2; }
+        .iface-badge-red { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+        .iface-badge-yellow { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
+        .iface-badge-blue { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
+        .iface-badge-gray { background: #eef2f7; color: #4b5563; border: 1px solid #d7dfe8; }
 
         /* Filters bar */
         .iface-filters {
             display: flex; align-items: center; gap: 8px; padding: 12px 16px;
-            border-bottom: 1px solid var(--border-primary); flex-wrap: wrap;
+            border-bottom: 1px solid var(--iface-border); flex-wrap: wrap;
         }
         .iface-filter-dropdown {
-            padding: 5px 10px; font-size: 12px; border: 1px solid var(--border-primary);
-            border-radius: var(--radius-sm); background: var(--bg-primary);
-            color: var(--text-primary); cursor: pointer; outline: none;
+            padding: 5px 10px; font-size: 12px; border: 1px solid var(--iface-border);
+            border-radius: 8px; background: white;
+            color: var(--iface-text); cursor: pointer; outline: none; font-family: inherit;
         }
-        .iface-filter-dropdown:focus { border-color: var(--primary-500); }
+        .iface-filter-dropdown:focus { border-color: var(--iface-accent); }
 
         /* Column layout blocks (side-by-side) */
         .iface-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 0 24px 16px; }
         .iface-columns .iface-block { margin: 0; }
-        .iface-columns .iface-block:first-child { border-radius: var(--radius-lg) 0 0 var(--radius-lg); border-right: none; }
-        .iface-columns .iface-block:last-child { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
+        .iface-columns .iface-block:first-child { border-radius: var(--iface-radius) 0 0 var(--iface-radius); border-right: none; }
+        .iface-columns .iface-block:last-child { border-radius: 0 var(--iface-radius) var(--iface-radius) 0; }
         @media (max-width: 768px) {
             .iface-columns { grid-template-columns: 1fr; }
-            .iface-columns .iface-block { border-radius: var(--radius-lg) !important; border-right: 1px solid var(--border-primary) !important; margin-bottom: 12px; }
+            .iface-columns .iface-block { border-radius: var(--iface-radius) !important; border-right: 1px solid var(--iface-border) !important; margin-bottom: 12px; }
         }
 
         /* Tabs inside blocks */
         .iface-tab-bar {
-            display: flex; gap: 0; border-bottom: 1px solid var(--border-primary);
-            background: var(--bg-secondary);
+            display: flex; gap: 0; border-bottom: 1px solid var(--iface-border);
+            background: #f8fafc;
         }
         .iface-tab-btn {
             padding: 10px 20px; font-size: 13px; font-weight: 500;
-            color: var(--text-muted); cursor: pointer; border: none; background: none;
+            color: var(--iface-text-muted); cursor: pointer; border: none; background: none;
             border-bottom: 2px solid transparent;
             transition: all var(--transition-fast);
         }
@@ -2333,17 +2406,17 @@
 
         .iface-synced-badge {
             display: flex; align-items: center; gap: 5px;
-            font-size: 12px; font-weight: 500; color: var(--success-500);
-            background: rgba(34,197,94,0.1); padding: 4px 10px;
-            border-radius: 999px;
+            font-size: 11px; font-weight: 500; color: #0f766e;
+            background: #ecfdf3; padding: 4px 10px;
+            border-radius: 999px; border: 1px solid #8fd3b2;
         }
         .iface-synced-badge::before {
             content: ''; width: 6px; height: 6px; border-radius: 50%;
-            background: var(--success-500);
+            background: #10b981;
         }
         .iface-topbar-avatar {
             width: 30px; height: 30px; border-radius: 50%;
-            background: rgba(59,130,246,0.12); color: var(--primary-500);
+            background: var(--iface-accent); color: white;
             display: flex; align-items: center; justify-content: center;
             font-size: 12px; font-weight: 600; cursor: pointer;
         }
@@ -2363,10 +2436,10 @@
         .iface-welcome-greeting { margin-bottom: 32px; }
         .iface-welcome-greeting h1 {
             font-size: 26px; font-weight: 700; letter-spacing: -.02em;
-            color: var(--text-primary); margin-bottom: 4px;
+            color: var(--iface-text); margin-bottom: 4px;
         }
-        .iface-welcome-greeting h1 span { color: var(--primary-500); }
-        .iface-welcome-greeting p { font-size: 14px; color: var(--text-muted); }
+        .iface-welcome-greeting h1 span { color: var(--iface-accent); }
+        .iface-welcome-greeting p { font-size: 14px; color: var(--iface-text-muted); }
 
         /* Action cards */
         .iface-action-cards {
@@ -2374,26 +2447,27 @@
             gap: 16px; margin-bottom: 28px;
         }
         .iface-action-card {
-            background: var(--bg-secondary); border: 1px solid var(--border-primary);
-            border-radius: var(--radius-xl); padding: 24px;
+            background: var(--iface-surface); border: 1px solid var(--iface-border);
+            border-radius: var(--iface-radius); padding: 24px;
             cursor: pointer; transition: all 0.2s ease;
             display: flex; flex-direction: column; gap: 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
-        .iface-action-card:hover { border-color: var(--primary-300); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .iface-action-card:hover { border-color: var(--iface-accent); box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
         .iface-action-card .acard-icon {
             width: 44px; height: 44px; border-radius: 10px;
             display: flex; align-items: center; justify-content: center;
             font-size: 20px;
         }
-        .iface-action-card .acard-icon.blue { background: rgba(59,130,246,0.1); color: var(--primary-500); }
-        .iface-action-card .acard-icon.green { background: rgba(34,197,94,0.08); color: var(--success-500); }
-        .iface-action-card .acard-icon.slate { background: var(--bg-tertiary); color: var(--text-muted); }
-        .iface-action-card h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
-        .iface-action-card p { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+        .iface-action-card .acard-icon.blue { background: rgba(37,99,235,0.08); color: #2563eb; }
+        .iface-action-card .acard-icon.green { background: rgba(16,185,129,0.08); color: #10b981; }
+        .iface-action-card .acard-icon.slate { background: #f1f5f9; color: var(--iface-text-muted); }
+        .iface-action-card h3 { font-size: 15px; font-weight: 600; color: var(--iface-text); }
+        .iface-action-card p { font-size: 13px; color: var(--iface-text-muted); line-height: 1.5; }
         .iface-action-card .acard-arrow {
-            font-size: 13px; color: var(--primary-500); font-weight: 500;
+            font-size: 13px; color: var(--iface-accent); font-weight: 500;
             display: flex; align-items: center; gap: 4px; margin-top: auto;
-            opacity: 0; transition: opacity var(--transition-fast);
+            opacity: 0; transition: opacity 150ms ease;
         }
         .iface-action-card:hover .acard-arrow { opacity: 1; }
 
@@ -2401,53 +2475,115 @@
         .iface-stats-row {
             display: grid; grid-template-columns: repeat(4, 1fr);
             gap: 0; margin-bottom: 28px;
-            background: var(--bg-secondary); border: 1px solid var(--border-primary);
-            border-radius: var(--radius-xl); overflow: hidden;
+            background: var(--iface-surface); border: 1px solid var(--iface-border);
+            border-radius: var(--iface-radius); overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
         .iface-stat-cell {
             padding: 20px 24px; text-align: center;
-            border-right: 1px solid var(--border-primary);
-            cursor: pointer; transition: background var(--transition-fast);
+            border-right: 1px solid var(--iface-border);
+            cursor: pointer; transition: background 150ms ease;
         }
         .iface-stat-cell:last-child { border-right: none; }
-        .iface-stat-cell:hover { background: var(--bg-hover); }
+        .iface-stat-cell:hover { background: rgba(167,118,83,0.04); }
         .iface-stat-cell .stat-num {
-            font-size: 28px; font-weight: 700; color: var(--text-primary);
+            font-size: 28px; font-weight: 700; color: var(--iface-text);
             letter-spacing: -.02em; margin-bottom: 2px;
         }
-        .iface-stat-cell .stat-num.green { color: var(--success-500); }
+        .iface-stat-cell .stat-num.green { color: #10b981; }
         .iface-stat-cell .stat-label {
-            font-size: 11px; font-weight: 600; color: var(--text-muted);
+            font-size: 11px; font-weight: 600; color: var(--iface-text-muted);
             text-transform: uppercase; letter-spacing: .06em;
         }
 
         /* Recent section (hearings, clients) */
         .iface-recent-section h2 {
             font-size: 15px; font-weight: 600; margin-bottom: 14px;
-            color: var(--text-primary); display: flex; align-items: center; gap: 8px;
+            color: var(--iface-text); display: flex; align-items: center; gap: 8px;
         }
         .iface-recent-section h2 .count {
-            font-size: 11px; font-weight: 500; color: var(--text-muted);
-            background: var(--bg-tertiary); padding: 2px 8px; border-radius: 999px;
+            font-size: 11px; font-weight: 500; color: var(--iface-text-muted);
+            background: #eef2f7; padding: 2px 8px; border-radius: 999px;
         }
         .iface-recent-list {
-            background: var(--bg-secondary); border: 1px solid var(--border-primary);
-            border-radius: var(--radius-xl); overflow: hidden;
+            background: var(--iface-surface); border: 1px solid var(--iface-border);
+            border-radius: var(--iface-radius); overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
         .iface-recent-item {
             padding: 14px 20px;
             display: flex; align-items: center; justify-content: space-between;
-            border-bottom: 1px solid var(--border-primary);
-            cursor: pointer; transition: background var(--transition-fast);
+            border-bottom: 1px solid #edf0f4;
+            cursor: pointer; transition: background 150ms ease;
         }
         .iface-recent-item:last-child { border-bottom: none; }
-        .iface-recent-item:hover { background: var(--bg-hover); }
+        .iface-recent-item:hover { background: rgba(167,118,83,0.04); }
         .iface-recent-item-left { display: flex; align-items: center; gap: 12px; }
         .iface-ri-avatar {
             width: 34px; height: 34px; border-radius: 50%;
-            background: var(--bg-tertiary); color: var(--text-muted);
+            background: rgba(167,118,83,0.1); color: var(--iface-accent);
             display: flex; align-items: center; justify-content: center;
             font-size: 13px; font-weight: 600;
+        }
+
+        /* ====== Inbox-style Case Notes ====== */
+        .iface-inbox {
+            display: flex; height: 100%; min-height: 500px; overflow: hidden;
+        }
+        .iface-inbox-list {
+            width: 320px; min-width: 280px; max-width: 380px;
+            border-right: 1px solid var(--iface-border);
+            overflow-y: auto; background: #fafbfc;
+            display: flex; flex-direction: column;
+        }
+        .iface-inbox-list-header {
+            padding: 14px 16px; border-bottom: 1px solid var(--iface-border);
+            font-size: 14px; font-weight: 700; color: var(--iface-text);
+            position: sticky; top: 0; background: #fafbfc; z-index: 1;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .iface-inbox-list-header .inbox-count {
+            font-size: 11px; font-weight: 500; color: var(--iface-text-muted);
+            background: #eef2f7; padding: 2px 8px; border-radius: 999px;
+        }
+        .iface-inbox-item {
+            padding: 12px 16px; cursor: pointer;
+            border-bottom: 1px solid #edf0f4;
+            transition: background 100ms ease;
+        }
+        .iface-inbox-item:hover { background: rgba(167,118,83,0.04); }
+        .iface-inbox-item.active { background: var(--iface-brand-subtle); border-left: 3px solid var(--iface-accent); }
+        .iface-inbox-item-name { font-size: 13px; font-weight: 600; color: var(--iface-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .iface-inbox-item-preview { font-size: 12px; color: var(--iface-text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .iface-inbox-item-time { font-size: 11px; color: var(--iface-text-light); margin-top: 3px; }
+        .iface-inbox-detail {
+            flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+        }
+        .iface-inbox-detail-header {
+            padding: 16px 20px; border-bottom: 1px solid var(--iface-border);
+            position: sticky; top: 0; background: white; z-index: 1;
+        }
+        .iface-inbox-detail-header h3 { font-size: 16px; font-weight: 600; color: var(--iface-text); margin-bottom: 4px; }
+        .iface-inbox-detail-header .inbox-meta { font-size: 12px; color: var(--iface-text-muted); }
+        .iface-inbox-messages {
+            flex: 1; overflow-y: auto; padding: 16px 20px;
+            display: flex; flex-direction: column;
+        }
+        .iface-inbox-msg {
+            padding: 14px 16px; background: #f8fafc; border-radius: 10px;
+            border: 1px solid #edf0f4; margin-bottom: 10px; max-width: 85%;
+        }
+        .iface-inbox-msg.own { align-self: flex-end; background: rgba(167,118,83,0.06); border-color: rgba(167,118,83,0.15); }
+        .iface-inbox-msg-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+        .iface-inbox-msg-author { font-size: 12px; font-weight: 600; color: var(--iface-text); }
+        .iface-inbox-msg-time { font-size: 11px; color: var(--iface-text-light); }
+        .iface-inbox-msg-body { font-size: 13px; line-height: 1.5; color: var(--iface-text); white-space: pre-wrap; }
+        .iface-inbox-msg-tags { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+        .iface-inbox-msg-tag { font-size: 10px; padding: 2px 8px; border-radius: 999px; background: #eef2f7; color: #4b5563; border: 1px solid #d7dfe8; }
+        @media (max-width: 768px) {
+            .iface-inbox { flex-direction: column; }
+            .iface-inbox-list { width: 100%; max-width: none; max-height: 240px; border-right: none; border-bottom: 1px solid var(--iface-border); }
+        }
         }
         .iface-ri-info h4 { font-size: 14px; font-weight: 500; color: var(--text-primary); }
         .iface-ri-info p { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
@@ -2619,10 +2755,11 @@
             overflow: hidden; text-overflow: ellipsis; max-width: 240px;
         }
         .iface-table-revamp td .client-name { font-weight: 500; }
-        .iface-table-revamp td .cell-muted { color: var(--text-muted); font-size: 12px; }
-        .iface-table-revamp td .cell-empty { color: var(--amino-slate-300); }
-        .iface-table-revamp td .date-primary { font-size: 13px; color: var(--text-primary); }
-        .iface-table-revamp td .date-relative { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+        .iface-table-revamp td .cell-muted { color: var(--iface-text-muted, var(--text-muted)); font-size: 12px; }
+        .iface-table-revamp td .cell-empty { color: var(--iface-text-light, #94a3b8); }
+        .iface-table-revamp td .cell-array .tag { background: rgba(167,118,83,0.1); color: var(--iface-accent, #a77653); border-radius: 999px; }
+        .iface-table-revamp td .date-primary { font-size: 13px; color: var(--iface-text, var(--text-primary)); }
+        .iface-table-revamp td .date-relative { font-size: 11px; color: var(--iface-text-muted, var(--text-muted)); margin-top: 1px; }
         .iface-table-revamp td .status-dot {
             display: inline-block; width: 7px; height: 7px;
             border-radius: 50%; margin-right: 6px; vertical-align: middle;
@@ -5398,20 +5535,35 @@
 
     <!-- Interface Sub-App -->
     <div id="interface-app">
-        <!-- Top bar -->
-        <div class="iface-topbar">
-            <div class="iface-topbar-left">
-                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search clients, events..." oninput="InterfaceApp.onGlobalSearch(this.value)">
+        <!-- Branded main navigation (matches Softr sample) -->
+        <div class="iface-mainnav">
+            <div class="iface-mainnav-left">
+                <a class="iface-nav-logo" onclick="switchApp('home')">
+                    <div class="iface-logo-mark">A</div>
+                    <div class="iface-logo-text">
+                        <span class="iface-logo-firm">Amino</span>
+                        <span class="iface-logo-sub">Case Management</span>
+                    </div>
+                </a>
+                <div class="iface-nav-divider"></div>
+                <div class="iface-page-tabs" id="iface-page-tabs">
+                    <!-- Rendered dynamically from schema -->
+                </div>
             </div>
-            <div class="iface-topbar-right">
+            <div class="iface-mainnav-right">
+                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search clients, events..." oninput="InterfaceApp.onGlobalSearch(this.value)">
+                <button class="iface-quick-action secondary" onclick="InterfaceApp.navigatePage('events')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    New Event
+                </button>
+                <button class="iface-quick-action primary" onclick="InterfaceApp.navigatePage('case-notes')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    New Note
+                </button>
                 <span class="iface-synced-badge" id="iface-sync-badge">Synced</span>
                 <div class="iface-topbar-avatar" id="iface-avatar" onclick="switchApp('settings')">RL</div>
                 <button class="iface-edit-toggle" id="iface-edit-toggle" onclick="InterfaceApp.toggleEditMode()">Edit Layout</button>
             </div>
-        </div>
-        <!-- Page tabs -->
-        <div class="iface-page-tabs" id="iface-page-tabs">
-            <!-- Rendered dynamically from schema -->
         </div>
         <!-- Page content -->
         <div class="iface-page-container" id="iface-page-container">
@@ -25117,6 +25269,9 @@ var InterfaceApp = (function() {
         }
 
         _tableDataCache[tableId] = { records: records, lastFetch: Date.now() };
+        // Clear the linked-record label cache when data refreshes so stale
+        // display names don't persist across syncs.
+        _recordLabelCache = {};
         return records;
     }
 
@@ -25224,21 +25379,30 @@ var InterfaceApp = (function() {
     function _formatFieldValue(val) {
         if (val == null) return '<span style="color:var(--text-disabled)">\u2013</span>';
         if (Array.isArray(val)) {
-            // Filter out raw record IDs
-            var filtered = val.filter(function(v) {
-                return !(typeof v === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(v));
-            });
-            if (!filtered.length && val.length) return '<span style="color:var(--text-muted)">assigned</span>';
-            return _esc(filtered.join(', '));
+            var resolved = val.map(function(v) {
+                if (typeof v === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(v)) {
+                    return _resolveRecordIdToLabel(v);
+                }
+                if (typeof v === 'object' && v !== null) {
+                    return v.name || v.label || v.filename || v.email || v.id || null;
+                }
+                return v;
+            }).filter(function(v) { return v != null; });
+            if (!resolved.length && val.length) return '<span style="color:var(--text-muted)">linked</span>';
+            return _esc(resolved.join(', '));
         }
         if (typeof val === 'object') {
             if (val.label) return _esc(val.label);
             if (val.name) return _esc(val.name);
+            if (val.filename) return _esc(val.filename);
+            if (val.email) return _esc(val.email);
             return _esc(JSON.stringify(val));
         }
-        // Hide raw record IDs
+        // Resolve record IDs to display name
         if (typeof val === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(val)) {
-            return '<span style="color:var(--text-muted)">assigned</span>';
+            var label = _resolveRecordIdToLabel(val);
+            if (label) return _esc(label);
+            return '<span style="color:var(--text-muted)">linked</span>';
         }
         // Try to detect date strings and format them
         if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
@@ -25651,29 +25815,122 @@ var InterfaceApp = (function() {
         return html;
     }
 
+    // ============ Linked Record Resolution ============
+
+    // Resolve a single record ID to its display name by searching all cached
+    // table data (current-state DB).  Falls back to the global
+    // getDisplayNameFieldId/META helpers when available.
+    var _recordLabelCache = {};
+
+    function _resolveRecordIdToLabel(recordId) {
+        if (!recordId) return null;
+        if (_recordLabelCache[recordId]) return _recordLabelCache[recordId];
+
+        // Search IN_MEMORY_DATA first (fastest, covers all tables)
+        if (window.IN_MEMORY_DATA) {
+            var tables = Object.keys(window.IN_MEMORY_DATA);
+            for (var t = 0; t < tables.length; t++) {
+                var tableId = tables[t];
+                var tableData = window.IN_MEMORY_DATA[tableId];
+                if (!tableData || !tableData[recordId]) continue;
+
+                var fields = tableData[recordId];
+                var label = _pickDisplayLabel(tableId, recordId, fields);
+                if (label) {
+                    _recordLabelCache[recordId] = label;
+                    return label;
+                }
+            }
+        }
+
+        // Fallback: search the Interface data cache
+        var cachedTables = Object.keys(_tableDataCache);
+        for (var c = 0; c < cachedTables.length; c++) {
+            var cached = _tableDataCache[cachedTables[c]];
+            if (!cached || !cached.records) continue;
+            for (var r = 0; r < cached.records.length; r++) {
+                var rec = cached.records[r];
+                if (rec.recordId === recordId) {
+                    var lbl = _pickDisplayLabel(cachedTables[c], recordId, rec.fields);
+                    if (lbl) {
+                        _recordLabelCache[recordId] = lbl;
+                        return lbl;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    function _pickDisplayLabel(tableId, recordId, fields) {
+        if (!fields || typeof fields !== 'object') return null;
+
+        // 1. Use the designated displayNameFieldId if set
+        if (typeof getDisplayNameFieldId === 'function') {
+            var dnfId = getDisplayNameFieldId(tableId);
+            if (dnfId) {
+                var val = fields[dnfId];
+                if (!val && typeof META_FIELDS !== 'undefined' && META_FIELDS[tableId] && META_FIELDS[tableId][dnfId]) {
+                    val = fields[META_FIELDS[tableId][dnfId].fieldName];
+                }
+                if (val != null && val !== '') return String(val);
+            }
+        }
+
+        // 2. Heuristic: common display-name field names
+        var candidates = ['Client Name', 'Display Name', 'Name', 'Title', 'Event Title',
+                          'Matter', 'Case Note', 'Activity', 'Subject', 'Label',
+                          'display name', 'name', 'title', 'label'];
+        for (var i = 0; i < candidates.length; i++) {
+            var v = fields[candidates[i]];
+            if (v != null && v !== '' && typeof v !== 'object') return String(v);
+        }
+
+        // 3. First non-ID string field
+        var keys = Object.keys(fields);
+        for (var k = 0; k < keys.length; k++) {
+            var fv = fields[keys[k]];
+            if (typeof fv === 'string' && fv.length > 0 && fv.length < 120 && !/^(rec|fld|tbl|viw)[A-Za-z0-9]{8,}$/.test(fv)) {
+                return fv;
+            }
+        }
+
+        return null;
+    }
+
     // ============ Revamped Data Table Renderer ============
 
     function _formatFieldValueRevamped(val, colField) {
         if (val == null || val === '') return '<span class="cell-empty">\u2013</span>';
         if (Array.isArray(val)) {
-            // Check if array contains record IDs (starts with rec)
             var resolved = val.map(function(v) {
                 if (typeof v === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(v)) {
-                    return null; // Hide raw record IDs
+                    var label = _resolveRecordIdToLabel(v);
+                    return label || null;
+                }
+                if (typeof v === 'object' && v !== null) {
+                    return v.name || v.label || v.filename || v.email || v.id || null;
                 }
                 return v;
             }).filter(function(v) { return v != null; });
-            if (!resolved.length) return '<span class="cell-empty">–</span>';
-            return _esc(resolved.join(', '));
+            if (!resolved.length) return '<span class="cell-empty">\u2013</span>';
+            return '<span class="cell-array">' + resolved.map(function(item) {
+                return '<span class="tag">' + _esc(String(item)) + '</span>';
+            }).join('') + '</span>';
         }
         if (typeof val === 'object') {
             if (val.label) return _esc(val.label);
             if (val.name) return _esc(val.name);
+            if (val.filename) return _esc(val.filename);
+            if (val.email) return _esc(val.email);
             return _esc(JSON.stringify(val));
         }
-        // Resolve record IDs
+        // Resolve single record IDs to display name
         if (typeof val === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(val)) {
-            return '<span class="cell-empty">–</span>';
+            var resolved = _resolveRecordIdToLabel(val);
+            if (resolved) return _esc(resolved);
+            return '<span class="cell-empty">\u2013</span>';
         }
         // Format dates
         if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
@@ -26451,56 +26708,115 @@ var InterfaceApp = (function() {
         }
 
         var clientIndex = await _buildCaseNotesClientIndex();
-        var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '">';
-        html += '<div class="iface-block-header"><span class="iface-block-title">' + _esc(block.label || 'Case Notes Inbox') + '</span></div>';
-        html += '<div class="iface-block-body iface-case-notes-widget">';
-        html += '<div class="iface-case-notes-controls">';
-        html += '<div class="iface-case-notes-actions">';
-        html += '<button onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'load\')">Refresh inbox</button>';
-        html += '<button onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'prev\')"' + (state.page <= 1 ? ' disabled' : '') + '>← Prev</button>';
+
+        // Group notes by client for inbox-style display
+        var clientGroups = {};
+        var clientOrder = [];
+        state.items.forEach(function(note) {
+            var clientInfo = _resolveCaseNoteClientInfo(note, clientIndex);
+            var key = clientInfo.recordId || clientInfo.joinKey || 'unlinked';
+            if (!clientGroups[key]) {
+                clientGroups[key] = {
+                    displayName: clientInfo.displayName || 'Unknown client',
+                    joinKey: clientInfo.joinKey || '',
+                    recordId: clientInfo.recordId || '',
+                    notes: []
+                };
+                clientOrder.push(key);
+            }
+            var date = _pickCaseNoteValue(note, ['Date', 'date', 'created_at', 'updated_at', 'Modified']);
+            var description = _pickCaseNoteValue(note, ['Description', 'description', 'note', 'body', 'details']);
+            var category = _pickCaseNoteValue(note, ['Type', 'type', 'Activity', 'activity']) || 'Case Note';
+            clientGroups[key].notes.push({
+                date: date || '',
+                description: description || '',
+                category: category
+            });
+        });
+
+        // Sort notes within each group chronologically (oldest first, scroll up for older)
+        clientOrder.forEach(function(key) {
+            clientGroups[key].notes.sort(function(a, b) {
+                var da = a.date ? new Date(a.date).getTime() : 0;
+                var db = b.date ? new Date(b.date).getTime() : 0;
+                return da - db;
+            });
+        });
+
         var totalPages = state.total && state.per_page ? Math.ceil(Number(state.total) / Math.max(Number(state.per_page), 1)) : 0;
-        html += '<button onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'next\')"' + (totalPages && state.page >= totalPages ? ' disabled' : '') + '>Next →</button>';
-        html += '</div>';
-        html += '<div class="iface-case-notes-status">' + _esc(state.status || 'Ready.') + ' · Total: ' + _esc(String(state.total || 0)) + ' · Page: ' + _esc(String(state.page || 1)) + (totalPages ? ' / ' + _esc(String(totalPages)) : '') + '</div>';
-        if (state.error) html += '<div class="iface-case-notes-error">' + _esc(state.error) + '</div>';
+        var firstClientKey = clientOrder[0] || '';
+
+        var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '" style="margin:0 24px 16px;">';
+        html += '<div class="iface-block-header">';
+        html += '<span class="iface-block-title">' + _esc(block.label || 'Case Notes Inbox') + '</span>';
+        html += '<div style="display:flex;gap:6px;align-items:center;">';
+        html += '<button class="iface-quick-action secondary" style="font-size:11px;padding:5px 10px;" onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'load\')">Refresh</button>';
+        html += '<button class="iface-quick-action secondary" style="font-size:11px;padding:5px 10px;" onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'prev\')"' + (state.page <= 1 ? ' disabled' : '') + '>\u2190</button>';
+        html += '<span style="font-size:11px;color:var(--iface-text-muted);">' + _esc(String(state.page || 1)) + (totalPages ? '/' + totalPages : '') + '</span>';
+        html += '<button class="iface-quick-action secondary" style="font-size:11px;padding:5px 10px;" onclick="InterfaceApp.caseNotesWidgetAction(\'' + _esc(block.id) + '\', \'next\')"' + (totalPages && state.page >= totalPages ? ' disabled' : '') + '>\u2192</button>';
+        html += '</div></div>';
+
+        if (state.error) html += '<div class="iface-case-notes-error" style="padding:8px 16px;">' + _esc(state.error) + '</div>';
+
+        // Inbox layout: client list on left, messages on right
+        html += '<div class="iface-inbox">';
+
+        // Left panel: client list
+        html += '<div class="iface-inbox-list">';
+        html += '<div class="iface-inbox-list-header">';
+        html += 'Clients <span class="inbox-count">' + clientOrder.length + '</span>';
         html += '</div>';
 
-        html += '<div class="iface-case-notes-list">';
-        if (!state.items.length) {
-            html += '<div class="iface-empty" style="padding:16px;">No case notes found.</div>';
+        if (!clientOrder.length) {
+            html += '<div style="padding:16px;font-size:13px;color:var(--iface-text-muted);">No case notes found.</div>';
         } else {
-            state.items.forEach(function(note) {
-                var date = _pickCaseNoteValue(note, ['Date', 'date', 'created_at', 'updated_at', 'Modified']);
-                var description = _pickCaseNoteValue(note, ['Description', 'description', 'note', 'body', 'details']);
-                var category = _pickCaseNoteValue(note, ['Type', 'type', 'Activity', 'activity']) || 'Case Note';
-                var clientInfo = _resolveCaseNoteClientInfo(note, clientIndex);
-                var joinKey = clientInfo.joinKey || 'Unlinked';
-                var displayName = clientInfo.displayName || 'Unknown client';
-
-                html += '<div class="iface-case-note-item">';
-                html += '<div class="iface-case-note-top">';
-                html += '<div class="iface-case-note-left">';
-                html += '<div class="iface-case-note-join-key" title="Join key">' + _esc(joinKey) + '</div>';
-                html += '<div class="iface-case-note-client-name">' + _esc(displayName) + '</div>';
-                html += '</div>';
-                html += '<div class="iface-case-note-right">' + (date ? '<span>' + _esc(date) + '</span>' : '') + '</div>';
-                html += '</div>';
-                html += '<div class="iface-case-note-desc">' + _formatCaseNoteDescriptionHtml(description) + '</div>';
-                html += '<div class="iface-case-note-meta">';
-                html += '<span class="iface-case-note-pill">' + _esc(category) + '</span>';
-                if (clientInfo.recordId) {
-                    html += '<button class="iface-case-note-link-btn" data-client-record-id="' + _esc(clientInfo.recordId) + '" onclick="InterfaceApp.openClientFromCaseNote(this)">Open client profile</button>';
-                    html += '<a class="iface-case-note-link-btn" href="client-profile.html?clientId=' + encodeURIComponent(clientInfo.recordId) + '" target="_blank" rel="noopener">Open full page</a>';
-                } else {
-                    html += '<span class="iface-case-note-unlinked">No profile link found.</span>';
-                }
-                html += '</div>';
+            clientOrder.forEach(function(key, idx) {
+                var group = clientGroups[key];
+                var lastNote = group.notes[group.notes.length - 1];
+                var previewText = lastNote ? lastNote.description.substring(0, 60) : '';
+                var activeClass = (idx === 0) ? ' active' : '';
+                html += '<div class="iface-inbox-item' + activeClass + '" data-inbox-client="' + _esc(key) + '" onclick="InterfaceApp._selectInboxClient(\'' + _esc(block.id) + '\', \'' + _esc(key) + '\')">';
+                html += '<div class="iface-inbox-item-name">' + _esc(group.displayName) + '</div>';
+                html += '<div class="iface-inbox-item-preview">' + _esc(previewText) + (previewText.length >= 60 ? '...' : '') + '</div>';
+                html += '<div class="iface-inbox-item-time">' + _esc(group.notes.length + ' note' + (group.notes.length !== 1 ? 's' : '')) + (lastNote && lastNote.date ? ' \u00B7 ' + _esc(lastNote.date) : '') + '</div>';
                 html += '</div>';
             });
         }
         html += '</div>';
 
-        html += '</div></div>';
+        // Right panel: chronological messages for selected client
+        html += '<div class="iface-inbox-detail">';
+        if (firstClientKey && clientGroups[firstClientKey]) {
+            var firstGroup = clientGroups[firstClientKey];
+            html += '<div class="iface-inbox-detail-header">';
+            html += '<h3>' + _esc(firstGroup.displayName) + '</h3>';
+            html += '<div class="inbox-meta">';
+            if (firstGroup.joinKey) html += _esc(firstGroup.joinKey) + ' \u00B7 ';
+            html += firstGroup.notes.length + ' note' + (firstGroup.notes.length !== 1 ? 's' : '');
+            if (firstGroup.recordId) {
+                html += ' \u00B7 <a href="client-profile.html?clientId=' + encodeURIComponent(firstGroup.recordId) + '" target="_blank" rel="noopener" style="color:var(--iface-accent);text-decoration:none;font-weight:500;">Open profile \u2192</a>';
+            }
+            html += '</div></div>';
+            html += '<div class="iface-inbox-messages">';
+            // Chronological order (oldest first = scroll up for older)
+            firstGroup.notes.forEach(function(note) {
+                html += '<div class="iface-inbox-msg">';
+                html += '<div class="iface-inbox-msg-header">';
+                html += '<span class="iface-inbox-msg-author">' + _esc(note.category) + '</span>';
+                html += '<span class="iface-inbox-msg-time">' + _esc(note.date) + '</span>';
+                html += '</div>';
+                html += '<div class="iface-inbox-msg-body">' + _formatCaseNoteDescriptionHtml(note.description) + '</div>';
+                html += '<div class="iface-inbox-msg-tags"><span class="iface-inbox-msg-tag">' + _esc(note.category) + '</span></div>';
+                html += '</div>';
+            });
+            html += '</div>';
+        } else {
+            html += '<div style="display:flex;align-items:center;justify-content:center;flex:1;color:var(--iface-text-muted);font-size:13px;">Select a client to view notes</div>';
+        }
+        html += '</div>';
+        html += '</div>'; // .iface-inbox
+
+        html += '</div>';
         return html;
     }
 
@@ -27687,6 +28003,86 @@ var InterfaceApp = (function() {
         window.location.href = targetUrl;
     }
 
+    // Navigate to a page tab (used by quick-action buttons)
+    function navigatePage(pageId) {
+        if (!pageId) return;
+        switchPage(pageId);
+    }
+
+    // Inbox: switch active client in the case notes inbox
+    function _selectInboxClient(blockId, clientKey) {
+        var blockEl = document.querySelector('[data-block-id="' + blockId + '"]');
+        if (!blockEl) return;
+
+        // Update active state in the list
+        var items = blockEl.querySelectorAll('.iface-inbox-item');
+        items.forEach(function(item) {
+            item.classList.toggle('active', item.getAttribute('data-inbox-client') === clientKey);
+        });
+
+        // Re-render the detail panel with the selected client's notes
+        var state = _getCaseNotesWidgetState(blockId);
+        _buildCaseNotesClientIndex().then(function(clientIndex) {
+            var clientGroups = {};
+            state.items.forEach(function(note) {
+                var clientInfo = _resolveCaseNoteClientInfo(note, clientIndex);
+                var key = clientInfo.recordId || clientInfo.joinKey || 'unlinked';
+                if (!clientGroups[key]) {
+                    clientGroups[key] = {
+                        displayName: clientInfo.displayName || 'Unknown client',
+                        joinKey: clientInfo.joinKey || '',
+                        recordId: clientInfo.recordId || '',
+                        notes: []
+                    };
+                }
+                var date = _pickCaseNoteValue(note, ['Date', 'date', 'created_at', 'updated_at', 'Modified']);
+                var description = _pickCaseNoteValue(note, ['Description', 'description', 'note', 'body', 'details']);
+                var category = _pickCaseNoteValue(note, ['Type', 'type', 'Activity', 'activity']) || 'Case Note';
+                clientGroups[key].notes.push({ date: date || '', description: description || '', category: category });
+            });
+
+            var group = clientGroups[clientKey];
+            if (!group) return;
+
+            // Sort chronologically (oldest first)
+            group.notes.sort(function(a, b) {
+                var da = a.date ? new Date(a.date).getTime() : 0;
+                var db = b.date ? new Date(b.date).getTime() : 0;
+                return da - db;
+            });
+
+            var detailEl = blockEl.querySelector('.iface-inbox-detail');
+            if (!detailEl) return;
+
+            var html = '<div class="iface-inbox-detail-header">';
+            html += '<h3>' + _esc(group.displayName) + '</h3>';
+            html += '<div class="inbox-meta">';
+            if (group.joinKey) html += _esc(group.joinKey) + ' \u00B7 ';
+            html += group.notes.length + ' note' + (group.notes.length !== 1 ? 's' : '');
+            if (group.recordId) {
+                html += ' \u00B7 <a href="client-profile.html?clientId=' + encodeURIComponent(group.recordId) + '" target="_blank" rel="noopener" style="color:var(--iface-accent);text-decoration:none;font-weight:500;">Open profile \u2192</a>';
+            }
+            html += '</div></div>';
+            html += '<div class="iface-inbox-messages">';
+            group.notes.forEach(function(note) {
+                html += '<div class="iface-inbox-msg">';
+                html += '<div class="iface-inbox-msg-header">';
+                html += '<span class="iface-inbox-msg-author">' + _esc(note.category) + '</span>';
+                html += '<span class="iface-inbox-msg-time">' + _esc(note.date) + '</span>';
+                html += '</div>';
+                html += '<div class="iface-inbox-msg-body">' + _formatCaseNoteDescriptionHtml(note.description) + '</div>';
+                html += '<div class="iface-inbox-msg-tags"><span class="iface-inbox-msg-tag">' + _esc(note.category) + '</span></div>';
+                html += '</div>';
+            });
+            html += '</div>';
+            detailEl.innerHTML = html;
+
+            // Scroll to bottom (newest messages at bottom)
+            var messagesEl = detailEl.querySelector('.iface-inbox-messages');
+            if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+        });
+    }
+
     // ============ Admin: Edit Mode ============
 
     function toggleEditMode() {
@@ -27845,6 +28241,8 @@ var InterfaceApp = (function() {
         caseNotesWidgetAction: caseNotesWidgetAction,
         openClientFromCaseNote: openClientFromCaseNote,
         openClientProfilePage: openClientProfilePage,
+        navigatePage: navigatePage,
+        _selectInboxClient: _selectInboxClient,
         onClientGraphClientChange: onClientGraphClientChange,
         openClientRelationshipGraph: openClientRelationshipGraph,
         setUrlState: setUrlState,
