@@ -1720,6 +1720,192 @@
         }
         .settings-profile-save-btn:hover { background: var(--primary-600); }
         .settings-profile-save-btn:disabled { background: var(--gray-600); cursor: not-allowed; }
+        /* Settings: Table Relationships */
+        .settings-rel-graph-container {
+            position: relative;
+            width: 100%;
+            height: 420px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-md);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .settings-rel-graph-container canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .settings-rel-graph-empty {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        .settings-rel-legend {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .settings-rel-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .settings-rel-legend-swatch {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+        .settings-rel-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .settings-rel-table th {
+            text-align: left;
+            padding: 8px 12px;
+            border-bottom: 2px solid var(--border-primary);
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .settings-rel-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-primary);
+            color: var(--text-primary);
+            vertical-align: middle;
+        }
+        .settings-rel-table tr:last-child td { border-bottom: none; }
+        .settings-rel-table tr:hover td { background: var(--bg-hover); }
+        .settings-rel-table .rel-table-name {
+            font-weight: 500;
+        }
+        .settings-rel-table .rel-field-name {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .settings-rel-table .rel-cardinality-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.2px;
+        }
+        .settings-rel-table .rel-cardinality-badge.many-to-many {
+            background: rgba(139, 92, 246, 0.15);
+            color: #a78bfa;
+        }
+        .settings-rel-table .rel-cardinality-badge.one-to-many {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--primary-400);
+        }
+        .settings-rel-table .rel-cardinality-badge.one-to-one {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success-500);
+        }
+        .settings-rel-primary-star {
+            color: var(--warning-500);
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            transition: opacity 0.15s;
+        }
+        .settings-rel-primary-star:hover { opacity: 0.7; }
+        .settings-rel-primary-star.inactive {
+            color: var(--text-muted);
+            opacity: 0.3;
+        }
+        .settings-rel-primary-star.inactive:hover { opacity: 0.6; }
+        .settings-rel-edit-btn {
+            padding: 3px 10px;
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 11px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+        .settings-rel-edit-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .settings-rel-detail-row {
+            background: var(--bg-secondary);
+        }
+        .settings-rel-detail-row td {
+            padding: 12px;
+        }
+        .settings-rel-detail-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            max-width: 600px;
+        }
+        .settings-rel-detail-form label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            display: block;
+            margin-bottom: 4px;
+        }
+        .settings-rel-detail-form input,
+        .settings-rel-detail-form select {
+            width: 100%;
+            padding: 6px 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-family: var(--font-sans);
+        }
+        .settings-rel-detail-form input:focus,
+        .settings-rel-detail-form select:focus {
+            outline: none;
+            border-color: var(--primary-500);
+        }
+        .settings-rel-detail-actions {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 8px;
+            margin-top: 4px;
+        }
+        .settings-rel-stats {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 20px;
+        }
+        .settings-rel-stat {
+            text-align: center;
+        }
+        .settings-rel-stat-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .settings-rel-stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        .settings-rel-arrow {
+            color: var(--text-muted);
+            margin: 0 4px;
+        }
         .settings-toast {
             padding: 10px 16px;
             border-radius: var(--radius-md);
@@ -5833,6 +6019,7 @@
         <div class="settings-tabs">
             <button class="settings-tab active" id="settings-tab-roles" onclick="switchSettingsTab('roles')">Users &amp; Roles</button>
             <button class="settings-tab" id="settings-tab-rooms" onclick="switchSettingsTab('rooms')">Room Access</button>
+            <button class="settings-tab" id="settings-tab-relationships" onclick="switchSettingsTab('relationships')">Table Relationships</button>
             <button class="settings-tab" id="settings-tab-preferences" onclick="switchSettingsTab('preferences')">Preferences</button>
         </div>
 
@@ -5954,6 +6141,50 @@
                 </div>
                 <div id="settings-rooms-empty" style="display: none; padding: 16px 0; color: var(--text-muted); font-size: 13px;">
                     Select a user to manage their room access.
+                </div>
+            </div>
+        </div>
+
+        <!-- Table Relationships Tab -->
+        <div id="settings-panel-relationships" style="display: none;">
+            <div class="settings-section">
+                <h2>Table Relationship Graph</h2>
+                <p class="settings-section-desc">Visual map of how your tables are connected through linked record fields. Relationships are auto-detected from Airtable field metadata.</p>
+                <div id="rel-graph-stats" class="settings-rel-stats"></div>
+                <div class="settings-rel-graph-container">
+                    <canvas id="rel-graph-canvas"></canvas>
+                    <div id="rel-graph-empty" class="settings-rel-graph-empty" style="display: none;">No table relationships detected. Link tables using linked record fields in Airtable.</div>
+                </div>
+                <div id="rel-graph-legend" class="settings-rel-legend"></div>
+            </div>
+
+            <div class="settings-section">
+                <h2>Relationship Configuration</h2>
+                <p class="settings-section-desc">Configure how each relationship behaves in the interface. Mark primary relationships to control default navigation paths. Labels and cardinality settings are used by interface blocks for display and filtering.</p>
+                <div id="rel-table-loading" class="settings-loading" style="display: none;">
+                    <div class="settings-spinner"></div>
+                    Loading relationships...
+                </div>
+                <div id="rel-table-content" style="display: none;">
+                    <table class="settings-rel-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 36px;" title="Primary relationship for navigation">Nav</th>
+                                <th>From Table</th>
+                                <th></th>
+                                <th>To Table</th>
+                                <th>Link Field</th>
+                                <th>Cardinality</th>
+                                <th>Label</th>
+                                <th style="width: 56px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="rel-table-tbody">
+                        </tbody>
+                    </table>
+                </div>
+                <div id="rel-table-empty" style="display: none; padding: 16px 0; color: var(--text-muted); font-size: 13px;">
+                    No relationships found. Create linked record fields in Airtable to define table relationships.
                 </div>
             </div>
         </div>
@@ -30927,6 +31158,7 @@ var InterfaceApp = (function() {
         _filterEventsSidebar: _filterEventsSidebar,
         _toggleAttorneyFilter: _toggleAttorneyFilter,
         _showGoogleCalendar: _showGoogleCalendar,
+        getInterfaceRoomId: function() { return _findOrCreateInterfaceRoom(); },
         get schema() { return _schema; },
         get activePage() { return _activePage; },
         get editMode() { return _editMode; }
@@ -31260,10 +31492,14 @@ function switchSettingsTab(tab) {
 
     document.getElementById('settings-panel-roles').style.display = tab === 'roles' ? 'block' : 'none';
     document.getElementById('settings-panel-rooms').style.display = tab === 'rooms' ? 'block' : 'none';
+    document.getElementById('settings-panel-relationships').style.display = tab === 'relationships' ? 'block' : 'none';
     document.getElementById('settings-panel-preferences').style.display = tab === 'preferences' ? 'block' : 'none';
 
     if (tab === 'preferences') {
         initPreferencesTab();
+    }
+    if (tab === 'relationships') {
+        initRelationshipsTab();
     }
 }
 
@@ -31473,6 +31709,455 @@ function toggleConfirmInlineCellEdit(enabled) {
     UserPreferences.set('confirmInlineCellEdit', enabled);
 }
 
+// ============ Settings: Table Relationships ============
+
+var _relConfig = {}; // edgeId -> { label, cardinality, isPrimary, displayFields[] }
+var _relConfigLoaded = false;
+var _relExpandedEdgeId = null; // which row is expanded for editing
+
+async function _loadRelConfig() {
+    if (_relConfigLoaded) return _relConfig;
+    try {
+        var roomId = await InterfaceApp.getInterfaceRoomId();
+        if (roomId) {
+            var state = await MatrixClient.getStateEvent(roomId, 'law.firm.interface', 'relationships');
+            if (state && state.edges) {
+                _relConfig = state.edges;
+            }
+        }
+    } catch (e) {
+        // No saved config yet, use empty defaults
+        console.log('[Relationships] No saved config, starting fresh');
+    }
+    _relConfigLoaded = true;
+    return _relConfig;
+}
+
+async function _saveRelConfig() {
+    try {
+        var roomId = await InterfaceApp.getInterfaceRoomId();
+        if (!roomId) { console.warn('[Relationships] Cannot save: no interface room'); return; }
+        await MatrixClient.sendStateEvent(roomId, 'law.firm.interface', 'relationships', {
+            edges: _relConfig,
+            lastModified: new Date().toISOString(),
+            modifiedBy: MatrixClient.getUserId() || 'unknown'
+        });
+        console.log('[Relationships] Config saved');
+        showSettingsToast('success', 'Relationship configuration saved.');
+    } catch (e) {
+        console.error('[Relationships] Save failed:', e);
+        showSettingsToast('error', 'Failed to save relationship configuration.');
+    }
+}
+
+function _getRelConfig(edgeId) {
+    return _relConfig[edgeId] || {};
+}
+
+function _setRelConfig(edgeId, key, value) {
+    if (!_relConfig[edgeId]) _relConfig[edgeId] = {};
+    _relConfig[edgeId][key] = value;
+}
+
+function _resolveTableName(tableId) {
+    var table = META_TABLES[tableId];
+    if (table && table.tableName) return table.tableName;
+    return tableId;
+}
+
+function _inferCardinality(edge) {
+    // If prefersSingle is set on the edge, it's a one-to-X relationship
+    // If there's an inverse field, both sides have link fields (many-to-many by default)
+    if (edge.prefersSingle) {
+        return edge.inverseFieldId ? 'one-to-many' : 'one-to-one';
+    }
+    return edge.inverseFieldId ? 'many-to-many' : 'one-to-many';
+}
+
+async function initRelationshipsTab() {
+    var loadingEl = document.getElementById('rel-table-loading');
+    var contentEl = document.getElementById('rel-table-content');
+    var emptyEl = document.getElementById('rel-table-empty');
+    var graphEmptyEl = document.getElementById('rel-graph-empty');
+
+    if (loadingEl) loadingEl.style.display = 'flex';
+    if (contentEl) contentEl.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    try {
+        await _loadRelConfig();
+        var edges = await getAllEdges();
+        if (!edges || edges.length === 0) {
+            // Try rebuilding edges if cache is empty
+            await rebuildEdges();
+            edges = await getAllEdges();
+        }
+
+        if (!edges || edges.length === 0) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'block';
+            if (graphEmptyEl) graphEmptyEl.style.display = 'flex';
+            _renderRelStats([], {});
+            return;
+        }
+
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (contentEl) contentEl.style.display = 'block';
+        if (graphEmptyEl) graphEmptyEl.style.display = 'none';
+
+        _renderRelStats(edges, _relConfig);
+        _renderRelTable(edges, _relConfig);
+        _renderRelGraph(edges, _relConfig);
+        _renderRelLegend(edges);
+    } catch (e) {
+        console.error('[Relationships] Init failed:', e);
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (emptyEl) {
+            emptyEl.style.display = 'block';
+            emptyEl.textContent = 'Failed to load relationships: ' + (e.message || e);
+        }
+    }
+}
+
+function _renderRelStats(edges, config) {
+    var statsEl = document.getElementById('rel-graph-stats');
+    if (!statsEl) return;
+
+    // Count unique tables involved in edges
+    var tableSet = {};
+    for (var i = 0; i < edges.length; i++) {
+        tableSet[edges[i].fromTableId] = true;
+        tableSet[edges[i].toTableId] = true;
+    }
+    var tableCount = Object.keys(tableSet).length;
+
+    // Count primary edges
+    var primaryCount = 0;
+    for (var j = 0; j < edges.length; j++) {
+        var cfg = config[edges[j].edgeId] || {};
+        if (cfg.isPrimary) primaryCount++;
+    }
+
+    statsEl.innerHTML =
+        '<div class="settings-rel-stat"><div class="settings-rel-stat-value">' + tableCount + '</div><div class="settings-rel-stat-label">Connected Tables</div></div>' +
+        '<div class="settings-rel-stat"><div class="settings-rel-stat-value">' + edges.length + '</div><div class="settings-rel-stat-label">Relationships</div></div>' +
+        '<div class="settings-rel-stat"><div class="settings-rel-stat-value">' + primaryCount + '</div><div class="settings-rel-stat-label">Primary Nav Paths</div></div>';
+}
+
+function _renderRelTable(edges, config) {
+    var tbody = document.getElementById('rel-table-tbody');
+    if (!tbody) return;
+
+    var html = '';
+    for (var i = 0; i < edges.length; i++) {
+        var edge = edges[i];
+        var cfg = config[edge.edgeId] || {};
+        var fromName = _resolveTableName(edge.fromTableId);
+        var toName = _resolveTableName(edge.toTableId);
+        var cardinality = cfg.cardinality || _inferCardinality(edge);
+        var label = cfg.label || '';
+        var isPrimary = !!cfg.isPrimary;
+        var cardClass = cardinality.replace(/\s+/g, '-');
+
+        var eid = _escSettingsHtml(edge.edgeId);
+
+        html += '<tr data-edge-id="' + eid + '">';
+        // Primary star
+        html += '<td style="text-align: center;"><span class="settings-rel-primary-star ' + (isPrimary ? '' : 'inactive') + '" onclick="toggleRelPrimary(\'' + eid + '\')" title="' + (isPrimary ? 'Primary navigation path' : 'Click to mark as primary') + '">' + (isPrimary ? '\u2605' : '\u2606') + '</span></td>';
+        // From table
+        html += '<td class="rel-table-name">' + _escSettingsHtml(fromName) + '</td>';
+        // Arrow
+        html += '<td class="settings-rel-arrow">\u2192</td>';
+        // To table
+        html += '<td class="rel-table-name">' + _escSettingsHtml(toName) + '</td>';
+        // Link field
+        html += '<td class="rel-field-name">' + _escSettingsHtml(edge.fieldName || edge.fieldId) + '</td>';
+        // Cardinality
+        html += '<td><span class="rel-cardinality-badge ' + cardClass + '">' + _escSettingsHtml(cardinality) + '</span></td>';
+        // Label
+        html += '<td style="color: ' + (label ? 'var(--text-primary)' : 'var(--text-muted)') + '; font-size: 12px;">' + (label ? _escSettingsHtml(label) : 'No label') + '</td>';
+        // Edit
+        html += '<td><button class="settings-rel-edit-btn" onclick="toggleRelEdit(\'' + eid + '\')">Edit</button></td>';
+        html += '</tr>';
+
+        // Detail row (hidden by default)
+        if (_relExpandedEdgeId === edge.edgeId) {
+            html += _renderRelDetailRow(edge, cfg);
+        }
+    }
+    tbody.innerHTML = html;
+}
+
+function _renderRelDetailRow(edge, cfg) {
+    var cardinality = cfg.cardinality || _inferCardinality(edge);
+    var label = cfg.label || '';
+    var displayFields = (cfg.displayFields || []).join(', ');
+    var eid = _escSettingsHtml(edge.edgeId);
+
+    var html = '<tr class="settings-rel-detail-row" data-detail-for="' + eid + '">';
+    html += '<td colspan="8">';
+    html += '<div class="settings-rel-detail-form">';
+    // Label
+    html += '<div><label>Relationship Label</label>';
+    html += '<input type="text" id="rel-edit-label-' + eid + '" value="' + _escSettingsHtml(label) + '" placeholder="e.g. Client Cases, Case Documents...">';
+    html += '</div>';
+    // Cardinality
+    html += '<div><label>Cardinality</label>';
+    html += '<select id="rel-edit-cardinality-' + eid + '">';
+    html += '<option value="one-to-one"' + (cardinality === 'one-to-one' ? ' selected' : '') + '>One-to-One</option>';
+    html += '<option value="one-to-many"' + (cardinality === 'one-to-many' ? ' selected' : '') + '>One-to-Many</option>';
+    html += '<option value="many-to-many"' + (cardinality === 'many-to-many' ? ' selected' : '') + '>Many-to-Many</option>';
+    html += '</select>';
+    html += '</div>';
+    // Display fields (comma-separated field names to show when traversing this link)
+    html += '<div style="grid-column: 1 / -1;"><label>Display Fields (comma-separated field names shown when following this link)</label>';
+    html += '<input type="text" id="rel-edit-display-' + eid + '" value="' + _escSettingsHtml(displayFields) + '" placeholder="e.g. Name, Status, Date Filed">';
+    html += '</div>';
+    // Actions
+    html += '<div class="settings-rel-detail-actions">';
+    html += '<button class="settings-action-btn primary" onclick="saveRelEdit(\'' + eid + '\')">Save</button>';
+    html += '<button class="settings-action-btn" onclick="toggleRelEdit(null)">Cancel</button>';
+    html += '</div>';
+    html += '</div>';
+    html += '</td>';
+    html += '</tr>';
+    return html;
+}
+
+function _escSettingsHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function toggleRelPrimary(edgeId) {
+    var current = _getRelConfig(edgeId);
+    _setRelConfig(edgeId, 'isPrimary', !current.isPrimary);
+    _saveRelConfig();
+    initRelationshipsTab();
+}
+
+function toggleRelEdit(edgeId) {
+    _relExpandedEdgeId = (_relExpandedEdgeId === edgeId) ? null : edgeId;
+    // Re-render just the table to show/hide the detail row
+    getAllEdges().then(function(edges) {
+        _renderRelTable(edges, _relConfig);
+    });
+}
+
+function saveRelEdit(edgeId) {
+    var labelInput = document.getElementById('rel-edit-label-' + edgeId);
+    var cardInput = document.getElementById('rel-edit-cardinality-' + edgeId);
+    var displayInput = document.getElementById('rel-edit-display-' + edgeId);
+
+    if (labelInput) _setRelConfig(edgeId, 'label', labelInput.value.trim());
+    if (cardInput) _setRelConfig(edgeId, 'cardinality', cardInput.value);
+    if (displayInput) {
+        var fields = displayInput.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+        _setRelConfig(edgeId, 'displayFields', fields);
+    }
+
+    _relExpandedEdgeId = null;
+    _saveRelConfig();
+    initRelationshipsTab();
+}
+
+function _renderRelLegend(edges) {
+    var legendEl = document.getElementById('rel-graph-legend');
+    if (!legendEl) return;
+
+    // Collect unique table IDs and assign colors
+    var colorMap = _buildRelColorMap(edges);
+    var html = '';
+    var tableIds = Object.keys(colorMap);
+    for (var i = 0; i < tableIds.length; i++) {
+        var tid = tableIds[i];
+        var name = _resolveTableName(tid);
+        html += '<div class="settings-rel-legend-item">';
+        html += '<span class="settings-rel-legend-swatch" style="background: ' + colorMap[tid] + ';"></span>';
+        html += '<span>' + _escSettingsHtml(name) + '</span>';
+        html += '</div>';
+    }
+    legendEl.innerHTML = html;
+}
+
+var _REL_GRAPH_COLORS = [
+    '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
+    '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
+    '#84cc16', '#e879f9', '#0ea5e9', '#a3e635', '#fb923c'
+];
+
+function _buildRelColorMap(edges) {
+    var tableSet = {};
+    for (var i = 0; i < edges.length; i++) {
+        tableSet[edges[i].fromTableId] = true;
+        tableSet[edges[i].toTableId] = true;
+    }
+    var ids = Object.keys(tableSet).sort();
+    var map = {};
+    for (var j = 0; j < ids.length; j++) {
+        map[ids[j]] = _REL_GRAPH_COLORS[j % _REL_GRAPH_COLORS.length];
+    }
+    return map;
+}
+
+function _renderRelGraph(edges, config) {
+    var canvas = document.getElementById('rel-graph-canvas');
+    if (!canvas || !canvas.getContext) return;
+
+    var container = canvas.parentElement;
+    var rect = container.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    if (!edges || edges.length === 0) return;
+
+    var colorMap = _buildRelColorMap(edges);
+
+    // Collect unique table nodes and compute positions using force-directed-like layout
+    var tableSet = {};
+    for (var i = 0; i < edges.length; i++) {
+        tableSet[edges[i].fromTableId] = true;
+        tableSet[edges[i].toTableId] = true;
+    }
+    var tableIds = Object.keys(tableSet).sort();
+    var nodeCount = tableIds.length;
+
+    // Position nodes in an elliptical layout centered in the canvas
+    var cx = rect.width / 2;
+    var cy = rect.height / 2;
+    var radiusX = Math.min(rect.width * 0.38, 280);
+    var radiusY = Math.min(rect.height * 0.35, 160);
+    var nodePositions = {};
+
+    if (nodeCount === 1) {
+        nodePositions[tableIds[0]] = { x: cx, y: cy };
+    } else if (nodeCount === 2) {
+        nodePositions[tableIds[0]] = { x: cx - radiusX * 0.6, y: cy };
+        nodePositions[tableIds[1]] = { x: cx + radiusX * 0.6, y: cy };
+    } else {
+        for (var n = 0; n < nodeCount; n++) {
+            var angle = (Math.PI * 2 * n) / nodeCount - Math.PI / 2;
+            nodePositions[tableIds[n]] = {
+                x: cx + Math.cos(angle) * radiusX,
+                y: cy + Math.sin(angle) * radiusY
+            };
+        }
+    }
+
+    // Draw edges
+    for (var e = 0; e < edges.length; e++) {
+        var edge = edges[e];
+        var from = nodePositions[edge.fromTableId];
+        var to = nodePositions[edge.toTableId];
+        if (!from || !to) continue;
+
+        var cfg = config[edge.edgeId] || {};
+        var isPrimary = !!cfg.isPrimary;
+
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+
+        // Use a quadratic curve for parallel edges between same table pairs
+        var midX = (from.x + to.x) / 2;
+        var midY = (from.y + to.y) / 2;
+        var dx = to.x - from.x;
+        var dy = to.y - from.y;
+        var len = Math.sqrt(dx * dx + dy * dy) || 1;
+        // Offset perpendicular to the edge for a slight curve
+        var offsetScale = 20;
+        var perpX = -dy / len * offsetScale;
+        var perpY = dx / len * offsetScale;
+
+        ctx.quadraticCurveTo(midX + perpX, midY + perpY, to.x, to.y);
+
+        ctx.strokeStyle = isPrimary ? '#f59e0b' : 'rgba(148, 163, 184, 0.35)';
+        ctx.lineWidth = isPrimary ? 2.5 : 1.5;
+        if (isPrimary) {
+            ctx.setLineDash([]);
+        } else {
+            ctx.setLineDash([4, 3]);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw arrowhead
+        var arrowLen = 8;
+        // Compute tangent at endpoint of quadratic curve
+        var t = 0.95;
+        var tangentX = 2 * (1 - t) * (midX + perpX - from.x) + 2 * t * (to.x - midX - perpX);
+        var tangentY = 2 * (1 - t) * (midY + perpY - from.y) + 2 * t * (to.y - midY - perpY);
+        var tLen = Math.sqrt(tangentX * tangentX + tangentY * tangentY) || 1;
+        tangentX /= tLen;
+        tangentY /= tLen;
+
+        var arrowX = to.x - tangentX * 22;
+        var arrowY = to.y - tangentY * 22;
+        ctx.beginPath();
+        ctx.moveTo(arrowX, arrowY);
+        ctx.lineTo(arrowX - tangentX * arrowLen + tangentY * arrowLen * 0.5, arrowY - tangentY * arrowLen - tangentX * arrowLen * 0.5);
+        ctx.lineTo(arrowX - tangentX * arrowLen - tangentY * arrowLen * 0.5, arrowY - tangentY * arrowLen + tangentX * arrowLen * 0.5);
+        ctx.closePath();
+        ctx.fillStyle = isPrimary ? '#f59e0b' : 'rgba(148, 163, 184, 0.5)';
+        ctx.fill();
+
+        // Edge label (field name)
+        var labelX = midX + perpX * 0.6;
+        var labelY = midY + perpY * 0.6 - 4;
+        var edgeLabel = cfg.label || edge.fieldName || '';
+        if (edgeLabel) {
+            ctx.font = '10px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim();
+            ctx.fillStyle = isPrimary ? '#f59e0b' : 'rgba(148, 163, 184, 0.7)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(edgeLabel, labelX, labelY);
+        }
+    }
+
+    // Draw table nodes
+    var nodeRadius = 20;
+    for (var nd = 0; nd < tableIds.length; nd++) {
+        var tid = tableIds[nd];
+        var pos = nodePositions[tid];
+        var color = colorMap[tid];
+        var tableName = _resolveTableName(tid);
+
+        // Node circle
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, nodeRadius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.2;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Table initial in circle
+        var initial = tableName.substring(0, 2).toUpperCase();
+        ctx.font = 'bold 12px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim();
+        ctx.fillStyle = color;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(initial, pos.x, pos.y);
+
+        // Table name below node
+        ctx.font = '11px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim();
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || '#f1f5f9';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        // Truncate long names
+        var displayName = tableName.length > 18 ? tableName.substring(0, 16) + '\u2026' : tableName;
+        ctx.fillText(displayName, pos.x, pos.y + nodeRadius + 6);
+    }
+}
+
 // ============ Settings: Toast ============
 
 function showSettingsToast(type, message) {
@@ -31491,6 +32176,10 @@ var _settingsLoaded = false;
 
 async function loadSettingsData() {
     if (_settingsLoaded) return;
+
+    // Table Relationships tab: admin-only visibility
+    var relTab = document.getElementById('settings-tab-relationships');
+    if (relTab) relTab.style.display = (_currentUserRole === 'admin') ? '' : 'none';
 
     if (_currentUserRole !== 'admin') {
         document.getElementById('settings-users-loading').style.display = 'none';
