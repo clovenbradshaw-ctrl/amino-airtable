@@ -2883,6 +2883,21 @@
         .iface-table-revamp td .status-dot.red { background: var(--danger-500); }
         .iface-table-revamp td .status-dot.slate { background: var(--text-muted); }
 
+        /* ─── Revamp table responsive: progressive column hiding ─── */
+        @media (max-width: 1400px) {
+            .iface-table-revamp th[data-col="last-modified-by"],
+            .iface-table-revamp td[data-col="last-modified-by"],
+            .iface-table-revamp th[data-col="email"],
+            .iface-table-revamp td[data-col="email"] { display: none; }
+        }
+        @media (max-width: 1200px) {
+            .iface-table-revamp th[data-col="country"],
+            .iface-table-revamp td[data-col="country"],
+            .iface-table-revamp th[data-col="event-info"],
+            .iface-table-revamp td[data-col="event-info"],
+            .iface-table-revamp th[data-col="phone"],
+            .iface-table-revamp td[data-col="phone"] { display: none; }
+        }
         @media (max-width: 1024px) {
             .iface-page[data-page-id="clients"] .iface-page-content.full-width {
                 padding: 20px 14px 16px;
@@ -2909,8 +2924,27 @@
             .iface-table-revamp td {
                 padding: 9px 12px;
             }
+            .iface-table-revamp th[data-col="a-"],
+            .iface-table-revamp td[data-col="a-"],
+            .iface-table-revamp th[data-col="last-modified"],
+            .iface-table-revamp td[data-col="last-modified"] { display: none; }
         }
-
+        @media (max-width: 768px) {
+            .iface-table-revamp th[data-col="dob-age"],
+            .iface-table-revamp td[data-col="dob-age"],
+            .iface-table-revamp th[data-col="ich-atty"],
+            .iface-table-revamp td[data-col="ich-atty"],
+            .iface-table-revamp th[data-col="mch-atty"],
+            .iface-table-revamp td[data-col="mch-atty"],
+            .iface-table-revamp th[data-col="case-manager"],
+            .iface-table-revamp td[data-col="case-manager"] { display: none; }
+            .iface-table-revamp { table-layout: auto; }
+            .iface-table-revamp thead th,
+            .iface-table-revamp td {
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+        }
         @media (max-width: 640px) {
             .iface-page[data-page-id="clients"] .iface-page-content.full-width {
                 padding: 14px 8px 12px;
@@ -2941,6 +2975,18 @@
             }
             .iface-table-revamp td {
                 max-width: 180px;
+            }
+            .iface-table-revamp th[data-col="next-event"],
+            .iface-table-revamp td[data-col="next-event"] { display: none; }
+        }
+        @media (max-width: 480px) {
+            .iface-table-revamp thead th,
+            .iface-table-revamp td {
+                padding: 6px 8px;
+                font-size: 11px;
+            }
+            .iface-table-revamp td {
+                max-width: 140px;
             }
         }
 
@@ -3084,6 +3130,41 @@
             .iface-stats-row { grid-template-columns: repeat(2, 1fr); }
             .iface-home-columns { grid-template-columns: 1fr; }
             .iface-events-layout { grid-template-columns: 1fr; }
+        }
+
+        /* ─── Interface app: comprehensive mobile improvements ─── */
+        @media (max-width: 640px) {
+            .iface-mainnav {
+                height: auto; min-height: 48px;
+                padding: 8px 12px; gap: 8px; flex-wrap: wrap;
+            }
+            .iface-mainnav-left { flex-wrap: wrap; gap: 8px; }
+            .iface-logo-text { display: none; }
+            .iface-nav-divider { display: none; }
+            .iface-quick-action span:not(svg) { display: none; }
+            .iface-quick-action { padding: 6px 10px; }
+            .iface-global-search { width: 120px; font-size: 11px; padding: 6px 10px; }
+            .iface-edit-toggle { font-size: 11px; padding: 4px 8px; }
+            .iface-page-tabs {
+                gap: 0; padding: 0 8px;
+                -ms-overflow-style: none; scrollbar-width: none;
+            }
+            .iface-page-tab { padding: 6px 10px; font-size: 12px; }
+            .iface-filter-bar {
+                overflow-x: auto; flex-wrap: nowrap;
+                -webkit-overflow-scrolling: touch;
+                -ms-overflow-style: none; scrollbar-width: none;
+                padding-bottom: 4px;
+            }
+            .iface-filter-bar::-webkit-scrollbar { display: none; }
+            .iface-filter-pill { flex-shrink: 0; font-size: 11px; padding: 4px 10px; }
+            .iface-pagination { flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+            .iface-pagination span { font-size: 11px; }
+        }
+        @media (max-width: 480px) {
+            .iface-mainnav-right { gap: 4px; }
+            .iface-global-search { width: 100px; }
+            .iface-quick-action.secondary { display: none; }
         }
 
         .hidden { display: none !important; }
@@ -5701,7 +5782,7 @@
                 </div>
             </div>
             <div class="iface-mainnav-right">
-                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search clients, events..." oninput="InterfaceApp.onGlobalSearch(this.value)">
+                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search clients, events..." onkeydown="if(event.key==='Enter')InterfaceApp.onGlobalSearch(this.value)">
                 <button class="iface-quick-action secondary" onclick="InterfaceApp.navigatePage('events')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                     New Event
@@ -6047,7 +6128,8 @@
 // ============ Theme Management ============
 (function() {
     var saved = localStorage.getItem('amino_theme');
-    if (saved === 'light') document.documentElement.classList.add('light-theme');
+    // Default to light theme unless user explicitly chose dark
+    if (saved !== 'dark') document.documentElement.classList.add('light-theme');
 })();
 
 // ============ Mobile Sidebar Toggle ============
@@ -6212,15 +6294,15 @@ function renderTabBar() {
     container.appendChild(frag);
 
     // Update theme icon state on render
-    var saved = localStorage.getItem('amino_theme');
+    var isLight = document.documentElement.classList.contains('light-theme');
     var icon = document.getElementById('theme-icon');
     var label = document.getElementById('theme-label');
-    if (icon) icon.textContent = saved === 'light' ? '\u263E' : '\u2606';
-    if (label) label.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
+    if (icon) icon.textContent = isLight ? '\u263E' : '\u2606';
+    if (label) label.textContent = isLight ? 'Dark Mode' : 'Light Mode';
     var fhIcon = document.getElementById('file-header-theme-icon');
     var fhLabel = document.getElementById('file-header-theme-label');
-    if (fhIcon) fhIcon.textContent = saved === 'light' ? '\u263E' : '\u2606';
-    if (fhLabel) fhLabel.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
+    if (fhIcon) fhIcon.textContent = isLight ? '\u263E' : '\u2606';
+    if (fhLabel) fhLabel.textContent = isLight ? 'Dark Mode' : 'Light Mode';
 }
 
 var DB_NAME = 'amino';
@@ -7003,6 +7085,11 @@ var totalRecords = 0;
 var lastEventTimestamp = null; // ISO timestamp of last synced event
 var pollInterval = null;
 var navVersion = 0; // Navigation guard to prevent race conditions when rapidly switching views
+
+// Targeted DOM update tracking — allows cell-level patching instead of full DOM rebuild
+var _lastRenderedRecordIds = null;
+var _lastRenderedTable = null;
+var _lastRenderedPage = null;
 
 // View field configuration cache (in-memory, persisted to IndexedDB)
 // Structure: VIEW_FIELD_CONFIG[tableId][viewId] = { hiddenFieldIds: [...], fieldOrder: [...] }
@@ -9045,11 +9132,13 @@ async function getRecord(tableId, recordId) {
 // re-renders (same page, filter tweaks, view toggles, table back-nav) avoid
 // hitting IndexedDB.  Keyed by "tableId|recordId" and supports records from
 // multiple tables simultaneously.
-var _recordCache = {};  // key: "tableId|recordId" -> record object
+// Uses a Map for LRU eviction: on access, delete+re-set moves the entry to
+// the end; on eviction, the oldest entries (front of iteration order) are removed.
+var _recordCache = new Map();  // key: "tableId|recordId" -> record object
 var _recordCacheTable = null;
 var _RECORD_CACHE_MAX = 2000; // cap to avoid unbounded growth (raised from 600 for fewer IDB reads)
 function _rcKey(tid, rid) { return tid + '|' + rid; }
-function clearRecordCache() { _recordCache = {}; _recordCacheTable = null; invalidateLocalSearchIndex(); }
+function clearRecordCache() { _recordCache = new Map(); _recordCacheTable = null; invalidateLocalSearchIndex(); }
 
 async function getRecordsByIds(tableId, recordIds) {
     if (!recordIds.length) return [];
@@ -9057,13 +9146,18 @@ async function getRecordsByIds(tableId, recordIds) {
     // Track current table (no longer evicts — cache is multi-table now)
     _recordCacheTable = tableId;
 
-    // Serve from cache where possible, only fetch missing IDs
+    // Serve from cache where possible, only fetch missing IDs.
+    // On cache hit, delete+re-set to move the entry to the end (LRU refresh).
     var cached = [];
     var missingForCache = [];
     for (var ci = 0; ci < recordIds.length; ci++) {
         var ck = _rcKey(tableId, recordIds[ci]);
-        if (_recordCache[ck]) {
-            cached.push(_recordCache[ck]);
+        var cachedRec = _recordCache.get(ck);
+        if (cachedRec) {
+            // LRU refresh: move to end of Map iteration order
+            _recordCache.delete(ck);
+            _recordCache.set(ck, cachedRec);
+            cached.push(cachedRec);
         } else {
             missingForCache.push(recordIds[ci]);
         }
@@ -9096,15 +9190,18 @@ async function getRecordsByIds(tableId, recordIds) {
         fetched = fetched.concat(dbResults);
     }
 
-    // Populate cache (cap size to avoid unbounded growth)
-    var cacheKeys = Object.keys(_recordCache);
-    if (cacheKeys.length + fetched.length > _RECORD_CACHE_MAX) {
-        // Evict oldest half of entries to make room
-        var toRemove = cacheKeys.slice(0, Math.floor(cacheKeys.length / 2));
-        for (var ri = 0; ri < toRemove.length; ri++) delete _recordCache[toRemove[ri]];
+    // Populate cache (cap size to avoid unbounded growth).
+    // LRU eviction: remove oldest entries (front of Map iteration) to make room.
+    var spaceNeeded = (_recordCache.size + fetched.length) - _RECORD_CACHE_MAX;
+    if (spaceNeeded > 0) {
+        var iter = _recordCache.keys();
+        for (var ri = 0; ri < spaceNeeded; ri++) {
+            var oldKey = iter.next().value;
+            _recordCache.delete(oldKey);
+        }
     }
     for (var fi = 0; fi < fetched.length; fi++) {
-        _recordCache[_rcKey(tableId, fetched[fi].recordId)] = fetched[fi];
+        _recordCache.set(_rcKey(tableId, fetched[fi].recordId), fetched[fi]);
     }
 
     return cached.concat(fetched);
@@ -14800,7 +14897,7 @@ function renderTableHeaders() {
     container.innerHTML = html;
 }
 
-async function renderTable() {
+async function renderTable(paginationOnly) {
     if (!currentTable) return;
     // Skip rendering if we're in a special view (Events or Sync Status)
     if (currentTable === '_events' || currentTable === '_sync_status') return;
@@ -14814,14 +14911,17 @@ async function renderTable() {
         return;
     }
 
-    // Apply filters, search, and sorts
-    var needsFiltering = hasFilterConditions(currentFilters) || currentSearchQuery || currentSorts.length > 0;
-    if (needsFiltering) {
-        currentRecordIds = await getFilteredSortedRecords();
-        if (navVersion !== renderNav) return; // Navigation changed, abort stale render
-    } else {
-        // Reuse original array directly when no filters are active (avoid copying large arrays)
-        currentRecordIds = originalRecordIds;
+    // When paginationOnly is true (e.g. prev/next page), skip the expensive
+    // filter+sort pipeline and reuse the already-computed currentRecordIds.
+    if (!paginationOnly) {
+        var needsFiltering = hasFilterConditions(currentFilters) || currentSearchQuery || currentSorts.length > 0;
+        if (needsFiltering) {
+            currentRecordIds = await getFilteredSortedRecords();
+            if (navVersion !== renderNav) return; // Navigation changed, abort stale render
+        } else {
+            // Reuse original array directly when no filters are active (avoid copying large arrays)
+            currentRecordIds = originalRecordIds;
+        }
     }
     totalRecords = currentRecordIds.length;
 
@@ -15025,10 +15125,47 @@ async function renderTable() {
 
     html += '</tbody>';
 
-    // Replace container content in one shot after data is ready (no intermediate blank state)
-    tableContainer.innerHTML = '<table id="table"></table>';
-    tableEl = document.getElementById('table');
-    tableEl.innerHTML = html;
+    // Targeted DOM update: if the same set of record IDs is already rendered
+    // (e.g. a sync-triggered re-render on the same page), diff and update only
+    // cells whose content changed instead of destroying and rebuilding 2000+ nodes.
+    var _canPatch = !isGrouped && tableEl && tableEl.querySelector('tbody') &&
+        _lastRenderedRecordIds && _lastRenderedTable === currentTable &&
+        _lastRenderedPage === currentPage &&
+        displayRecordIds.length === _lastRenderedRecordIds.length &&
+        displayRecordIds.every(function(id, i) { return id === _lastRenderedRecordIds[i]; });
+
+    if (_canPatch) {
+        // Patch existing DOM cells with new values
+        for (var pi = 0; pi < displayRecordIds.length; pi++) {
+            var prid = displayRecordIds[pi];
+            var prow = recordMap[prid] || {};
+            var domRow = tableEl.querySelector('tr[data-record-id="' + CSS.escape(prid) + '"]');
+            if (!domRow) { _canPatch = false; break; }
+            for (var pci = 0; pci < _colMeta.length; pci++) {
+                var pcm = _colMeta[pci];
+                var pval = prow[pcm.id];
+                if (pval === undefined) pval = prow[pcm.name];
+                var newHtml = formatCell(pval, pcm.fieldType);
+                var cell = domRow.querySelector('td[data-field-id="' + CSS.escape(pcm.id) + '"]');
+                if (cell && cell === _inlineEditingCell) continue; // don't clobber active edit
+                if (cell && cell.innerHTML !== newHtml) {
+                    cell.innerHTML = newHtml;
+                }
+            }
+        }
+    }
+
+    if (!_canPatch) {
+        // Full DOM replacement (table/page/columns changed)
+        tableContainer.innerHTML = '<table id="table"></table>';
+        tableEl = document.getElementById('table');
+        tableEl.innerHTML = html;
+    }
+
+    // Track what we just rendered for future diff checks
+    _lastRenderedRecordIds = displayRecordIds.slice();
+    _lastRenderedTable = currentTable;
+    _lastRenderedPage = currentPage;
 
     // Update pagination (hide when grouped)
     if (isGrouped) {
@@ -15207,7 +15344,7 @@ function prevPage() {
     if (currentPage > 0) {
         currentPage--;
         if (_urlStateBootstrapped) persistUrlState();
-        renderTable();
+        renderTable(true);
     }
 }
 
@@ -15216,7 +15353,7 @@ function nextPage() {
     if (currentPage < totalPages - 1) {
         currentPage++;
         if (_urlStateBootstrapped) persistUrlState();
-        renderTable();
+        renderTable(true);
     }
 }
 
@@ -16444,27 +16581,26 @@ async function hydrateFromWebhooks() {
 
         updateLoadingOverlay('Downloading from API...', 'Found ' + webhookTables.length + ' tables', 0, webhookTables.length, 0, 0, null);
 
-        // 2. For each table, fetch records and store in main app IndexedDB
-        for (var idx = 0; idx < webhookTables.length; idx++) {
-            var wt = webhookTables[idx];
+        // 2. For each table, fetch records and store in main app IndexedDB.
+        // Processes up to CONCURRENCY tables in parallel to overlap network I/O
+        // with encryption/IDB writes. IDB transactions are per-batch so they
+        // don't conflict across concurrent tables.
+        var HYDRATION_CONCURRENCY = 3;
+        var _tablesCompleted = 0;
+
+        async function _hydrateOneTable(wt) {
             var tableId = wt.table_id;
             var tableName = wt.table_name || tableId;
-            var progressPct = Math.round((idx / webhookTables.length) * 100);
-
-            updateStatus('Downloading ' + tableName + '...', false, progressPct, 'Table ' + (idx + 1) + ' of ' + webhookTables.length);
-            updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, 'Fetching records...');
 
             // Save table metadata
             await saveTable({ tableId: tableId, tableName: tableName });
             META_TABLES[tableId] = { tableId: tableId, tableName: tableName };
 
-            // Fetch records for this table
             try {
                 var recordsData = await webhookFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
                 var records = recordsData.records || [];
 
                 if (records.length > 0) {
-                    // Process records in batches to avoid blocking
                     var BATCH = 200;
                     for (var b = 0; b < records.length; b += BATCH) {
                         var batch = records.slice(b, b + BATCH);
@@ -16476,7 +16612,6 @@ async function hydrateFromWebhooks() {
                             var fields = rec.fields;
                             if (!fields || typeof fields !== 'object') continue;
 
-                            // If fields is a string (JSON from postgres), parse it
                             if (typeof fields === 'string') {
                                 try { fields = JSON.parse(fields); } catch (e) { continue; }
                             }
@@ -16486,7 +16621,6 @@ async function hydrateFromWebhooks() {
                                 maxCursorTimestamp = cursorTs;
                             }
 
-                            // Auto-discover field metadata from record data
                             if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
                             var fieldIds = Object.keys(fields);
                             for (var fi = 0; fi < fieldIds.length; fi++) {
@@ -16512,35 +16646,46 @@ async function hydrateFromWebhooks() {
                             });
                         }
 
-                        // Save field metadata
-                        for (var fs = 0; fs < fieldsToSave.length; fs++) {
-                            await saveField(fieldsToSave[fs]);
-                        }
-
-                        // Save data records (uses main app's encryption)
-                        if (dataRecords.length > 0) {
-                            await saveBatch([], [], [], dataRecords);
+                        if (dataRecords.length > 0 || fieldsToSave.length > 0) {
+                            await saveBatch([], fieldsToSave, [], dataRecords);
                         }
 
                         totalRecords += dataRecords.length;
 
-                        // Update progress within this table's batch processing
                         var recordsSoFar = Math.min(b + BATCH, records.length);
-                        updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, recordsSoFar.toLocaleString() + ' of ' + records.length.toLocaleString() + ' records saved');
+                        var progressPct = Math.round((_tablesCompleted / webhookTables.length) * 100);
+                        updateLoadingOverlay('Downloading ' + tableName + '...', _tablesCompleted + ' of ' + webhookTables.length + ' tables done', progressPct, webhookTables.length, totalFields, totalRecords, recordsSoFar.toLocaleString() + ' of ' + records.length.toLocaleString() + ' records saved');
                     }
                 }
 
                 successfulTables++;
+                _tablesCompleted++;
+                var progressPct = Math.round((_tablesCompleted / webhookTables.length) * 100);
                 console.log('[WebhookHydration] ' + tableName + ': ' + records.length + ' records');
-                updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records ✔');
+                updateLoadingOverlay('Downloaded ' + tableName, _tablesCompleted + ' of ' + webhookTables.length + ' tables done', progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records ✔');
 
             } catch (recErr) {
                 failedTables++;
+                _tablesCompleted++;
                 console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
                 SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
-                // Continue with remaining tables so one outage does not block all data.
             }
         }
+
+        // Concurrency pool: run up to HYDRATION_CONCURRENCY tables at a time.
+        // Each slot is independent — when one finishes, the next table fills it.
+        var _tableIdx = 0;
+        async function _hydrateSlot() {
+            while (_tableIdx < webhookTables.length) {
+                var myIdx = _tableIdx++;
+                await _hydrateOneTable(webhookTables[myIdx]);
+            }
+        }
+        var slots = [];
+        for (var s = 0; s < Math.min(HYDRATION_CONCURRENCY, webhookTables.length); s++) {
+            slots.push(_hydrateSlot());
+        }
+        await Promise.all(slots);
 
         updateLoadingOverlay('Sync complete', totalRecords.toLocaleString() + ' records downloaded', 100, webhookTables.length, totalFields, totalRecords, '');
         updateStatus('Webhook hydration complete: ' + totalRecords + ' records', true, 100, null);
@@ -21211,13 +21356,60 @@ var CaseNotesAPI = (function() {
 
 // ============ Record Update Event Listener ============
 
+// Debounce sync-triggered re-renders: collect record-update events over a short
+// window and apply a single batched re-render instead of N re-renders per burst.
+var _syncRenderTimer = null;
+var _syncRenderPendingUpdates = []; // { tableId, recordId, fields }
+
+function _flushSyncRenderUpdates() {
+    _syncRenderTimer = null;
+    var pending = _syncRenderPendingUpdates;
+    _syncRenderPendingUpdates = [];
+    if (pending.length === 0) return;
+
+    // Check if any updates are for the current table
+    var currentTableUpdates = pending.filter(function(u) { return u.tableId === currentTable; });
+    if (currentTableUpdates.length === 0) return;
+
+    // Try targeted cell updates for each changed record on the current page
+    var didFullRender = false;
+    for (var i = 0; i < currentTableUpdates.length; i++) {
+        var upd = currentTableUpdates[i];
+        var row = document.querySelector('tr[data-record-id="' + CSS.escape(upd.recordId) + '"]');
+        if (row && upd.fields) {
+            // Record is visible on current page — update cells in place
+            var cells = row.querySelectorAll('td.inline-editable, td.cell-formula, td.cell-readonly');
+            cells.forEach(function(cell) {
+                if (cell === _inlineEditingCell) return;
+                var fid = cell.dataset.fieldId;
+                if (fid) {
+                    var val = upd.fields[fid];
+                    var f = META_FIELDS[upd.tableId]?.[fid];
+                    if (val === undefined && f?.fieldName) val = upd.fields[f.fieldName];
+                    if (val !== undefined) cell.innerHTML = formatCell(val, f?.fieldType);
+                }
+            });
+        } else if (!didFullRender) {
+            // Record not visible or no field data — full re-render (once)
+            _inlineEditingCell = null;
+            renderTable();
+            didFullRender = true;
+        }
+    }
+}
+
 window.addEventListener('amino:record-updated', function(e) {
     var detail = e.detail;
     if (!detail || !detail.tableId || !detail.recordId) return;
 
-    _recordSearchDataVersion++;
-    invalidateFilterCache();
+    // Only invalidate filter cache when the update is for the current table.
+    // Updates to other tables don't affect the currently displayed filter results.
+    if (detail.tableId === currentTable) {
+        _recordSearchDataVersion++;
+        invalidateFilterCache();
+    }
     invalidateLocalSearchIndex(detail.tableId, detail.recordId);
+    invalidateFormulaResultCache(detail.tableId, detail.recordId);
 
     // Re-render the record profile if it's showing this record
     if (profileCurrentTableId === detail.tableId && profileCurrentRecordId === detail.recordId) {
@@ -21226,23 +21418,20 @@ window.addEventListener('amino:record-updated', function(e) {
 
     // Re-render the table grid if showing the same table
     if (currentTable === detail.tableId) {
-        // If an inline edit just committed, update only the affected cells instead of a full re-render.
-        // This prevents destroying any active editing state and avoids visual flicker.
+        // If an inline edit just committed, update only the affected cells immediately
+        // (no debounce for user's own edits — they expect instant feedback).
         if (_inlineEditJustCommitted) {
             _inlineEditJustCommitted = false;
-            // Update all cells for this record in the DOM without a full re-render
             var row = document.querySelector('tr[data-record-id="' + CSS.escape(detail.recordId) + '"]');
             if (row) {
                 var cells = row.querySelectorAll('td.inline-editable, td.cell-formula, td.cell-readonly');
                 cells.forEach(function(cell) {
-                    // Skip cell currently being edited
                     if (cell === _inlineEditingCell) return;
                     var fid = cell.dataset.fieldId;
                     if (fid && detail.fields) {
                         var val = detail.fields[fid];
                         var f = META_FIELDS[detail.tableId]?.[fid];
                         if (val === undefined) {
-                            // Try field name
                             if (f?.fieldName) val = detail.fields[f.fieldName];
                         }
                         cell.innerHTML = formatCell(val, f?.fieldType);
@@ -21251,9 +21440,16 @@ window.addEventListener('amino:record-updated', function(e) {
             }
             return;
         }
-        // Clear inline editing cell before full re-render to avoid stale DOM
-        _inlineEditingCell = null;
-        renderTable();
+
+        // Debounce background sync updates: collect over 300ms, then batch render
+        _syncRenderPendingUpdates.push({
+            tableId: detail.tableId,
+            recordId: detail.recordId,
+            fields: detail.fields || null
+        });
+        if (!_syncRenderTimer) {
+            _syncRenderTimer = setTimeout(_flushSyncRenderUpdates, 300);
+        }
     }
 });
 
@@ -21780,8 +21976,41 @@ function computedFieldLabel(fieldType) {
 // display computed formula values, not just rows that had values stored.
 
 var _compiledFormulaCache = {};   // tableId -> { fieldId -> { fn, deps, fieldName } }
-var _compiledFormulaCacheKey = ''; // invalidation key
+var _compiledFormulaCacheKeys = {}; // tableId -> invalidation key
 var _disableFormulaEvaluation = false;
+
+// Formula result memoization — caches computed values keyed by
+// "tableId|recordId|fieldId" -> { inputHash, value }.
+// Avoids re-evaluating formulas when input fields haven't changed.
+var _formulaResultCache = {};  // key -> { inputHash, value }
+var _FORMULA_RESULT_CACHE_MAX = 20000;
+
+function _formulaInputHash(row, deps) {
+    // Fast string hash of the dependency values. Uses JSON.stringify for
+    // correctness (handles objects/arrays) with a length cap for speed.
+    var parts = '';
+    for (var i = 0; i < deps.length; i++) {
+        var v = row[deps[i]];
+        if (v === undefined || v === null) {
+            parts += '|_';
+        } else if (typeof v === 'object') {
+            parts += '|' + JSON.stringify(v).slice(0, 100);
+        } else {
+            parts += '|' + String(v);
+        }
+    }
+    return parts;
+}
+
+function invalidateFormulaResultCache(tableId, recordId) {
+    // Invalidate all formula results for a specific record
+    if (!tableId || !recordId) { _formulaResultCache = {}; return; }
+    var prefix = tableId + '|' + recordId + '|';
+    var keys = Object.keys(_formulaResultCache);
+    for (var i = 0; i < keys.length; i++) {
+        if (keys[i].indexOf(prefix) === 0) delete _formulaResultCache[keys[i]];
+    }
+}
 
 function _shouldSkipFormulaColumns(recordCount, formulaCount) {
     if (_disableFormulaEvaluation) return true;
@@ -21827,13 +22056,16 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         return f.fieldId + ':' + expr;
     }).join(',');
     var cached = _compiledFormulaCache[tableId];
-    if (!cached || _compiledFormulaCacheKey !== cacheKey) {
+    if (!cached || _compiledFormulaCacheKeys[tableId] !== cacheKey) {
         cached = {};
         var compiledList = [];
         for (var i = 0; i < formulaFields.length; i++) {
             var f = formulaFields[i];
             try {
                 var formulaExpr = f.options.formula || f.options.expression;
+                // Resolve field IDs in the formula expression to human-readable
+                // names so that {fldXYZ} references match the aliased record keys.
+                formulaExpr = resolveFormulaFieldNames(formulaExpr, tableId);
                 var ast = engine.parseAirtableFormula(formulaExpr);
                 var refs = engine.collectFieldRefs(ast);
                 var fn = engine.compileFormula(ast);
@@ -21878,7 +22110,7 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
 
         cached._sorted = sorted;
         _compiledFormulaCache[tableId] = cached;
-        _compiledFormulaCacheKey = cacheKey;
+        _compiledFormulaCacheKeys[tableId] = cacheKey;
     }
 
     var sorted = cached._sorted;
@@ -21894,7 +22126,12 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         }
     }
 
-    // Execute every formula on every record in dependency order
+    // Execute every formula on every record in dependency order.
+    // Uses memoization: if the input values (deps) haven't changed since last
+    // evaluation, return the cached result instead of re-executing the formula.
+    var _frcSize = Object.keys(_formulaResultCache).length;
+    if (_frcSize > _FORMULA_RESULT_CACHE_MAX) _formulaResultCache = {};
+
     for (var rid in recordMap) {
         var row = recordMap[rid];
         // Populate bidirectional name↔id aliases so formulas can resolve refs
@@ -21909,12 +22146,26 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         for (var i = 0; i < sorted.length; i++) {
             var c = sorted[i];
             try {
+                // Check formula result cache
+                var frcKey = tableId + '|' + rid + '|' + c.fieldId;
+                var inputHash = _formulaInputHash(row, c.deps);
+                var frcEntry = _formulaResultCache[frcKey];
+                if (frcEntry && frcEntry.inputHash === inputHash) {
+                    // Cache hit — reuse previous value
+                    row[c.fieldId] = frcEntry.value;
+                    if (c.fieldName && c.fieldName !== c.fieldId) {
+                        row[c.fieldName] = frcEntry.value;
+                    }
+                    continue;
+                }
+
                 var value = c.fn(row, { recordId: rid });
                 if (value !== null && value !== undefined && !(value && value.__error)) {
                     row[c.fieldId] = value;
                     if (c.fieldName && c.fieldName !== c.fieldId) {
                         row[c.fieldName] = value;
                     }
+                    _formulaResultCache[frcKey] = { inputHash: inputHash, value: value };
                 }
             } catch (_e) {
                 // Formula runtime error — leave cell empty
@@ -26992,7 +27243,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'List') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -27025,7 +27276,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Timeline') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -27564,7 +27815,7 @@ var InterfaceApp = (function() {
         var countLabel = total === allCount ? (total + ' records') : (total + ' of ' + allCount + ' records');
         html += '<h2>' + _esc(block.label || 'Table') + ' <span class="muted">\u00B7 ' + countLabel + '</span></h2>';
         html += '<div class="iface-clients-header-actions">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         if (_currentUserRole === 'admin') {
             html += '<button class="iface-table-settings-btn" onclick="InterfaceApp.toggleTableSettings(\'' + _esc(block.id) + '\')">';
             html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -27635,8 +27886,9 @@ var InterfaceApp = (function() {
             if (block.segment && block.segment.sort && block.segment.sort.field === col.field) {
                 sortIndicator = block.segment.sort.dir === 'asc' ? ' \u2191' : ' \u2193';
             }
+            var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
             var w = col.width ? ' style="min-width:' + col.width + 'px;max-width:' + (col.width + 80) + 'px"' : '';
-            html += '<th' + w + ' onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + sortIndicator + '</th>';
+            html += '<th' + w + ' data-col="' + _esc(colId) + '" onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + sortIndicator + '</th>';
         });
         if (includeRelationshipAction) {
             html += '<th style="width:180px;">Client Relationship Graph</th>';
@@ -27656,13 +27908,14 @@ var InterfaceApp = (function() {
                 columns.forEach(function(col) {
                     var val = _findFieldValue(r.fields || {}, col.field);
                     var label = (col.label || col.field || '').toLowerCase();
+                    var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
                     // Special formatting based on column type
                     if (label.includes('client name') || label === 'name') {
-                        html += '<td><span class="client-name">' + _formatFieldValueRevamped(val, col.field) + '</span></td>';
+                        html += '<td data-col="' + _esc(colId) + '"><span class="client-name">' + _formatFieldValueRevamped(val, col.field) + '</span></td>';
                     } else if (label.includes('file status') || label.includes('status')) {
-                        html += '<td>' + _formatFileStatus(val) + '</td>';
+                        html += '<td data-col="' + _esc(colId) + '">' + _formatFileStatus(val) + '</td>';
                     } else {
-                        html += '<td>' + _formatFieldValueRevamped(val, col.field) + '</td>';
+                        html += '<td data-col="' + _esc(colId) + '">' + _formatFieldValueRevamped(val, col.field) + '</td>';
                     }
                 });
                 if (includeRelationshipAction) {
@@ -27998,7 +28251,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Table') + ' <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(' + total + ' records)</span></span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
