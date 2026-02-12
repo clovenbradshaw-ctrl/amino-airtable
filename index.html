@@ -17733,12 +17733,9 @@ function renderEventRow(event, isNew) {
     var setTableId = (event.set || '').replace('airtable:', '');
     var setDisplayName = (META_TABLES[setTableId] && META_TABLES[setTableId].tableName) || event.set || '';
     html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(setDisplayName) + '</span></td>';
-    // Details column - highlight operator and how to inspect full historical record state
+    // Details column - highlight operator
     html += '<td class="event-details">';
     html += '<div><span class="field-op-badge ' + eventType + '">Operator: ' + esc(ENTITY_TYPE_NAMES[eventType] || eventType) + '</span></div>';
-    if (!isCurrentState && event.recordId && event.recordId.startsWith('rec')) {
-        html += '<div style="margin-top: 6px; color: #9ca3af; font-size: 11px; line-height: 1.4;">View State shows the full record snapshot from this moment (all fields as they were then).</div>';
-    }
     html += '</td>';
 
     // Payload preview
