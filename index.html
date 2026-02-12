@@ -24377,7 +24377,14 @@ var InterfaceApp = (function() {
                             sort: { field: 'Client Name', dir: 'asc' },
                             pageSize: 50
                         }
-                    },
+                    }
+                ]
+            },
+            {
+                id: 'client-relationships',
+                label: 'Client Relationships',
+                icon: 'clients',
+                blocks: [
                     {
                         id: 'clients-relationship-graph',
                         type: 'client-relationship-graph',
@@ -25522,6 +25529,7 @@ var InterfaceApp = (function() {
         // Table wrapper
         html += '<div style="background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:var(--radius-xl);overflow:hidden;">';
         html += '<div class="iface-table-wrapper"><table class="iface-table-revamp">';
+        var includeRelationshipAction = block.id === 'clients-table';
         html += '<thead><tr>';
         columns.forEach(function(col) {
             var sortIndicator = '';
@@ -25531,10 +25539,14 @@ var InterfaceApp = (function() {
             var w = col.width ? ' style="min-width:' + col.width + 'px;max-width:' + (col.width + 80) + 'px"' : '';
             html += '<th' + w + ' onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + sortIndicator + '</th>';
         });
+        if (includeRelationshipAction) {
+            html += '<th style="width:180px;">Client Relationship Graph</th>';
+        }
         html += '</tr></thead><tbody>';
 
         if (!pageRecords.length) {
-            html += '<tr><td colspan="' + columns.length + '" style="text-align:center;color:var(--text-muted);padding:40px;">No records found</td></tr>';
+            var emptyColspan = columns.length + (includeRelationshipAction ? 1 : 0);
+            html += '<tr><td colspan="' + emptyColspan + '" style="text-align:center;color:var(--text-muted);padding:40px;">No records found</td></tr>';
         } else {
             pageRecords.forEach(function(r) {
                 html += '<tr data-record-id="' + _esc(r.recordId) + '">';
@@ -25550,6 +25562,9 @@ var InterfaceApp = (function() {
                         html += '<td>' + _formatFieldValueRevamped(val, col.field) + '</td>';
                     }
                 });
+                if (includeRelationshipAction) {
+                    html += '<td><button class="iface-page-btn" onclick="InterfaceApp.openClientRelationshipGraph(\'' + _esc(r.recordId) + '\')">View graph</button></td>';
+                }
                 html += '</tr>';
             });
         }
@@ -26456,6 +26471,23 @@ var InterfaceApp = (function() {
         if (!block) return;
         block._selectedClientRecordId = selectedRecordId || '';
         renderPage(_activePage);
+        if (_urlStateBootstrapped) persistUrlState();
+    }
+
+    function openClientRelationshipGraph(recordId) {
+        if (!recordId || !_schema) return;
+        var page = _schema.pages.find(function(p) { return p.id === 'client-relationships'; });
+        if (!page || !Array.isArray(page.blocks)) {
+            _showToast('Client Relationship Graph page is not available.');
+            return;
+        }
+        var graphBlock = page.blocks.find(function(b) { return b.type === 'client-relationship-graph'; });
+        if (!graphBlock) {
+            _showToast('Client Relationship Graph block is not configured.');
+            return;
+        }
+        graphBlock._selectedClientRecordId = recordId;
+        switchPage('client-relationships');
         if (_urlStateBootstrapped) persistUrlState();
     }
 
@@ -27390,6 +27422,7 @@ var InterfaceApp = (function() {
         caseNotesWidgetAction: caseNotesWidgetAction,
         openClientFromCaseNote: openClientFromCaseNote,
         onClientGraphClientChange: onClientGraphClientChange,
+        openClientRelationshipGraph: openClientRelationshipGraph,
         setUrlState: setUrlState,
         getUrlState: getUrlState,
         toggleEditMode: toggleEditMode,
