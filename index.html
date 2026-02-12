@@ -6330,6 +6330,7 @@ var ENCRYPTION_CONFIG_KEY = 'amino_encryption_config';
 var ENCRYPTED_CREDENTIALS_KEY = 'amino_encrypted_credentials';
 var encryptionKey = null; // CryptoKey object, only kept in memory
 var encryptionEnabled = false;
+var _deferEncryptionUI = false; // when true, skip per-record encryption; bulk-encrypt on logout
 var passkeyCredentialId = null; // For WebAuthn
 
 // ============ Web Crypto API Utilities ============
@@ -6744,6 +6745,7 @@ async function setupEncryptionWithPassword() {
         });
 
         encryptionEnabled = true;
+        _deferEncryptionUI = true;
         await saveSessionKey(encryptionKey);
         hideUnlockScreen();
         initAuthScreen();
@@ -6800,6 +6802,7 @@ async function setupEncryptionWithPasskey() {
         });
 
         encryptionEnabled = true;
+        _deferEncryptionUI = true;
         passkeyCredentialId = passkeyResult.credentialId;
         await saveSessionKey(encryptionKey);
         hideUnlockScreen();
@@ -6825,6 +6828,7 @@ function skipEncryption() {
 
     saveEncryptionConfig({ type: 'none' });
     encryptionEnabled = false;
+    _deferEncryptionUI = false;
     encryptionKey = null;
     hideUnlockScreen();
     initAuthScreen();
@@ -6861,6 +6865,7 @@ async function unlockWithPassword() {
         }
 
         encryptionEnabled = true;
+        _deferEncryptionUI = true;
         await saveSessionKey(encryptionKey);
         hideUnlockScreen();
         document.getElementById('unlock-password').value = '';
@@ -6906,6 +6911,7 @@ async function unlockWithPasskey() {
         }
 
         encryptionEnabled = true;
+        _deferEncryptionUI = true;
         passkeyCredentialId = config.credentialId;
         await saveSessionKey(encryptionKey);
         hideUnlockScreen();
@@ -6946,6 +6952,7 @@ async function clearEncryptedData() {
 
         encryptionKey = null;
         encryptionEnabled = false;
+        _deferEncryptionUI = false;
         passkeyCredentialId = null;
 
         // Show setup screen
@@ -7058,6 +7065,7 @@ async function initEncryption() {
             // Session key is valid
             encryptionKey = sessionKey;
             encryptionEnabled = true;
+            _deferEncryptionUI = true;
             return true;
         } catch (e) {
             // Session key is stale or invalid
@@ -8586,6 +8594,10 @@ async function encryptEventForStorage(event) {
     if (!encryptionEnabled || !encryptionKey || !event.payload) {
         return event;
     }
+    // Deferred encryption: store plaintext during active session, encrypt on logout
+    if (_deferEncryptionUI) {
+        return event;
+    }
     var encrypted = { ...event };
     encrypted._encryptedPayload = await encryptData(event.payload, encryptionKey);
     delete encrypted.payload;
@@ -8593,11 +8605,17 @@ async function encryptEventForStorage(event) {
 }
 
 // Decrypt event payload after retrieval
+// Handles both plaintext (deferred-encryption mode) and encrypted formats.
 // Always attempt decryption if the event has _encryptedPayload and a key is available,
 // regardless of the current encryptionEnabled flag.  This ensures events encrypted in
 // a previous session are still readable after encryption settings change.
 async function decryptEventFromStorage(event) {
-    if (!event || !event._encryptedPayload || !encryptionKey) {
+    if (!event) return event;
+    // Plaintext event (deferred-encryption mode or leftover from crash) — return as-is
+    if (event.payload && !event._encryptedPayload) {
+        return event;
+    }
+    if (!event._encryptedPayload || !encryptionKey) {
         return event;
     }
     try {
@@ -8616,6 +8634,10 @@ async function encryptRecordForStorage(record) {
     if (!encryptionEnabled || !encryptionKey || !record.fields) {
         return record;
     }
+    // Deferred encryption: store plaintext during active session, encrypt on logout
+    if (_deferEncryptionUI) {
+        return record;
+    }
     var encrypted = { ...record };
     encrypted._encryptedFields = await encryptData(record.fields, encryptionKey);
     delete encrypted.fields;
@@ -8623,10 +8645,16 @@ async function encryptRecordForStorage(record) {
 }
 
 // Decrypt data record fields after retrieval
+// Handles both plaintext (deferred-encryption mode) and encrypted formats.
 // Always attempt decryption if the record has _encryptedFields and a key is available,
 // regardless of the current encryptionEnabled flag.
 async function decryptRecordFromStorage(record) {
-    if (!record || !record._encryptedFields || !encryptionKey) {
+    if (!record) return record;
+    // Plaintext record (deferred-encryption mode or leftover from crash) — return as-is
+    if (record.fields && !record._encryptedFields) {
+        return record;
+    }
+    if (!record._encryptedFields || !encryptionKey) {
         return record;
     }
     try {
@@ -8656,6 +8684,84 @@ async function saveRawEvents(events) {
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
+}
+
+// ============ Encrypt-on-Logout: Bulk Encryption ============
+
+// Encrypt all plaintext data records and events in the UI IndexedDB.
+// Called on logout to ensure data-at-rest is encrypted.
+// Processes in batches to avoid memory pressure.
+async function encryptAllUIRecords() {
+    if (!db || !encryptionKey) return 0;
+    var BATCH_SIZE = 200;
+    var encrypted = 0;
+
+    // ── Encrypt plaintext data records ──
+    try {
+        var allRecords = await new Promise(function(resolve, reject) {
+            var tx = db.transaction('data', 'readonly');
+            var req = tx.objectStore('data').getAll();
+            req.onsuccess = function() { resolve(req.result || []); };
+            req.onerror = function() { reject(req.error); };
+        });
+
+        for (var b = 0; b < allRecords.length; b += BATCH_SIZE) {
+            var batch = allRecords.slice(b, b + BATCH_SIZE);
+            var writeTx = db.transaction('data', 'readwrite');
+            var store = writeTx.objectStore('data');
+            for (var i = 0; i < batch.length; i++) {
+                var rec = batch[i];
+                // Only encrypt records that have plaintext fields (not already encrypted)
+                if (rec.fields && !rec._encryptedFields) {
+                    rec._encryptedFields = await encryptData(rec.fields, encryptionKey);
+                    delete rec.fields;
+                    store.put(rec);
+                    encrypted++;
+                }
+            }
+            await new Promise(function(resolve, reject) {
+                writeTx.oncomplete = resolve;
+                writeTx.onerror = function() { reject(writeTx.error); };
+            });
+        }
+    } catch (e) {
+        console.error('[encryptAllUIRecords] Failed to encrypt data records:', e);
+    }
+
+    // ── Encrypt plaintext events ──
+    try {
+        var allEvents = await new Promise(function(resolve, reject) {
+            var tx = db.transaction('events', 'readonly');
+            var req = tx.objectStore('events').getAll();
+            req.onsuccess = function() { resolve(req.result || []); };
+            req.onerror = function() { reject(req.error); };
+        });
+
+        for (var eb = 0; eb < allEvents.length; eb += BATCH_SIZE) {
+            var evBatch = allEvents.slice(eb, eb + BATCH_SIZE);
+            var evWriteTx = db.transaction('events', 'readwrite');
+            var evStore = evWriteTx.objectStore('events');
+            for (var ei = 0; ei < evBatch.length; ei++) {
+                var evt = evBatch[ei];
+                // Only encrypt events that have plaintext payload (not already encrypted)
+                if (evt.payload && !evt._encryptedPayload) {
+                    evt._encryptedPayload = await encryptData(evt.payload, encryptionKey);
+                    delete evt.payload;
+                    evStore.put(evt);
+                    encrypted++;
+                }
+            }
+            await new Promise(function(resolve, reject) {
+                evWriteTx.oncomplete = resolve;
+                evWriteTx.onerror = function() { reject(evWriteTx.error); };
+            });
+        }
+    } catch (e) {
+        console.error('[encryptAllUIRecords] Failed to encrypt events:', e);
+    }
+
+    console.log('[Amino] Encrypted', encrypted, 'plaintext records/events on logout');
+    return encrypted;
 }
 
 async function getAllRawEvents(limit, offset) {
@@ -11639,6 +11745,7 @@ async function trySynapseLogin() {
 
         encryptionKey = derivedKey;
         encryptionEnabled = true;
+        _deferEncryptionUI = true;
         await saveSessionKey(encryptionKey);
 
         // NOTE: AminoData layer is not used for the main hydration flow —
@@ -12146,6 +12253,16 @@ async function logout() {
     SynapseSync.stop();
     // Stop n8n webhook data layer polling, encrypt records, and clear its encryption key
     await AminoData.logout(false); // Encrypts plaintext records, keeps data in IndexedDB for next session
+    // Encrypt all plaintext records/events in the UI database before closing.
+    // Must happen while encryptionKey and db are still available.
+    if (_deferEncryptionUI && encryptionKey && db) {
+        try {
+            await encryptAllUIRecords();
+        } catch (encErr) {
+            console.error('[logout] Failed to encrypt UI records on logout:', encErr);
+        }
+    }
+    _deferEncryptionUI = false;
     // Close stale IndexedDB connection
     if (db) {
         try { db.close(); } catch (e) { /* ignore */ }
@@ -30805,12 +30922,16 @@ async function detectAndStoreUserRole() {
     updateAppNavUser();
 }
 
-function appNavLogout() {
+async function appNavLogout() {
     if (!confirm('Sign out of Amino?')) return;
     hideAppNav();
-    // Clear encryption key from memory and sessionStorage — the encrypted
+    // Encrypt plaintext records before clearing the key — the encrypted
     // IndexedDB data is retained on device (AES-GCM-256, unreadable without
     // the user's password) so the next login can skip re-hydration.
+    if (_deferEncryptionUI && encryptionKey && db) {
+        try { await encryptAllUIRecords(); } catch (e) { console.error('[appNavLogout] encrypt failed:', e); }
+    }
+    _deferEncryptionUI = false;
     clearSessionKey();
     encryptionKey = null;
     encryptionEnabled = false;
@@ -32184,6 +32305,34 @@ window.addEventListener('amino:auth-expired', async function() {
     // if the Matrix session is also expired
 });
 
+// ============ Encrypt-on-Logout: Safety Handlers (UI Database) ============
+// Best-effort encryption when the page is being discarded without a
+// clean logout. Mirrors the same pattern used in data-layer.js for the
+// amino-data-layer database, but operates on the UI's 'amino' IndexedDB.
+var _encryptUIOnUnloadRunning = false;
+
+function _tryEncryptUIOnUnload() {
+    if (!_deferEncryptionUI || !encryptionKey || !db || _encryptUIOnUnloadRunning) return;
+    _encryptUIOnUnloadRunning = true;
+    encryptAllUIRecords()
+        .catch(function(err) {
+            console.error('[Amino] Encrypt-on-unload (UI) failed:', err);
+        })
+        .finally(function() {
+            _encryptUIOnUnloadRunning = false;
+        });
+}
+
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden' && _deferEncryptionUI) {
+        _tryEncryptUIOnUnload();
+    }
+});
+
+window.addEventListener('beforeunload', function() {
+    _tryEncryptUIOnUnload();
+});
+
 // Initialize: Synapse login is the gate — everything derives from it
 (async function() {
     // Check for existing valid Synapse session
@@ -32202,6 +32351,7 @@ window.addEventListener('amino:auth-expired', async function() {
                     await decryptData(config.verificationToken, sessionKey);
                     encryptionKey = sessionKey;
                     encryptionEnabled = true;
+                    _deferEncryptionUI = true;
 
                     // Session + encryption restored — hide login and init app
                     hideSynapseLoginScreen();
