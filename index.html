@@ -25092,7 +25092,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'List') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -25125,7 +25125,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Timeline') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -25474,7 +25474,7 @@ var InterfaceApp = (function() {
         var countLabel = total === allCount ? (total + ' records') : (total + ' of ' + allCount + ' records');
         html += '<h2>' + _esc(block.label || 'Table') + ' <span class="muted">\u00B7 ' + countLabel + '</span></h2>';
         html += '<div class="iface-clients-header-actions">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<button class="iface-btn-secondary">';
         html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
         html += ' Export</button>';
@@ -25885,7 +25885,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Table') + ' <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(' + total + ' records)</span></span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -27099,6 +27099,7 @@ var InterfaceApp = (function() {
 
     function onBlockSearch(blockId, query) {
         _blockSearchState[blockId] = query;
+        _tablePaginationState[blockId] = Object.assign({}, _tablePaginationState[blockId], { page: 0 });
         // Debounce re-render
         clearTimeout(onBlockSearch._timer);
         onBlockSearch._timer = setTimeout(function() {
@@ -27115,6 +27116,7 @@ var InterfaceApp = (function() {
             if (page) {
                 page.blocks.forEach(function(b) {
                     _blockSearchState[b.id] = query;
+                    _tablePaginationState[b.id] = Object.assign({}, _tablePaginationState[b.id], { page: 0 });
                 });
             }
         }
