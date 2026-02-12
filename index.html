@@ -12132,12 +12132,12 @@ function showAuthScreen() {
     initAuthScreen();
 }
 
-function logout() {
+async function logout() {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = null;
     SynapseSync.stop();
-    // Stop n8n webhook data layer polling and clear its encryption key
-    AminoData.logout(false); // Keep encrypted data in IndexedDB for next session
+    // Stop n8n webhook data layer polling, encrypt records, and clear its encryption key
+    await AminoData.logout(false); // Encrypts plaintext records, keeps data in IndexedDB for next session
     // Close stale IndexedDB connection
     if (db) {
         try { db.close(); } catch (e) { /* ignore */ }
@@ -32175,9 +32175,9 @@ document.getElementById('setup-password').onkeydown = (e) => { if (e.key === 'En
 document.getElementById('setup-password-confirm').onkeydown = (e) => { if (e.key === 'Enter') setupEncryptionWithPassword(); };
 
 // Handle AminoData auth expiry — stop polling, prompt re-login
-window.addEventListener('amino:auth-expired', function() {
+window.addEventListener('amino:auth-expired', async function() {
     console.warn('[AminoData] Access token expired — stopping data layer polling');
-    AminoData.logout(false);
+    await AminoData.logout(false);
     // The main Synapse session may still be valid; only force re-login
     // if the Matrix session is also expired
 });
