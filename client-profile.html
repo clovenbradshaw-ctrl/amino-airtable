@@ -992,8 +992,9 @@
         // If context has a clientId, it should match our target
         if (parsed.clientId && state.clientId && parsed.clientId !== state.clientId) return null;
         // Reject stale snapshots older than 5 minutes
-        if (parsed.timestamp && (Date.now() - parsed.timestamp) > CONTEXT_MAX_AGE_MS) {
-          console.warn('[Profile] Context snapshot is stale (' + Math.round((Date.now() - parsed.timestamp) / 1000) + 's old), skipping.');
+        var snapshotTime = parsed.capturedAt || parsed.timestamp;
+        if (snapshotTime && (Date.now() - snapshotTime) > CONTEXT_MAX_AGE_MS) {
+          console.warn('[Profile] Context snapshot is stale (' + Math.round((Date.now() - snapshotTime) / 1000) + 's old), skipping.');
           return null;
         }
         return parsed;
@@ -1009,6 +1010,17 @@
         var rows = data[key];
         if (!Array.isArray(rows)) return;
         state.data[key] = rows;
+      });
+      // Populate tableMap from snapshot so tableId lookups work
+      var tableIdMap = ctx.tableIdMap || {};
+      Object.keys(tableIdMap).forEach(function(tableId) {
+        var tableName = tableIdMap[tableId];
+        state.tableMap[tableId] = tableName;
+        state.tableMap[tableName] = tableName;
+        // Also make data accessible by tableId for resolvers that use IDs
+        if (tableName !== tableId && state.data[tableName] && !state.data[tableId]) {
+          state.data[tableId] = state.data[tableName];
+        }
       });
       // Eagerly build record index after loading all data
       buildRecordIndex();
@@ -1778,16 +1790,25 @@
           // Restore Matrix session for state event access
           MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
 
-          // Initialize AminoData
+          // Initialize AminoData — try password first, then stored key from localStorage
           if (typeof AminoData !== 'undefined' && AminoData.init) {
+            var aminoInited = false;
             if (session.password) {
               await AminoData.init(session.accessToken, session.userId, session.password);
+              aminoInited = true;
             } else if (AminoData.initWithKey) {
-              await AminoData.initWithKey(session.accessToken, session.userId);
+              try {
+                await AminoData.initWithKey(session.accessToken, session.userId);
+                aminoInited = true;
+              } catch (keyErr) {
+                console.warn('[Profile] Key-based init failed:', keyErr.message);
+              }
             }
-            loadingMsg.textContent = 'Loading tables...';
-            await loadDataFromAminoData();
-            dataLoaded = Object.keys(state.data).length > 0;
+            if (aminoInited) {
+              loadingMsg.textContent = 'Loading tables...';
+              await loadDataFromAminoData();
+              dataLoaded = Object.keys(state.data).length > 0;
+            }
           }
         } catch (e) {
           console.warn('[Profile] Session restore failed:', e.message);
