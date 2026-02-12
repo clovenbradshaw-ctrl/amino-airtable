@@ -389,6 +389,36 @@
       color: var(--text-primary);
     }
 
+    .record-card-meta-right {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .record-date {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .case-notes-search {
+      margin-bottom: 10px;
+    }
+    .case-notes-search input {
+      width: 100%;
+      border: 1px solid var(--border-primary);
+      border-radius: var(--radius-md);
+      padding: 8px 10px;
+      font-size: 13px;
+      font-family: var(--font-sans);
+      color: var(--text-primary);
+      background: var(--bg-secondary);
+    }
+    .case-notes-search input:focus {
+      outline: none;
+      border-color: var(--primary-500);
+      box-shadow: 0 0 0 2px rgba(58,158,143,0.12);
+    }
+
     /* ===== Admin Config Panel ===== */
     .admin-panel {
       margin-top: 24px;
@@ -664,7 +694,8 @@
       adminOpen: false,
       orgSpaceId: null,
       session: null,
-      fkCache: {}       // tableName -> { fieldName: true } (discovered FK fields)
+      fkCache: {},      // tableName -> { fieldName: true } (discovered FK fields)
+      caseNotesSearch: ''
     };
 
     // ============ Utilities ============
@@ -936,6 +967,63 @@
       return '<span>' + esc(value) + '</span>';
     }
 
+    function parseDateValue(value) {
+      if (!value) return null;
+      if (value instanceof Date && !isNaN(value.getTime())) return value;
+      var parsed = new Date(value);
+      if (!isNaN(parsed.getTime())) return parsed;
+      return null;
+    }
+
+    function formatDateTime(value) {
+      var dt = parseDateValue(value);
+      if (!dt) return '&mdash;';
+      return dt.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    }
+
+    function getCaseNoteCreatedDate(row) {
+      var fields = row && row.fields ? row.fields : {};
+      var candidateFields = ['Created', 'Creation Date', 'Created At', 'Created Time', 'Date'];
+      for (var i = 0; i < candidateFields.length; i++) {
+        var raw = fields[candidateFields[i]];
+        var parsed = parseDateValue(raw);
+        if (parsed) return { raw: raw, parsed: parsed };
+      }
+      return null;
+    }
+
+    function valueMatchesQuery(value, q) {
+      if (!q) return true;
+      if (value == null || value === '') return false;
+      if (Array.isArray(value)) {
+        return value.some(function(v) { return valueMatchesQuery(v, q); });
+      }
+      if (typeof value === 'object') {
+        return Object.keys(value).some(function(key) {
+          return valueMatchesQuery(value[key], q);
+        });
+      }
+      return String(value).toLowerCase().indexOf(q) !== -1;
+    }
+
+    function rowMatchesCaseNotesQuery(row, query) {
+      var q = norm(query);
+      if (!q) return true;
+      var fields = row && row.fields ? row.fields : {};
+      return Object.keys(fields).some(function(fieldName) {
+        var isClientField = /client|name/i.test(fieldName);
+        var isNoteField = /note|description|summary/i.test(fieldName);
+        if (!isClientField && !isNoteField) return false;
+        return valueMatchesQuery(fields[fieldName], q);
+      });
+    }
+
     function renderNav() {
       var session = loadSynapseSession();
       var username = '';
@@ -1018,14 +1106,44 @@
     function renderRelatedSection(sec) {
       var rows = findRelatedRows(sec.table);
       if (!rows.length) return '<div class="panel-body empty">No related records found.</div>';
+      var isCaseNotesSection = norm(sec.table) === 'case notes' || norm(sec.title) === 'case notes';
+
+      if (isCaseNotesSection) {
+        rows = rows.filter(function(row) {
+          return rowMatchesCaseNotesQuery(row, state.caseNotesSearch);
+        }).sort(function(a, b) {
+          var aDate = getCaseNoteCreatedDate(a);
+          var bDate = getCaseNoteCreatedDate(b);
+          var aTs = aDate ? aDate.parsed.getTime() : 0;
+          var bTs = bDate ? bDate.parsed.getTime() : 0;
+          return bTs - aTs;
+        });
+
+        if (!rows.length) {
+          return '<div class="panel-body"><div class="case-notes-search"><input id="caseNotesSearchInput" type="search" placeholder="Search by client or note content" value="' + esc(state.caseNotesSearch) + '"></div><div class="empty" style="padding:18px 0;text-align:center;color:var(--text-muted);font-size:13px;">No case notes match your search.</div></div>';
+        }
+      }
+
       var displayFields = sec.fields || [];
-      var html = '<div class="panel-body"><div class="record-cards">';
+      var html = '<div class="panel-body">';
+
+      if (isCaseNotesSection) {
+        html += '<div class="case-notes-search"><input id="caseNotesSearchInput" type="search" placeholder="Search by client or note content" value="' + esc(state.caseNotesSearch) + '"></div>';
+      }
+
+      html += '<div class="record-cards">';
       rows.forEach(function(row) {
         var f = row.fields || {};
         var title = f[displayFields[0]] || row.recordId || '(record)';
+        var createdDate = getCaseNoteCreatedDate(row);
         html += '<div class="record-card">';
         html += '<div class="record-card-head"><span class="record-card-title">' + esc(Array.isArray(title) ? title.join(', ') : title) + '</span>';
-        html += '<span class="pill id">' + esc(row.recordId || '-') + '</span></div>';
+        if (isCaseNotesSection) {
+          html += '<div class="record-card-meta-right"><span class="record-date">' + formatDateTime(createdDate ? createdDate.raw : null) + '</span><span class="pill id">' + esc(row.recordId || '-') + '</span></div>';
+        } else {
+          html += '<span class="pill id">' + esc(row.recordId || '-') + '</span>';
+        }
+        html += '</div>';
         displayFields.slice(1).forEach(function(name) {
           html += '<div class="kv-row"><div class="kv-key">' + esc(name) + '</div><div class="kv-val">' + renderValue(f[name]) + '</div></div>';
         });
@@ -1033,6 +1151,15 @@
       });
       html += '</div></div>';
       return html;
+    }
+
+    function bindCaseNotesSearch() {
+      var input = document.getElementById('caseNotesSearchInput');
+      if (!input) return;
+      input.addEventListener('input', function(e) {
+        state.caseNotesSearch = e.target.value || '';
+        renderTabContent();
+      });
     }
 
     function renderTabContent() {
@@ -1059,6 +1186,7 @@
       });
       html += '</div>';
       document.getElementById('tabContent').innerHTML = html;
+      bindCaseNotesSearch();
     }
 
     // ============ Admin Config ============
