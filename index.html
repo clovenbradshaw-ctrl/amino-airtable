@@ -2583,10 +2583,10 @@
 
         /* Revamped data table */
         .iface-table-revamp {
-            width: max-content;
-            min-width: 100%;
+            width: 100%;
             border-collapse: collapse;
             font-size: 13px;
+            table-layout: fixed;
         }
         .iface-table-revamp thead th {
             text-align: left; padding: 10px 16px;
@@ -24833,7 +24833,12 @@ var InterfaceApp = (function() {
                 Object.keys(rawFields).forEach(function(key) {
                     var meta = fieldMeta[key];
                     var name = (meta && meta.fieldName) ? meta.fieldName : key;
-                    translated[name] = rawFields[key];
+                    var value = rawFields[key];
+                    // Preserve both field-id and field-name keys so interface
+                    // blocks, formulas, and filters behave like Airtable where
+                    // computed values are addressable by canonical field ID.
+                    translated[key] = value;
+                    if (name !== key) translated[name] = value;
                 });
                 return { recordId: r.recordId, fields: translated };
             });
