@@ -928,7 +928,7 @@
       var f = rec ? (rec.fields || {}) : {};
       var name = 'Client not found';
       if (rec) {
-        name = f['Display Name'] || f['display name']
+        name = f['Full Name Client'] || f['Display Name'] || f['display name']
           || ((f['Last Name'] || '') + ', ' + (f['First Name'] || '')).replace(/^,\s*/, '').replace(/,\s*$/, '')
           || rec.recordId || state.clientId;
       }

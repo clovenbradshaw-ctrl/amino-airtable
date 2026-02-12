@@ -20359,13 +20359,13 @@ var CaseNotesAPI = (function() {
         }
 
         records.sort(function(a, b) {
-            var na = (a.fields['Client Name'] || a.fields['Name'] || '').toLowerCase();
-            var nb = (b.fields['Client Name'] || b.fields['Name'] || '').toLowerCase();
+            var na = (a.fields['Full Name Client'] || a.fields['Client Name'] || a.fields['Name'] || '').toLowerCase();
+            var nb = (b.fields['Full Name Client'] || b.fields['Client Name'] || b.fields['Name'] || '').toLowerCase();
             return na.localeCompare(nb);
         });
 
         records.forEach(function(r) {
-            var name = r.fields['Client Name'] || r.fields['Name'] || r.recordId;
+            var name = r.fields['Full Name Client'] || r.fields['Client Name'] || r.fields['Name'] || r.recordId;
             var opt = document.createElement('option');
             opt.value = r.recordId;
             opt.textContent = name;
@@ -24999,7 +24999,7 @@ var InterfaceApp = (function() {
                         },
                         display: {
                             titleField: 'Event Title',
-                            subtitleField: 'Client Name',
+                            subtitleField: 'Full Name Client',
                             timeField: 'Hearing Date/Time',
                             detailFields: ['Court/Office']
                         },
@@ -25020,7 +25020,7 @@ var InterfaceApp = (function() {
                             fallbackTablePattern: 'client'
                         },
                         display: {
-                            titleField: 'Client Name',
+                            titleField: 'Full Name Client',
                             subtitleFields: ['ICH Atty', 'A#'],
                             statusField: 'File Case Status (from Case Master View // Activities)'
                         },
@@ -25052,7 +25052,7 @@ var InterfaceApp = (function() {
                             fallbackTablePattern: 'client'
                         },
                         columns: [
-                            { field: 'Client Name', label: 'Client Name', width: 200 },
+                            { field: 'Full Name Client', label: 'Client Name', width: 200 },
                             { field: 'File Case Status (from Case Master View // Activities)', label: 'File Status', width: 100 },
                             { field: 'A#', label: 'A#', width: 100 },
                             { field: 'DOB & Age', label: 'DOB & Age', width: 120 },
@@ -25073,7 +25073,7 @@ var InterfaceApp = (function() {
                         ],
                         segment: {
                             op: 'SEG',
-                            sort: { field: 'Client Name', dir: 'asc' },
+                            sort: { field: 'Full Name Client', dir: 'asc' },
                             pageSize: 50
                         }
                     }
@@ -25119,7 +25119,7 @@ var InterfaceApp = (function() {
                         display: {
                             titleField: 'Event Title',
                             timeField: 'Hearing Date/Time',
-                            clientField: 'Client Name',
+                            clientField: 'Full Name Client',
                             detailFields: ['Court/Office', 'Judge'],
                             attorneyFields: ['ICH Attny', 'MCH Attny']
                         },
@@ -25202,7 +25202,7 @@ var InterfaceApp = (function() {
                         display: {
                             titleField: 'Event Title',
                             timeField: 'Hearing Date/Time',
-                            detailFields: ['Client Name', 'ICH Attny', 'MCH Attny', 'Court/Office', 'Judge']
+                            detailFields: ['Full Name Client', 'ICH Attny', 'MCH Attny', 'Court/Office', 'Judge']
                         },
                         segment: {
                             op: 'SEG',
@@ -25223,7 +25223,7 @@ var InterfaceApp = (function() {
                         },
                         display: {
                             titleField: 'Event Title',
-                            subtitleField: 'Client Name',
+                            subtitleField: 'Full Name Client',
                             metaField: 'Hearing Date/Time',
                             icon: '\uD83D\uDCC5'
                         },
@@ -25245,7 +25245,7 @@ var InterfaceApp = (function() {
                         },
                         columns: [
                             { field: 'Event Title', label: 'Event', width: 220 },
-                            { field: 'Client Name', label: 'Client', width: 160 },
+                            { field: 'Full Name Client', label: 'Client', width: 160 },
                             { field: 'Hearing Date/Time', label: 'Date/Time', width: 160 },
                             { field: 'ICH Attny', label: 'ICH', width: 100 },
                             { field: 'MCH Attny', label: 'MCH', width: 100 },
@@ -26176,7 +26176,7 @@ var InterfaceApp = (function() {
         }
 
         // 2. Heuristic: common display-name field names
-        var candidates = ['Client Name', 'Display Name', 'Name', 'Title', 'Event Title',
+        var candidates = ['Full Name Client', 'Client Name', 'Display Name', 'Name', 'Title', 'Event Title',
                           'Matter', 'Case Note', 'Activity', 'Subject', 'Label',
                           'display name', 'name', 'title', 'label'];
         for (var i = 0; i < candidates.length; i++) {
@@ -26528,7 +26528,7 @@ var InterfaceApp = (function() {
                 group.events.forEach(function(r, idx) {
                     var f = r.fields || {};
                     var title = _findFieldValue(f, display.titleField) || 'Event';
-                    var clientName = _findFieldValue(f, display.clientField || 'Client Name') || '';
+                    var clientName = _findFieldValue(f, display.clientField || 'Full Name Client') || _findFieldValue(f, 'Client Name') || '';
                     var timeVal = _findFieldValue(f, timeField);
                     var timeStr = '';
                     if (timeVal) {
