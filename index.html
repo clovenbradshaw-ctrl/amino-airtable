@@ -4806,6 +4806,7 @@
                 <strong>Why encrypt?</strong> Your API key and cached data will be encrypted before being stored in your browser. If someone gains access to your browser's storage, they won't be able to read your data without your password or passkey.
             </div>
 
+            <form onsubmit="return false;">
             <div class="setup-section">
                 <label for="setup-password">Create a password</label>
                 <input type="password" id="setup-password" placeholder="Enter a strong password" autocomplete="new-password" oninput="updatePasswordStrength()">
@@ -4818,6 +4819,7 @@
             </div>
 
             <button id="setup-password-btn" onclick="setupEncryptionWithPassword()">Set Up with Password</button>
+            </form>
 
             <div class="unlock-divider">or</div>
 
@@ -4845,8 +4847,10 @@
                 <div class="unlock-divider">or enter your password</div>
             </div>
 
+            <form onsubmit="return false;">
             <input type="password" id="unlock-password" placeholder="Enter your password" autocomplete="current-password">
             <button id="unlock-password-btn" onclick="unlockWithPassword()">Unlock</button>
+            </form>
 
             <button id="clear-encrypted-data-btn" class="secondary" onclick="clearEncryptedData()">Clear All Data & Start Fresh</button>
 
@@ -4859,7 +4863,7 @@
     <div id="synapse-login-screen">
         <div class="synapse-login-box">
             <!-- Login Form -->
-            <div id="synapse-login-form">
+            <form id="synapse-login-form" onsubmit="return false;">
                 <h2>Amino Viewer</h2>
                 <p>Sign in to your account at app.aminoimmigration.com</p>
                 <div id="synapse-login-error" class="synapse-error"></div>
@@ -4869,9 +4873,9 @@
                 <input type="password" id="synapse-password" placeholder="Password" autocomplete="current-password">
                 <button id="synapse-login-btn">Sign In</button>
                 <a class="synapse-forgot-link" onclick="showPasswordReset()">Forgot Password?</a>
-            </div>
+            </form>
             <!-- Password Reset Form -->
-            <div id="synapse-reset-form">
+            <form id="synapse-reset-form" onsubmit="return false;">
                 <h2>Reset Password</h2>
                 <div id="synapse-reset-error" class="synapse-error"></div>
                 <div id="synapse-reset-success" class="synapse-success"></div>
@@ -4896,7 +4900,7 @@
                     <div class="synapse-success" style="display: block;">Your password has been reset successfully. You can now sign in with your new password.</div>
                 </div>
                 <a class="synapse-back-link" onclick="hidePasswordReset()">Back to Sign In</a>
-            </div>
+            </form>
         </div>
     </div>
 
@@ -4916,10 +4920,12 @@
             <h2>Amino Viewer</h2>
             <p>Connect to your Amino event stream</p>
             <div id="auth-error" class="auth-error"></div>
+            <form onsubmit="return false;">
             <input type="password" id="api-key-input" placeholder="API Key" autocomplete="off">
             <input type="text" id="set-filter-input" placeholder="Filter by set (optional)" autocomplete="off">
             <button id="auth-submit">Connect</button>
             <button id="auth-clear" class="secondary hidden">Clear Local Data</button>
+            </form>
             <div class="auth-divider" style="display: flex; align-items: center; gap: 12px; margin: 16px 0 12px;">
                 <div style="flex: 1; height: 1px; background: var(--border-primary);"></div>
                 <span style="font-size: 12px; color: var(--text-muted);">or</span>
@@ -4992,10 +4998,12 @@
             <h3 style="font-size: 16px; margin-bottom: 6px; color: #333;">Connect API Key</h3>
             <p style="font-size: 13px; color: #666; margin-bottom: 16px;">Add your API key to enable syncing with the server.</p>
             <div id="connect-api-error" style="color: #dc3545; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: #f8d7da; border-radius: 4px; display: none;"></div>
+            <form onsubmit="return false;">
             <input type="password" id="connect-api-key-input" placeholder="API Key" autocomplete="off" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; box-sizing: border-box;">
             <input type="text" id="connect-api-set-filter" placeholder="Filter by set (optional)" autocomplete="off" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; box-sizing: border-box;">
             <button id="connect-api-submit" onclick="submitConnectApi()" style="width: 100%; padding: 10px; background: #2d6cdf; border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; margin-bottom: 8px; font-weight: 500;">Connect</button>
             <button onclick="hideConnectApiModal()" style="width: 100%; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; color: #333; font-size: 14px; cursor: pointer; font-weight: 500;">Cancel</button>
+            </form>
         </div>
     </div>
 
@@ -17061,31 +17069,25 @@ async function init() {
 
     updateStatus('Loading local data...', false, null, null);
 
-    // Attempt hydration from Box-hosted .amo binary snapshot.
+    // Always attempt hydration from Box-hosted .amo binary snapshot first.
+    // The Box snapshot is the most complete and up-to-date data source (~70k records).
     // When successful, processEventsMemoryOnly replays all events into META_TABLES,
     // META_FIELDS, META_VIEWS, and IN_MEMORY_DATA so the UI can render immediately.
-    // Try when no tables exist (first run) OR when tables exist but records are
-    // missing (incomplete previous hydration).
+    // The 12-second timeout on the download keeps startup resilient if Box is unreachable.
     var _boxHydrationSucceeded = false;
     try {
-        var existingTableCount = await getAllTables().then(function(ts) { return ts.length; }).catch(function() { return 0; });
-        var existingRecordCount = existingTableCount > 0
-            ? await getCurrentRecordsCount().catch(function() { return 0; })
-            : 0;
-        if (existingTableCount === 0 || existingRecordCount === 0) {
-            updateStatus('Loading hydration snapshot...', false, null, 'Downloading .amo');
-            var boxResult = await hydrateFromBoxAmoFile();
-            if (boxResult && boxResult.importedEvents > 0) {
-                _boxHydrationSucceeded = Object.keys(META_TABLES).length > 0;
-                if (_boxHydrationSucceeded) {
-                    SyncStatusFeed.success('Hydrated from Box .amo snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
-                    await setSyncMeta('lastWebhookSync', new Date().toISOString());
-                }
+        updateStatus('Loading hydration snapshot...', false, null, 'Downloading .amo');
+        var boxResult = await hydrateFromBoxAmoFile();
+        if (boxResult && boxResult.importedEvents > 0) {
+            _boxHydrationSucceeded = Object.keys(META_TABLES).length > 0;
+            if (_boxHydrationSucceeded) {
+                SyncStatusFeed.success('Hydrated from Box .amo snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
+                await setSyncMeta('lastWebhookSync', new Date().toISOString());
             }
         }
     } catch (boxErr) {
-        console.warn('[init] Box .amo hydration unavailable, continuing with normal hydration:', boxErr.message || boxErr);
-        SyncStatusFeed.warn('Box .amo hydration unavailable — falling back to webhook/Synapse sync');
+        console.warn('[init] Box .amo hydration unavailable, continuing with local/normal hydration:', boxErr.message || boxErr);
+        SyncStatusFeed.warn('Box .amo hydration unavailable — falling back to local cache/webhook/Synapse sync');
     }
 
     // Load all metadata + max event ID in parallel — single IDB round-trip
