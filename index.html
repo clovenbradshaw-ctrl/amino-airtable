@@ -968,7 +968,19 @@
         }
         #home-app .routes-stat {
             padding: 16px;
+            border: 0;
             border-right: 1px solid var(--h-border);
+            text-align: left;
+            width: 100%;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            transition: background var(--h-transition);
+        }
+        #home-app .routes-stat:hover,
+        #home-app .routes-stat:focus-visible {
+            background: rgba(21, 34, 55, .04);
+            outline: none;
         }
         #home-app .routes-stat:last-child { border-right: 0; }
         #home-app .routes-stat-value { font-size: 24px; font-weight: 700; }
@@ -4735,22 +4747,22 @@
             </div>
 
             <div class="routes-home-stats">
-                <div class="routes-stat">
+                <button class="routes-stat" onclick="openHomeStat('tables')" title="Open Database tables">
                     <div class="routes-stat-value" id="home-table-count">0</div>
                     <div class="routes-stat-label">Tables</div>
-                </div>
-                <div class="routes-stat">
+                </button>
+                <button class="routes-stat" onclick="openHomeStat('records')" title="Open Database records">
                     <div class="routes-stat-value" id="home-record-count">0</div>
                     <div class="routes-stat-label">Records</div>
-                </div>
-                <div class="routes-stat">
+                </button>
+                <button class="routes-stat" onclick="openHomeStat('case-notes')" title="Open Case Notes table">
                     <div class="routes-stat-value" id="home-casenotes-count">0</div>
                     <div class="routes-stat-label">Case Notes</div>
-                </div>
-                <div class="routes-stat">
+                </button>
+                <button class="routes-stat" onclick="openHomeStat('data-source')" title="Matrix connection status">
                     <div class="routes-stat-value" id="home-sync-status">Local</div>
                     <div class="routes-stat-label">Data Source</div>
-                </div>
+                </button>
             </div>
         </div>
     </div>
@@ -27450,6 +27462,41 @@ function switchApp(appName) {
 
 // Cache for the current user's Matrix profile (display name, email)
 var _cachedUserProfile = null;
+
+function openHomeStat(kind) {
+    if (kind === 'tables' || kind === 'records') {
+        switchApp('database');
+        return;
+    }
+
+    if (kind === 'case-notes') {
+        var caseNotesTableId = (typeof CaseNotesAPI !== 'undefined' && CaseNotesAPI.getCaseNotesTableId)
+            ? CaseNotesAPI.getCaseNotesTableId()
+            : null;
+
+        if (!caseNotesTableId) {
+            showToast('warning', 'Case Notes table not found');
+            return;
+        }
+
+        switchApp('database');
+        setTimeout(function() {
+            showTable(caseNotesTableId).catch(function(err) {
+                console.warn('[Home] Could not open Case Notes table:', err);
+                showToast('error', 'Could not open Case Notes');
+            });
+        }, 0);
+        return;
+    }
+
+    if (kind === 'data-source') {
+        if (MatrixClient.isLoggedIn()) {
+            showToast('success', 'Connected to Matrix (Live)');
+        } else {
+            showSynapseLoginScreen();
+        }
+    }
+}
 
 function populateHomePage() {
     // Display name / avatar — use cached profile if available, fall back to userId localpart
