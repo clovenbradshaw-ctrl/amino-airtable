@@ -18781,14 +18781,14 @@ async function renderRecordProfile() {
 
             html += '<div class="profile-field-card" data-field-id="' + esc(fieldId) + '" data-block-index="' + blockIndex + '" data-field-index="' + fieldIndex + '" draggable="true" ondragstart="handleFieldDragStart(event)" ondragover="handleFieldDragOver(event)" ondragleave="handleFieldDragLeave(event)" ondrop="handleFieldDrop(event)">';
             var pfIsComputed = field && isComputedFieldType(field.fieldType);
-            var pfIsReadOnly = !pfIsComputed && field && isReadOnlyField(field);
+            var pfIsReadOnly = (!field) || (!pfIsComputed && field && isReadOnlyField(field));
             html += '<div class="profile-field-name">';
             html += '<span class="field-drag-handle">&#8942;&#8942;</span>';
             html += esc(fieldName);
             if (pfIsComputed) {
                 html += '<span class="formula-badge" onclick="event.stopPropagation(); showFormulaInfoPopover(this, META_FIELDS[\'' + esc(profileCurrentTableId) + '\'][\'' + esc(fieldId) + '\'])" title="Click to see formula details">' + esc(computedFieldLabel(field.fieldType)) + '</span>';
             } else if (pfIsReadOnly) {
-                html += '<span class="readonly-badge" title="This field is read-only">' + esc(readOnlyFieldLabel(field)) + '</span>';
+                html += '<span class="readonly-badge" title="This field is read-only">' + esc(field ? readOnlyFieldLabel(field) : 'Linked') + '</span>';
             }
             if (profileConfigureMode) {
                 html += '<button style="margin-left: auto; background: none; border: none; color: #ccc; cursor: pointer; font-size: 12px;" onclick="removeFieldFromBlock(' + blockIndex + ', ' + fieldIndex + ')">&times;</button>';
@@ -18894,27 +18894,25 @@ async function removeProfileBlock(blockIndex) {
 }
 
 // Show field picker dropdown
-function showFieldPicker(event, blockIndex) {
+async function showFieldPicker(event, blockIndex) {
     event.stopPropagation();
     closeFieldPicker();
 
-    var fields = META_FIELDS[profileCurrentTableId] || {};
-    var fieldIds = Object.keys(fields);
+    var recordFields = {};
+    if (profileCurrentTableId && profileCurrentRecordId) {
+        var pickerRecords = await getRecordsByIds(profileCurrentTableId, [profileCurrentRecordId]);
+        if (pickerRecords.length > 0) recordFields = pickerRecords[0].fields || {};
+    }
+    var fieldOptions = getProfileLayoutFieldOptions(recordFields);
 
     var picker = document.createElement('div');
     picker.className = 'profile-field-picker';
     picker.innerHTML = '<div class="profile-field-picker-header">Add Field</div>';
 
-    fieldIds.sort(function(a, b) {
-        var nameA = (fields[a]?.fieldName || a).toLowerCase();
-        var nameB = (fields[b]?.fieldName || b).toLowerCase();
-        return nameA.localeCompare(nameB);
-    });
-
-    fieldIds.forEach(function(fieldId) {
-        var field = fields[fieldId];
-        var fieldName = field?.fieldName || fieldId;
-        var fieldType = field?.fieldType || 'text';
+    fieldOptions.forEach(function(option) {
+        var fieldId = option.fieldId;
+        var fieldName = option.fieldName;
+        var fieldType = option.fieldType;
 
         var item = document.createElement('div');
         item.className = 'profile-field-picker-item';
@@ -18952,6 +18950,33 @@ function closeFieldPicker() {
         profileFieldPicker = null;
         document.removeEventListener('click', closeFieldPickerOnOutsideClick);
     }
+}
+
+function getProfileLayoutFieldOptions(recordFields) {
+    var tableFields = META_FIELDS[profileCurrentTableId] || {};
+    var optionsById = {};
+
+    Object.keys(tableFields).forEach(function(fieldId) {
+        var field = tableFields[fieldId] || {};
+        optionsById[fieldId] = {
+            fieldId: fieldId,
+            fieldName: field.fieldName || fieldId,
+            fieldType: field.fieldType || 'text'
+        };
+    });
+
+    Object.keys(recordFields || {}).forEach(function(fieldKey) {
+        if (optionsById[fieldKey]) return;
+        optionsById[fieldKey] = {
+            fieldId: fieldKey,
+            fieldName: fieldKey,
+            fieldType: 'linked'
+        };
+    });
+
+    return Object.keys(optionsById).map(function(fid) { return optionsById[fid]; }).sort(function(a, b) {
+        return String(a.fieldName || a.fieldId).toLowerCase().localeCompare(String(b.fieldName || b.fieldId).toLowerCase());
+    });
 }
 
 // Add field to a block
@@ -19104,6 +19129,7 @@ async function startProfileFieldEdit(element) {
 
     // Don't edit formula/computed/read-only fields
     var pfField = META_FIELDS[profileCurrentTableId]?.[fieldId];
+    if (!pfField) return;
     if (pfField && isReadOnlyField(pfField)) return;
 
     profileEditingFieldId = fieldId;
