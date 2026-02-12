@@ -2444,6 +2444,61 @@
         .iface-block-action-btn:hover { color: var(--text-primary); border-color: var(--primary-500); }
         .iface-block-action-btn.danger:hover { color: var(--danger-500); border-color: var(--danger-500); }
 
+        /* Admin table settings panel */
+        .iface-table-settings-btn {
+            padding: 4px 10px; font-size: 12px; border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm); background: var(--bg-primary);
+            color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+        }
+        .iface-table-settings-btn:hover { border-color: var(--primary-500); color: var(--text-primary); }
+        .iface-table-settings-btn svg { width: 13px; height: 13px; }
+        .iface-table-settings-panel {
+            background: var(--bg-secondary); border: 1px solid var(--border-primary);
+            border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .iface-table-settings-panel h4 { margin: 0 0 12px 0; font-size: 13px; color: var(--text-primary); }
+        .iface-table-settings-section { margin-bottom: 12px; }
+        .iface-table-settings-section label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
+        .iface-col-list { list-style: none; padding: 0; margin: 0; }
+        .iface-col-list li {
+            display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+            font-size: 12px; border: 1px solid var(--border-primary); border-radius: var(--radius-sm);
+            margin-bottom: 3px; background: var(--bg-primary);
+        }
+        .iface-col-list li:hover { background: var(--bg-hover); }
+        .iface-col-list .col-move-btns { display: flex; gap: 2px; margin-left: auto; }
+        .iface-col-list .col-move-btn {
+            padding: 1px 5px; font-size: 10px; border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-muted);
+            cursor: pointer; line-height: 1;
+        }
+        .iface-col-list .col-move-btn:hover { border-color: var(--primary-500); color: var(--primary-500); }
+        .iface-col-remove-btn {
+            padding: 1px 5px; font-size: 10px; border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-muted);
+            cursor: pointer; line-height: 1;
+        }
+        .iface-col-remove-btn:hover { border-color: var(--danger-500); color: var(--danger-500); }
+        .iface-settings-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .iface-settings-row select, .iface-settings-row input {
+            padding: 4px 8px; font-size: 12px; border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary);
+        }
+        .iface-settings-save-btn {
+            padding: 5px 14px; font-size: 12px; border: none; border-radius: var(--radius-sm);
+            background: var(--primary-500); color: #fff; cursor: pointer; font-weight: 500;
+        }
+        .iface-settings-save-btn:hover { background: var(--primary-600); }
+        .iface-add-col-row { display: flex; gap: 4px; margin-top: 6px; }
+        .iface-add-col-row select { flex: 1; }
+        .iface-add-col-btn {
+            padding: 3px 10px; font-size: 11px; border: 1px solid var(--primary-500);
+            border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--primary-500);
+            cursor: pointer;
+        }
+        .iface-add-col-btn:hover { background: var(--primary-50, var(--bg-hover)); }
+
         /* Pagination */
         .iface-pagination {
             display: flex; align-items: center; justify-content: space-between;
@@ -25286,6 +25341,7 @@ var InterfaceApp = (function() {
     var _tablePaginationState = {}; // pageId -> { page: 0, pageSize: 50, sort: { field, dir } }
     var _blockSearchState = {};     // blockId -> searchQuery
     var _caseNotesWidgetState = {}; // blockId -> remote case note query state
+    var _tableSettingsOpen = {};    // blockId -> boolean (admin settings panel toggle)
 
     var CASE_NOTES_WIDGET_ENDPOINT = 'https://xvkq-pq7i-idtl.n7d.xano.io/api:l_gEBOGc/get_case_notes';
 
@@ -25407,7 +25463,9 @@ var InterfaceApp = (function() {
                             { field: 'Case Manager', label: 'Case Manager', width: 120 },
                             { field: 'Country', label: 'Country', width: 100 },
                             { field: 'Phone Number', label: 'Phone', width: 120 },
-                            { field: 'Client Email', label: 'Email', width: 180 }
+                            { field: 'Client Email', label: 'Email', width: 180 },
+                            { field: 'Last Modified', label: 'Last Modified', width: 160 },
+                            { field: 'Last Modified By', label: 'Last Modified By', width: 140 }
                         ],
                         filters: [
                             { id: 'mch', label: 'MCH', field: 'MCH Attny Options' },
@@ -25417,7 +25475,7 @@ var InterfaceApp = (function() {
                         ],
                         segment: {
                             op: 'SEG',
-                            sort: { field: 'Client Name', dir: 'asc' },
+                            sort: { field: 'Last Modified', dir: 'desc' },
                             pageSize: 50
                         }
                     }
@@ -25629,6 +25687,21 @@ var InterfaceApp = (function() {
         if (_interfaceRoomId) return _interfaceRoomId;
         if (!MatrixClient.isLoggedIn()) return null;
 
+        // Try localStorage cache first to avoid scanning space children on every load
+        try {
+            var cached = localStorage.getItem('amino.interfaceRoomId');
+            if (cached) {
+                // Verify the cached room is still valid by checking its type
+                var roomType = MatrixClient.getCachedStateEvent(cached, 'law.firm.room.type', '');
+                if (roomType && roomType.content && roomType.content.type === 'interface') {
+                    _interfaceRoomId = cached;
+                    return _interfaceRoomId;
+                }
+                // Cached room is stale, clear it
+                localStorage.removeItem('amino.interfaceRoomId');
+            }
+        } catch (e) {}
+
         // Look for existing interface room in org space
         var orgSpaceId = _settingsOrgSpaceId;
         if (!orgSpaceId) {
@@ -25641,6 +25714,7 @@ var InterfaceApp = (function() {
                 var roomType = MatrixClient.getCachedStateEvent(childId, 'law.firm.room.type', '');
                 if (roomType && roomType.content && roomType.content.type === 'interface') {
                     _interfaceRoomId = childId;
+                    try { localStorage.setItem('amino.interfaceRoomId', childId); } catch (e) {}
                     return _interfaceRoomId;
                 }
             }
@@ -25669,6 +25743,7 @@ var InterfaceApp = (function() {
                 } catch (e) { console.warn('[Interface] Could not add room to org space:', e); }
             }
             _interfaceRoomId = roomId;
+            try { localStorage.setItem('amino.interfaceRoomId', roomId); } catch (e) {}
             console.log('[Interface] Created interface room:', roomId);
         } catch (e) {
             console.error('[Interface] Failed to create interface room:', e);
@@ -25914,6 +25989,23 @@ var InterfaceApp = (function() {
         // display names don't persist across syncs.
         _recordLabelCache = {};
         return records;
+    }
+
+    // Pre-warm client data: start loading the client table before the schema
+    // is fully resolved, so the data is already cached when renderPage runs.
+    async function _preWarmClientData() {
+        try {
+            var tables = Object.keys(typeof META_TABLES !== 'undefined' ? META_TABLES : {});
+            for (var i = 0; i < tables.length; i++) {
+                var name = ((META_TABLES[tables[i]] || {}).tableName || '').toLowerCase();
+                if (name.includes('client info') || name.includes('client')) {
+                    await _getTableRecords(tables[i]);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('[Interface] Pre-warm failed:', e.message);
+        }
     }
 
     // ============ Data Processing (SEG operations) ============
@@ -26626,6 +26718,103 @@ var InterfaceApp = (function() {
         return '<span class="status-dot ' + dotClass + '"></span>' + _esc(label);
     }
 
+    function _renderTableSettingsPanel(block, columns, tableId) {
+        var html = '<div class="iface-table-settings-panel">';
+        html += '<h4>Table Settings</h4>';
+
+        // Sort settings
+        html += '<div class="iface-table-settings-section">';
+        html += '<label>Default Sort</label>';
+        html += '<div class="iface-settings-row">';
+        var curSort = (block.segment && block.segment.sort) || {};
+        html += '<select id="iface-sort-field-' + _esc(block.id) + '">';
+        columns.forEach(function(col) {
+            var sel = (curSort.field === col.field) ? ' selected' : '';
+            html += '<option value="' + _esc(col.field) + '"' + sel + '>' + _esc(col.label || col.field) + '</option>';
+        });
+        html += '</select>';
+        html += '<select id="iface-sort-dir-' + _esc(block.id) + '">';
+        html += '<option value="desc"' + (curSort.dir === 'desc' ? ' selected' : '') + '>Newest first</option>';
+        html += '<option value="asc"' + (curSort.dir === 'asc' ? ' selected' : '') + '>Oldest first</option>';
+        html += '</select>';
+        html += '</div></div>';
+
+        // Page size
+        html += '<div class="iface-table-settings-section">';
+        html += '<label>Rows per page</label>';
+        html += '<div class="iface-settings-row">';
+        var curPageSize = (block.segment && block.segment.pageSize) || 50;
+        html += '<select id="iface-pagesize-' + _esc(block.id) + '">';
+        [25, 50, 100, 200].forEach(function(sz) {
+            html += '<option value="' + sz + '"' + (curPageSize === sz ? ' selected' : '') + '>' + sz + '</option>';
+        });
+        html += '</select>';
+        html += '</div></div>';
+
+        // Column ordering
+        html += '<div class="iface-table-settings-section">';
+        html += '<label>Columns (drag to reorder)</label>';
+        html += '<ul class="iface-col-list">';
+        columns.forEach(function(col, idx) {
+            html += '<li data-col-idx="' + idx + '">';
+            html += '<span>' + _esc(col.label || col.field) + '</span>';
+            html += '<div class="col-move-btns">';
+            if (idx > 0) {
+                html += '<button class="col-move-btn" onclick="InterfaceApp.moveColumn(\'' + _esc(block.id) + '\', ' + idx + ', -1)" title="Move up">\u2191</button>';
+            }
+            if (idx < columns.length - 1) {
+                html += '<button class="col-move-btn" onclick="InterfaceApp.moveColumn(\'' + _esc(block.id) + '\', ' + idx + ', 1)" title="Move down">\u2193</button>';
+            }
+            html += '</div>';
+            html += '<button class="iface-col-remove-btn" onclick="InterfaceApp.removeColumn(\'' + _esc(block.id) + '\', ' + idx + ')" title="Remove column">\u2715</button>';
+            html += '</li>';
+        });
+        html += '</ul>';
+
+        // Add column
+        var allFields = _getAvailableFields(tableId, columns);
+        if (allFields.length) {
+            html += '<div class="iface-add-col-row">';
+            html += '<select id="iface-add-col-' + _esc(block.id) + '">';
+            html += '<option value="">Add a column...</option>';
+            allFields.forEach(function(f) {
+                html += '<option value="' + _esc(f.id || f.name) + '">' + _esc(f.name) + '</option>';
+            });
+            html += '</select>';
+            html += '<button class="iface-add-col-btn" onclick="InterfaceApp.addColumn(\'' + _esc(block.id) + '\')">Add</button>';
+            html += '</div>';
+        }
+
+        html += '</div>';
+
+        // Save button
+        html += '<div style="text-align:right;margin-top:8px;">';
+        html += '<button class="iface-settings-save-btn" onclick="InterfaceApp.saveTableSettings(\'' + _esc(block.id) + '\')">Save Settings</button>';
+        html += '</div>';
+
+        html += '</div>';
+        return html;
+    }
+
+    function _getAvailableFields(tableId, currentColumns) {
+        if (!tableId || typeof META_FIELDS === 'undefined' || !META_FIELDS[tableId]) return [];
+        var existing = {};
+        (currentColumns || []).forEach(function(col) {
+            existing[(col.field || '').toLowerCase()] = true;
+        });
+        var fields = META_FIELDS[tableId];
+        var available = [];
+        Object.keys(fields).forEach(function(fid) {
+            var meta = fields[fid];
+            var name = meta.fieldName || fid;
+            if (!existing[name.toLowerCase()] && !existing[fid.toLowerCase()]) {
+                available.push({ id: fid, name: name });
+            }
+        });
+        available.sort(function(a, b) { return a.name.localeCompare(b.name); });
+        return available;
+    }
+
     function _renderDataTableRevamped(block, records, pageState, allRecords, tableId) {
         var columns = _getMirroredColumnsFromView(tableId, block) || block.columns || [];
         var filters = block.filters || [];
@@ -26650,10 +26839,20 @@ var InterfaceApp = (function() {
         html += '<h2>' + _esc(block.label || 'Table') + ' <span class="muted">\u00B7 ' + countLabel + '</span></h2>';
         html += '<div class="iface-clients-header-actions">';
         html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        if (_currentUserRole === 'admin') {
+            html += '<button class="iface-table-settings-btn" onclick="InterfaceApp.toggleTableSettings(\'' + _esc(block.id) + '\')">';
+            html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
+            html += ' Settings</button>';
+        }
         html += '<button class="iface-btn-secondary">';
         html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
         html += ' Export</button>';
         html += '</div></div>';
+
+        // Admin table settings panel (toggle visibility)
+        if (_currentUserRole === 'admin' && _tableSettingsOpen[block.id]) {
+            html += _renderTableSettingsPanel(block, columns, tableId);
+        }
 
         // Filter pills
         if (filters.length) {
@@ -28589,6 +28788,10 @@ var InterfaceApp = (function() {
         _tablePaginationState[blockId] = { page: 0, pageSize: block.segment.pageSize || 50 };
         renderPage(_activePage);
         if (_urlStateBootstrapped) persistUrlState();
+        // Persist sort preference to room data so all users see the same default
+        if (_currentUserRole === 'admin') {
+            saveSchema();
+        }
     }
 
     function onPageChange(blockId, newPage) {
@@ -28814,6 +29017,88 @@ var InterfaceApp = (function() {
         });
     }
 
+    // ============ Admin: Table Settings ============
+
+    function toggleTableSettings(blockId) {
+        if (_currentUserRole !== 'admin') return;
+        _tableSettingsOpen[blockId] = !_tableSettingsOpen[blockId];
+        renderPage(_activePage);
+    }
+
+    function moveColumn(blockId, colIdx, direction) {
+        if (_currentUserRole !== 'admin') return;
+        var block = _findBlockById(blockId);
+        if (!block || !block.columns) return;
+        var newIdx = colIdx + direction;
+        if (newIdx < 0 || newIdx >= block.columns.length) return;
+        var temp = block.columns[colIdx];
+        block.columns[colIdx] = block.columns[newIdx];
+        block.columns[newIdx] = temp;
+        renderPage(_activePage);
+    }
+
+    function removeColumn(blockId, colIdx) {
+        if (_currentUserRole !== 'admin') return;
+        var block = _findBlockById(blockId);
+        if (!block || !block.columns) return;
+        block.columns.splice(colIdx, 1);
+        renderPage(_activePage);
+    }
+
+    function addColumn(blockId) {
+        if (_currentUserRole !== 'admin') return;
+        var sel = document.getElementById('iface-add-col-' + blockId);
+        if (!sel || !sel.value) return;
+        var block = _findBlockById(blockId);
+        if (!block) return;
+        if (!block.columns) block.columns = [];
+        var fieldId = sel.value;
+        // Resolve field name from META_FIELDS
+        var fieldName = fieldId;
+        var tableId = _resolveTableId(block.source);
+        if (tableId && typeof META_FIELDS !== 'undefined' && META_FIELDS[tableId] && META_FIELDS[tableId][fieldId]) {
+            fieldName = META_FIELDS[tableId][fieldId].fieldName || fieldId;
+        }
+        block.columns.push({ field: fieldName, label: fieldName, width: 160 });
+        renderPage(_activePage);
+    }
+
+    async function saveTableSettings(blockId) {
+        if (_currentUserRole !== 'admin') return;
+        var block = _findBlockById(blockId);
+        if (!block) return;
+
+        // Read sort settings from the panel
+        var sortFieldEl = document.getElementById('iface-sort-field-' + blockId);
+        var sortDirEl = document.getElementById('iface-sort-dir-' + blockId);
+        var pageSizeEl = document.getElementById('iface-pagesize-' + blockId);
+
+        if (!block.segment) block.segment = { op: 'SEG' };
+        if (sortFieldEl && sortFieldEl.value) {
+            block.segment.sort = { field: sortFieldEl.value, dir: (sortDirEl && sortDirEl.value) || 'desc' };
+        }
+        if (pageSizeEl) {
+            block.segment.pageSize = parseInt(pageSizeEl.value, 10) || 50;
+        }
+
+        await saveSchema();
+        _tableSettingsOpen[blockId] = false;
+        _tablePaginationState[blockId] = { page: 0, pageSize: block.segment.pageSize || 50 };
+        renderPage(_activePage);
+        _showToast('Table settings saved');
+    }
+
+    function _findBlockById(blockId) {
+        if (!_schema || !_schema.pages) return null;
+        for (var i = 0; i < _schema.pages.length; i++) {
+            var blocks = _schema.pages[i].blocks || [];
+            for (var j = 0; j < blocks.length; j++) {
+                if (blocks[j].id === blockId) return blocks[j];
+            }
+        }
+        return null;
+    }
+
     // ============ Admin: Edit Mode ============
 
     function toggleEditMode() {
@@ -28890,8 +29175,16 @@ var InterfaceApp = (function() {
     async function init() {
         if (_initialized) return;
         _initialized = true;
+        var t0 = performance.now();
 
+        // Load schema and pre-warm the most common table data in parallel.
+        // The schema load finds/creates the interface room and reads configuration.
+        // Meanwhile, we can start loading the client table data since it's almost
+        // always the first page users see.
+        var preWarmPromise = _preWarmClientData();
         await loadSchema();
+        console.log('[Interface] Schema loaded in', Math.round(performance.now() - t0), 'ms');
+
         var visiblePages = _getVisiblePages().filter(function(p) { return p.id !== 'home'; });
         _activePage = visiblePages.length ? visiblePages[0].id : null;
 
@@ -28905,9 +29198,13 @@ var InterfaceApp = (function() {
         var avatarEl = document.getElementById('iface-avatar');
         if (avatarEl) avatarEl.textContent = _getUserInitials();
 
+        // Wait for pre-warm to complete before rendering (data will be cached)
+        try { await preWarmPromise; } catch (e) {}
+
         if (_activePage) {
             await renderPage(_activePage);
         }
+        console.log('[Interface] First render in', Math.round(performance.now() - t0), 'ms');
 
         // Listen for data updates
         window.addEventListener('amino:record-update', function() {
@@ -28981,6 +29278,11 @@ var InterfaceApp = (function() {
         setUrlState: setUrlState,
         getUrlState: getUrlState,
         toggleEditMode: toggleEditMode,
+        toggleTableSettings: toggleTableSettings,
+        moveColumn: moveColumn,
+        removeColumn: removeColumn,
+        addColumn: addColumn,
+        saveTableSettings: saveTableSettings,
         removeBlock: removeBlock,
         addPage: addPage,
         editPagePermissions: editPagePermissions,
