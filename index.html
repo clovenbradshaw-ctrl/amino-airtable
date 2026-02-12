@@ -13871,6 +13871,22 @@ async function setDisplayNameFromContextMenu() {
         delete table.displayNameFieldId;
     } else {
         table.displayNameFieldId = fieldId;
+
+        // Move the display name field to the leftmost column in the current view
+        var viewId = currentView || '_default';
+        var config = getViewFieldConfig(currentTable, viewId);
+        var currentOrder = (config.fieldOrder || []).slice();
+        // Remove the field from its current position (if present)
+        var idx = currentOrder.indexOf(fieldId);
+        if (idx > 0) {
+            currentOrder.splice(idx, 1);
+            currentOrder.unshift(fieldId);
+            updateFieldOrderFast(currentTable, viewId, currentOrder);
+        } else if (idx === -1 && currentOrder.length > 0) {
+            // Field not in fieldOrder yet (newly added) — prepend it
+            currentOrder.unshift(fieldId);
+            updateFieldOrderFast(currentTable, viewId, currentOrder);
+        }
     }
 
     await saveTable(table);
