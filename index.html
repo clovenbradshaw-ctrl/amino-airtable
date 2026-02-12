@@ -15399,6 +15399,66 @@ var SynapseSync = {
                 // No rooms found via state events, but API-populated mappings exist —
                 // keep them (bot-created rooms may lack state events)
                 console.log('[SynapseSync] No rooms found via state events, keeping ' + this.tableRooms.length + ' API-populated mappings');
+            } else {
+                // Fallback: state events didn't identify any table rooms.
+                // Probe all joined rooms for law.firm.schema.object / law.firm.record.mutate
+                // timeline events — rooms containing these are table rooms even without
+                // explicit state events.
+                console.log('[SynapseSync] No table rooms from state events — probing joined rooms for timeline events');
+                var fallbackFilter = JSON.stringify({
+                    room: {
+                        state: { types: [] },
+                        timeline: {
+                            types: ['law.firm.schema.object', 'law.firm.record.mutate'],
+                            limit: 5
+                        },
+                        ephemeral: { types: [] },
+                        account_data: { types: [] }
+                    },
+                    account_data: { types: [] },
+                    presence: { types: [] }
+                });
+                try {
+                    var fallbackRes = await fetch(
+                        SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=0&filter=' + encodeURIComponent(fallbackFilter),
+                        { headers: { 'Authorization': 'Bearer ' + session.accessToken } }
+                    );
+                    if (fallbackRes.ok) {
+                        var fallbackData = await safeResponseJson(fallbackRes, 'Room discovery fallback');
+                        var fallbackJoinRooms = (fallbackData.rooms && fallbackData.rooms.join) || {};
+                        for (var fbRoomId in fallbackJoinRooms) {
+                            var fbRoom = fallbackJoinRooms[fbRoomId];
+                            var fbTimeline = (fbRoom.timeline && fbRoom.timeline.events) || [];
+                            // Extract unique tableIds from timeline events in this room
+                            var seenTableIds = {};
+                            for (var fi = 0; fi < fbTimeline.length; fi++) {
+                                var fbEvt = fbTimeline[fi];
+                                if (!fbEvt.content) continue;
+                                var fbTableId = fbEvt.content.set ? String(fbEvt.content.set).replace('airtable:', '') : null;
+                                if (!fbTableId && fbEvt.content.tableId) fbTableId = fbEvt.content.tableId;
+                                if (!fbTableId && fbEvt.content.table_id) fbTableId = fbEvt.content.table_id;
+                                if (fbTableId && !seenTableIds[fbTableId]) {
+                                    seenTableIds[fbTableId] = true;
+                                    tableRooms.push({
+                                        tableId: fbTableId,
+                                        roomId: fbRoomId,
+                                        name: fbEvt.content.tableName || fbEvt.content.table_name || fbTableId
+                                    });
+                                }
+                            }
+                        }
+                        if (tableRooms.length > 0) {
+                            console.log('[SynapseSync] Fallback discovery found ' + tableRooms.length + ' table rooms from timeline events');
+                            this.tableRooms = tableRooms;
+                            this.roomToTable = {};
+                            for (var ftr of tableRooms) {
+                                this.roomToTable[ftr.roomId] = ftr.tableId;
+                            }
+                        }
+                    }
+                } catch (fallbackErr) {
+                    console.warn('[SynapseSync] Fallback room discovery failed:', fallbackErr);
+                }
             }
 
             console.log('[SynapseSync] Discovered ' + this.tableRooms.length + ' table rooms');
@@ -15930,8 +15990,8 @@ async function backfillHistoryFromMatrix() {
 // ============ Webhook Hydration ============
 
 // Fetch from n8n webhook API using the Synapse access token.
-// Uses query-parameter auth by default to avoid CORS preflight (the
-// Authorization header triggers an OPTIONS preflight that n8n may not
+// Uses GET with query-parameter auth by default to avoid CORS preflight
+// (the Authorization header triggers an OPTIONS preflight that n8n may not
 // handle).  Falls back to Authorization header only if query-param auth
 // returns 401 (meaning the server didn't recognise the token in the URL).
 async function webhookFetch(path) {
@@ -15949,29 +16009,25 @@ async function webhookFetch(path) {
             await new Promise(function(r) { setTimeout(r, delay); });
         }
 
-        // Auth: POST with access_token in JSON body + query-param fallback
+        // Auth: GET with access_token as query-param (avoids CORS preflight)
         var separator = path.indexOf('?') === -1 ? '?' : '&';
         var url = N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(session.accessToken);
 
         var response;
         try {
             response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ access_token: session.accessToken })
+                method: 'GET'
             });
         } catch (fetchErr) {
             // Network / CORS failure on the simple request — try header auth
             // as a last resort (will trigger OPTIONS preflight).
-            console.warn('[webhookFetch] POST fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
+            console.warn('[webhookFetch] GET fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
             try {
                 response = await fetch(N8N_WEBHOOK_BASE + path, {
-                    method: 'POST',
+                    method: 'GET',
                     headers: {
-                        'Authorization': 'Bearer ' + session.accessToken,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ access_token: session.accessToken })
+                        'Authorization': 'Bearer ' + session.accessToken
+                    }
                 });
             } catch (headerErr) {
                 lastErr = new Error('Webhook unreachable (CORS/network): ' + headerErr.message);
@@ -15984,12 +16040,10 @@ async function webhookFetch(path) {
             console.warn('[webhookFetch] 401, retrying with header auth for ' + path);
             try {
                 response = await fetch(N8N_WEBHOOK_BASE + path, {
-                    method: 'POST',
+                    method: 'GET',
                     headers: {
-                        'Authorization': 'Bearer ' + session.accessToken,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ access_token: session.accessToken })
+                        'Authorization': 'Bearer ' + session.accessToken
+                    }
                 });
             } catch (headerErr) {
                 throw new Error('Webhook auth retry failed (CORS/network): ' + headerErr.message);
@@ -18776,6 +18830,7 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
         }
 
         // Phase 3: Save data records from IN_MEMORY_DATA per-table and free each table's data after save
+        var totalDataRecords = 0;
         if (window.IN_MEMORY_DATA) {
             var tableIds = Object.keys(window.IN_MEMORY_DATA);
             for (var ti = 0; ti < tableIds.length; ti++) {
@@ -18791,6 +18846,7 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
                     });
                 }
                 if (dataRecords.length > 0) {
+                    totalDataRecords += dataRecords.length;
                     // Save in sub-batches to avoid large transactions
                     for (var di = 0; di < dataRecords.length; di += batchSize) {
                         var dataBatch = dataRecords.slice(di, di + batchSize);
@@ -18863,7 +18919,7 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
             await setSyncMeta('lastEventTimestamp', lastEvent.created_at);
         }
 
-        console.log('Background IndexedDB save complete: ' + saved + ' events, ' + dataRecords.length + ' records');
+        console.log('Background IndexedDB save complete: ' + saved + ' events, ' + totalDataRecords + ' records');
 
         // Clear in-memory cache after successful IndexedDB save to free memory
         // (functions will now read from IndexedDB)
@@ -30969,7 +31025,7 @@ window.addEventListener('amino:auth-expired', function() {
     <script>
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/sw.js').catch(function(err) {
+        navigator.serviceWorker.register('./sw.js').catch(function(err) {
             console.warn('[ServiceWorker] Registration failed:', err && err.message ? err.message : err);
         });
     });
