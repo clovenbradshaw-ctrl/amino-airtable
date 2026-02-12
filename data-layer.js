@@ -2712,6 +2712,7 @@ var AminoData = (function() {
         var result = { mutations: mutations };
 
         // Optionally reconstruct the current state by replaying mutations
+        // in chronological order (oldest first) before we re-sort for display
         if (rebuildState) {
             var state = {};
             for (var m = 0; m < mutations.length; m++) {
@@ -2737,6 +2738,11 @@ var AminoData = (function() {
             }
             result.state = state;
         }
+
+        // Sort mutations by timestamp descending (most recent first)
+        mutations.sort(function(a, b) {
+            return (b.timestamp || 0) - (a.timestamp || 0);
+        });
 
         return result;
     }
