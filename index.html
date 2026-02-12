@@ -29920,6 +29920,68 @@ var InterfaceApp = (function() {
         }, 120);
     }
 
+    // Check if a field value (string, array, or nested object) overlaps with an ID set.
+    function _fieldValueOverlaps(value, idSet) {
+        if (value == null || value === '') return false;
+        if (typeof value === 'string') return idSet.has(value.trim());
+        if (Array.isArray(value)) {
+            for (var vi = 0; vi < value.length; vi++) {
+                if (_fieldValueOverlaps(value[vi], idSet)) return true;
+            }
+            return false;
+        }
+        if (typeof value === 'object') {
+            if (typeof value.id === 'string' && idSet.has(value.id.trim())) return true;
+            if (typeof value.recordId === 'string' && idSet.has(value.recordId.trim())) return true;
+            return false;
+        }
+        return false;
+    }
+
+    // Filter rows from a source table to only those linked to a specific client,
+    // walking the edge path backwards from the client table to the source table.
+    function _filterRowsByEdgePath(sourceRows, path, clientRecordId, allTableRows) {
+        if (!path || !path.length || !sourceRows.length) return sourceRows;
+
+        // Start from client and walk backwards through intermediate tables
+        var targetIds = new Set();
+        targetIds.add(clientRecordId);
+
+        for (var i = path.length - 1; i >= 1; i--) {
+            var edge = path[i];
+            var intermediateRows = allTableRows[edge.fromTableId];
+            if (!intermediateRows || !intermediateRows.length) return sourceRows; // can't resolve, include all
+            var nextTargetIds = new Set();
+            for (var r = 0; r < intermediateRows.length; r++) {
+                var fields = intermediateRows[r].fields || {};
+                // Check both field ID and field name keys
+                var val = fields[edge.fieldId];
+                if (val === undefined) val = fields[edge.fieldName];
+                if (_fieldValueOverlaps(val, targetIds)) {
+                    var rid = intermediateRows[r].recordId;
+                    if (rid) nextTargetIds.add(rid);
+                }
+            }
+            if (!nextTargetIds.size) return [];
+            targetIds = nextTargetIds;
+        }
+
+        // Final step: filter source rows using the first edge's field
+        var firstEdge = path[0];
+        var filtered = [];
+        for (var j = 0; j < sourceRows.length; j++) {
+            var fields = sourceRows[j].fields || {};
+            var val = fields[firstEdge.fieldId];
+            if (val === undefined) val = fields[firstEdge.fieldName];
+            if (_fieldValueOverlaps(val, targetIds)) {
+                filtered.push(sourceRows[j]);
+            }
+        }
+        // Safety fallback: if filtering produced nothing, include all rows
+        // (edge metadata may be stale; client-profile.html will re-filter)
+        return filtered.length > 0 ? filtered : sourceRows;
+    }
+
     async function _buildClientProfileContext(recordId) {
         // Use actual Airtable table names (lowercased) — includes display tables
         // plus lookup tables needed to resolve linked record IDs to names.
@@ -29951,27 +30013,95 @@ var InterfaceApp = (function() {
             'templates': true,
             'placeholder fields': true
         };
+
+        // Lookup tables are small reference data used for record ID resolution —
+        // always include all their records in the snapshot.
+        var LOOKUP_TABLES = {
+            'users': true, 'locations': true, 'status': true, 'event type': true,
+            'hearing type': true, 'activity dictionary': true, 'activity sub types': true,
+            'custodian': true, 'abandoning parent': true, 'office locations': true,
+            'templates': true, 'placeholder fields': true, 'sij engagement interviews': true,
+            'foia request': true
+        };
+
         var data = {};
+        var tableIdToName = {};
         var tableIds = Object.keys(META_TABLES || {}).filter(function(tableId) {
             var table = META_TABLES[tableId] || {};
             var tableName = String(table.tableName || table.table_name || '').trim().toLowerCase();
-            return REQUIRED_TABLES[tableName];
+            if (REQUIRED_TABLES[tableName]) {
+                tableIdToName[tableId] = table.tableName || table.table_name || tableId;
+                return true;
+            }
+            return false;
         });
 
-        for (var i = 0; i < tableIds.length; i++) {
-            var tableId = tableIds[i];
-            var tableMeta = META_TABLES[tableId] || {};
-            var tableName = tableMeta.tableName || tableMeta.table_name || tableId;
-            var rows = await _getTableRecords(tableId);
-            data[tableName] = rows;
-            data[tableId] = rows;
+        // ── Phase 1: Fetch all tables in parallel batches ──
+        // Previously sequential (~100ms × 25 tables = ~2.5s).
+        // Now batched 6-wide (~100ms × ceil(25/6) batches ≈ ~500ms).
+        var BATCH_SIZE = 6;
+        var allTableRows = {}; // tableId -> rows
+        for (var b = 0; b < tableIds.length; b += BATCH_SIZE) {
+            var batch = tableIds.slice(b, b + BATCH_SIZE);
+            await Promise.all(batch.map(function(tid) {
+                return _getTableRecords(tid).then(function(rows) {
+                    allTableRows[tid] = rows;
+                });
+            }));
+        }
+
+        // ── Phase 2: Use edges graph to pre-filter data tables ──
+        // Instead of sending ALL records from every table in the snapshot,
+        // use the edges (link graph) to include only records related to
+        // this specific client. Lookup tables are kept in full since they're
+        // small reference data needed for ID → display-name resolution.
+        var clientTableId = null;
+        for (var ci = 0; ci < tableIds.length; ci++) {
+            if ((tableIdToName[tableIds[ci]] || '').toLowerCase() === 'client info') {
+                clientTableId = tableIds[ci];
+                break;
+            }
+        }
+
+        var edges = [];
+        var tablePathMap = {};
+        try { edges = await getAllEdges(); } catch (e) { /* edges unavailable, skip filtering */ }
+        if (clientTableId && edges.length) {
+            tablePathMap = computeLinkedRecordTableMap(edges, clientTableId);
+        }
+
+        // Build tableIdMap so client-profile.html can resolve tableId → tableName
+        var tableIdMap = {};
+        for (var ti = 0; ti < tableIds.length; ti++) {
+            var tableId = tableIds[ti];
+            var tableName = tableIdToName[tableId] || tableId;
+            var rows = allTableRows[tableId] || [];
+            var tNameLower = tableName.toLowerCase();
+            tableIdMap[tableId] = tableName;
+
+            if (tNameLower === 'client info' || LOOKUP_TABLES[tNameLower]) {
+                // Client info and lookup tables: include all records
+                data[tableName] = rows;
+                continue;
+            }
+
+            // Data tables: filter to client-related records via edge path
+            var pathInfo = tablePathMap[tableId];
+            if (pathInfo && pathInfo.path && pathInfo.path.length > 0) {
+                var filtered = _filterRowsByEdgePath(rows, pathInfo.path, recordId, allTableRows);
+                data[tableName] = filtered;
+            } else {
+                // No edge path discovered — include all (safe fallback)
+                data[tableName] = rows;
+            }
         }
 
         return {
             version: 1,
             capturedAt: Date.now(),
             clientId: recordId,
-            data: data
+            data: data,
+            tableIdMap: tableIdMap
         };
     }
 
