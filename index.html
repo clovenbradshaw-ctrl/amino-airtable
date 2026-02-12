@@ -4530,8 +4530,8 @@
             <div class="loading-logo">
                 <div class="loading-logo-inner">A</div>
             </div>
-            <h1 class="loading-title">Setting Up Your Workspace</h1>
-            <p class="loading-subtitle">We're downloading your data to this device for lightning-fast access.</p>
+            <h1 class="loading-title" id="loading-title">Setting Up Your Workspace</h1>
+            <p class="loading-subtitle" id="loading-subtitle">We're downloading your data to this device for lightning-fast access.</p>
 
             <div class="loading-facts">
                 <div class="loading-fact">
@@ -4559,7 +4559,7 @@
                 <div class="loading-speed" id="loading-speed"></div>
             </div>
 
-            <div class="loading-note">
+            <div class="loading-note" id="loading-note">
                 <strong>One-time setup:</strong> This only happens once per device. After this, your data loads instantly from local storage.
             </div>
 
@@ -13377,6 +13377,7 @@ var lastSyncTime = null;
 function showLoadingOverlay() {
     var overlay = document.getElementById('loading-overlay');
     overlay.classList.remove('hidden', 'fading-out');
+    setLoadingOverlayMode('default');
 }
 
 function hideLoadingOverlay() {
@@ -13395,6 +13396,39 @@ var _loadingStartTime = null;
 var _loadingPrevRecords = 0;
 var _loadingPrevTime = null;
 var _loadingSmoothedSpeed = 0;
+
+var _defaultLoadingOverlayContent = null;
+
+function _ensureDefaultLoadingOverlayContent() {
+    if (_defaultLoadingOverlayContent) return _defaultLoadingOverlayContent;
+    var titleEl = document.getElementById('loading-title');
+    var subtitleEl = document.getElementById('loading-subtitle');
+    var noteEl = document.getElementById('loading-note');
+    _defaultLoadingOverlayContent = {
+        title: titleEl ? titleEl.textContent : '',
+        subtitle: subtitleEl ? subtitleEl.textContent : '',
+        note: noteEl ? noteEl.innerHTML : ''
+    };
+    return _defaultLoadingOverlayContent;
+}
+
+function setLoadingOverlayMode(mode) {
+    var titleEl = document.getElementById('loading-title');
+    var subtitleEl = document.getElementById('loading-subtitle');
+    var noteEl = document.getElementById('loading-note');
+    var defaults = _ensureDefaultLoadingOverlayContent();
+    if (!titleEl || !subtitleEl || !noteEl) return;
+
+    if (mode === 'local-memory') {
+        titleEl.textContent = 'Loading from Local Memory';
+        subtitleEl.textContent = "We found local cached data, so your workspace is starting instantly.";
+        noteEl.innerHTML = '<strong>Fast startup:</strong> Using local memory avoids a full download and gets you to work faster.';
+    } else {
+        titleEl.textContent = defaults.title;
+        subtitleEl.textContent = defaults.subtitle;
+        noteEl.innerHTML = defaults.note;
+    }
+}
 
 function _formatElapsed(ms) {
     var secs = Math.floor(ms / 1000);
@@ -15564,6 +15598,7 @@ async function init() {
     // Show loading overlay immediately so user never sees a blank screen
     // between login fading out and content appearing.
     showLoadingOverlay();
+    setLoadingOverlayMode('local-memory');
     updateLoadingOverlay('Initializing...', 'Loading local data...', 0, 0, 0, 0, null);
 
     // Load sidebar state (pinned, recent, expanded sections)
@@ -15687,6 +15722,7 @@ async function init() {
         }
 
         showLoadingOverlay();
+        setLoadingOverlayMode('default');
 
         // Step 1: Hydrate current record state from DB API (fast, REST)
         var hydrated = false;
