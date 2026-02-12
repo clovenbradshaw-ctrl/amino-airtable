@@ -47,6 +47,32 @@ var AminoData = (function() {
     var _tableRecordIdIndex = {};    // tableId -> { recordId: true }
     var _tableCacheHydrated = {};    // tableId -> true when full table is cached
 
+    function _isDebugLoggingEnabled() {
+        try {
+            return localStorage.getItem('amino_debug') === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function logDebug() {
+        if (!_isDebugLoggingEnabled()) return;
+        console.log.apply(console, arguments);
+    }
+
+    function logInfo() {
+        console.info.apply(console, arguments);
+    }
+
+    function logWarn() {
+        console.warn.apply(console, arguments);
+    }
+
+    function logError() {
+        console.error.apply(console, arguments);
+    }
+
+
     // ============ Encryption ============
 
     async function deriveKey(password, salt) {
@@ -198,7 +224,7 @@ var AminoData = (function() {
             // Old key doesn't work — check if data is already on the new key
             try {
                 await decrypt(newKey, allRecords[0].fields);
-                console.log('[AminoData] Data already encrypted with new key, no migration needed');
+                logDebug('[AminoData] Data already encrypted with new key, no migration needed');
                 return 0;
             } catch (e2) {
                 console.warn('[AminoData] Neither key decrypts existing data — re-hydration required');
@@ -206,7 +232,7 @@ var AminoData = (function() {
             }
         }
 
-        console.log('[AminoData] Migrating', allRecords.length, 'records to Synapse-derived encryption');
+        logDebug('[AminoData] Migrating', allRecords.length, 'records to Synapse-derived encryption');
         var BATCH_SIZE = 200;
         var migrated = 0;
         for (var b = 0; b < allRecords.length; b += BATCH_SIZE) {
@@ -223,7 +249,7 @@ var AminoData = (function() {
             }
             await idbTxDone(writeTx);
         }
-        console.log('[AminoData] Migration complete:', migrated, 'records re-encrypted');
+        logDebug('[AminoData] Migration complete:', migrated, 'records re-encrypted');
         return migrated;
     }
 
@@ -335,7 +361,7 @@ var AminoData = (function() {
         for (var attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             if (attempt > 0) {
                 var delay = attempt === 1 ? 1000 : 3000;
-                console.log('[AminoData] Retry ' + attempt + '/' + MAX_RETRIES + ' for ' + path + ' (waiting ' + delay + 'ms)');
+                logDebug('[AminoData] Retry ' + attempt + '/' + MAX_RETRIES + ' for ' + path + ' (waiting ' + delay + 'ms)');
                 await new Promise(function(r) { setTimeout(r, delay); });
             }
 
@@ -429,7 +455,7 @@ var AminoData = (function() {
                 _roomTableMap[t.matrix_room_id] = t.table_id;
             }
         }
-        console.log('[AminoData] Built table-room map:', Object.keys(_tableRoomMap).length, 'mappings');
+        logDebug('[AminoData] Built table-room map:', Object.keys(_tableRoomMap).length, 'mappings');
 
         return tables;
     }
@@ -692,7 +718,7 @@ var AminoData = (function() {
     // ============ Hydration & Sync ============
 
     async function hydrateTable(tableId) {
-        console.log('[AminoData] Hydrating table:', tableId);
+        logDebug('[AminoData] Hydrating table:', tableId);
         var records = [];
         try {
             var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId), 'fullBackfill');
@@ -740,7 +766,7 @@ var AminoData = (function() {
             };
         }));
 
-        console.log('[AminoData] Hydrated', records.length, 'records for table', tableId);
+        logDebug('[AminoData] Hydrated', records.length, 'records for table', tableId);
         return records.length;
     }
 
@@ -827,10 +853,10 @@ var AminoData = (function() {
 
         // Step 2: Identify rooms the user hasn't joined
         var unjoinedRoomIds = roomIds.filter(function(id) { return !joinedRoomIds.has(id); });
-        console.log('[AminoData] Room membership: ' + joinedRoomIds.size + ' already joined, ' + unjoinedRoomIds.length + ' to join');
+        logDebug('[AminoData] Room membership: ' + joinedRoomIds.size + ' already joined, ' + unjoinedRoomIds.length + ' to join');
 
         if (unjoinedRoomIds.length === 0) {
-            console.log('[AminoData] Already a member of all ' + roomIds.length + ' table rooms');
+            logDebug('[AminoData] Already a member of all ' + roomIds.length + ' table rooms');
             return roomIds;
         }
 
@@ -844,7 +870,7 @@ var AminoData = (function() {
                 body: JSON.stringify({ userId: userId })
             });
             var inviteData = await inviteRes.json();
-            console.log('[AminoData] Invite response:', inviteData.message || ('invited to ' + (inviteData.roomsInvited || 0) + ' rooms'));
+            logDebug('[AminoData] Invite response:', inviteData.message || ('invited to ' + (inviteData.roomsInvited || 0) + ' rooms'));
         } catch (inviteErr) {
             console.warn('[AminoData] Invite request failed:', inviteErr.message);
             // Continue anyway — some rooms may be public / already invited
@@ -877,7 +903,7 @@ var AminoData = (function() {
             return joinedRoomIds.has(id) || joined.indexOf(id) !== -1;
         });
 
-        console.log('[AminoData] Room membership complete: ' + joined.length + ' newly joined, ' + failed.length + ' failed, ' + allJoined.length + ' total');
+        logDebug('[AminoData] Room membership complete: ' + joined.length + ' newly joined, ' + failed.length + ' failed, ' + allJoined.length + ' total');
         return allJoined;
     }
 
@@ -1075,7 +1101,7 @@ var AminoData = (function() {
         }
 
         _matrixSyncRunning = true;
-        console.log('[AminoData] Starting Matrix realtime sync for', Object.keys(_tableRoomMap).length, 'tables');
+        logDebug('[AminoData] Starting Matrix realtime sync for', Object.keys(_tableRoomMap).length, 'tables');
 
         // Run sync loop in the background
         _runSyncLoop();
@@ -1227,7 +1253,7 @@ var AminoData = (function() {
 
         _orgSpaceId = orgSpaceId;
         _viewSyncRunning = true;
-        console.log('[AminoData] Starting view deletion sync for org space:', orgSpaceId);
+        logDebug('[AminoData] Starting view deletion sync for org space:', orgSpaceId);
 
         _runViewSyncLoop();
         return true;
@@ -1425,13 +1451,13 @@ var AminoData = (function() {
 
         // Rate limit: reject if still within cooldown
         if (remaining > 0) {
-            console.log('[AminoData] Airtable sync throttled — ' + Math.ceil(remaining / 1000) + 's remaining');
+            logDebug('[AminoData] Airtable sync throttled — ' + Math.ceil(remaining / 1000) + 's remaining');
             return { triggered: false, cooldownRemaining: remaining };
         }
 
         // Deduplicate: don't send if a request is already in flight
         if (_airtableSyncInFlight) {
-            console.log('[AminoData] Airtable sync already in progress');
+            logDebug('[AminoData] Airtable sync already in progress');
             return { triggered: false, cooldownRemaining: 0, inFlight: true };
         }
 
@@ -1439,7 +1465,7 @@ var AminoData = (function() {
         _lastAirtableSyncTrigger = now;
 
         try {
-            console.log('[AminoData] Triggering Airtable sync via n8n webhook');
+            logDebug('[AminoData] Triggering Airtable sync via n8n webhook');
             var response = await fetch(AIRTABLE_SYNC_WEBHOOK);
 
             if (!response.ok) {
@@ -1448,7 +1474,7 @@ var AminoData = (function() {
                 return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN, error: errMsg };
             }
 
-            console.log('[AminoData] Airtable sync triggered successfully');
+            logDebug('[AminoData] Airtable sync triggered successfully');
             return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN };
         } catch (err) {
             console.error('[AminoData] Airtable sync webhook failed:', err);
@@ -1622,7 +1648,7 @@ var AminoData = (function() {
 
         if (saltEntry && saltEntry.value !== 'synapse-derived') {
             // Legacy random salt exists — migrate to Synapse-derived key
-            console.log('[AminoData] Detected legacy random salt, migrating to Synapse-derived encryption');
+            logDebug('[AminoData] Detected legacy random salt, migrating to Synapse-derived encryption');
             var oldSalt = new Uint8Array(saltEntry.value);
             var oldKey = await deriveKey(password, oldSalt);
             var migrated = await migrateEncryptionKey(oldKey, _cryptoKey);
@@ -1664,7 +1690,7 @@ var AminoData = (function() {
 
         _offlineMode = false;
         _initialized = true;
-        console.log('[AminoData] Initialized with', _tables.length, 'tables (Synapse-derived encryption)');
+        logDebug('[AminoData] Initialized with', _tables.length, 'tables (Synapse-derived encryption)');
 
         return _tables;
     }
@@ -1716,7 +1742,7 @@ var AminoData = (function() {
         }
 
         if (!matrixSyncStarted) {
-            console.log('[AminoData] Using HTTP polling for updates');
+            logDebug('[AminoData] Using HTTP polling for updates');
             startPolling(pollInterval);
         }
 
@@ -2195,7 +2221,7 @@ var AminoData = (function() {
 
         var lastSynced = await getLastSyncTime();
 
-        console.log('[AminoData] Offline unlock successful for', session.userId,
+        logDebug('[AminoData] Offline unlock successful for', session.userId,
             '(' + _tables.length + ' cached tables, last synced:', lastSynced + ')');
 
         return {
@@ -2247,7 +2273,7 @@ var AminoData = (function() {
             });
         });
 
-        console.log('[AminoData] Connectivity monitor started (checking every', CONNECTIVITY_CHECK_INTERVAL / 1000 + 's)');
+        logDebug('[AminoData] Connectivity monitor started (checking every', CONNECTIVITY_CHECK_INTERVAL / 1000 + 's)');
     }
 
     function stopConnectivityMonitor() {
@@ -2344,7 +2370,7 @@ var AminoData = (function() {
             startPolling();
         }
 
-        console.log('[AminoData] Transitioned to online mode.',
+        logDebug('[AminoData] Transitioned to online mode.',
             'Flushed:', flushResult.flushed, 'mutations.',
             'Synced:', syncedRecords, 'records.');
 
@@ -2494,7 +2520,7 @@ var AminoData = (function() {
             }));
         }
 
-        console.log('[AminoData] Flushed', flushed, 'pending mutations (' + failed + ' failed)');
+        logDebug('[AminoData] Flushed', flushed, 'pending mutations (' + failed + ' failed)');
         return { flushed: flushed, failed: failed };
     }
 
