@@ -24943,6 +24943,12 @@ var InterfaceApp = (function() {
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    function _formatCaseNoteDescriptionHtml(value) {
+        if (value == null || value === '') return _esc('No description field found on this note.');
+        var normalized = String(value).replace(/<br\s*\/?\s*>/gi, '\n');
+        return _esc(normalized).replace(/\r?\n/g, '<br>');
+    }
+
     function _formatFieldValue(val) {
         if (val == null) return '<span style="color:var(--text-disabled)">\u2013</span>';
         if (Array.isArray(val)) {
@@ -26148,7 +26154,7 @@ var InterfaceApp = (function() {
                 var clientPp = _pickCaseNoteValue(note, ['Client_PP_ID', 'client_pp_id']);
                 html += '<div class="iface-case-note-item">';
                 html += '<div class="iface-case-note-top"><strong>' + _esc(title) + '</strong>' + (date ? '<span>' + _esc(date) + '</span>' : '') + '</div>';
-                html += '<div class="iface-case-note-desc">' + _esc(description || 'No description field found on this note.') + '</div>';
+                html += '<div class="iface-case-note-desc">' + _formatCaseNoteDescriptionHtml(description) + '</div>';
                 html += '<div class="iface-case-note-meta">';
                 if (clientPp) html += '<span class="iface-case-note-pill">Client_PP_ID: ' + _esc(clientPp) + '</span>';
                 var matterId = _pickCaseNoteValue(note, ['matter_id', 'Matter']);
