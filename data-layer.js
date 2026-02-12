@@ -89,7 +89,7 @@ var AminoData = (function() {
             },
             keyMaterial,
             { name: 'AES-GCM', length: 256 },
-            false, // not extractable
+            true, // extractable — allows key export for sub-page access
             ['encrypt', 'decrypt']
         );
     }
@@ -137,6 +137,41 @@ var AminoData = (function() {
         var key = await deriveKey(password, salt);
         _keyDerivationCache = { fingerprint: fingerprint, key: key };
         return key;
+    }
+
+    // ============ Key Storage (for sub-page access) ============
+    // Sub-pages (layout builder, client profile) cannot derive the key because
+    // the Synapse password is intentionally not stored. Instead, the main app
+    // derives and exports the key to localStorage so sub-pages can import it.
+
+    var DATA_LAYER_KEY_STORAGE = 'amino_data_layer_key';
+
+    async function exportKeyToStorage(key) {
+        try {
+            var raw = await crypto.subtle.exportKey('raw', key);
+            localStorage.setItem(DATA_LAYER_KEY_STORAGE, arrayBufferToBase64(raw));
+        } catch (e) {
+            console.warn('[AminoData] Could not export key to storage:', e);
+        }
+    }
+
+    async function importKeyFromStorage() {
+        var stored = localStorage.getItem(DATA_LAYER_KEY_STORAGE);
+        if (!stored) return null;
+        try {
+            var raw = base64ToArrayBuffer(stored);
+            return crypto.subtle.importKey(
+                'raw', raw, { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']
+            );
+        } catch (e) {
+            console.warn('[AminoData] Could not import key from storage:', e);
+            localStorage.removeItem(DATA_LAYER_KEY_STORAGE);
+            return null;
+        }
+    }
+
+    function clearKeyFromStorage() {
+        localStorage.removeItem(DATA_LAYER_KEY_STORAGE);
     }
 
     // ============ Base64 <-> ArrayBuffer Helpers ============
@@ -2087,20 +2122,17 @@ var AminoData = (function() {
 
     // ============ Initialization ============
 
-    async function init(accessToken, userId, password) {
-        if (!accessToken || !userId || !password) {
-            throw new Error('accessToken, userId, and password are required');
-        }
-
+    // Core initialization logic shared by init() and initWithKey().
+    // Accepts a pre-derived CryptoKey and an optional raw password
+    // (needed only for legacy salt migration).
+    async function _initCore(accessToken, userId, cryptoKey, password) {
         _accessToken = accessToken;
         _userId = userId;
         clearRecordCache();
 
         // Open database
         _db = await openDatabase();
-
-        // Derive the Synapse-derived encryption key (deterministic salt from userId)
-        _cryptoKey = await deriveSynapseKey(password, userId);
+        _cryptoKey = cryptoKey;
 
         // Check for existing encryption state and migrate if necessary
         var cryptoTx = _db.transaction('crypto', 'readonly');
@@ -2108,15 +2140,25 @@ var AminoData = (function() {
         var verifyEntry = await idbGet(cryptoTx.objectStore('crypto'), 'verify');
 
         if (saltEntry && saltEntry.value !== 'synapse-derived') {
-            // Legacy random salt exists — migrate to Synapse-derived key
-            console.log('[AminoData] Detected legacy random salt, migrating to Synapse-derived encryption');
-            var oldSalt = new Uint8Array(saltEntry.value);
-            var oldKey = await deriveKey(password, oldSalt);
-            var migrated = await migrateEncryptionKey(oldKey, _cryptoKey);
+            if (password) {
+                // Legacy random salt exists — migrate to Synapse-derived key
+                console.log('[AminoData] Detected legacy random salt, migrating to Synapse-derived encryption');
+                var oldSalt = new Uint8Array(saltEntry.value);
+                var oldKey = await deriveKey(password, oldSalt);
+                var migrated = await migrateEncryptionKey(oldKey, _cryptoKey);
 
-            if (migrated === -1) {
-                // Neither key works — clear stale data and re-hydrate
-                console.warn('[AminoData] Clearing stale encrypted data for re-hydration');
+                if (migrated === -1) {
+                    // Neither key works — clear stale data and re-hydrate
+                    console.warn('[AminoData] Clearing stale encrypted data for re-hydration');
+                    var clearTx = _db.transaction(['records', 'sync'], 'readwrite');
+                    clearTx.objectStore('records').clear();
+                    clearTx.objectStore('sync').clear();
+                    await idbTxDone(clearTx);
+                    clearRecordCache();
+                }
+            } else {
+                // No password available for legacy migration — clear and re-hydrate
+                console.warn('[AminoData] Legacy salt detected but no password for migration — clearing data');
                 var clearTx = _db.transaction(['records', 'sync'], 'readwrite');
                 clearTx.objectStore('records').clear();
                 clearTx.objectStore('sync').clear();
@@ -2160,10 +2202,43 @@ var AminoData = (function() {
             console.warn('[AminoData] Using cached table metadata (offline):', err.message || err);
         }
 
+        // Store exported key in localStorage for sub-page access
+        await exportKeyToStorage(_cryptoKey);
+
         _initialized = true;
         console.log('[AminoData] Initialized with', _tables.length, 'tables (Synapse-derived encryption)');
 
         return _tables;
+    }
+
+    async function init(accessToken, userId, password) {
+        if (!accessToken || !userId || !password) {
+            throw new Error('accessToken, userId, and password are required');
+        }
+
+        var key = await deriveSynapseKey(password, userId);
+        return _initCore(accessToken, userId, key, password);
+    }
+
+    // Initialize using a previously exported key from localStorage.
+    // Used by sub-pages (layout builder, client profile) that don't have the password.
+    async function initWithKey(accessToken, userId) {
+        if (!accessToken || !userId) {
+            throw new Error('accessToken and userId are required');
+        }
+        var key = await importKeyFromStorage();
+        if (!key) {
+            throw new Error('No stored encryption key found. Please log in from the main app first.');
+        }
+        return _initCore(accessToken, userId, key, null);
+    }
+
+    // Derive and store the encryption key without full initialization.
+    // Called by the main app after Synapse login so sub-pages can use initWithKey().
+    async function prepareKey(password, userId) {
+        if (!password || !userId) return;
+        var key = await deriveSynapseKey(password, userId);
+        await exportKeyToStorage(key);
     }
 
     async function hydrateAll(onProgress) {
@@ -2253,6 +2328,7 @@ var AminoData = (function() {
         stopMatrixSync();
         stopViewDeletionSync();
         stopConnectivityMonitor();
+        clearKeyFromStorage();
         _cryptoKey = null;
         _accessToken = null;
         _userId = null;
@@ -3072,6 +3148,8 @@ var AminoData = (function() {
     return {
         // Initialization
         init: init,
+        initWithKey: initWithKey,
+        prepareKey: prepareKey,
         hydrateAll: hydrateAll,
         initAndHydrate: initAndHydrate,
         restoreSession: restoreSession,
