@@ -28096,11 +28096,8 @@ var InterfaceApp = (function() {
                 break;
 
             case 'client-relationship-graph':
-                records = await _getSourceRecords(block.source);
-                var relationshipRecords = await _getSourceRecords(block.relationshipSource || null);
-                searchQ = _blockSearchState[block.id] || '';
-                records = _applySegment(records, null, searchQ, null);
-                html = _renderClientRelationshipGraph(block, records, relationshipRecords);
+                // Temporarily hidden until the relationship graph experience is fixed.
+                html = '';
                 break;
 
             default:
