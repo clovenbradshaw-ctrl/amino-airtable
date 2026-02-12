@@ -8448,14 +8448,22 @@ async function encryptEventForStorage(event) {
 }
 
 // Decrypt event payload after retrieval
+// Always attempt decryption if the event has _encryptedPayload and a key is available,
+// regardless of the current encryptionEnabled flag.  This ensures events encrypted in
+// a previous session are still readable after encryption settings change.
 async function decryptEventFromStorage(event) {
-    if (!event || !event._encryptedPayload || !encryptionEnabled || !encryptionKey) {
+    if (!event || !event._encryptedPayload || !encryptionKey) {
         return event;
     }
-    var decrypted = { ...event };
-    decrypted.payload = await decryptData(event._encryptedPayload, encryptionKey);
-    delete decrypted._encryptedPayload;
-    return decrypted;
+    try {
+        var decrypted = { ...event };
+        decrypted.payload = await decryptData(event._encryptedPayload, encryptionKey);
+        delete decrypted._encryptedPayload;
+        return decrypted;
+    } catch (e) {
+        console.warn('[decryptEvent] Failed to decrypt event', event.id, e);
+        return event;
+    }
 }
 
 // Encrypt data record fields for storage
@@ -8470,14 +8478,21 @@ async function encryptRecordForStorage(record) {
 }
 
 // Decrypt data record fields after retrieval
+// Always attempt decryption if the record has _encryptedFields and a key is available,
+// regardless of the current encryptionEnabled flag.
 async function decryptRecordFromStorage(record) {
-    if (!record || !record._encryptedFields || !encryptionEnabled || !encryptionKey) {
+    if (!record || !record._encryptedFields || !encryptionKey) {
         return record;
     }
-    var decrypted = { ...record };
-    decrypted.fields = await decryptData(record._encryptedFields, encryptionKey);
-    delete decrypted._encryptedFields;
-    return decrypted;
+    try {
+        var decrypted = { ...record };
+        decrypted.fields = await decryptData(record._encryptedFields, encryptionKey);
+        delete decrypted._encryptedFields;
+        return decrypted;
+    } catch (e) {
+        console.warn('[decryptRecord] Failed to decrypt record', record.recordId, e);
+        return record;
+    }
 }
 
 async function saveRawEvents(events) {
@@ -8542,8 +8557,8 @@ async function getAllRawEvents(limit, offset) {
         req.onerror = () => reject(req.error);
     });
 
-    // Decrypt events if needed
-    if (encryptionEnabled && encryptionKey) {
+    // Decrypt events if any have encrypted payloads and a key is available
+    if (encryptionKey) {
         return Promise.all(results.map(e => decryptEventFromStorage(e)));
     }
     return results;
@@ -8590,8 +8605,8 @@ async function getRawEventsByRecordId(recordId, maxEventId) {
         req.onerror = () => reject(req.error);
     });
 
-    // Decrypt events if needed
-    if (encryptionEnabled && encryptionKey) {
+    // Decrypt events if any have encrypted payloads and a key is available
+    if (encryptionKey) {
         return Promise.all(results.map(e => decryptEventFromStorage(e)));
     }
     return results;
@@ -8631,14 +8646,14 @@ async function getRawEventsBySetPaginated(setFilter, offset, limit) {
         req.onerror = () => reject(req.error);
     });
 
-    // Decrypt events if needed
-    if (encryptionEnabled && encryptionKey) {
+    // Decrypt events if any have encrypted payloads and a key is available
+    if (encryptionKey) {
         return Promise.all(results.map(e => decryptEventFromStorage(e)));
     }
     return results;
 }
 
-function searchRawEvents(query, limit, offset) {
+async function searchRawEvents(query, limit, offset) {
     var maxLimit = limit || 100;
     var skipCount = offset || 0;
     var lowerQuery = query.toLowerCase();
@@ -8664,10 +8679,10 @@ function searchRawEvents(query, limit, offset) {
                 }
             }
         }
-        return Promise.resolve(results);
+        return results;
     }
 
-    return new Promise((resolve, reject) => {
+    var results = await new Promise((resolve, reject) => {
         var tx = db.transaction('events', 'readonly');
         var store = tx.objectStore('events');
         var results = [];
@@ -8696,6 +8711,12 @@ function searchRawEvents(query, limit, offset) {
         };
         req.onerror = () => reject(req.error);
     });
+
+    // Decrypt events if any have encrypted payloads and a key is available
+    if (encryptionKey) {
+        return Promise.all(results.map(e => decryptEventFromStorage(e)));
+    }
+    return results;
 }
 
 function getMaxEventId() {
@@ -8749,8 +8770,8 @@ async function getRawEventsPaginated(offset, limit) {
         req.onerror = () => reject(req.error);
     });
 
-    // Decrypt events if needed
-    if (encryptionEnabled && encryptionKey) {
+    // Decrypt events if any have encrypted payloads and a key is available
+    if (encryptionKey) {
         return Promise.all(results.map(e => decryptEventFromStorage(e)));
     }
     return results;
@@ -15603,9 +15624,13 @@ var SynapseSync = {
         }
 
         // Handle case where event has flat fields + op but no EO-structured payload
-        // (covers both law.firm.schema.object and law.firm.record.mutate flat formats)
-        if (c.op && c.fields && !c.payload) {
-            syntheticEvent.payload = { fields: {} };
+        // (covers both law.firm.schema.object and law.firm.record.mutate flat formats).
+        // Also covers the case where c.payload exists but is empty/has no INS/ALT/NUL data.
+        var payloadFields = syntheticEvent.payload && syntheticEvent.payload.fields;
+        var payloadHasOps = payloadFields && (payloadFields.INS || payloadFields.ALT || payloadFields.NUL || payloadFields.SYN);
+        if (c.op && c.fields && !payloadHasOps) {
+            if (!syntheticEvent.payload) syntheticEvent.payload = { fields: {} };
+            if (!syntheticEvent.payload.fields) syntheticEvent.payload.fields = {};
             if (c.op === 'INS') {
                 syntheticEvent.payload.fields.INS = c.fields;
             } else if (c.op === 'ALT') {
@@ -17704,6 +17729,7 @@ function updateEventsStats(totalEventsCount, totalRecordsCount) {
 
 function renderEventRow(event, isNew) {
     var payload = parsePayload(event.payload);
+    var isEncrypted = !payload && !!event._encryptedPayload;
     var baseType = payload?._set || 'data';
     // For data events, show the operator (INS/ALT/NUL) instead of generic "data"
     var eventType = baseType;
@@ -17741,7 +17767,7 @@ function renderEventRow(event, isNew) {
     // Payload preview
     html += '<td class="payload-preview-container">';
     html += '<div class="payload-preview' + (isExpanded ? ' expanded' : '') + '" onclick="togglePayloadExpand(\'' + (event.id || event.recordId) + '\')">';
-    html += formatPayloadPreview(payload, isExpanded);
+    html += isEncrypted ? '<span class="json-null" title="Payload is encrypted. Unlock encryption to view.">encrypted</span>' : formatPayloadPreview(payload, isExpanded);
     if (!isExpanded) {
         html += '<span class="payload-expand-btn">Expand</span>';
     } else {
@@ -17761,7 +17787,7 @@ function renderEventRow(event, isNew) {
             html += 'View Record';
             html += '</button>';
         } else {
-            html += '<button class="event-action-btn primary" onclick="viewRecordAtPointInTime(' + event.id + ', \'' + esc(event.recordId) + '\', \'' + esc(event.set || '') + '\')" title="View the full record snapshot at this point in time (all fields)">';
+            html += '<button class="event-action-btn primary" onclick="viewRecordAtPointInTime(\'' + esc(String(event.id)) + '\', \'' + esc(event.recordId) + '\', \'' + esc(event.set || '') + '\')" title="View the full record snapshot at this point in time (all fields)">';
             html += '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/></svg>';
             html += 'View State';
             html += '</button>';
@@ -17840,7 +17866,7 @@ function formatPayloadPreview(payload, expanded) {
 
 function formatPayloadFields(fields, expanded) {
     var html = '<div class="payload-fields">';
-    var ops = ['INS', 'ALT', 'NUL'];
+    var ops = ['INS', 'ALT', 'NUL', 'SYN'];
     var hasAnyFields = false;
 
     for (var i = 0; i < ops.length; i++) {
@@ -18435,7 +18461,7 @@ async function exportEventsToCSV() {
         showImportStatus('Exporting...', 'Building CSV file...', 'progress', 60);
 
         // CSV header
-        var csvLines = ['id,set,recordId,created_at,payload'];
+        var csvLines = ['id,set,recordId,operator,created_at,payload'];
 
         // Convert events to CSV rows
         for (var i = 0; i < allEvents.length; i++) {
@@ -18447,6 +18473,7 @@ async function exportEventsToCSV() {
                 event.id,
                 escapeCSVField(event.set || ''),
                 escapeCSVField(event.recordId || ''),
+                escapeCSVField(event.operator || ''),
                 escapeCSVField(event.created_at || ''),
                 escapeCSVField(payloadStr)
             ];
@@ -18504,8 +18531,9 @@ async function exportEventsToAmo() {
             return;
         }
 
-        // Decrypt events if encryption is enabled
-        if (encryptionEnabled && encryptionKey) {
+        // Decrypt any remaining encrypted events (getRawEventsPaginated already decrypts,
+        // but this handles edge cases where the key became available after retrieval)
+        if (encryptionKey) {
             showImportStatus('Exporting...', 'Decrypting events...', 'progress', 55);
             allEvents = await Promise.all(allEvents.map(function(e) { return decryptEventFromStorage(e); }));
         }
@@ -18616,6 +18644,7 @@ async function importEventsFromCSV() {
             var idIndex = header.indexOf('id');
             var setIndex = header.indexOf('set');
             var recordIdIndex = header.indexOf('recordId');
+            var operatorIndex = header.indexOf('operator');
             var createdAtIndex = header.indexOf('created_at');
             var payloadIndex = header.indexOf('payload');
 
@@ -18640,6 +18669,7 @@ async function importEventsFromCSV() {
 
                 if (setIndex !== -1) event.set = fields[setIndex] || '';
                 if (recordIdIndex !== -1) event.recordId = fields[recordIdIndex] || '';
+                if (operatorIndex !== -1 && fields[operatorIndex]) event.operator = fields[operatorIndex];
                 if (createdAtIndex !== -1) event.created_at = fields[createdAtIndex] || '';
                 if (payloadIndex !== -1) {
                     var payloadStr = fields[payloadIndex] || '{}';
@@ -18951,6 +18981,7 @@ async function processCSVFile(file) {
             var idIndex = header.indexOf('id');
             var setIndex = header.indexOf('set');
             var recordIdIndex = header.indexOf('recordId');
+            var operatorIndex = header.indexOf('operator');
             var createdAtIndex = header.indexOf('created_at');
             var payloadIndex = header.indexOf('payload');
 
@@ -18979,6 +19010,7 @@ async function processCSVFile(file) {
 
                 if (setIndex !== -1) event.set = fields[setIndex] || '';
                 if (recordIdIndex !== -1) event.recordId = fields[recordIdIndex] || '';
+                if (operatorIndex !== -1 && fields[operatorIndex]) event.operator = fields[operatorIndex];
                 if (createdAtIndex !== -1) event.created_at = fields[createdAtIndex] || '';
                 if (payloadIndex !== -1) {
                     var payloadStr = fields[payloadIndex] || '{}';
@@ -19286,6 +19318,10 @@ async function skipSetupAndUploadAmoFile() {
 var _pitRevertState = null; // Stores reconstructed state for revert
 
 async function viewRecordAtPointInTime(eventId, recordId, set) {
+    // Coerce numeric-looking IDs back to numbers for consistent comparison
+    if (typeof eventId === 'string' && /^\d+$/.test(eventId)) {
+        eventId = Number(eventId);
+    }
     var overlay = document.getElementById('pit-modal-overlay');
     var body = document.getElementById('pit-modal-body');
 
@@ -19368,7 +19404,11 @@ async function viewRecordAtPointInTime(eventId, recordId, set) {
 
         var fieldIds = Object.keys(recordState);
         if (fieldIds.length === 0) {
-            html += '<div class="pit-empty-state">No fields recorded at this point in time</div>';
+            var hasEncryptedEvents = events.some(function(e) { return !!e._encryptedPayload; });
+            var emptyMsg = hasEncryptedEvents
+                ? 'Event payloads are encrypted. Unlock encryption to view field data.'
+                : 'No fields recorded at this point in time';
+            html += '<div class="pit-empty-state">' + esc(emptyMsg) + '</div>';
         } else {
             // Sort fields by name
             var fieldsInfo = META_FIELDS[tableId] || {};
