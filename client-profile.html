@@ -6,15 +6,18 @@
   <title>Amino Client Profile</title>
   <style>
     :root {
-      --bg: #f0f4f8;
+      --bg: #f8fafc;
       --card: #ffffff;
-      --line: #d9e0e8;
-      --text: #232120;
-      --muted: #6b7280;
-      --accent: #a77653;
-      --accent-2: #8f6243;
+      --line: #d7e0ea;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --accent-2: #1d4ed8;
       --pill: #eef2f7;
       --success: #0f766e;
+      --topbar-bg: #1e293b;
+      --topbar-border: #334155;
+      --topbar-text: #f8fafc;
     }
     * { box-sizing: border-box; }
     body {
@@ -25,26 +28,50 @@
     }
     .topbar {
       display: flex;
-      gap: 10px;
-      padding: 14px 18px;
-      background: #f6f2ef;
-      border-bottom: 1px solid var(--line);
+      gap: 12px;
+      padding: 12px 18px;
+      background: var(--topbar-bg);
+      border-bottom: 1px solid var(--topbar-border);
       position: sticky;
       top: 0;
-      z-index: 5;
+      z-index: 10;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--topbar-text);
+      font-weight: 700;
+      letter-spacing: .02em;
+      margin-right: 4px;
+    }
+    .brand-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+    }
+    .nav-group {
+      display: flex;
+      gap: 8px;
       flex-wrap: wrap;
     }
     .nav-btn {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 9px;
+      padding: 8px 13px;
       font-weight: 600;
       cursor: pointer;
       text-decoration: none;
-      color: inherit;
-      font-size: 14px;
+      color: var(--topbar-text);
+      font-size: 13px;
+      transition: background .15s ease;
     }
+    .nav-btn:hover { background: rgba(255, 255, 255, 0.16); }
     .page {
       padding: 12px 18px 26px;
       max-width: 1400px;
@@ -222,12 +249,15 @@
 </head>
 <body>
   <div class="topbar">
-    <a class="nav-btn" href="./Home.html">Home</a>
-    <a class="nav-btn" href="./index.html">Clients</a>
-    <a class="nav-btn" href="./Events.html">Calendar</a>
-    <button class="nav-btn" type="button">Communications</button>
-    <button class="nav-btn" type="button">New Client Event</button>
-    <button class="nav-btn" type="button">New Case Note</button>
+    <div class="brand"><span class="brand-dot"></span>Amino</div>
+    <div class="nav-group">
+      <a class="nav-btn" href="./Home.html">Home</a>
+      <a class="nav-btn" href="./index.html">Clients</a>
+      <a class="nav-btn" href="./Events.html">Calendar</a>
+      <button class="nav-btn" type="button">Communications</button>
+      <button class="nav-btn" type="button">New Client Event</button>
+      <button class="nav-btn" type="button">New Case Note</button>
+    </div>
   </div>
 
   <div class="page">
@@ -260,7 +290,8 @@
   <script>
     const STORAGE_KEYS = {
       schema: 'amino.clientProfile.schema.v1',
-      admin: 'amino.clientProfile.admin'
+      admin: 'amino.clientProfile.admin',
+      context: 'amino.clientProfile.context.v1'
     };
 
     const defaultSchema = {
@@ -275,18 +306,6 @@
       ]
     };
 
-    const mockData = {
-      Clients: [{ recordId: 'recClient001', fields: { 'First Name': 'Robert', 'Last Name': 'Lacy', Office: 'Lacy, Robert Offices', 'Client Tags': ['SIJ', 'Priority'], 'Entry Status': 'Active', 'Case Manager': 'Ana Garcia', 'SIJ Case Status': 'Awaiting hearing', 'Merits Atty': 'Padilla Rivera', 'Current Stage': 'Evidence Collection', Priority: 'High', Notes: 'Client prefers Spanish calls after 2pm.' } }],
-      Addresses: [{ recordId: 'recAddr1', fields: { 'Client Record ID': 'recClient001', Address: '123 Main St, Houston TX', 'Address Change Date': '2026-01-02', 'Same Address Confirmed Date': '2026-02-05' } }],
-      Matters: [{ recordId: 'recMat1', fields: { 'Client Record ID': 'recClient001', Matter: 'SIJ Petition', Description: 'Primary SIJ filing', Status: 'In Progress', Created_By: 'Ana' } }],
-      'Matter Notes': [{ recordId: 'recMN1', fields: { 'Client Record ID': 'recClient001', Matter: 'SIJ Petition', Description: 'Collected school records', Activity: 'Records Intake', Date: '2026-02-01', Created_By: 'Ana', 'Matter Record ID': 'recMat1' } }],
-      'Case Notes': [{ recordId: 'recCN1', fields: { 'Client Record ID': 'recClient001', 'Case Note': 'Client shared updated address.', Category: 'Address', Created: '2026-02-03', Created_By: 'Case Team' } }],
-      EAD: [{ recordId: 'recEAD1', fields: { 'Client Record ID': 'recClient001', 'Mail Tracking # EAD': 'USPS-1234', 'EAD Stage': 'Mailed', 'EAD Received': '2026-01-20', 'EAD Sent Date': '2026-01-28', 'EAD Approval Date': '2026-02-10' } }],
-      Activities: [{ recordId: 'recAct1', fields: { 'Client Record ID': 'recClient001', Activity: 'Intake Call', Description: 'Completed full intake', Date: '2026-01-03', Owner: 'Ana' } }],
-      'Hearings/Interviews': [{ recordId: 'recHear1', fields: { 'Client Record ID': 'recClient001', Event: 'Master Calendar', Date: '2026-03-10', Judge: 'Ramirez', Location: 'Houston' } }],
-      Communications: [{ recordId: 'recCom1', fields: { 'Client Record ID': 'recClient001', Type: 'Phone', Date: '2026-02-05', Summary: 'Reminder call', Direction: 'Outbound' } }]
-    };
-
     const state = {
       schema: loadSchema(),
       admin: loadAdmin(),
@@ -295,6 +314,20 @@
       clientId: new URLSearchParams(location.search).get('clientId') || 'recClient001',
       clientRecord: null
     };
+
+    function getClientContextSnapshot() {
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEYS.context);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        if (parsed.clientId && parsed.clientId !== state.clientId) return null;
+        if (!parsed.data || typeof parsed.data !== 'object') return null;
+        return parsed;
+      } catch {
+        return null;
+      }
+    }
 
     function loadSchema() {
       const raw = localStorage.getItem(STORAGE_KEYS.schema);
@@ -379,11 +412,18 @@
       document.getElementById('clientName').textContent = name;
       document.getElementById('clientMeta').innerHTML = `recordId: <strong>${escapeHtml(record?.recordId || state.clientId || '-')}</strong>`;
 
+      const relatedRowsCount = state.clientRecord
+        ? state.schema.tabs
+            .flatMap(tab => tab.sections || [])
+            .filter(section => section.type === 'related-list')
+            .reduce((acc, section) => acc + resolveRelatedRows(section).length, 0)
+        : 0;
+
       const summaryItems = [
         { label: 'Case Manager', value: fields['Case Manager'] || 'Unassigned' },
         { label: 'Entry Status', value: fields['Entry Status'] || 'Unknown' },
         { label: 'Current Stage', value: fields['Current Stage'] || 'Unknown' },
-        { label: 'Related Rows', value: Object.values(state.data).reduce((acc, rows) => acc + (Array.isArray(rows) ? rows.length : 0), 0) }
+        { label: 'Related Rows', value: relatedRowsCount }
       ];
 
       document.getElementById('summaryRow').innerHTML = summaryItems
@@ -477,7 +517,10 @@
     function renderTabContent() {
       const tab = state.schema.tabs.find(t => t.id === state.activeTab) || state.schema.tabs[0];
       const html = (tab?.sections || []).map(renderSection).join('');
-      document.getElementById('tabContent').innerHTML = `<div class="layout">${html || '<div class="muted">No sections configured.</div>'}</div>`;
+      const fallback = state.clientRecord
+        ? '<div class="muted">No sections configured.</div>'
+        : '<div class="muted">No client data found for this selection. Open the profile from the Clients page to load a scoped record context.</div>';
+      document.getElementById('tabContent').innerHTML = `<div class="layout">${html || fallback}</div>`;
     }
 
     function renderSchemaEditor() {
@@ -495,10 +538,19 @@
     }
 
     async function loadData() {
+      const contextSnapshot = getClientContextSnapshot();
+      if (contextSnapshot) {
+        state.data = contextSnapshot.data;
+        const contextClients = resolveContextClients(state.data);
+        state.clientRecord = findClientRecord(contextClients, state.clientId) || contextClients[0] || null;
+        if (state.clientRecord?.recordId) state.clientId = state.clientRecord.recordId;
+        return;
+      }
+
       const canUseAmino = typeof AminoData !== 'undefined' && typeof AminoData.getTables === 'function';
       if (!canUseAmino) {
-        state.data = mockData;
-        state.clientRecord = findClientRecord(mockData.Clients, state.clientId) || mockData.Clients[0];
+        state.data = { Clients: [] };
+        state.clientRecord = null;
         return;
       }
 
@@ -521,10 +573,17 @@
         state.clientRecord = findClientRecord(clients, state.clientId) || clients[0] || null;
         if (state.clientRecord?.recordId) state.clientId = state.clientRecord.recordId;
       } catch (err) {
-        console.warn('Failed loading AminoData, falling back to mock data:', err);
-        state.data = mockData;
-        state.clientRecord = findClientRecord(mockData.Clients, state.clientId) || mockData.Clients[0];
+        console.warn('Failed loading AminoData:', err);
+        state.data = { Clients: [] };
+        state.clientRecord = null;
       }
+    }
+
+    function resolveContextClients(data) {
+      const byName = Object.keys(data || {}).find(name => normalizeTableName(name) === 'clients')
+        || Object.keys(data || {}).find(name => normalizeTableName(name) === 'client info');
+      if (byName) return data[byName] || [];
+      return data?.Clients || [];
     }
 
     function wireEvents() {
