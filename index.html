@@ -9325,9 +9325,17 @@ function getSchemaByPrefix(prefix) {
 }
 
 function getRecordIdsForTable(tableId) {
-    // Check in-memory data first (from CSV import)
+    // Collect record IDs from both in-memory data and IndexedDB, merging them.
+    // IN_MEMORY_DATA (from Box AMO) may have fewer records than IDB
+    // (from Postgres webhook hydration or previous sessions).
+    var memIds = {};
     if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
-        return Promise.resolve(Object.keys(window.IN_MEMORY_DATA[tableId]));
+        var keys = Object.keys(window.IN_MEMORY_DATA[tableId]);
+        for (var i = 0; i < keys.length; i++) memIds[keys[i]] = true;
+    }
+
+    if (typeof db === 'undefined' || !db) {
+        return Promise.resolve(Object.keys(memIds));
     }
 
     return new Promise((resolve, reject) => {
@@ -9336,24 +9344,32 @@ function getRecordIdsForTable(tableId) {
         var req = index.getAllKeys(tableId);
         req.onsuccess = () => {
             // Keys are [tableId, recordId], extract recordIds
-            var recordIds = (req.result || []).map(k => k[1]);
-            resolve(recordIds);
+            var idbIds = (req.result || []).map(k => k[1]);
+            // Merge IDB record IDs with in-memory IDs
+            for (var j = 0; j < idbIds.length; j++) {
+                memIds[idbIds[j]] = true;
+            }
+            resolve(Object.keys(memIds));
         };
         req.onerror = () => reject(req.error);
     });
 }
 
-// Fast record count using IndexedDB count() — avoids loading all keys into memory
+// Record count combining in-memory and IndexedDB sources
 function getRecordCountForTable(tableId) {
-    if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
-        return Promise.resolve(Object.keys(window.IN_MEMORY_DATA[tableId]).length);
+    var memCount = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId])
+        ? Object.keys(window.IN_MEMORY_DATA[tableId]).length : 0;
+
+    if (typeof db === 'undefined' || !db) {
+        return Promise.resolve(memCount);
     }
+
     return new Promise((resolve, reject) => {
         var tx = db.transaction('data', 'readonly');
         var index = tx.objectStore('data').index('by_table');
         var req = index.count(tableId);
-        req.onsuccess = () => resolve(req.result || 0);
-        req.onerror = () => reject(req.error);
+        req.onsuccess = () => resolve(Math.max(req.result || 0, memCount));
+        req.onerror = () => resolve(memCount); // Fall back to memory count on error
     });
 }
 
@@ -27308,14 +27324,22 @@ var InterfaceApp = (function() {
             return cached.records;
         }
         var records = [];
+        var recordIdSet = {};
         try {
-            // Use in-memory data if available
+            // Read from in-memory data first (populated by Box AMO hydration)
             if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
                 var memData = window.IN_MEMORY_DATA[tableId];
                 Object.keys(memData).forEach(function(rid) {
                     records.push({ recordId: rid, fields: memData[rid] });
+                    recordIdSet[rid] = true;
                 });
-            } else if (typeof db !== 'undefined' && db) {
+            }
+
+            // Also read from IndexedDB and merge any records not already in memory.
+            // This ensures the Interface shows the full dataset even when
+            // IN_MEMORY_DATA (from Box AMO) has fewer records than IDB
+            // (from Postgres webhook hydration or previous sessions).
+            if (typeof db !== 'undefined' && db) {
                 var tx = db.transaction('data', 'readonly');
                 var store = tx.objectStore('data');
                 var index = null;
@@ -27332,12 +27356,20 @@ var InterfaceApp = (function() {
                     });
                     for (var i = 0; i < results.length; i++) {
                         var rec = results[i];
+                        var rid = rec.recordId || rec.id;
+                        if (recordIdSet[rid]) continue; // Already have this record from memory
                         if (encryptionEnabled && encryptionKey && (rec._encryptedFields || rec.encrypted || rec._encrypted)) {
                             try {
                                 rec = await decryptRecordFromStorage(rec);
                             } catch (e) { continue; }
                         }
-                        records.push({ recordId: rec.recordId || rec.id, fields: rec.fields || rec });
+                        var idbFields = rec.fields || rec;
+                        // Handle fields stored as JSON string (from Postgres webhook)
+                        if (typeof idbFields === 'string') {
+                            try { idbFields = JSON.parse(idbFields); } catch (e) { continue; }
+                        }
+                        records.push({ recordId: rid, fields: idbFields });
+                        recordIdSet[rid] = true;
                     }
                 }
             }
@@ -27345,10 +27377,30 @@ var InterfaceApp = (function() {
             console.warn('[Interface] Data fetch error for table', tableId, ':', e.message);
         }
 
+        // Ensure META_FIELDS has proper field metadata for this table.
+        // The DB screen reloads META_FIELDS from IDB on every table navigation,
+        // but the Interface relies on whatever was populated during hydration.
+        // If META_FIELDS was deleted (by DB screen navigation) or only has
+        // placeholder entries (fieldName === fieldId), reload from IDB.
+        var fieldMeta = (typeof META_FIELDS !== 'undefined' && META_FIELDS[tableId]) ? META_FIELDS[tableId] : null;
+        if ((!fieldMeta || Object.keys(fieldMeta).length === 0) && typeof db !== 'undefined' && db && typeof getFieldsForTable === 'function') {
+            try {
+                var idbFields = await getFieldsForTable(tableId);
+                if (idbFields && idbFields.length > 0) {
+                    if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+                    idbFields.forEach(function(f) {
+                        META_FIELDS[tableId][f.fieldId] = f;
+                    });
+                    fieldMeta = META_FIELDS[tableId];
+                }
+            } catch (e) {
+                console.warn('[Interface] Failed to reload field metadata from IDB:', e.message);
+            }
+        }
+
         // Compute formula fields for interface records before translating IDs.
         // Stored records often omit formula values because they are computed at render-time.
-        var formulaFieldMeta = (typeof META_FIELDS !== 'undefined' && META_FIELDS[tableId]) ? META_FIELDS[tableId] : null;
-        if (formulaFieldMeta && records.length) {
+        if (fieldMeta && records.length) {
             var recordMap = {};
             for (var rix = 0; rix < records.length; rix++) {
                 var ifaceRecord = records[rix] || {};
@@ -27357,14 +27409,13 @@ var InterfaceApp = (function() {
                 recordMap[ifaceRecordId] = ifaceRecord.fields || {};
             }
             if (Object.keys(recordMap).length) {
-                _applyFormulaColumns(tableId, formulaFieldMeta, recordMap);
+                _applyFormulaColumns(tableId, fieldMeta, recordMap);
             }
         }
 
         // Translate field IDs to human-readable field names using META_FIELDS.
         // IN_MEMORY_DATA stores fields keyed by field IDs (e.g. "fldAbc123"),
         // but the interface schema references fields by name (e.g. "Client Name").
-        var fieldMeta = formulaFieldMeta;
         if (fieldMeta) {
             records = records.map(function(r) {
                 var rawFields = r.fields || {};
