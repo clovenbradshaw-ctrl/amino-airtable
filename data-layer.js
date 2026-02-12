@@ -2323,22 +2323,29 @@ var AminoData = (function() {
     async function hydrateAll(onProgress) {
         if (!_initialized) throw new Error('Call init() first');
 
-        // Primary & only automatic source: bulk hydration from Box download webhook (~70k records).
-        // Other sources (Postgres per-table) are only used when explicitly requested
-        // via hydrateAllFromPostgres() which requires manual user action.
+        // Primary source: bulk hydration from Box download webhook (~70k records).
         try {
             var boxTotal = await hydrateFromBoxDownload(onProgress);
             console.log('[AminoData] Primary hydration (box-download) succeeded:', boxTotal, 'records');
             return boxTotal;
         } catch (boxErr) {
-            console.warn('[AminoData] Primary hydration (box-download) failed. Alternative sources available via manual refresh only:', boxErr.message || boxErr);
+            console.warn('[AminoData] Primary hydration (box-download) failed, falling back to Postgres webhook API:', boxErr.message || boxErr);
+        }
+
+        // Fallback: per-table hydration from current_state via Postgres webhook API.
+        try {
+            var pgTotal = await hydrateAllFromPostgres(onProgress);
+            console.log('[AminoData] Fallback hydration (Postgres webhook) succeeded:', pgTotal, 'records');
+            return pgTotal;
+        } catch (pgErr) {
+            console.warn('[AminoData] Fallback hydration (Postgres webhook) also failed:', pgErr.message || pgErr);
             return 0;
         }
     }
 
-    // Manual-only fallback: per-table hydration from Postgres via /amino-records.
-    // This is NOT called automatically — only triggered by explicit user action
-    // (e.g. Settings → Refresh Database → "Use Postgres API").
+    // Per-table hydration from current_state via Postgres /amino-records webhook.
+    // Used as automatic fallback when Box download is unavailable, and can also
+    // be triggered manually via Settings → Refresh Database.
     async function hydrateAllFromPostgres(onProgress) {
         if (!_initialized) throw new Error('Call init() first');
 
