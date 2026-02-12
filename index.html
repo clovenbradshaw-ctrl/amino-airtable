@@ -25961,6 +25961,7 @@ var InterfaceApp = (function() {
     function _buildCaseNotesWidgetParams(state) {
         var params = new URLSearchParams();
         var filters = state.filters || {};
+        if (filters.search) params.set('search', String(filters.search).trim());
         params.set('page', String(Math.max(1, state.page || 1)));
         params.set('per_page', String(filters.per_page || '20'));
         return params;
@@ -27156,9 +27157,12 @@ var InterfaceApp = (function() {
             try { await refreshSchemaAndData(true); } catch (e) { console.warn('Schema refresh failed before profile open', e); }
         }
         switchPage('clients');
-        setTimeout(function() {
-            openRecordProfile(clientsTableId, recordId);
-        }, 120);
+        try {
+            await renderPage('clients');
+        } catch (e) {
+            console.warn('Client page render failed before profile open', e);
+        }
+        await openRecordProfile(clientsTableId, recordId);
     }
 
     // ============ Admin: Edit Mode ============
