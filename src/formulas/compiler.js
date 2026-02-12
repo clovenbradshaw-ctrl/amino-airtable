@@ -271,8 +271,20 @@ export const FORMULA_RUNTIME = {
  */
 function compileNode(node) {
   switch (node.type) {
-    case 'field_ref':
-      return (record) => record[node.name];
+    case 'field_ref': {
+      const name = node.name;
+      return (record) => {
+        // Direct property lookup (most common)
+        if (record[name] !== undefined) return record[name];
+        // Fallback: case-insensitive match for field name mismatches
+        const lower = name.toLowerCase();
+        const keys = Object.keys(record);
+        for (let i = 0; i < keys.length; i++) {
+          if (keys[i].toLowerCase() === lower) return record[keys[i]];
+        }
+        return undefined;
+      };
+    }
 
     case 'literal':
       return () => node.value;
