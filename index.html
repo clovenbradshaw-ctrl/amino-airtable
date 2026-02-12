@@ -27107,7 +27107,13 @@ var InterfaceApp = (function() {
         return _esc(normalized).replace(/\r?\n/g, '<br>');
     }
 
-    function _formatFieldValue(val) {
+    function _formatFieldValue(val, fieldType) {
+        // For computed field types (formula, rollup, lookup, etc.), delegate
+        // to the same formatCell() used by the DB screen so rendering is
+        // identical between the two views.
+        if (fieldType && typeof isComputedFieldType === 'function' && isComputedFieldType(fieldType)) {
+            return (typeof formatCell === 'function') ? formatCell(val, fieldType) : _esc(String(val != null ? val : ''));
+        }
         if (val == null) return '<span style="color:var(--text-disabled)">\u2013</span>';
         if (Array.isArray(val)) {
             var resolved = val.map(function(v) {
@@ -27632,7 +27638,13 @@ var InterfaceApp = (function() {
 
     // ============ Revamped Data Table Renderer ============
 
-    function _formatFieldValueRevamped(val, colField) {
+    function _formatFieldValueRevamped(val, colField, fieldType) {
+        // For computed field types (formula, rollup, lookup, etc.), delegate
+        // to the same formatCell() used by the DB screen so rendering is
+        // identical between the two views.
+        if (fieldType && typeof isComputedFieldType === 'function' && isComputedFieldType(fieldType)) {
+            return (typeof formatCell === 'function') ? formatCell(val, fieldType) : _esc(String(val != null ? val : ''));
+        }
         if (val == null || val === '') return '<span class="cell-empty">\u2013</span>';
         if (Array.isArray(val)) {
             var resolved = val.map(function(v) {
@@ -27797,6 +27809,19 @@ var InterfaceApp = (function() {
         var columns = _getMirroredColumnsFromView(tableId, block) || block.columns || [];
         var filters = block.filters || [];
         var ps = pageState || { page: 0, pageSize: block.segment && block.segment.pageSize || 50 };
+
+        // Build field-name-to-fieldType lookup so cell formatters can
+        // delegate to formatCell() for computed/formula fields, matching
+        // the DB screen rendering exactly.
+        var _fieldTypeByName = {};
+        var _tblMeta = (typeof META_FIELDS !== 'undefined' && META_FIELDS && META_FIELDS[tableId]) ? META_FIELDS[tableId] : {};
+        Object.keys(_tblMeta).forEach(function(fid) {
+            var m = _tblMeta[fid];
+            if (m) {
+                if (m.fieldName) _fieldTypeByName[m.fieldName] = m.fieldType;
+                _fieldTypeByName[fid] = m.fieldType;
+            }
+        });
         var total = records.length;
         var start = ps.page * ps.pageSize;
         var pageRecords = records.slice(start, start + ps.pageSize);
@@ -27910,13 +27935,14 @@ var InterfaceApp = (function() {
                     var val = _findFieldValue(r.fields || {}, col.field);
                     var label = (col.label || col.field || '').toLowerCase();
                     var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                    var colFieldType = _fieldTypeByName[col.field] || null;
                     // Special formatting based on column type
                     if (label.includes('client name') || label === 'name') {
-                        html += '<td data-col="' + _esc(colId) + '"><span class="client-name">' + _formatFieldValueRevamped(val, col.field) + '</span></td>';
+                        html += '<td data-col="' + _esc(colId) + '"><span class="client-name">' + _formatFieldValueRevamped(val, col.field, colFieldType) + '</span></td>';
                     } else if (label.includes('file status') || label.includes('status')) {
                         html += '<td data-col="' + _esc(colId) + '">' + _formatFileStatus(val) + '</td>';
                     } else {
-                        html += '<td data-col="' + _esc(colId) + '">' + _formatFieldValueRevamped(val, col.field) + '</td>';
+                        html += '<td data-col="' + _esc(colId) + '">' + _formatFieldValueRevamped(val, col.field, colFieldType) + '</td>';
                     }
                 });
                 if (includeRelationshipAction) {
@@ -28247,6 +28273,19 @@ var InterfaceApp = (function() {
         var start = ps.page * ps.pageSize;
         var pageRecords = records.slice(start, start + ps.pageSize);
 
+        // Build field-name-to-fieldType lookup so cell formatters can
+        // delegate to formatCell() for computed/formula fields, matching
+        // the DB screen rendering exactly.
+        var _fieldTypeByName = {};
+        var _tblMeta = (typeof META_FIELDS !== 'undefined' && META_FIELDS && META_FIELDS[tableId]) ? META_FIELDS[tableId] : {};
+        Object.keys(_tblMeta).forEach(function(fid) {
+            var m = _tblMeta[fid];
+            if (m) {
+                if (m.fieldName) _fieldTypeByName[m.fieldName] = m.fieldType;
+                _fieldTypeByName[fid] = m.fieldType;
+            }
+        });
+
         var html = '<div class="iface-block iface-data-table-block" data-block-id="' + _esc(block.id) + '">';
         html += '<div class="iface-block-drag-handle">Drag</div>';
         html += '<div class="iface-block-header">';
@@ -28299,7 +28338,8 @@ var InterfaceApp = (function() {
                 columns.forEach(function(col) {
                     var val = _findFieldValue(r.fields || {}, col.field);
                     var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
-                    html += '<td data-col="' + _esc(colId) + '">' + _formatFieldValue(val) + '</td>';
+                    var colFieldType = _fieldTypeByName[col.field] || null;
+                    html += '<td data-col="' + _esc(colId) + '">' + _formatFieldValue(val, colFieldType) + '</td>';
                 });
                 html += '</tr>';
             });
