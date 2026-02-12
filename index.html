@@ -8102,7 +8102,8 @@ var OfflineSyncQueue = {
                     var writeBody = JSON.stringify({
                         tableId: entry.tableId,
                         recordId: entry.recordId,
-                        fields: entry.fieldChanges
+                        fields: entry.fieldChanges,
+                        access_token: session.accessToken
                     });
 
                     var response = await fetch(
@@ -15856,20 +15857,29 @@ async function webhookFetch(path) {
             await new Promise(function(r) { setTimeout(r, delay); });
         }
 
-        // Primary: query-param auth — avoids CORS preflight entirely
+        // Auth: POST with access_token in JSON body + query-param fallback
         var separator = path.indexOf('?') === -1 ? '?' : '&';
         var url = N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(session.accessToken);
 
         var response;
         try {
-            response = await fetch(url);
+            response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ access_token: session.accessToken })
+            });
         } catch (fetchErr) {
             // Network / CORS failure on the simple request — try header auth
             // as a last resort (will trigger OPTIONS preflight).
-            console.warn('[webhookFetch] Query-param fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
+            console.warn('[webhookFetch] POST fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
             try {
                 response = await fetch(N8N_WEBHOOK_BASE + path, {
-                    headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + session.accessToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ access_token: session.accessToken })
                 });
             } catch (headerErr) {
                 lastErr = new Error('Webhook unreachable (CORS/network): ' + headerErr.message);
@@ -15878,11 +15888,16 @@ async function webhookFetch(path) {
         }
 
         if (response.status === 401) {
-            // Query-param token may not have been picked up — retry with header
-            console.warn('[webhookFetch] 401 with query-param auth, retrying with header auth for ' + path);
+            // Token may not have been picked up — retry with header auth
+            console.warn('[webhookFetch] 401, retrying with header auth for ' + path);
             try {
                 response = await fetch(N8N_WEBHOOK_BASE + path, {
-                    headers: { 'Authorization': 'Bearer ' + session.accessToken }
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + session.accessToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ access_token: session.accessToken })
                 });
             } catch (headerErr) {
                 throw new Error('Webhook auth retry failed (CORS/network): ' + headerErr.message);
@@ -20221,7 +20236,7 @@ async function editRecord(tableId, recordId, fieldChanges) {
         // ── Stage 2: Write to server ──────────────────────────
         // Flat endpoint: PATCH /webhook/amino-write with {tableId, recordId, fields} in body
         var writeUrl = WRITE_API_BASE;
-        var writeBody = JSON.stringify({ tableId: tableId, recordId: recordId, fields: fieldChanges });
+        var writeBody = JSON.stringify({ tableId: tableId, recordId: recordId, fields: fieldChanges, access_token: session.accessToken });
         var response;
 
         try {
@@ -20460,7 +20475,8 @@ var CaseNotesAPI = (function() {
             eventId: noteData.eventId || ''
         };
 
-        // POST to the dedicated caseNotes webhook
+        // POST to the dedicated caseNotes webhook (access_token in body for auth)
+        payload.access_token = session.accessToken;
         var response;
         try {
             response = await fetch(
