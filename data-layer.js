@@ -2323,16 +2323,25 @@ var AminoData = (function() {
     async function hydrateAll(onProgress) {
         if (!_initialized) throw new Error('Call init() first');
 
-        // Primary: try bulk hydration from Box download webhook (~70k records)
+        // Primary & only automatic source: bulk hydration from Box download webhook (~70k records).
+        // Other sources (Postgres per-table) are only used when explicitly requested
+        // via hydrateAllFromPostgres() which requires manual user action.
         try {
             var boxTotal = await hydrateFromBoxDownload(onProgress);
             console.log('[AminoData] Primary hydration (box-download) succeeded:', boxTotal, 'records');
             return boxTotal;
         } catch (boxErr) {
-            console.warn('[AminoData] Primary hydration (box-download) failed, falling back to Postgres:', boxErr.message || boxErr);
+            console.warn('[AminoData] Primary hydration (box-download) failed. Alternative sources available via manual refresh only:', boxErr.message || boxErr);
+            return 0;
         }
+    }
 
-        // Fallback: per-table hydration from Postgres via /amino-records
+    // Manual-only fallback: per-table hydration from Postgres via /amino-records.
+    // This is NOT called automatically — only triggered by explicit user action
+    // (e.g. Settings → Refresh Database → "Use Postgres API").
+    async function hydrateAllFromPostgres(onProgress) {
+        if (!_initialized) throw new Error('Call init() first');
+
         var totalHydrated = 0;
         for (var i = 0; i < _tableIds.length; i++) {
             var tableId = _tableIds[i];
@@ -3287,6 +3296,7 @@ var AminoData = (function() {
         initWithKey: initWithKey,
         prepareKey: prepareKey,
         hydrateAll: hydrateAll,
+        hydrateAllFromPostgres: hydrateAllFromPostgres,
         initAndHydrate: initAndHydrate,
         restoreSession: restoreSession,
 
