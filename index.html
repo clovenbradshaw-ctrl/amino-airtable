@@ -4544,7 +4544,7 @@
             <h1 class="loading-title" id="loading-title">Setting Up Your Workspace</h1>
             <p class="loading-subtitle" id="loading-subtitle">We're downloading your data to this device for lightning-fast access.</p>
 
-            <div class="loading-facts">
+            <div class="loading-facts" id="loading-facts">
                 <div class="loading-fact">
                     <div class="loading-fact-value" id="loading-tables">0</div>
                     <div class="loading-fact-label">Tables</div>
@@ -13427,6 +13427,7 @@ function setLoadingOverlayMode(mode) {
     var titleEl = document.getElementById('loading-title');
     var subtitleEl = document.getElementById('loading-subtitle');
     var noteEl = document.getElementById('loading-note');
+    var factsEl = document.getElementById('loading-facts');
     var defaults = _ensureDefaultLoadingOverlayContent();
     if (!titleEl || !subtitleEl || !noteEl) return;
 
@@ -13434,10 +13435,12 @@ function setLoadingOverlayMode(mode) {
         titleEl.textContent = 'Loading from Local Memory';
         subtitleEl.textContent = "We found local cached data, so your workspace is starting instantly.";
         noteEl.innerHTML = '<strong>Fast startup:</strong> Using local memory avoids a full download and gets you to work faster.';
+        if (factsEl) factsEl.style.display = 'none';
     } else {
         titleEl.textContent = defaults.title;
         subtitleEl.textContent = defaults.subtitle;
         noteEl.innerHTML = defaults.note;
+        if (factsEl) factsEl.style.display = '';
     }
 }
 
