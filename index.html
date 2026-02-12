@@ -7797,11 +7797,16 @@ async function hydrateFromBoxAmoFile() {
     var apiKey = getBoxAmoApiKey();
     var url = BOX_AMO_DOWNLOAD_URL + '?api_key=' + encodeURIComponent(apiKey);
 
-    // Keep startup resilient: fail fast if Box is unreachable so normal hydration can continue.
+    // Keep startup resilient: abort if Box is unreachable so normal hydration can continue.
+    // The download proxies through n8n → Box.com which can be slow; 45s avoids
+    // premature aborts on larger snapshots while still failing on network errors.
     var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     var timeoutId = null;
     if (controller) {
-        timeoutId = setTimeout(function() { controller.abort(); }, 12000);
+        timeoutId = setTimeout(function() {
+            console.warn('[BoxAmo] Download timed out after 45 seconds, aborting');
+            controller.abort();
+        }, 45000);
     }
 
     var res;
@@ -17226,17 +17231,31 @@ async function init() {
     // metaResults[3] = loadTableSettings (void)
     appOpenedEventId = metaResults[4];
 
-    // Merge IDB metadata into in-memory state (additive — preserves any
-    // entries already populated by Box AMO hydration above).
-    tables.forEach(t => META_TABLES[t.tableId] = t);
-    fields.forEach(f => {
-        if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-        META_FIELDS[f.tableId][f.fieldId] = f;
-    });
-    views.forEach(v => {
-        if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-        META_VIEWS[v.tableId][v.viewId] = v;
-    });
+    // Merge IDB metadata into in-memory state.  When Box AMO hydration
+    // succeeded, use additive merge (||) so the fresh snapshot data takes
+    // precedence over potentially stale IDB entries.  This matches the
+    // pattern used in _startBackgroundHydration.
+    if (_boxHydrationSucceeded) {
+        tables.forEach(t => META_TABLES[t.tableId] = META_TABLES[t.tableId] || t);
+        fields.forEach(f => {
+            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+            META_FIELDS[f.tableId][f.fieldId] = META_FIELDS[f.tableId][f.fieldId] || f;
+        });
+        views.forEach(v => {
+            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+            META_VIEWS[v.tableId][v.viewId] = META_VIEWS[v.tableId][v.viewId] || v;
+        });
+    } else {
+        tables.forEach(t => META_TABLES[t.tableId] = t);
+        fields.forEach(f => {
+            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+            META_FIELDS[f.tableId][f.fieldId] = f;
+        });
+        views.forEach(v => {
+            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+            META_VIEWS[v.tableId][v.viewId] = v;
+        });
+    }
 
     // Build edges from field metadata on startup
     rebuildEdges();
@@ -19469,9 +19488,7 @@ async function backgroundSaveToIndexedDB(events, onProgress) {
                         await saveBatch([], [], [], dataBatch);
                     }
                 }
-                // Free this table's in-memory data now that it's persisted
-                delete window.IN_MEMORY_DATA[tableId];
-                // Yield to GC and UI
+                // Yield to UI periodically (memory freed in bulk after all tables saved)
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
         }
