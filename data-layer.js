@@ -46,6 +46,7 @@ var AminoData = (function() {
     var _recordCacheById = {};       // recordId -> decrypted record
     var _tableRecordIdIndex = {};    // tableId -> { recordId: true }
     var _tableCacheHydrated = {};    // tableId -> true when full table is cached
+    var _keyDerivationCache = { fingerprint: null, key: null };
 
     // ============ Encryption ============
 
@@ -106,9 +107,16 @@ var AminoData = (function() {
     // This ties the encryption directly to the authenticated Synapse user —
     // different users get different keys, and re-login regenerates the same key.
     async function deriveSynapseKey(password, userId) {
+        var fingerprint = userId + '::' + password;
+        if (_keyDerivationCache.fingerprint === fingerprint && _keyDerivationCache.key) {
+            return _keyDerivationCache.key;
+        }
+
         var encoder = new TextEncoder();
         var salt = encoder.encode(SYNAPSE_SALT_PREFIX + userId);
-        return deriveKey(password, salt);
+        var key = await deriveKey(password, salt);
+        _keyDerivationCache = { fingerprint: fingerprint, key: key };
+        return key;
     }
 
     // ============ Base64 <-> ArrayBuffer Helpers ============
@@ -434,6 +442,28 @@ var AminoData = (function() {
         return tables;
     }
 
+    async function loadTablesFromCache() {
+        if (!_db) throw new Error('Data layer not initialized');
+
+        var tx = _db.transaction('tables', 'readonly');
+        var tables = await idbGetAll(tx.objectStore('tables'));
+
+        _tables = tables;
+        _tableIds = tables.map(function(t) { return t.table_id; });
+
+        _tableRoomMap = {};
+        _roomTableMap = {};
+        for (var j = 0; j < tables.length; j++) {
+            var t = tables[j];
+            if (t.matrix_room_id) {
+                _tableRoomMap[t.table_id] = t.matrix_room_id;
+                _roomTableMap[t.matrix_room_id] = t.table_id;
+            }
+        }
+
+        return tables;
+    }
+
     // ============ Record Encryption Helpers ============
 
     async function encryptAndStoreRecord(store, record, tableId) {
@@ -453,6 +483,29 @@ var AminoData = (function() {
             lastSynced: normalizedRecord.lastSynced
         });
         cacheRecord(normalizedRecord);
+    }
+
+    async function prepareEncryptedRecords(records, tableId) {
+        return Promise.all(records.map(async function(record) {
+            var normalizedRecord = {
+                id: record.id,
+                tableId: tableId,
+                tableName: record.tableName || tableId,
+                fields: record.fields || {},
+                lastSynced: record.lastSynced || new Date().toISOString()
+            };
+            var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(normalizedRecord.fields));
+            return {
+                entry: {
+                    id: normalizedRecord.id,
+                    tableId: normalizedRecord.tableId,
+                    tableName: normalizedRecord.tableName,
+                    fields: encryptedFields,
+                    lastSynced: normalizedRecord.lastSynced
+                },
+                normalizedRecord: normalizedRecord
+            };
+        }));
     }
 
     async function decryptRecord(entry) {
@@ -679,10 +732,9 @@ var AminoData = (function() {
         var rebuildTx = _db.transaction('records', 'readonly');
         var rebuildIndex = rebuildTx.objectStore('records').index('byTable');
         var rebuildEntries = await idbGetAll(rebuildIndex, tableId);
-        var rebuiltRecords = [];
-        for (var rr = 0; rr < rebuildEntries.length; rr++) {
-            rebuiltRecords.push(await decryptRecord(rebuildEntries[rr]));
-        }
+        var rebuiltRecords = await Promise.all(rebuildEntries.map(function(entry) {
+            return decryptRecord(entry);
+        }));
         cacheFullTable(tableId, rebuiltRecords);
 
         console.warn('[AminoData] Rebuilt', recordIds.length, 'records for table', tableId, 'from Matrix room history');
@@ -714,10 +766,12 @@ var AminoData = (function() {
         var BATCH_SIZE = 200;
         for (var b = 0; b < records.length; b += BATCH_SIZE) {
             var batch = records.slice(b, b + BATCH_SIZE);
+            var encryptedBatch = await prepareEncryptedRecords(batch, tableId);
             var tx = _db.transaction('records', 'readwrite');
             var store = tx.objectStore('records');
-            for (var i = 0; i < batch.length; i++) {
-                await encryptAndStoreRecord(store, batch[i], tableId);
+            for (var i = 0; i < encryptedBatch.length; i++) {
+                await idbPut(store, encryptedBatch[i].entry);
+                cacheRecord(encryptedBatch[i].normalizedRecord);
             }
             await idbTxDone(tx);
         }
@@ -764,10 +818,12 @@ var AminoData = (function() {
             var BATCH_SIZE = 200;
             for (var b = 0; b < records.length; b += BATCH_SIZE) {
                 var batch = records.slice(b, b + BATCH_SIZE);
+                var encryptedBatch = await prepareEncryptedRecords(batch, tableId);
                 var tx = _db.transaction('records', 'readwrite');
                 var store = tx.objectStore('records');
-                for (var i = 0; i < batch.length; i++) {
-                    await encryptAndStoreRecord(store, batch[i], tableId);
+                for (var i = 0; i < encryptedBatch.length; i++) {
+                    await idbPut(store, encryptedBatch[i].entry);
+                    cacheRecord(encryptedBatch[i].normalizedRecord);
                 }
                 await idbTxDone(tx);
             }
@@ -1556,10 +1612,9 @@ var AminoData = (function() {
         var index = tx.objectStore('records').index('byTable');
         var entries = await idbGetAll(index, tableId);
 
-        var results = [];
-        for (var i = 0; i < entries.length; i++) {
-            results.push(await decryptRecord(entries[i]));
-        }
+        var results = await Promise.all(entries.map(function(entry) {
+            return decryptRecord(entry);
+        }));
         cacheFullTable(tableId, results);
         return results.map(function(record) { return cloneRecord(record); });
     }
@@ -1659,10 +1714,20 @@ var AminoData = (function() {
         await idbPut(metaStore, { key: 'lastOnlineAuth', value: Date.now() });
         await idbTxDone(metaTx);
 
-        // Load table list from API
-        await fetchAndStoreTables();
+        // Load cached tables immediately (fast startup + offline support),
+        // then refresh from API when network is available.
+        var cachedTables = await loadTablesFromCache();
+        try {
+            await fetchAndStoreTables();
+            _offlineMode = false;
+        } catch (err) {
+            if (!cachedTables.length) {
+                throw err;
+            }
+            _offlineMode = true;
+            console.warn('[AminoData] Using cached table metadata (offline):', err.message || err);
+        }
 
-        _offlineMode = false;
         _initialized = true;
         console.log('[AminoData] Initialized with', _tables.length, 'tables (Synapse-derived encryption)');
 
@@ -1754,6 +1819,7 @@ var AminoData = (function() {
         _orgSpaceId = null;
         _offlineMode = false;
         _initialized = false;
+        _keyDerivationCache = { fingerprint: null, key: null };
         clearRecordCache();
 
         if (clearData && _db) {
