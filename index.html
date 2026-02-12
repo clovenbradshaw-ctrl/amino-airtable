@@ -21526,7 +21526,7 @@ function computedFieldLabel(fieldType) {
 // display computed formula values, not just rows that had values stored.
 
 var _compiledFormulaCache = {};   // tableId -> { fieldId -> { fn, deps, fieldName } }
-var _compiledFormulaCacheKey = ''; // invalidation key
+var _compiledFormulaCacheKeys = {}; // tableId -> invalidation key
 var _disableFormulaEvaluation = false;
 
 function _shouldSkipFormulaColumns(recordCount, formulaCount) {
@@ -21573,13 +21573,16 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         return f.fieldId + ':' + expr;
     }).join(',');
     var cached = _compiledFormulaCache[tableId];
-    if (!cached || _compiledFormulaCacheKey !== cacheKey) {
+    if (!cached || _compiledFormulaCacheKeys[tableId] !== cacheKey) {
         cached = {};
         var compiledList = [];
         for (var i = 0; i < formulaFields.length; i++) {
             var f = formulaFields[i];
             try {
                 var formulaExpr = f.options.formula || f.options.expression;
+                // Resolve field IDs in the formula expression to human-readable
+                // names so that {fldXYZ} references match the aliased record keys.
+                formulaExpr = resolveFormulaFieldNames(formulaExpr, tableId);
                 var ast = engine.parseAirtableFormula(formulaExpr);
                 var refs = engine.collectFieldRefs(ast);
                 var fn = engine.compileFormula(ast);
@@ -21624,7 +21627,7 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
 
         cached._sorted = sorted;
         _compiledFormulaCache[tableId] = cached;
-        _compiledFormulaCacheKey = cacheKey;
+        _compiledFormulaCacheKeys[tableId] = cacheKey;
     }
 
     var sorted = cached._sorted;
