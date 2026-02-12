@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DB Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amino Workspace</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -4390,11 +4390,36 @@
             /* Disable hover card transform on touch */
             .home-card:hover { transform: none; }
         }
+
+        .app-modal-backdrop {
+            position: fixed; inset: 0; background: rgba(2, 6, 23, 0.65);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 4000; padding: 16px;
+        }
+        .app-modal-card {
+            width: min(520px, 100%); background: var(--bg-elevated); color: var(--text-primary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-xl); padding: 16px;
+        }
+        .app-modal-title { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+        .app-modal-message { color: var(--text-secondary); font-size: 14px; line-height: 1.45; margin-bottom: 14px; }
+        .app-modal-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border-secondary); border-radius: var(--radius-md); background: var(--bg-primary); color: var(--text-primary); margin-bottom: 14px; }
+        .app-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+        .app-modal-btn { padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--border-primary); background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+        .app-modal-btn.primary { background: var(--primary-600); color: #fff; border-color: var(--primary-600); }
+        .app-modal-btn.danger { background: var(--danger-600); color: #fff; border-color: var(--danger-600); }
     </style>
 </head>
 <body>
     <!-- Toast Notification Container -->
     <div id="toast-container"></div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var btn = document.getElementById('skip-encryption-btn');
+        if (btn) btn.style.display = ALLOW_UNENCRYPTED_MODE ? '' : 'none';
+    });
+    </script>
 
     <!-- Encryption Unlock Screen -->
     <div id="unlock-screen" class="hidden">
@@ -4427,7 +4452,7 @@
                 <span class="passkey-icon">&#128273;</span> Set Up with Passkey
             </button>
 
-            <button id="skip-encryption-btn" class="secondary" onclick="skipEncryption()">Skip (Not Recommended)</button>
+            <button id="skip-encryption-btn" class="secondary" onclick="skipEncryption()">Allow Unencrypted Mode (Disabled by Policy)</button>
 
             <div class="unlock-info">
                 Passkeys use your device's biometrics (Face ID, Touch ID, Windows Hello) for secure, passwordless authentication.
@@ -4462,7 +4487,7 @@
         <div class="synapse-login-box">
             <!-- Login Form -->
             <div id="synapse-login-form">
-                <h2>Amino Viewer</h2>
+                <h2>Amino Workspace</h2>
                 <p>Sign in to your account at app.aminoimmigration.com</p>
                 <div id="synapse-login-error" class="synapse-error"></div>
                 <label for="synapse-username">Username</label>
@@ -4504,8 +4529,8 @@
 
     <div id="view-selection-screen" class="hidden" style="position: fixed; inset: 0; background: var(--bg-primary); display: flex; align-items: center; justify-content: center; z-index: 104;">
         <div style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); padding: 32px; width: 400px; box-shadow: var(--shadow-xl);">
-            <h2 style="font-size: 20px; margin-bottom: 8px; color: var(--text-primary);">Amino Viewer</h2>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Choose how to view your data</p>
+            <h2 style="font-size: 20px; margin-bottom: 8px; color: var(--text-primary);">Amino Workspace</h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Choose how to access your workspace</p>
             <button id="view-as-database-btn" style="width: 100%; padding: 14px; background: var(--primary-500); border: none; border-radius: var(--radius-md); color: #fff; font-size: 14px; cursor: pointer; font-weight: 500; margin-bottom: 10px; transition: background var(--transition-fast);">View as Database</button>
             <button id="view-as-interface-btn" style="width: 100%; padding: 14px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-secondary); font-size: 14px; cursor: pointer; font-weight: 500; transition: background var(--transition-fast);">View as Interface</button>
         </div>
@@ -4515,7 +4540,7 @@
 
     <div id="auth-screen" class="hidden">
         <div class="auth-box">
-            <h2>Amino Viewer</h2>
+            <h2>Amino Workspace</h2>
             <p>Connect to your Amino event stream</p>
             <div id="auth-error" class="auth-error"></div>
             <input type="password" id="api-key-input" placeholder="API Key" autocomplete="off">
@@ -4778,7 +4803,7 @@
                         <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
                     </svg>
                 </div>
-                <h2>Amino Viewer</h2>
+                <h2>Amino Workspace</h2>
             </div>
             <div class="sidebar-search">
                 <span class="sidebar-search-icon">
@@ -6000,13 +6025,13 @@ async function createPasskey() {
     var publicKeyOptions = {
         challenge: challenge,
         rp: {
-            name: 'Amino Viewer',
+            name: 'Amino Workspace',
             id: window.location.hostname
         },
         user: {
             id: userId,
             name: 'amino-user',
-            displayName: 'Amino Viewer User'
+            displayName: 'Amino Workspace User'
         },
         pubKeyCredParams: [
             { alg: -7, type: 'public-key' },   // ES256
@@ -6372,9 +6397,64 @@ async function setupEncryptionWithPasskey() {
     }
 }
 
+function _escapeHtml(text) {
+    return String(text || '').replace(/[&<>"']/g, function(ch) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch];
+    });
+}
+
+function showAppModal(options) {
+    options = options || {};
+    return new Promise(function(resolve) {
+        var backdrop = document.createElement('div');
+        backdrop.className = 'app-modal-backdrop';
+        var title = _escapeHtml(options.title || 'Confirm');
+        var message = _escapeHtml(options.message || '');
+        var inputHtml = options.input ? '<input class="app-modal-input" id="app-modal-input" value="' + _escapeHtml(options.defaultValue || '') + '" />' : '';
+        var dangerClass = options.danger ? ' danger' : '';
+        backdrop.innerHTML = '<div class="app-modal-card" role="dialog" aria-modal="true">' +
+            '<div class="app-modal-title">' + title + '</div>' +
+            '<div class="app-modal-message">' + message.replace(/\n/g, '<br>') + '</div>' +
+            inputHtml +
+            '<div class="app-modal-actions">' +
+            '<button class="app-modal-btn" id="app-modal-cancel">' + _escapeHtml(options.cancelText || 'Cancel') + '</button>' +
+            '<button class="app-modal-btn primary' + dangerClass + '" id="app-modal-ok">' + _escapeHtml(options.okText || 'Continue') + '</button>' +
+            '</div></div>';
+        document.body.appendChild(backdrop);
+        var ok = backdrop.querySelector('#app-modal-ok');
+        var cancel = backdrop.querySelector('#app-modal-cancel');
+        var input = backdrop.querySelector('#app-modal-input');
+        function done(val) { backdrop.remove(); resolve(val); }
+        cancel.onclick = function() { done(null); };
+        ok.onclick = function() { done(input ? input.value : true); };
+        backdrop.addEventListener('click', function(e) { if (e.target === backdrop) done(null); });
+        if (input) { input.focus(); input.select(); } else { ok.focus(); }
+    });
+}
+
+async function appConfirm(message, options) {
+    var result = await showAppModal(Object.assign({ message: message, title: 'Confirm', okText: 'Continue', cancelText: 'Cancel' }, options || {}));
+    return !!result;
+}
+
+async function appPrompt(message, defaultValue, options) {
+    return showAppModal(Object.assign({ message: message, title: 'Input', okText: 'Save', cancelText: 'Cancel', input: true, defaultValue: defaultValue || '' }, options || {}));
+}
+
+async function appAlert(message, options) {
+    await showAppModal(Object.assign({ message: message, title: 'Notice', okText: 'OK', cancelText: 'Close' }, options || {}));
+}
+
+var ALLOW_UNENCRYPTED_MODE = false;
+
 // Skip encryption (not recommended)
-function skipEncryption() {
-    if (!confirm('Are you sure? Your API key and cached data will be stored unencrypted, which means anyone with access to your browser could read them.')) {
+async function skipEncryption() {
+    if (!ALLOW_UNENCRYPTED_MODE) {
+        showToast('warning', 'Unencrypted mode is disabled by policy.');
+        return;
+    }
+
+    if (!(await appConfirm('Your API key and cached data will be stored unencrypted. Anyone with browser access could read them.', { title: 'Disable Encryption?', okText: 'Disable Encryption', danger: true }))) {
         return;
     }
 
@@ -6481,7 +6561,7 @@ async function unlockWithPasskey() {
 
 // Clear all encrypted data and start fresh
 async function clearEncryptedData() {
-    if (!confirm('This will delete ALL local data including your cached database. Your data on the server is not affected. Continue?')) {
+    if (!(await appConfirm('This deletes ALL local data including your cached database. Server data is not affected.', { title: 'Clear Local Data?', okText: 'Delete Local Data', danger: true }))) {
         return;
     }
 
@@ -6507,7 +6587,7 @@ async function clearEncryptedData() {
         showUnlockScreen('setup');
     } catch (e) {
         console.error('Failed to clear data:', e);
-        alert('Failed to clear data: ' + e.message);
+        showToast('error', 'Failed to clear data: ' + e.message);
     }
 }
 
@@ -10550,7 +10630,7 @@ async function trySynapseLogin() {
             type: 'm.login.password',
             identifier: { type: 'm.id.user', user: username },
             password: password,
-            initial_device_display_name: 'Amino Viewer'
+            initial_device_display_name: 'Amino Workspace'
         };
 
         var response = await fetch(SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/login', {
@@ -10943,7 +11023,7 @@ function restoreMatrixSessionQuietly() {
 }
 
 async function clearLocalAndReset() {
-    if (!confirm('Clear all local data?')) return;
+    if (!(await appConfirm('Clear all local data?', { title: 'Confirm Reset', okText: 'Clear Data', danger: true }))) return;
     try {
         db = await openDB();
         await clearAllData();
@@ -10962,7 +11042,7 @@ async function clearLocalAndReset() {
 // Refresh the entire local database by clearing all cached data and
 // re-downloading everything from the PostgreSQL-backed webhook API.
 async function refreshLocalDB() {
-    if (!confirm('Refresh local database?\n\nThis will clear all locally cached data and re-download everything from the server. The app will be unavailable during the refresh.')) return;
+    if (!(await appConfirm('This clears local cache and re-downloads all data from the server. The app will be briefly unavailable.', { title: 'Refresh Local Database?', okText: 'Refresh Database', danger: true }))) return;
 
     var btn = document.getElementById('refresh-db-btn');
     var statusEl = document.getElementById('refresh-db-status');
@@ -12425,8 +12505,9 @@ async function toggleViewFolder(tableId, folderId, event) {
 
 // Create a new view folder
 async function createViewFolder(tableId) {
-    var folderName = prompt('Enter folder name:');
-    if (!folderName) return;
+    var folderName = await appPrompt('Enter folder name:', '', { title: 'Create Folder', okText: 'Create' });
+    if (!folderName || !folderName.trim()) return;
+    folderName = folderName.trim();
 
     var folderId = 'vfld' + Date.now();
     var folder = {
@@ -22602,7 +22683,7 @@ async function submitCreateView() {
 
     var viewName = nameInput.value.trim();
     if (!viewName) {
-        alert('Please enter a view name');
+        showToast('warning', 'Please enter a view name');
         nameInput.focus();
         return;
     }
@@ -22622,7 +22703,7 @@ async function submitCreateView() {
 
         // Handle "create new workspace" option
         if (workspaceId === '_new') {
-            var wsName = prompt('Enter workspace name:');
+            var wsName = await appPrompt('Enter workspace name:', '', { title: 'Create Workspace', okText: 'Create' });
             if (wsName) {
                 workspaceId = await createWorkspace(wsName);
             } else {
@@ -22704,7 +22785,7 @@ async function submitCreateView() {
         await selectTableView(currentTable, newViewId);
     } catch (err) {
         console.error('Failed to create view:', err);
-        alert('Failed to create view: ' + (err.message || 'Unknown error'));
+showToast('error', 'Failed to create view: ' + (err.message || 'Unknown error'));
     } finally {
         // Re-enable button
         if (submitBtn) {
@@ -27247,7 +27328,7 @@ var InterfaceApp = (function() {
 
     async function removeBlock(blockId) {
         if (_currentUserRole !== 'admin' || !_editMode) return;
-        if (!confirm('Remove this block from the page?')) return;
+        if (!(await appConfirm('Remove this block from the page?', { title: 'Remove Block?', okText: 'Remove', danger: true }))) return;
         var page = _schema.pages.find(function(p) { return p.id === _activePage; });
         if (!page) return;
         page.blocks = page.blocks.filter(function(b) { return b.id !== blockId; });
@@ -27262,8 +27343,9 @@ var InterfaceApp = (function() {
 
     async function addPage() {
         if (_currentUserRole !== 'admin') return;
-        var name = prompt('New page name:');
-        if (!name) return;
+        var name = await appPrompt('New page name:', '', { title: 'Add Page', okText: 'Create Page' });
+        if (!name || !name.trim()) return;
+        name = name.trim();
         var baseId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'page';
         var id = baseId;
         var counter = 2;
