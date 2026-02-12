@@ -2883,6 +2883,21 @@
         .iface-table-revamp td .status-dot.red { background: var(--danger-500); }
         .iface-table-revamp td .status-dot.slate { background: var(--text-muted); }
 
+        /* ─── Revamp table responsive: progressive column hiding ─── */
+        @media (max-width: 1400px) {
+            .iface-table-revamp th[data-col="last-modified-by"],
+            .iface-table-revamp td[data-col="last-modified-by"],
+            .iface-table-revamp th[data-col="email"],
+            .iface-table-revamp td[data-col="email"] { display: none; }
+        }
+        @media (max-width: 1200px) {
+            .iface-table-revamp th[data-col="country"],
+            .iface-table-revamp td[data-col="country"],
+            .iface-table-revamp th[data-col="event-info"],
+            .iface-table-revamp td[data-col="event-info"],
+            .iface-table-revamp th[data-col="phone"],
+            .iface-table-revamp td[data-col="phone"] { display: none; }
+        }
         @media (max-width: 1024px) {
             .iface-page[data-page-id="clients"] .iface-page-content.full-width {
                 padding: 20px 14px 16px;
@@ -2909,8 +2924,27 @@
             .iface-table-revamp td {
                 padding: 9px 12px;
             }
+            .iface-table-revamp th[data-col="a-"],
+            .iface-table-revamp td[data-col="a-"],
+            .iface-table-revamp th[data-col="last-modified"],
+            .iface-table-revamp td[data-col="last-modified"] { display: none; }
         }
-
+        @media (max-width: 768px) {
+            .iface-table-revamp th[data-col="dob-age"],
+            .iface-table-revamp td[data-col="dob-age"],
+            .iface-table-revamp th[data-col="ich-atty"],
+            .iface-table-revamp td[data-col="ich-atty"],
+            .iface-table-revamp th[data-col="mch-atty"],
+            .iface-table-revamp td[data-col="mch-atty"],
+            .iface-table-revamp th[data-col="case-manager"],
+            .iface-table-revamp td[data-col="case-manager"] { display: none; }
+            .iface-table-revamp { table-layout: auto; }
+            .iface-table-revamp thead th,
+            .iface-table-revamp td {
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+        }
         @media (max-width: 640px) {
             .iface-page[data-page-id="clients"] .iface-page-content.full-width {
                 padding: 14px 8px 12px;
@@ -2941,6 +2975,18 @@
             }
             .iface-table-revamp td {
                 max-width: 180px;
+            }
+            .iface-table-revamp th[data-col="next-event"],
+            .iface-table-revamp td[data-col="next-event"] { display: none; }
+        }
+        @media (max-width: 480px) {
+            .iface-table-revamp thead th,
+            .iface-table-revamp td {
+                padding: 6px 8px;
+                font-size: 11px;
+            }
+            .iface-table-revamp td {
+                max-width: 140px;
             }
         }
 
@@ -3084,6 +3130,41 @@
             .iface-stats-row { grid-template-columns: repeat(2, 1fr); }
             .iface-home-columns { grid-template-columns: 1fr; }
             .iface-events-layout { grid-template-columns: 1fr; }
+        }
+
+        /* ─── Interface app: comprehensive mobile improvements ─── */
+        @media (max-width: 640px) {
+            .iface-mainnav {
+                height: auto; min-height: 48px;
+                padding: 8px 12px; gap: 8px; flex-wrap: wrap;
+            }
+            .iface-mainnav-left { flex-wrap: wrap; gap: 8px; }
+            .iface-logo-text { display: none; }
+            .iface-nav-divider { display: none; }
+            .iface-quick-action span:not(svg) { display: none; }
+            .iface-quick-action { padding: 6px 10px; }
+            .iface-global-search { width: 120px; font-size: 11px; padding: 6px 10px; }
+            .iface-edit-toggle { font-size: 11px; padding: 4px 8px; }
+            .iface-page-tabs {
+                gap: 0; padding: 0 8px;
+                -ms-overflow-style: none; scrollbar-width: none;
+            }
+            .iface-page-tab { padding: 6px 10px; font-size: 12px; }
+            .iface-filter-bar {
+                overflow-x: auto; flex-wrap: nowrap;
+                -webkit-overflow-scrolling: touch;
+                -ms-overflow-style: none; scrollbar-width: none;
+                padding-bottom: 4px;
+            }
+            .iface-filter-bar::-webkit-scrollbar { display: none; }
+            .iface-filter-pill { flex-shrink: 0; font-size: 11px; padding: 4px 10px; }
+            .iface-pagination { flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+            .iface-pagination span { font-size: 11px; }
+        }
+        @media (max-width: 480px) {
+            .iface-mainnav-right { gap: 4px; }
+            .iface-global-search { width: 100px; }
+            .iface-quick-action.secondary { display: none; }
         }
 
         .hidden { display: none !important; }
@@ -6047,7 +6128,8 @@
 // ============ Theme Management ============
 (function() {
     var saved = localStorage.getItem('amino_theme');
-    if (saved === 'light') document.documentElement.classList.add('light-theme');
+    // Default to light theme unless user explicitly chose dark
+    if (saved !== 'dark') document.documentElement.classList.add('light-theme');
 })();
 
 // ============ Mobile Sidebar Toggle ============
@@ -6212,15 +6294,15 @@ function renderTabBar() {
     container.appendChild(frag);
 
     // Update theme icon state on render
-    var saved = localStorage.getItem('amino_theme');
+    var isLight = document.documentElement.classList.contains('light-theme');
     var icon = document.getElementById('theme-icon');
     var label = document.getElementById('theme-label');
-    if (icon) icon.textContent = saved === 'light' ? '\u263E' : '\u2606';
-    if (label) label.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
+    if (icon) icon.textContent = isLight ? '\u263E' : '\u2606';
+    if (label) label.textContent = isLight ? 'Dark Mode' : 'Light Mode';
     var fhIcon = document.getElementById('file-header-theme-icon');
     var fhLabel = document.getElementById('file-header-theme-label');
-    if (fhIcon) fhIcon.textContent = saved === 'light' ? '\u263E' : '\u2606';
-    if (fhLabel) fhLabel.textContent = saved === 'light' ? 'Dark Mode' : 'Light Mode';
+    if (fhIcon) fhIcon.textContent = isLight ? '\u263E' : '\u2606';
+    if (fhLabel) fhLabel.textContent = isLight ? 'Dark Mode' : 'Light Mode';
 }
 
 var DB_NAME = 'amino';
@@ -27333,8 +27415,9 @@ var InterfaceApp = (function() {
             if (block.segment && block.segment.sort && block.segment.sort.field === col.field) {
                 sortIndicator = block.segment.sort.dir === 'asc' ? ' \u2191' : ' \u2193';
             }
+            var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
             var w = col.width ? ' style="min-width:' + col.width + 'px;max-width:' + (col.width + 80) + 'px"' : '';
-            html += '<th' + w + ' onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + sortIndicator + '</th>';
+            html += '<th' + w + ' data-col="' + _esc(colId) + '" onclick="InterfaceApp.onColumnSort(\'' + _esc(block.id) + '\', \'' + _esc(col.field) + '\')">' + _esc(col.label || col.field) + sortIndicator + '</th>';
         });
         if (includeRelationshipAction) {
             html += '<th style="width:180px;">Client Relationship Graph</th>';
@@ -27354,13 +27437,14 @@ var InterfaceApp = (function() {
                 columns.forEach(function(col) {
                     var val = _findFieldValue(r.fields || {}, col.field);
                     var label = (col.label || col.field || '').toLowerCase();
+                    var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
                     // Special formatting based on column type
                     if (label.includes('client name') || label === 'name') {
-                        html += '<td><span class="client-name">' + _formatFieldValueRevamped(val, col.field) + '</span></td>';
+                        html += '<td data-col="' + _esc(colId) + '"><span class="client-name">' + _formatFieldValueRevamped(val, col.field) + '</span></td>';
                     } else if (label.includes('file status') || label.includes('status')) {
-                        html += '<td>' + _formatFileStatus(val) + '</td>';
+                        html += '<td data-col="' + _esc(colId) + '">' + _formatFileStatus(val) + '</td>';
                     } else {
-                        html += '<td>' + _formatFieldValueRevamped(val, col.field) + '</td>';
+                        html += '<td data-col="' + _esc(colId) + '">' + _formatFieldValueRevamped(val, col.field) + '</td>';
                     }
                 });
                 if (includeRelationshipAction) {
