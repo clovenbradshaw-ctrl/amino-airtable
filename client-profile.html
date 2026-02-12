@@ -676,6 +676,37 @@
 
     function norm(s) { return String(s || '').trim().toLowerCase(); }
 
+    var CLIENT_ID_FIELD_ALIASES = [
+      'recordId', 'Record ID', 'record_id',
+      'Client Record ID', 'clientId', 'client_id',
+      'airtableId',
+      'PP ID', 'PPID', 'Client_PP_ID'
+    ];
+
+    function normKey(s) {
+      return norm(s).replace(/[^a-z0-9]/g, '');
+    }
+
+    function collectAliasValues(fields, aliases) {
+      var out = [];
+      if (!fields || typeof fields !== 'object') return out;
+
+      var aliasSet = new Set((aliases || []).map(normKey));
+      Object.keys(fields).forEach(function(fieldName) {
+        if (!aliasSet.has(normKey(fieldName))) return;
+        var value = fields[fieldName];
+        if (Array.isArray(value)) {
+          value.forEach(function(item) {
+            if (item != null && item !== '') out.push(String(item));
+          });
+          return;
+        }
+        if (value != null && value !== '') out.push(String(value));
+      });
+
+      return out;
+    }
+
     function showToast(msg, type) {
       var el = document.getElementById('toast');
       el.textContent = msg;
@@ -814,10 +845,8 @@
         var f = row.fields || {};
         var candidates = [
           row.recordId, row.id,
-          f.recordId, f.airtableId,
-          f['Client Record ID'], f.clientId,
-          f['Record ID'], f['record_id']
-        ];
+          f.recordId, f.airtableId
+        ].concat(collectAliasValues(f, CLIENT_ID_FIELD_ALIASES));
         return candidates.some(function(v) { return norm(v) === needle; });
       }) || null;
     }
@@ -831,8 +860,8 @@
       if (state.clientRecord) {
         if (state.clientRecord.recordId) ids.add(state.clientRecord.recordId);
         var f = state.clientRecord.fields || {};
-        ['recordId', 'airtableId', 'Client Record ID', 'Record ID', 'clientId'].forEach(function(k) {
-          if (f[k]) ids.add(String(f[k]));
+        collectAliasValues(f, CLIENT_ID_FIELD_ALIASES).forEach(function(value) {
+          ids.add(String(value));
         });
       }
       return ids;
@@ -880,7 +909,7 @@
 
       if (!fkNames.length) {
         // Fallback: try common FK field names
-        fkNames = ['Client', 'Client Record ID', 'clientId', 'client_airtable_id', 'Softr_Link_to_clients', 'Client_PP_ID'];
+        fkNames = ['Client', 'Client Record ID', 'clientId', 'client_airtable_id', 'Softr_Link_to_clients', 'Client_PP_ID', 'recordId', 'Record ID', 'PP ID', 'PPID'];
       }
 
       return rows.filter(function(row) {
