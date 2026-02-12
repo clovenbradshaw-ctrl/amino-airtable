@@ -5701,7 +5701,7 @@
                 </div>
             </div>
             <div class="iface-mainnav-right">
-                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search clients, events..." oninput="InterfaceApp.onGlobalSearch(this.value)">
+                <input type="text" class="iface-global-search" id="iface-global-search" placeholder="Search clients, events..." onkeydown="if(event.key==='Enter')InterfaceApp.onGlobalSearch(this.value)">
                 <button class="iface-quick-action secondary" onclick="InterfaceApp.navigatePage('events')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                     New Event
@@ -26690,7 +26690,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'List') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -26723,7 +26723,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Timeline') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
@@ -27262,7 +27262,7 @@ var InterfaceApp = (function() {
         var countLabel = total === allCount ? (total + ' records') : (total + ' of ' + allCount + ' records');
         html += '<h2>' + _esc(block.label || 'Table') + ' <span class="muted">\u00B7 ' + countLabel + '</span></h2>';
         html += '<div class="iface-clients-header-actions">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." style="width:200px;margin-right:4px;" value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         if (_currentUserRole === 'admin') {
             html += '<button class="iface-table-settings-btn" onclick="InterfaceApp.toggleTableSettings(\'' + _esc(block.id) + '\')">';
             html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -27696,7 +27696,7 @@ var InterfaceApp = (function() {
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Table') + ' <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(' + total + ' records)</span></span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
-        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" onkeydown="if(event.key===\'Enter\')InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
         html += '<div class="iface-block-actions">';
         html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
         html += '</div></div></div>';
