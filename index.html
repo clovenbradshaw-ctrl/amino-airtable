@@ -9024,6 +9024,39 @@ function normalizeHistoryEvent(matrixEvent) {
     };
 }
 
+function getHistoryFieldName(tableId, fieldId) {
+    if (fieldId === '__created_at') return 'Created At';
+    return (META_FIELDS[tableId] && META_FIELDS[tableId][fieldId] && META_FIELDS[tableId][fieldId].fieldName) || fieldId;
+}
+
+function maybeAddSyntheticCreatedAtHistory(fieldHistoryEntries, baseMeta, payload, state) {
+    if (!baseMeta || !payload) return;
+
+    var fieldOps = payload.fields || {};
+    var hasFieldChanges = Object.keys(fieldOps.INS || {}).length > 0 ||
+        Object.keys(fieldOps.ALT || {}).length > 0 ||
+        Object.keys(fieldOps.SYN || {}).length > 0 ||
+        (Array.isArray(fieldOps.NUL) && fieldOps.NUL.length > 0);
+    if (hasFieldChanges) return;
+
+    var op = payload.op || null;
+    if (op !== 'INS') return;
+
+    var createdAt = payload._created_at || baseMeta.timestamp || null;
+    if (!createdAt) return;
+
+    fieldHistoryEntries.push(Object.assign({}, baseMeta, {
+        fieldId: '__created_at',
+        changeType: 'created',
+        oldValue: null,
+        newValue: createdAt
+    }));
+
+    if (state && state.__created_at === undefined) {
+        state.__created_at = createdAt;
+    }
+}
+
 // Fetch and process mutation history for a specific record from Matrix.
 // Paginates forward (oldest-first) through the table's Matrix room,
 // filters by recordId client-side, decrypts encrypted payloads, and
@@ -9185,6 +9218,8 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
                         delete state[nulFields[n]];
                     }
                 }
+
+                maybeAddSyntheticCreatedAtHistory(fieldHistoryEntries, baseMeta, payload, state);
             } else if (content.op && content.fields) {
                 // Flat format: { recordId, op, fields: { key: val } }
                 var op = content.op;
@@ -12215,6 +12250,15 @@ async function processEvents(events, options) {
                     delete state[fieldId];
                 });
             }
+
+            maybeAddSyntheticCreatedAtHistory(fieldHistoryEntries, {
+                tableId: tableId,
+                recordId: recordId,
+                eventId: eventId,
+                timestamp: timestamp,
+                actor: actor,
+                device: device
+            }, payload, state);
         }
 
         // Track the latest event timestamp for incremental sync
@@ -16529,7 +16573,7 @@ function renderHistoryModal() {
     var html = '<div class="history-timeline">';
 
     for (var item of filteredData) {
-        var fieldName = fields[item.fieldId]?.fieldName || item.fieldId;
+        var fieldName = getHistoryFieldName(currentHistoryTableId, item.fieldId);
         var changeTypeClass = item.changeType || 'updated';
         var timestamp = item.timestamp ? formatTimestamp(item.timestamp) : 'Unknown time';
         var histActor = item.actor || null;
@@ -20850,6 +20894,13 @@ function buildFieldHistoryFromRawEvents(tableId, recordId, events) {
                 delete state[fieldId];
             });
         }
+
+        maybeAddSyntheticCreatedAtHistory(fieldHistoryEntries, {
+            tableId: tableId,
+            recordId: recordId,
+            eventId: eventId,
+            timestamp: timestamp
+        }, payload, state);
     }
 
     // Return sorted by eventId descending (most recent first) for display
@@ -20897,7 +20948,7 @@ async function renderProfileSyncHistory() {
         var html = '<div class="profile-sync-history-list">';
 
         history.forEach(function(item) {
-            var fieldName = fields[item.fieldId]?.fieldName || item.fieldId;
+            var fieldName = getHistoryFieldName(profileCurrentTableId, item.fieldId);
             var changeType = item.changeType || 'updated';
             var timestamp = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown';
             var sender = item.sender || null;
