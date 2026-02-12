@@ -1482,8 +1482,10 @@
       try {
         if (session.password) {
           await AminoData.init(session.accessToken, session.userId, session.password);
-        } else if (AminoData.restoreSession) {
-          await AminoData.restoreSession(session.accessToken, session.userId, session.password || '');
+        } else if (AminoData.initWithKey) {
+          await AminoData.initWithKey(session.accessToken, session.userId);
+        } else {
+          throw new Error('No password or stored key available. Please log in from the main app first.');
         }
       } catch (e) {
         loadingMsg.textContent = 'Data layer init failed: ' + e.message;
