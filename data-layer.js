@@ -347,19 +347,28 @@ var AminoData = (function() {
                 await new Promise(function(r) { setTimeout(r, delay); });
             }
 
-            // Use query-param auth by default to avoid CORS preflight.
+            // Auth: POST with access_token in JSON body + query-param fallback.
             var separator = path.indexOf('?') === -1 ? '?' : '&';
             var url = WEBHOOK_BASE_URL + path + separator + 'access_token=' + encodeURIComponent(_accessToken);
 
             var response;
             try {
-                response = await fetch(url);
+                response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ access_token: _accessToken })
+                });
             } catch (fetchErr) {
                 // Network / CORS failure — try header auth as last resort
-                console.warn('[AminoData] Query-param fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
+                console.warn('[AminoData] POST fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
                 try {
                     response = await fetch(WEBHOOK_BASE_URL + path, {
-                        headers: { 'Authorization': 'Bearer ' + _accessToken }
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + _accessToken,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ access_token: _accessToken })
                     });
                 } catch (headerErr) {
                     lastErr = new Error('API unreachable (CORS/network): ' + headerErr.message);
@@ -368,11 +377,16 @@ var AminoData = (function() {
             }
 
             if (response.status === 401) {
-                // Query-param token may not have been recognised — retry with header
-                console.warn('[AminoData] 401 with query-param auth, retrying with header auth for ' + path);
+                // Token may not have been picked up — retry with header auth
+                console.warn('[AminoData] 401, retrying with header auth for ' + path);
                 try {
                     response = await fetch(WEBHOOK_BASE_URL + path, {
-                        headers: { 'Authorization': 'Bearer ' + _accessToken }
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + _accessToken,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ access_token: _accessToken })
                     });
                 } catch (headerErr) {
                     var err = new Error('Authentication expired (CORS/network)');
@@ -897,7 +911,7 @@ var AminoData = (function() {
             var inviteRes = await fetch(WEBHOOK_BASE_URL + '/amino-invite', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: userId })
+                body: JSON.stringify({ userId: userId, access_token: _accessToken })
             });
             var inviteData = await inviteRes.json();
             console.log('[AminoData] Invite response:', inviteData.message || ('invited to ' + (inviteData.roomsInvited || 0) + ' rooms'));
@@ -1496,7 +1510,11 @@ var AminoData = (function() {
 
         try {
             console.log('[AminoData] Triggering Airtable sync via n8n webhook');
-            var response = await fetch(AIRTABLE_SYNC_WEBHOOK);
+            var response = await fetch(AIRTABLE_SYNC_WEBHOOK, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ access_token: _accessToken })
+            });
 
             if (!response.ok) {
                 var errMsg = 'Airtable sync webhook returned ' + response.status;
