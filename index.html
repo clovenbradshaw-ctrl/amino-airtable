@@ -16151,6 +16151,87 @@ function _deferNetworkInit() {
     });
 }
 
+var _backgroundHydrationInFlight = null;
+function _startBackgroundHydration() {
+    if (_backgroundHydrationInFlight) return _backgroundHydrationInFlight;
+
+    _backgroundHydrationInFlight = (async function() {
+        // Step 1: Hydrate current record state from DB API (fast, REST)
+        var hydrated = false;
+        var webhookHydration = null;
+        try {
+            updateLoadingOverlay('Connecting to API...', 'Fetching tables...', 0, 0, 0, 0, null);
+            webhookHydration = await hydrateFromWebhooks();
+            hydrated = !!(webhookHydration && webhookHydration.success);
+            if (hydrated) {
+                // Save webhook sync cursor so future incremental syncs work
+                var hydrationCursor = webhookHydration.nextCursor || new Date().toISOString();
+                await setSyncMeta('lastWebhookSync', hydrationCursor);
+                if (webhookHydration.partial) {
+                    SyncStatusFeed.warn('Webhook hydration was partial (' + webhookHydration.failedTables + ' table' + (webhookHydration.failedTables !== 1 ? 's' : '') + ' failed) — backfilling from Synapse');
+                }
+            }
+        } catch (webhookErr) {
+            console.warn('[init] Webhook hydration failed, trying Synapse rooms:', webhookErr);
+            SyncStatusFeed.warn('Webhook hydration failed: ' + webhookErr.message + ' — trying Synapse rooms');
+        }
+
+        if (!hydrated || (webhookHydration && webhookHydration.partial)) {
+            // Fall back to Synapse room replay (gets both records + history)
+            updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
+            hydrated = await hydrateFromSynapse();
+        }
+
+        if (hydrated) {
+            // Reload metadata after hydration — in parallel
+            var reloadResults = await Promise.all([getAllTables(), getAllFields(), getAllViews()]);
+            var tables = reloadResults[0];
+            var fields = reloadResults[1];
+            var views = reloadResults[2];
+
+            META_TABLES = {};
+            META_FIELDS = {};
+            META_VIEWS = {};
+            tables.forEach(t => META_TABLES[t.tableId] = t);
+            fields.forEach(f => {
+                if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+                META_FIELDS[f.tableId][f.fieldId] = f;
+            });
+            views.forEach(v => {
+                if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+                META_VIEWS[v.tableId][v.viewId] = v;
+            });
+
+            // Refresh sidebar/table once hydration completes.
+            await renderSidebar(true);
+            if (!currentTable) {
+                var firstTable = Object.keys(META_TABLES)[0];
+                if (firstTable) {
+                    await showTable(firstTable);
+                }
+            }
+
+            // Backfill field history in background (do not block app access)
+            try {
+                updateLoadingOverlay('Backfilling history...', 'Reading Matrix room timelines...', 0, 0, 0, 0, null);
+                await backfillHistoryFromMatrix();
+            } catch (backfillErr) {
+                console.warn('[init] History backfill failed (non-fatal):', backfillErr);
+                SyncStatusFeed.warn('History backfill failed: ' + backfillErr.message);
+            }
+
+            updateStatus('Up to date', true, null, null);
+        } else {
+            updateStatus('No data available — waiting for sync', true, null, null);
+            await renderSidebar(true);
+        }
+    })().finally(function() {
+        _backgroundHydrationInFlight = null;
+    });
+
+    return _backgroundHydrationInFlight;
+}
+
 // ============ Init ============
 
 async function init() {
@@ -16287,74 +16368,12 @@ async function init() {
             await renderSidebar(true);
         }
 
-        showLoadingOverlay();
-        setLoadingOverlayMode('default');
-
-        // Step 1: Hydrate current record state from DB API (fast, REST)
-        var hydrated = false;
-        var webhookHydration = null;
-        try {
-            updateLoadingOverlay('Connecting to API...', 'Fetching tables...', 0, 0, 0, 0, null);
-            webhookHydration = await hydrateFromWebhooks();
-            hydrated = !!(webhookHydration && webhookHydration.success);
-            if (hydrated) {
-                // Save webhook sync cursor so future incremental syncs work
-                var hydrationCursor = webhookHydration.nextCursor || new Date().toISOString();
-                await setSyncMeta('lastWebhookSync', hydrationCursor);
-                if (webhookHydration.partial) {
-                    SyncStatusFeed.warn('Webhook hydration was partial (' + webhookHydration.failedTables + ' table' + (webhookHydration.failedTables !== 1 ? 's' : '') + ' failed) — backfilling from Synapse');
-                }
-            }
-        } catch (webhookErr) {
-            console.warn('[init] Webhook hydration failed, trying Synapse rooms:', webhookErr);
-            SyncStatusFeed.warn('Webhook hydration failed: ' + webhookErr.message + ' — trying Synapse rooms');
-        }
-
-        if (!hydrated || (webhookHydration && webhookHydration.partial)) {
-            // Fall back to Synapse room replay (gets both records + history)
-            updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
-            hydrated = await hydrateFromSynapse();
-        }
-
-        if (hydrated) {
-            // Reload metadata after hydration — in parallel
-            var reloadResults = await Promise.all([getAllTables(), getAllFields(), getAllViews()]);
-            tables = reloadResults[0];
-            fields = reloadResults[1];
-            views = reloadResults[2];
-            tables.forEach(t => META_TABLES[t.tableId] = t);
-            fields.forEach(f => {
-                if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-                META_FIELDS[f.tableId][f.fieldId] = f;
-            });
-            views.forEach(v => {
-                if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-                META_VIEWS[v.tableId][v.viewId] = v;
-            });
-
-            // Render UI immediately so user can start working
-            await renderSidebar(true);
-            var firstTable = Object.keys(META_TABLES)[0];
-            if (firstTable) {
-                await showTable(firstTable);
-            }
-
-            // Step 2: Backfill field history from Matrix room timelines.
-            // This runs after the UI is visible so the user isn't blocked.
-            try {
-                updateLoadingOverlay('Backfilling history...', 'Reading Matrix room timelines...', 0, 0, 0, 0, null);
-                await backfillHistoryFromMatrix();
-            } catch (backfillErr) {
-                console.warn('[init] History backfill failed (non-fatal):', backfillErr);
-                SyncStatusFeed.warn('History backfill failed: ' + backfillErr.message);
-            }
-        } else {
-            // No data from either source — show empty state
-            updateStatus('No data available — waiting for sync', true, null, null);
-            await renderSidebar(true);
-        }
-
+        // Prioritize app access: enter UI immediately, run room/data hydration in background.
         hideLoadingOverlay();
+        updateStatus('Syncing data in background...', false, null, null);
+        _startBackgroundHydration().catch(function(err) {
+            console.warn('[init] Background hydration failed:', err);
+        });
 
         // Defer non-critical network operations for the hydration path too
         _deferNetworkInit();
