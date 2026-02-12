@@ -16916,53 +16916,83 @@ function _startBackgroundHydration() {
     if (_backgroundHydrationInFlight) return _backgroundHydrationInFlight;
 
     _backgroundHydrationInFlight = (async function() {
-        // Step 1: Hydrate current record state from DB API (fast, REST)
         var hydrated = false;
-        var webhookHydration = null;
+
+        // Step 0: Try Box AMO hydration first (complete binary snapshot).
+        // This is the most reliable source for the full dataset (~70k records).
+        // The Box AMO file is a pre-built snapshot that replays all events into
+        // memory, giving the Interface and table views immediate access to the
+        // complete record set.
         try {
-            updateLoadingOverlay('Connecting to API...', 'Fetching tables...', 0, 0, 0, 0, null);
-            webhookHydration = await hydrateFromWebhooks();
-            hydrated = !!(webhookHydration && webhookHydration.success);
-            if (hydrated) {
-                // Save webhook sync cursor so future incremental syncs work
-                var hydrationCursor = webhookHydration.nextCursor || new Date().toISOString();
-                await setSyncMeta('lastWebhookSync', hydrationCursor);
-                if (webhookHydration.partial) {
-                    SyncStatusFeed.warn('Webhook hydration was partial (' + webhookHydration.failedTables + ' table' + (webhookHydration.failedTables !== 1 ? 's' : '') + ' failed) — backfilling from Synapse');
-                }
+            updateLoadingOverlay('Loading snapshot...', 'Downloading from Box...', 0, 0, 0, 0, null);
+            var boxResult = await hydrateFromBoxAmoFile();
+            if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
+                hydrated = true;
+                SyncStatusFeed.success('Hydrated from Box snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
+                console.log('[BackgroundHydration] Box AMO hydration succeeded:', boxResult.importedEvents, 'events');
+                await setSyncMeta('lastWebhookSync', new Date().toISOString());
             }
-        } catch (webhookErr) {
-            console.warn('[init] Webhook hydration failed, trying Synapse rooms:', webhookErr);
-            SyncStatusFeed.warn('Webhook hydration failed: ' + webhookErr.message + ' — trying Synapse rooms');
+        } catch (boxErr) {
+            console.warn('[BackgroundHydration] Box AMO hydration failed, trying webhook API:', boxErr.message || boxErr);
         }
 
-        if (!hydrated || (webhookHydration && webhookHydration.partial)) {
-            // Fall back to Synapse room replay (gets both records + history)
-            updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
-            hydrated = await hydrateFromSynapse();
+        // Step 1: Hydrate current record state from DB API (fast, REST)
+        if (!hydrated) {
+            var webhookHydration = null;
+            try {
+                updateLoadingOverlay('Connecting to API...', 'Fetching tables...', 0, 0, 0, 0, null);
+                webhookHydration = await hydrateFromWebhooks();
+                hydrated = !!(webhookHydration && webhookHydration.success);
+                if (hydrated) {
+                    // Save webhook sync cursor so future incremental syncs work
+                    var hydrationCursor = webhookHydration.nextCursor || new Date().toISOString();
+                    await setSyncMeta('lastWebhookSync', hydrationCursor);
+                    if (webhookHydration.partial) {
+                        SyncStatusFeed.warn('Webhook hydration was partial (' + webhookHydration.failedTables + ' table' + (webhookHydration.failedTables !== 1 ? 's' : '') + ' failed) — backfilling from Synapse');
+                    }
+                }
+            } catch (webhookErr) {
+                console.warn('[init] Webhook hydration failed, trying Synapse rooms:', webhookErr);
+                SyncStatusFeed.warn('Webhook hydration failed: ' + webhookErr.message + ' — trying Synapse rooms');
+            }
+
+            if (!hydrated || (webhookHydration && webhookHydration.partial)) {
+                // Fall back to Synapse room replay (gets both records + history)
+                updateLoadingOverlay('Connecting to Synapse...', 'Discovering rooms...', 0, 0, 0, 0, null);
+                hydrated = await hydrateFromSynapse();
+            }
         }
 
         if (hydrated) {
-            // Reload metadata after hydration — in parallel
+            // Reload metadata after hydration — in parallel.
+            // When Box AMO hydration populated IN_MEMORY_DATA, the IDB save is
+            // still in-flight so IDB may not yet contain the Box data.  Merge
+            // IDB metadata additively so we don't overwrite the in-memory state
+            // that processEventsMemoryOnly already built.
             var reloadResults = await Promise.all([getAllTables(), getAllFields(), getAllViews()]);
             var tables = reloadResults[0];
             var fields = reloadResults[1];
             var views = reloadResults[2];
 
-            META_TABLES = {};
-            META_FIELDS = {};
-            META_VIEWS = {};
-            tables.forEach(t => META_TABLES[t.tableId] = t);
+            var hasInMemoryData = window.IN_MEMORY_DATA && Object.keys(window.IN_MEMORY_DATA).length > 0;
+            if (!hasInMemoryData) {
+                // Non-Box path: IDB is the sole source, replace metadata
+                META_TABLES = {};
+                META_FIELDS = {};
+                META_VIEWS = {};
+            }
+            // Merge IDB metadata (additive — preserves Box AMO entries)
+            tables.forEach(t => META_TABLES[t.tableId] = META_TABLES[t.tableId] || t);
             fields.forEach(f => {
                 if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-                META_FIELDS[f.tableId][f.fieldId] = f;
+                META_FIELDS[f.tableId][f.fieldId] = META_FIELDS[f.tableId][f.fieldId] || f;
             });
             views.forEach(v => {
                 if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-                META_VIEWS[v.tableId][v.viewId] = v;
+                META_VIEWS[v.tableId][v.viewId] = META_VIEWS[v.tableId][v.viewId] || v;
             });
 
-            // Rebuild edges after Synapse hydration
+            // Rebuild edges after hydration
             rebuildEdges();
 
             // Refresh sidebar/table once hydration completes.
@@ -16973,6 +17003,12 @@ function _startBackgroundHydration() {
                     await showTable(firstTable);
                 }
             }
+
+            // Notify Interface and other listeners that data has been hydrated
+            // so they can refresh their views with the complete dataset.
+            window.dispatchEvent(new CustomEvent('amino:sync', {
+                detail: { source: 'hydration', tables: Object.keys(META_TABLES).length }
+            }));
 
             // Backfill field history in background (do not block app access)
             try {
@@ -17020,18 +17056,26 @@ async function init() {
 
     updateStatus('Loading local data...', false, null, null);
 
-    // First-run optimization: attempt hydration from Box-hosted .amo binary snapshot.
+    // Attempt hydration from Box-hosted .amo binary snapshot.
     // When successful, processEventsMemoryOnly replays all events into META_TABLES,
     // META_FIELDS, META_VIEWS, and IN_MEMORY_DATA so the UI can render immediately.
+    // Try when no tables exist (first run) OR when tables exist but records are
+    // missing (incomplete previous hydration).
     var _boxHydrationSucceeded = false;
     try {
         var existingTableCount = await getAllTables().then(function(ts) { return ts.length; }).catch(function() { return 0; });
-        if (existingTableCount === 0) {
+        var existingRecordCount = existingTableCount > 0
+            ? await getCurrentRecordsCount().catch(function() { return 0; })
+            : 0;
+        if (existingTableCount === 0 || existingRecordCount === 0) {
             updateStatus('Loading hydration snapshot...', false, null, 'Downloading .amo');
             var boxResult = await hydrateFromBoxAmoFile();
             if (boxResult && boxResult.importedEvents > 0) {
                 _boxHydrationSucceeded = Object.keys(META_TABLES).length > 0;
-                SyncStatusFeed.success('Hydrated from Box .amo snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
+                if (_boxHydrationSucceeded) {
+                    SyncStatusFeed.success('Hydrated from Box .amo snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
+                    await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                }
             }
         }
     } catch (boxErr) {
