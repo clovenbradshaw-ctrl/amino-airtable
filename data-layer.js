@@ -43,6 +43,9 @@ var AminoData = (function() {
     var _orgSpaceId = null;           // org space room ID for view deletion monitoring
     var _viewSyncRunning = false;
     var _viewSyncAbort = null;
+    var _recordCacheById = {};       // recordId -> decrypted record
+    var _tableRecordIdIndex = {};    // tableId -> { recordId: true }
+    var _tableCacheHydrated = {};    // tableId -> true when full table is cached
 
     // ============ Encryption ============
 
@@ -434,14 +437,22 @@ var AminoData = (function() {
     // ============ Record Encryption Helpers ============
 
     async function encryptAndStoreRecord(store, record, tableId) {
-        var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(record.fields));
-        await idbPut(store, {
+        var normalizedRecord = {
             id: record.id,
             tableId: tableId,
-            tableName: record.tableName,
+            tableName: record.tableName || tableId,
+            fields: record.fields || {},
+            lastSynced: record.lastSynced || new Date().toISOString()
+        };
+        var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(normalizedRecord.fields));
+        await idbPut(store, {
+            id: normalizedRecord.id,
+            tableId: normalizedRecord.tableId,
+            tableName: normalizedRecord.tableName,
             fields: encryptedFields, // ArrayBuffer — encrypted
-            lastSynced: record.lastSynced
+            lastSynced: normalizedRecord.lastSynced
         });
+        cacheRecord(normalizedRecord);
     }
 
     async function decryptRecord(entry) {
@@ -453,6 +464,47 @@ var AminoData = (function() {
             fields: fields,
             lastSynced: entry.lastSynced
         };
+    }
+
+
+    function cloneRecord(record) {
+        if (typeof structuredClone === 'function') {
+            return structuredClone(record);
+        }
+        return JSON.parse(JSON.stringify(record));
+    }
+
+    function clearRecordCache() {
+        _recordCacheById = {};
+        _tableRecordIdIndex = {};
+        _tableCacheHydrated = {};
+    }
+
+    function clearTableCache(tableId) {
+        var tableIndex = _tableRecordIdIndex[tableId] || {};
+        var recordIds = Object.keys(tableIndex);
+        for (var i = 0; i < recordIds.length; i++) {
+            delete _recordCacheById[recordIds[i]];
+        }
+        delete _tableRecordIdIndex[tableId];
+        delete _tableCacheHydrated[tableId];
+    }
+
+    function cacheRecord(record) {
+        if (!record || !record.id || !record.tableId) return;
+        _recordCacheById[record.id] = cloneRecord(record);
+        if (!_tableRecordIdIndex[record.tableId]) {
+            _tableRecordIdIndex[record.tableId] = {};
+        }
+        _tableRecordIdIndex[record.tableId][record.id] = true;
+    }
+
+    function cacheFullTable(tableId, records) {
+        clearTableCache(tableId);
+        for (var i = 0; i < records.length; i++) {
+            cacheRecord(records[i]);
+        }
+        _tableCacheHydrated[tableId] = true;
     }
 
     function normalizeFieldOps(content) {
@@ -494,6 +546,7 @@ var AminoData = (function() {
         });
 
         await idbTxDone(tx);
+        clearTableCache(tableId);
     }
 
     async function rebuildTableFromRoom(tableId) {
@@ -623,6 +676,15 @@ var AminoData = (function() {
         });
         await idbTxDone(syncTx);
 
+        var rebuildTx = _db.transaction('records', 'readonly');
+        var rebuildIndex = rebuildTx.objectStore('records').index('byTable');
+        var rebuildEntries = await idbGetAll(rebuildIndex, tableId);
+        var rebuiltRecords = [];
+        for (var rr = 0; rr < rebuildEntries.length; rr++) {
+            rebuiltRecords.push(await decryptRecord(rebuildEntries[rr]));
+        }
+        cacheFullTable(tableId, rebuiltRecords);
+
         console.warn('[AminoData] Rebuilt', recordIds.length, 'records for table', tableId, 'from Matrix room history');
         return recordIds.length;
     }
@@ -667,6 +729,16 @@ var AminoData = (function() {
             lastSynced: new Date().toISOString()
         });
         await idbTxDone(syncTx);
+
+        cacheFullTable(tableId, records.map(function(record) {
+            return {
+                id: record.id,
+                tableId: tableId,
+                tableName: record.tableName || tableId,
+                fields: record.fields || {},
+                lastSynced: record.lastSynced || new Date().toISOString()
+            };
+        }));
 
         console.log('[AminoData] Hydrated', records.length, 'records for table', tableId);
         return records.length;
@@ -904,6 +976,14 @@ var AminoData = (function() {
             lastSynced: new Date().toISOString()
         });
         await idbTxDone(writeTx);
+
+        cacheRecord({
+            id: recordId,
+            tableId: tableId,
+            tableName: (existing && existing.tableName) || tableId,
+            fields: fields,
+            lastSynced: new Date().toISOString()
+        });
 
         // Emit sync event so UI can react
         window.dispatchEvent(new CustomEvent('amino:record-update', {
@@ -1465,6 +1545,13 @@ var AminoData = (function() {
     async function getTableRecords(tableId) {
         if (!_db || !_cryptoKey) throw new Error('Data layer not initialized');
 
+        if (_tableCacheHydrated[tableId]) {
+            var cachedIds = Object.keys(_tableRecordIdIndex[tableId] || {});
+            return cachedIds.map(function(recordId) {
+                return cloneRecord(_recordCacheById[recordId]);
+            });
+        }
+
         var tx = _db.transaction('records', 'readonly');
         var index = tx.objectStore('records').index('byTable');
         var entries = await idbGetAll(index, tableId);
@@ -1473,17 +1560,25 @@ var AminoData = (function() {
         for (var i = 0; i < entries.length; i++) {
             results.push(await decryptRecord(entries[i]));
         }
-        return results;
+        cacheFullTable(tableId, results);
+        return results.map(function(record) { return cloneRecord(record); });
     }
 
     async function getRecord(recordId) {
         if (!_db || !_cryptoKey) throw new Error('Data layer not initialized');
 
+        if (_recordCacheById[recordId]) {
+            return cloneRecord(_recordCacheById[recordId]);
+        }
+
         var tx = _db.transaction('records', 'readonly');
         var entry = await idbGet(tx.objectStore('records'), recordId);
         if (!entry) return null;
-        return decryptRecord(entry);
+        var record = await decryptRecord(entry);
+        cacheRecord(record);
+        return cloneRecord(record);
     }
+
 
     async function searchRecords(tableId, fieldName, searchValue) {
         var records = await getTableRecords(tableId);
@@ -1512,6 +1607,7 @@ var AminoData = (function() {
 
         _accessToken = accessToken;
         _userId = userId;
+        clearRecordCache();
 
         // Open database
         _db = await openDatabase();
@@ -1538,6 +1634,7 @@ var AminoData = (function() {
                 clearTx.objectStore('records').clear();
                 clearTx.objectStore('sync').clear();
                 await idbTxDone(clearTx);
+                clearRecordCache();
             }
         } else if (verifyEntry) {
             // Synapse-derived key already in use — verify it still matches
@@ -1549,6 +1646,7 @@ var AminoData = (function() {
                 clearTx2.objectStore('records').clear();
                 clearTx2.objectStore('sync').clear();
                 await idbTxDone(clearTx2);
+                clearRecordCache();
             }
         }
 
@@ -1656,6 +1754,7 @@ var AminoData = (function() {
         _orgSpaceId = null;
         _offlineMode = false;
         _initialized = false;
+        clearRecordCache();
 
         if (clearData && _db) {
             // Clear all data from IndexedDB
@@ -2335,6 +2434,14 @@ var AminoData = (function() {
             lastSynced: (existing && existing.lastSynced) || new Date().toISOString()
         });
         await idbTxDone(writeTx);
+
+        cacheRecord({
+            id: recordId,
+            tableId: tableId,
+            tableName: (existing && existing.tableName) || tableId,
+            fields: currentFields,
+            lastSynced: (existing && existing.lastSynced) || new Date().toISOString()
+        });
 
         // Emit update event for UI
         window.dispatchEvent(new CustomEvent('amino:record-update', {
