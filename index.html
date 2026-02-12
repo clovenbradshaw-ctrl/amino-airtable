@@ -20554,7 +20554,8 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
     var formulaFields = [];
     for (var fid in fields) {
         var f = fields[fid];
-        if (f.fieldType === 'formula' && f.options && f.options.formula) {
+        var formulaExpr = f && f.options && (f.options.formula || f.options.expression);
+        if (f.fieldType === 'formula' && formulaExpr) {
             formulaFields.push(f);
         }
     }
@@ -20562,7 +20563,10 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
     if (_shouldSkipFormulaColumns(Object.keys(recordMap).length, formulaFields.length)) return;
 
     // Build / reuse compiled formula cache per table
-    var cacheKey = tableId + ':' + formulaFields.map(function(f) { return f.fieldId; }).join(',');
+    var cacheKey = tableId + ':' + formulaFields.map(function(f) {
+        var expr = f && f.options && (f.options.formula || f.options.expression) || '';
+        return f.fieldId + ':' + expr;
+    }).join(',');
     var cached = _compiledFormulaCache[tableId];
     if (!cached || _compiledFormulaCacheKey !== cacheKey) {
         cached = {};
@@ -20570,7 +20574,8 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         for (var i = 0; i < formulaFields.length; i++) {
             var f = formulaFields[i];
             try {
-                var ast = engine.parseAirtableFormula(f.options.formula);
+                var formulaExpr = f.options.formula || f.options.expression;
+                var ast = engine.parseAirtableFormula(formulaExpr);
                 var refs = engine.collectFieldRefs(ast);
                 var fn = engine.compileFormula(ast);
                 var entry = { fieldId: f.fieldId, fieldName: f.fieldName, fn: fn, deps: refs };
