@@ -633,51 +633,60 @@
     var DEFAULT_SCHEMA = {
       version: 2,
       summaryFields: ['Case Manager', 'Entry Status', 'Current Stage'],
-      linkResolvers: {},
+      linkResolvers: {
+        'applications': { preferredFields: ['Case Master'], idSource: 'case' },
+        'update tracker': { preferredFields: ['Contact'], idSource: 'case' },
+        'global eads': { preferredFields: ['Edit Client Info'], idSource: 'client' },
+        'events': { preferredFields: ['Client Info', 'Case Master'], idSource: 'both' },
+        'imported table 4': { preferredFields: ['Case Master View'], idSource: 'case' },
+        'relationships': { preferredFields: ['Subject Client'], idSource: 'client' },
+        'deadlines 2.0': { preferredFields: ['Client Link Copy', 'Case Link Copy'], idSource: 'both' },
+        'support comments': { preferredFields: ['Client'], idSource: 'client' }
+      },
       tabs: [
         {
           id: 'overview', label: 'Overview',
           sections: [
-            { title: 'Client Info', type: 'fields', table: 'Clients', fields: ['First Name', 'Last Name', 'Office', 'Client Tags', 'Entry Status', 'Case Manager'] },
-            { title: 'Addresses', type: 'related', table: 'Addresses', fields: ['Address', 'Address Change Date', 'Same Address Confirmed Date'] }
+            { title: 'Client Info', type: 'fields', table: 'Client Info', fields: ['First Name', 'Last Name', 'Office', 'Client Tags', 'Entry Status', 'Case Manager'] },
+            { title: 'Addresses', type: 'fields', table: 'Client Info', fields: ['Address', 'Address Change Date', 'Same Address Confirmed Date'] }
           ]
         },
         {
           id: 'at-a-glance', label: 'At a Glance',
           sections: [
-            { title: 'At a Glance', type: 'fields', table: 'Clients', fields: ['SIJ Case Status', 'Merits Atty', 'Current Stage', 'Priority', 'Notes'] }
+            { title: 'At a Glance', type: 'fields', table: 'Client Info', fields: ['SIJ Case Status', 'Merits Atty', 'Current Stage', 'Priority', 'Notes'] }
           ]
         },
         {
           id: 'matters', label: 'Matters',
           sections: [
-            { title: 'Matters', type: 'related', table: 'Matters', fields: ['Matter', 'Description', 'Status', 'Created_By'] },
-            { title: 'Matter Notes', type: 'related', table: 'Matter Notes', fields: ['Matter', 'Description', 'Activity', 'Date', 'Created_By'] }
+            { title: 'Matters', type: 'related', table: 'Applications', fields: ['Matter', 'Description', 'Status', 'Created By'] },
+            { title: 'Matter Notes', type: 'related', table: 'Imported table 4', fields: ['Matter', 'Description', 'Activity', 'Date', 'Created By'] }
           ]
         },
         {
           id: 'case-notes', label: 'Case Notes',
           sections: [
-            { title: 'Case Notes', type: 'related', table: 'Case Notes', fields: ['Case Note', 'Category', 'Created', 'Created_By'] }
+            { title: 'Case Notes', type: 'related', table: 'Update Tracker', fields: ['Case Note', 'Category', 'Created', 'Created By'] }
           ]
         },
         {
           id: 'ead', label: 'EAD',
           sections: [
-            { title: 'EAD', type: 'related', table: 'EAD', fields: ['Mail Tracking # EAD', 'EAD Stage', 'EAD Received', 'EAD Sent Date', 'EAD Approval Date'] }
+            { title: 'EAD', type: 'related', table: 'Global EADs', fields: ['Mail Tracking # EAD', 'EAD Stage', 'EAD Received', 'EAD Sent Date', 'EAD Approval Date'] }
           ]
         },
         {
           id: 'activities', label: 'Activities',
           sections: [
-            { title: 'All Activity Notes', type: 'related', table: 'Activities', fields: ['Activity', 'Description', 'Date', 'Owner'] },
-            { title: 'Hearings / Interviews', type: 'related', table: 'Hearings/Interviews', fields: ['Event', 'Date', 'Judge', 'Location'] }
+            { title: 'All Activity Notes', type: 'related', table: 'Imported table 4', fields: ['Activity', 'Description', 'Date', 'Owner'] },
+            { title: 'Hearings / Interviews', type: 'related', table: 'Events', fields: ['Event', 'Date', 'Judge', 'Location'] }
           ]
         },
         {
           id: 'comms', label: 'Communications',
           sections: [
-            { title: 'Communications', type: 'related', table: 'Communications', fields: ['Type', 'Date', 'Summary', 'Direction'] }
+            { title: 'Communications', type: 'related', table: 'Support Comments', fields: ['Type', 'Date', 'Summary', 'Direction'] }
           ]
         }
       ]
@@ -687,6 +696,7 @@
     var state = {
       clientId: new URLSearchParams(location.search).get('clientId') || '',
       clientRecord: null,
+      caseRecord: null,
       schema: null,
       activeTab: null,
       data: {},         // tableName -> rows[]
@@ -761,6 +771,19 @@
       if (!linkResolvers || typeof linkResolvers !== 'object') return null;
       return linkResolvers[tableKey(tableName)] || null;
     }
+
+    var TABLE_ALIASES = {
+      'clients': ['client info'],
+      'client': ['client info'],
+      'matters': ['applications'],
+      'matter notes': ['imported table 4'],
+      'case notes': ['update tracker'],
+      'ead': ['global eads'],
+      'activities': ['imported table 4', 'events'],
+      'hearings/interviews': ['events'],
+      'communications': ['support comments'],
+      'addresses': ['client info']
+    };
 
     // ============ Navigation ============
     window.navTo = function(event, appName) {
@@ -872,6 +895,13 @@
     function resolveTable(name) {
       // Fuzzy table name match
       var n = norm(name);
+      var aliases = TABLE_ALIASES[n];
+      if (aliases && aliases.length) {
+        for (var a = 0; a < aliases.length; a++) {
+          var aliasRows = resolveTable(aliases[a]);
+          if (aliasRows.length) return aliasRows;
+        }
+      }
       var keys = Object.keys(state.data);
       var exact = keys.find(function(k) { return norm(k) === n; });
       if (exact) return state.data[exact];
@@ -879,6 +909,33 @@
       var partial = keys.find(function(k) { return norm(k).indexOf(n) !== -1 || n.indexOf(norm(k)) !== -1; });
       if (partial) return state.data[partial];
       return [];
+    }
+
+    function findRowByRecordId(rows, recordId) {
+      var target = norm(recordId);
+      if (!target) return null;
+      return rows.find(function(row) {
+        if (norm(row.recordId) === target || norm(row.id) === target) return true;
+        var ids = collectAliasValues(row.fields || {}, CLIENT_ID_FIELD_ALIASES);
+        return ids.some(function(id) { return norm(id) === target; });
+      }) || null;
+    }
+
+    function getLinkedRecordIds(record, fieldNames) {
+      var ids = [];
+      if (!record || !record.fields) return ids;
+      fieldNames.forEach(function(fieldName) {
+        var value = record.fields[fieldName];
+        if (!value) return;
+        if (Array.isArray(value)) {
+          value.forEach(function(v) {
+            if (typeof v === 'string' && /^rec[a-zA-Z0-9]+$/.test(v)) ids.push(v);
+          });
+        } else if (typeof value === 'string' && /^rec[a-zA-Z0-9]+$/.test(value)) {
+          ids.push(value);
+        }
+      });
+      return ids;
     }
 
     function findClientRecord(rows) {
@@ -906,6 +963,15 @@
         collectAliasValues(f, CLIENT_ID_FIELD_ALIASES).forEach(function(value) {
           ids.add(String(value));
         });
+      }
+      return ids;
+    }
+
+    function getCaseIds() {
+      var ids = new Set();
+      if (state.caseRecord && state.caseRecord.recordId) ids.add(state.caseRecord.recordId);
+      if (state.clientId && /^rec[a-zA-Z0-9]+$/.test(state.clientId) && state.caseRecord && state.clientId === state.caseRecord.recordId) {
+        ids.add(state.clientId);
       }
       return ids;
     }
@@ -955,15 +1021,24 @@
       if (!rows.length) {
         return { rows: [], fkNames: [], matchedFkNames: [], ambiguous: false, note: 'No rows available in table.' };
       }
+      var resolver = getResolverConfig(tableName);
+      var idSource = resolver && resolver.idSource ? norm(resolver.idSource) : 'client';
       var clientIds = getClientIds();
-      if (!clientIds.size) {
+      var caseIds = getCaseIds();
+      var targetIds = new Set();
+      if (idSource === 'case' || idSource === 'both') {
+        caseIds.forEach(function(v) { targetIds.add(v); });
+      }
+      if (idSource !== 'case') {
+        clientIds.forEach(function(v) { targetIds.add(v); });
+      }
+      if (!targetIds.size) {
         return { rows: [], fkNames: [], matchedFkNames: [], ambiguous: false, note: 'No client identifiers available.' };
       }
 
       // Discover which fields link to this client
-      var fkFields = discoverForeignKeyFields(tableName, rows, clientIds);
+      var fkFields = discoverForeignKeyFields(tableName, rows, targetIds);
       var fkNames = Object.keys(fkFields);
-      var resolver = getResolverConfig(tableName);
       var preferred = resolver && Array.isArray(resolver.preferredFields)
         ? resolver.preferredFields.map(function(f) { return String(f || '').trim(); }).filter(Boolean)
         : [];
@@ -980,13 +1055,13 @@
       var matchedRows = rows.filter(function(row) {
         var fields = row.fields || {};
         return fkNames.some(function(fk) {
-          return valueContainsId(fields[fk], clientIds);
+          return valueContainsId(fields[fk], targetIds);
         });
       });
 
       var matchedFkNames = fkNames.filter(function(fk) {
         return matchedRows.some(function(row) {
-          return valueContainsId((row.fields || {})[fk], clientIds);
+          return valueContainsId((row.fields || {})[fk], targetIds);
         });
       });
       var result = {
@@ -1145,6 +1220,9 @@
 
     function renderFieldsSection(sec) {
       var rec = state.clientRecord;
+      if (sec.table && norm(sec.table) === 'case master view' && state.caseRecord) {
+        rec = state.caseRecord;
+      }
       var f = rec ? (rec.fields || {}) : {};
       var fields = sec.fields || [];
       if (!fields.length) return '<div class="panel-body empty">No fields configured.</div>';
@@ -1499,9 +1577,29 @@
       }
 
       // 6. Resolve client record
-      var clientRows = resolveTable('Clients');
-      if (!clientRows.length) clientRows = resolveTable('Client Info');
+      var clientRows = resolveTable('Client Info');
       state.clientRecord = findClientRecord(clientRows);
+
+      // If URL points to Case Master record, resolve linked client record and preserve case context.
+      if (!state.clientRecord) {
+        var caseRows = resolveTable('Case Master View');
+        state.caseRecord = findRowByRecordId(caseRows, state.clientId);
+        var linkedClientIds = getLinkedRecordIds(state.caseRecord, ['Edit Client Info', 'Client Info', 'Client']);
+        if (linkedClientIds.length) {
+          state.clientRecord = findRowByRecordId(clientRows, linkedClientIds[0]);
+        }
+      }
+
+      // If URL points to client, resolve a primary case record for case-based related tables.
+      if (state.clientRecord && !state.caseRecord) {
+        var caseRowsForClient = resolveTable('Case Master View');
+        var clientRecordId = state.clientRecord.recordId;
+        state.caseRecord = caseRowsForClient.find(function(row) {
+          var value = (row.fields || {})['Edit Client Info'];
+          return valueContainsId(value, new Set([clientRecordId]));
+        }) || null;
+      }
+
       if (state.clientRecord && state.clientRecord.recordId) {
         state.clientId = state.clientRecord.recordId;
       }
