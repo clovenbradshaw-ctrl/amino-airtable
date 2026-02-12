@@ -46,7 +46,7 @@ async function requestInvites() {
   const res = await fetch(`${WEBHOOK_BASE}/webhook/amino-invite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: USER_ID })
+    body: JSON.stringify({ userId: USER_ID, access_token: ACCESS_TOKEN })
   });
   const data = await res.json();
   console.log(`   Result: ${data.message || JSON.stringify(data)}`);
