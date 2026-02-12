@@ -2220,13 +2220,14 @@ var AminoData = (function() {
         return _initCore(accessToken, userId, key, password);
     }
 
-    // Initialize using a previously exported key from localStorage.
+    // Initialize using a pre-derived CryptoKey or a previously exported key from localStorage.
     // Used by sub-pages (layout builder, client profile) that don't have the password.
-    async function initWithKey(accessToken, userId) {
+    // If cryptoKey is provided, uses it directly; otherwise loads from localStorage.
+    async function initWithKey(accessToken, userId, cryptoKey) {
         if (!accessToken || !userId) {
             throw new Error('accessToken and userId are required');
         }
-        var key = await importKeyFromStorage();
+        var key = cryptoKey || (await importKeyFromStorage());
         if (!key) {
             throw new Error('No stored encryption key found. Please log in from the main app first.');
         }
