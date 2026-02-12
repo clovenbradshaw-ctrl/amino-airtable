@@ -1237,9 +1237,23 @@ var MatrixBridge = (function() {
 
     // ============ Client Grouping ============
 
-    function groupRecordsByClient(records, fields, clientTable, clientIdField, linkedRecordTables) {
+    // groupRecordsByClient supports both single-hop (linkedRecordTables) and
+    // multi-hop (edgePaths) resolution.  edgePaths is an optional object from
+    // edgeAutoLinkedRecordTables(): { tableId: [edge, edge, ...] }.
+    // When a single-hop lookup fails but edgePaths provides a multi-hop path,
+    // the function follows the link chain through intermediate records that are
+    // already in the records array (no async IDB fetch needed).
+    function groupRecordsByClient(records, fields, clientTable, clientIdField, linkedRecordTables, edgePaths) {
         var groups = {}; // clientName -> { clientInfo: record, records: { tableId: [records] } }
         var unassigned = []; // records that don't belong to any client
+
+        // Build per-table record indexes for multi-hop intermediate lookups.
+        // recordsByTable[tableId][recordId] = record
+        var recordsByTable = {};
+        records.forEach(function(rec) {
+            if (!recordsByTable[rec.tableId]) recordsByTable[rec.tableId] = {};
+            recordsByTable[rec.tableId][rec.recordId] = rec;
+        });
 
         // First pass: collect client info records to build a lookup
         var clientLookup = {}; // record_id -> client identifier value
@@ -1257,30 +1271,80 @@ var MatrixBridge = (function() {
             }
         });
 
+        // Helper: follow a multi-hop edge path from a record to find client IDs.
+        // Traverses through in-memory records only (no IDB fetch).
+        function resolveMultiHop(rec, path) {
+            var currentRecords = [rec];
+            for (var step = 0; step < path.length; step++) {
+                var edge = path[step];
+                var nextRecords = [];
+                for (var ci = 0; ci < currentRecords.length; ci++) {
+                    var cr = currentRecords[ci];
+                    var recFields = cr.fields || cr;
+                    var linkedValue = recFields[edge.fieldId];
+                    if (linkedValue === undefined) linkedValue = recFields[edge.fieldName];
+                    if (!linkedValue) continue;
+                    var ids = Array.isArray(linkedValue) ? linkedValue : [linkedValue];
+                    for (var li = 0; li < ids.length; li++) {
+                        var lid = ids[li];
+                        if (typeof lid !== 'string') continue;
+                        if (step < path.length - 1) {
+                            // Intermediate hop — look up record in memory
+                            var intermediate = recordsByTable[edge.toTable] && recordsByTable[edge.toTable][lid];
+                            if (intermediate) nextRecords.push(intermediate);
+                        } else {
+                            // Final hop — lid should be a client record ID
+                            nextRecords.push({ recordId: lid });
+                        }
+                    }
+                }
+                currentRecords = nextRecords;
+                if (currentRecords.length === 0) return [];
+            }
+            return currentRecords.map(function(r) { return r.recordId; }).filter(Boolean);
+        }
+
         // Second pass: assign other records to clients via linked record fields
         records.forEach(function(rec) {
             if (rec.tableId === clientTable) return; // already handled
 
             var linkedField = linkedRecordTables[rec.tableId];
-            if (!linkedField || !rec.fields) {
-                unassigned.push(rec);
-                return;
-            }
-
-            var linkedValue = rec.fields[linkedField];
-            // linked record fields can be arrays of record IDs or a single ID
-            var linkedIds = Array.isArray(linkedValue) ? linkedValue : [linkedValue];
             var assigned = false;
 
-            for (var i = 0; i < linkedIds.length; i++) {
-                var clientName = clientLookup[linkedIds[i]];
-                if (clientName && groups[clientName]) {
-                    if (!groups[clientName].records[rec.tableId]) {
-                        groups[clientName].records[rec.tableId] = [];
+            // Try single-hop lookup first (existing behavior)
+            if (linkedField && rec.fields) {
+                var linkedValue = rec.fields[linkedField];
+                var linkedIds = Array.isArray(linkedValue) ? linkedValue : (linkedValue ? [linkedValue] : []);
+
+                for (var i = 0; i < linkedIds.length; i++) {
+                    var clientName = clientLookup[linkedIds[i]];
+                    if (clientName && groups[clientName]) {
+                        if (!groups[clientName].records[rec.tableId]) {
+                            groups[clientName].records[rec.tableId] = [];
+                        }
+                        groups[clientName].records[rec.tableId].push(rec);
+                        assigned = true;
+                        break;
                     }
-                    groups[clientName].records[rec.tableId].push(rec);
-                    assigned = true;
-                    break;
+                }
+            }
+
+            // If single-hop failed and we have edge paths, try multi-hop
+            if (!assigned && edgePaths && edgePaths[rec.tableId] && rec.fields) {
+                var path = edgePaths[rec.tableId];
+                if (path.length > 1) {
+                    var resolvedClientIds = resolveMultiHop(rec, path);
+                    for (var mi = 0; mi < resolvedClientIds.length; mi++) {
+                        var clientName = clientLookup[resolvedClientIds[mi]];
+                        if (clientName && groups[clientName]) {
+                            if (!groups[clientName].records[rec.tableId]) {
+                                groups[clientName].records[rec.tableId] = [];
+                            }
+                            groups[clientName].records[rec.tableId].push(rec);
+                            assigned = true;
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -1321,13 +1385,20 @@ var MatrixBridge = (function() {
 
         onProgress({ phase: 'grouping', total: allRecords.length });
 
-        // Group records by client
+        // Group records by client.  Pass edge paths for multi-hop resolution
+        // if the global EDGE_GRAPH is available (built from META_FIELDS).
+        var edgePaths = null;
+        if (typeof edgeAutoLinkedRecordTables === 'function' && _config.clientTable) {
+            var edgeResult = edgeAutoLinkedRecordTables(_config.clientTable);
+            edgePaths = edgeResult.paths;
+        }
         var grouped = groupRecordsByClient(
             allRecords,
             fields,
             _config.clientTable,
             _config.clientIdentifierField,
-            _config.linkedRecordTables
+            _config.linkedRecordTables,
+            edgePaths
         );
 
         var clientNames = Object.keys(grouped.groups);

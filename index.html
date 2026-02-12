@@ -6306,7 +6306,7 @@ function renderTabBar() {
 }
 
 var DB_NAME = 'amino';
-var DB_VERSION = 9;
+var DB_VERSION = 10;
 var PAGE_SIZE = 100;
 var N8N_WEBHOOK_BASE = 'https://n8n.intelechia.com/webhook';
 
@@ -8536,6 +8536,15 @@ function openDB() {
                 pendingStore.createIndex('by_record', ['tableId', 'recordId']);
                 pendingStore.createIndex('by_status', 'status');
             }
+
+            // Edges: relationship graph between tables via multipleRecordLinks fields.
+            // Keyed by [fromTable, fieldId] so each link field produces exactly one edge.
+            // Enables multi-hop graph traversal for client record resolution.
+            if (!db.objectStoreNames.contains('edges')) {
+                var edgesStore = db.createObjectStore('edges', { keyPath: ['fromTable', 'fieldId'] });
+                edgesStore.createIndex('by_from', 'fromTable');
+                edgesStore.createIndex('by_to', 'toTable');
+            }
         };
     });
 }
@@ -9298,7 +9307,9 @@ async function saveBatch(tables, fields, views, dataRecords) {
 
 function clearAllData() {
     return new Promise((resolve, reject) => {
-        var tx = db.transaction(['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory', 'events'], 'readwrite');
+        var storeNames = ['data', 'tables', 'fields', 'views', 'sync', 'fieldHistory', 'events'];
+        if (db.objectStoreNames.contains('edges')) storeNames.push('edges');
+        var tx = db.transaction(storeNames, 'readwrite');
         tx.objectStore('data').clear();
         tx.objectStore('tables').clear();
         tx.objectStore('fields').clear();
@@ -9306,6 +9317,7 @@ function clearAllData() {
         tx.objectStore('sync').clear();
         tx.objectStore('fieldHistory').clear();
         tx.objectStore('events').clear();
+        if (db.objectStoreNames.contains('edges')) tx.objectStore('edges').clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
@@ -12686,6 +12698,19 @@ async function processEvents(events, options) {
 
     // Save raw events for Events view
     await saveRawEvents(events);
+
+    // If any field events included link metadata (options.linkedTableId),
+    // rebuild the edge graph so multi-hop traversal stays current.
+    if (fields.length > 0) {
+        var hasLinkField = fields.some(function(f) {
+            return f.fieldType === 'multipleRecordLinks' && f.options && f.options.linkedTableId;
+        });
+        if (hasLinkField) {
+            rebuildAndPersistEdgeGraph().catch(function(e) {
+                console.warn('[processEvents] Edge graph rebuild failed:', e);
+            });
+        }
+    }
 }
 
 function applyPayloadFields(target, payload) {
@@ -16760,6 +16785,12 @@ function _startBackgroundHydration() {
                 SyncStatusFeed.warn('History backfill failed: ' + backfillErr.message);
             }
 
+            // Rebuild edge graph after hydration + backfill (field metadata
+            // now includes options.linkedTableId from room state events).
+            rebuildAndPersistEdgeGraph().catch(function(e) {
+                console.warn('[init] Edge graph rebuild failed:', e);
+            });
+
             updateStatus('Up to date', true, null, null);
         } else {
             updateStatus('No data available — waiting for sync', true, null, null);
@@ -16770,6 +16801,275 @@ function _startBackgroundHydration() {
     });
 
     return _backgroundHydrationInFlight;
+}
+
+// ============ Edge Graph (Table Relationship Graph) ============
+//
+// Scans META_FIELDS for multipleRecordLinks fields and builds a directed graph
+// of table-to-table edges.  Stored in IndexedDB 'edges' store and kept in memory
+// as EDGE_GRAPH for fast BFS/DFS traversal.
+//
+// Edge shape: {
+//   fromTable:      tableId,        // source table
+//   fieldId:        fieldId,        // the link field on fromTable
+//   fieldName:      string,         // human-readable field name
+//   toTable:        tableId,        // destination (linked) table
+//   inverseFieldId: string|null,    // the inverse link field on toTable
+//   prefersSingle:  boolean         // if the field prefers single record link
+// }
+
+var EDGE_GRAPH = [];  // flat array of edge objects (also persisted to IDB)
+
+// In-memory adjacency index built from EDGE_GRAPH for O(1) neighbor lookup.
+// _edgesByFrom[tableId] = [ edge, edge, ... ]  (outgoing edges)
+// _edgesByTo[tableId]   = [ edge, edge, ... ]  (incoming edges)
+var _edgesByFrom = {};
+var _edgesByTo = {};
+
+function _rebuildEdgeIndex() {
+    _edgesByFrom = {};
+    _edgesByTo = {};
+    for (var i = 0; i < EDGE_GRAPH.length; i++) {
+        var e = EDGE_GRAPH[i];
+        if (!_edgesByFrom[e.fromTable]) _edgesByFrom[e.fromTable] = [];
+        _edgesByFrom[e.fromTable].push(e);
+        if (!_edgesByTo[e.toTable]) _edgesByTo[e.toTable] = [];
+        _edgesByTo[e.toTable].push(e);
+    }
+}
+
+// Scan META_FIELDS and rebuild EDGE_GRAPH from scratch.
+// Called after hydration completes and after field metadata changes.
+function rebuildEdgeGraph() {
+    var edges = [];
+    var seen = {}; // "fromTable|fieldId" -> true to avoid duplicates
+
+    var tableIds = Object.keys(META_FIELDS);
+    for (var ti = 0; ti < tableIds.length; ti++) {
+        var tableId = tableIds[ti];
+        var fields = META_FIELDS[tableId];
+        var fieldIds = Object.keys(fields);
+        for (var fi = 0; fi < fieldIds.length; fi++) {
+            var f = fields[fieldIds[fi]];
+            if (!f || f.fieldType !== 'multipleRecordLinks') continue;
+            if (!f.options || !f.options.linkedTableId) continue;
+
+            var key = tableId + '|' + f.fieldId;
+            if (seen[key]) continue;
+            seen[key] = true;
+
+            edges.push({
+                fromTable: tableId,
+                fieldId: f.fieldId,
+                fieldName: f.fieldName || f.fieldId,
+                toTable: f.options.linkedTableId,
+                inverseFieldId: f.options.inverseLinkFieldId || null,
+                prefersSingle: !!(f.options.prefersSingleRecordLink)
+            });
+        }
+    }
+
+    EDGE_GRAPH = edges;
+    _rebuildEdgeIndex();
+    return edges;
+}
+
+// Persist current EDGE_GRAPH to IndexedDB (replaces all existing edges).
+async function persistEdgeGraph() {
+    if (!db || !db.objectStoreNames.contains('edges')) return;
+    return new Promise(function(resolve, reject) {
+        var tx = db.transaction('edges', 'readwrite');
+        var store = tx.objectStore('edges');
+        store.clear();
+        for (var i = 0; i < EDGE_GRAPH.length; i++) {
+            store.put(EDGE_GRAPH[i]);
+        }
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function() { reject(tx.error); };
+    });
+}
+
+// Load edges from IndexedDB into memory (used on startup before META_FIELDS
+// may be fully populated with options — e.g. placeholder fields from webhook
+// hydration don't have linkedTableId).
+async function loadEdgeGraph() {
+    if (!db || !db.objectStoreNames.contains('edges')) return;
+    return new Promise(function(resolve, reject) {
+        var tx = db.transaction('edges', 'readonly');
+        var req = tx.objectStore('edges').getAll();
+        req.onsuccess = function() {
+            EDGE_GRAPH = req.result || [];
+            _rebuildEdgeIndex();
+            resolve(EDGE_GRAPH);
+        };
+        req.onerror = function() { reject(req.error); };
+    });
+}
+
+// Rebuild edges from META_FIELDS and persist.  Fire-and-forget safe.
+async function rebuildAndPersistEdgeGraph() {
+    rebuildEdgeGraph();
+    try { await persistEdgeGraph(); } catch (e) {
+        console.warn('[EdgeGraph] Failed to persist edges:', e);
+    }
+    console.log('[EdgeGraph] Rebuilt: ' + EDGE_GRAPH.length + ' edges across ' +
+        Object.keys(_edgesByFrom).length + ' source tables');
+}
+
+// ---- Graph Traversal ----
+
+// BFS from a source table to a target table.  Returns the shortest path as an
+// array of edges, or null if unreachable.  maxHops caps search depth (default 5).
+function edgeFindPath(fromTableId, toTableId, maxHops) {
+    if (fromTableId === toTableId) return [];
+    maxHops = maxHops || 5;
+
+    // BFS queue: each entry is { tableId, path: [edges...] }
+    var queue = [{ tableId: fromTableId, path: [] }];
+    var visited = {};
+    visited[fromTableId] = true;
+
+    while (queue.length > 0) {
+        var current = queue.shift();
+        if (current.path.length >= maxHops) continue;
+
+        // Outgoing edges from current table
+        var neighbors = _edgesByFrom[current.tableId] || [];
+        for (var i = 0; i < neighbors.length; i++) {
+            var edge = neighbors[i];
+            if (edge.toTable === toTableId) {
+                return current.path.concat([edge]);
+            }
+            if (!visited[edge.toTable]) {
+                visited[edge.toTable] = true;
+                queue.push({ tableId: edge.toTable, path: current.path.concat([edge]) });
+            }
+        }
+
+        // Also try inverse edges (traverse the link in reverse direction)
+        var incoming = _edgesByTo[current.tableId] || [];
+        for (var j = 0; j < incoming.length; j++) {
+            var invEdge = incoming[j];
+            if (invEdge.fromTable === toTableId) {
+                // Create a synthetic reverse edge for the path
+                return current.path.concat([{
+                    fromTable: current.tableId,
+                    fieldId: invEdge.inverseFieldId || invEdge.fieldId,
+                    fieldName: invEdge.fieldName + ' (inverse)',
+                    toTable: invEdge.fromTable,
+                    inverseFieldId: invEdge.fieldId,
+                    prefersSingle: invEdge.prefersSingle,
+                    _inverse: true
+                }]);
+            }
+            if (!visited[invEdge.fromTable]) {
+                visited[invEdge.fromTable] = true;
+                queue.push({
+                    tableId: invEdge.fromTable,
+                    path: current.path.concat([{
+                        fromTable: current.tableId,
+                        fieldId: invEdge.inverseFieldId || invEdge.fieldId,
+                        fieldName: invEdge.fieldName + ' (inverse)',
+                        toTable: invEdge.fromTable,
+                        inverseFieldId: invEdge.fieldId,
+                        prefersSingle: invEdge.prefersSingle,
+                        _inverse: true
+                    }])
+                });
+            }
+        }
+    }
+
+    return null; // no path found
+}
+
+// Find all tables that can reach the target table and their shortest paths.
+// Returns: { tableId: [edge, edge, ...], ... }
+function edgeFindAllPaths(targetTableId, maxHops) {
+    maxHops = maxHops || 5;
+    var result = {};
+    var tableIds = Object.keys(META_TABLES);
+    for (var i = 0; i < tableIds.length; i++) {
+        var tid = tableIds[i];
+        if (tid === targetTableId) continue;
+        var path = edgeFindPath(tid, targetTableId, maxHops);
+        if (path) result[tid] = path;
+    }
+    return result;
+}
+
+// Resolve a record to a target table record ID by walking the edge path.
+// Given a record's fields and its table's path to the target, follow the
+// link field chain through intermediate records.
+// Returns: array of target record IDs, or empty array if no link found.
+async function edgeResolveRecord(record, path) {
+    if (!path || path.length === 0) return [];
+    if (!record || !record.fields) return [];
+
+    var currentIds = [record];
+
+    for (var step = 0; step < path.length; step++) {
+        var edge = path[step];
+        var nextIds = [];
+
+        for (var ri = 0; ri < currentIds.length; ri++) {
+            var rec = currentIds[ri];
+            var fields = rec.fields || rec;
+            var linkedValue = fields[edge.fieldId];
+            // Also try by field name
+            if (linkedValue === undefined) linkedValue = fields[edge.fieldName];
+            if (!linkedValue) continue;
+
+            var ids = Array.isArray(linkedValue) ? linkedValue : [linkedValue];
+            for (var li = 0; li < ids.length; li++) {
+                var lid = ids[li];
+                // If it's a string (record ID), and we need to follow more hops, fetch the record
+                if (typeof lid === 'string') {
+                    if (step < path.length - 1) {
+                        // Need to fetch intermediate record to continue traversal
+                        try {
+                            var intermediate = await getRecord(edge.toTable, lid);
+                            if (intermediate) nextIds.push(intermediate);
+                        } catch (e) { /* skip unresolvable */ }
+                    } else {
+                        // Last step — just collect the IDs
+                        nextIds.push({ recordId: lid });
+                    }
+                }
+            }
+        }
+
+        currentIds = nextIds;
+        if (currentIds.length === 0) return [];
+    }
+
+    return currentIds.map(function(r) { return r.recordId; }).filter(Boolean);
+}
+
+// Auto-compute linkedRecordTables from the edge graph.
+// For each table, find the shortest path to the client table and extract
+// the first-hop link field.  For direct links (1-hop), this is equivalent
+// to the existing wizard config.  For multi-hop links, the full path is
+// also stored for use by edgeResolveRecord.
+function edgeAutoLinkedRecordTables(clientTableId) {
+    if (!clientTableId) return { linkedRecordTables: {}, paths: {} };
+
+    var paths = edgeFindAllPaths(clientTableId);
+    var linkedRecordTables = {};
+    var fullPaths = {};
+
+    var tableIds = Object.keys(paths);
+    for (var i = 0; i < tableIds.length; i++) {
+        var tid = tableIds[i];
+        var path = paths[tid];
+        if (path.length > 0) {
+            // The first-hop field ID is what the existing grouping logic needs
+            linkedRecordTables[tid] = path[0].fieldId;
+            fullPaths[tid] = path;
+        }
+    }
+
+    return { linkedRecordTables: linkedRecordTables, paths: fullPaths };
 }
 
 // ============ Init ============
@@ -16847,6 +17147,31 @@ async function init() {
     // the background IDB save finishes, so the IDB read above may return
     // fewer tables than actually exist in memory.
     var tableCount = Object.keys(META_TABLES).length;
+
+    // Load edge graph from IDB (fast path for returning users).
+    // If META_FIELDS has rich metadata (options with linkedTableId), rebuild
+    // from scratch for accuracy; otherwise use the persisted version.
+    try {
+        await loadEdgeGraph();
+        // Check if we can build a more accurate graph from current metadata
+        var hasRichFields = false;
+        var allTableIds = Object.keys(META_FIELDS);
+        for (var _ei = 0; _ei < allTableIds.length && !hasRichFields; _ei++) {
+            var _efields = META_FIELDS[allTableIds[_ei]];
+            for (var _efid in _efields) {
+                if (_efields[_efid].options && _efields[_efid].options.linkedTableId) {
+                    hasRichFields = true; break;
+                }
+            }
+        }
+        if (hasRichFields) {
+            rebuildEdgeGraph();
+            // Persist in background (non-blocking)
+            persistEdgeGraph().catch(function(e) { console.warn('[init] Edge persist failed:', e); });
+        }
+    } catch (e) {
+        console.warn('[init] Failed to load edge graph:', e);
+    }
 
     // Load user preferences (local-only, fast) — don't await network-dependent prefs yet
     try {
@@ -25279,13 +25604,20 @@ async function runHydration() {
             lastSyncCursor: 0
         });
 
-        // Group records
+        // Group records.  Pass edge paths for multi-hop resolution when the
+        // edge graph is available (built from META_FIELDS during init).
+        var edgePaths = null;
+        if (typeof edgeAutoLinkedRecordTables === 'function' && wizardData.clientTable) {
+            var edgeResult = edgeAutoLinkedRecordTables(wizardData.clientTable);
+            edgePaths = edgeResult.paths;
+        }
         var grouped = MatrixBridge.groupRecordsByClient(
             allRecords,
             wizardData.legacyFields,
             wizardData.clientTable,
             wizardData.clientIdentifierField,
-            wizardData.linkedRecordTables
+            wizardData.linkedRecordTables,
+            edgePaths
         );
 
         var clientNames = Object.keys(grouped.groups);
