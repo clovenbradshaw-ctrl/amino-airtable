@@ -303,6 +303,26 @@
       return (tableRows || []).find(row => row.recordId === recordId || row.id === recordId || row.fields?.recordId === recordId);
     }
 
+    function findClientRecord(tableRows, clientId) {
+      const needle = String(clientId || '').trim().toLowerCase();
+      if (!needle) return (tableRows || [])[0] || null;
+      return (tableRows || []).find(row => {
+        const fields = row.fields || {};
+        const candidates = [
+          row.recordId,
+          row.id,
+          fields.recordId,
+          fields.airtableId,
+          fields.Airtable_ID,
+          fields.airtable_id,
+          fields['Client Record ID'],
+          fields.clientId,
+          fields.client_id
+        ];
+        return candidates.some(v => String(v || '').trim().toLowerCase() === needle);
+      }) || null;
+    }
+
     function collectRecordIds(value) {
       if (value == null || value === '') return [];
       if (Array.isArray(value)) return value.flatMap(collectRecordIds);
@@ -326,9 +346,12 @@
 
     function renderHeader() {
       const record = state.clientRecord;
-      const name = record ? `${record.fields?.['Last Name'] || ''}, ${record.fields?.['First Name'] || ''} ${record.fields?.Office || ''}`.replace(/\s+/g, ' ').trim() : 'Unknown Client';
+      const fields = record?.fields || {};
+      const name = record
+        ? (fields['display name'] || fields['Display Name'] || `${fields?.['Last Name'] || ''}, ${fields?.['First Name'] || ''} ${fields?.Office || ''}`.replace(/\s+/g, ' ').trim() || 'Unknown Client')
+        : 'Unknown Client';
       document.getElementById('clientName').textContent = name;
-      document.getElementById('clientMeta').textContent = `recordId: ${state.clientId}`;
+      document.getElementById('clientMeta').textContent = `recordId: ${record?.recordId || state.clientId}`;
     }
 
     function renderTabs() {
@@ -432,7 +455,7 @@
       const canUseAmino = typeof AminoData !== 'undefined' && typeof AminoData.getTables === 'function';
       if (!canUseAmino) {
         state.data = mockData;
-        state.clientRecord = findRecordById(mockData.Clients, state.clientId) || mockData.Clients[0];
+        state.clientRecord = findClientRecord(mockData.Clients, state.clientId) || mockData.Clients[0];
         return;
       }
 
@@ -448,13 +471,18 @@
         }
         state.data = byTableName;
 
-        const clientTableMatch = Object.keys(byTableName).find(name => normalizeTableName(name) === 'clients') || 'Clients';
+        const clientTableMatch = Object.keys(byTableName).find(name => normalizeTableName(name) === 'client info')
+          || Object.keys(byTableName).find(name => normalizeTableName(name) === 'clients')
+          || 'clientInfo';
         const clients = byTableName[clientTableMatch] || [];
-        state.clientRecord = findRecordById(clients, state.clientId) || clients[0] || null;
+        state.clientRecord = findClientRecord(clients, state.clientId) || clients[0] || null;
+        if (state.clientRecord?.recordId) {
+          state.clientId = state.clientRecord.recordId;
+        }
       } catch (err) {
         console.warn('Failed loading AminoData, falling back to mock data:', err);
         state.data = mockData;
-        state.clientRecord = findRecordById(mockData.Clients, state.clientId) || mockData.Clients[0];
+        state.clientRecord = findClientRecord(mockData.Clients, state.clientId) || mockData.Clients[0];
       }
     }
 
