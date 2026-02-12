@@ -820,7 +820,8 @@
       'placeholder fields': ['Name', 'Field Name']
     };
 
-    // Lazily-built lookup: recordId → { tableName, record }
+    // Record index: recordId → { tableName, record }
+    // Built eagerly after data load; updated incrementally when tables change.
     function buildRecordIndex() {
       if (state._recordIndex) return state._recordIndex;
       var index = {};
@@ -829,15 +830,27 @@
         if (/^tbl[a-zA-Z0-9]+$/.test(tableName)) return;
         var rows = state.data[tableName];
         if (!Array.isArray(rows)) return;
-        rows.forEach(function(row) {
-          var id = row.recordId || row.id;
+        for (var i = 0; i < rows.length; i++) {
+          var id = rows[i].recordId || rows[i].id;
           if (id && !index[id]) {
-            index[id] = { tableName: tableName, record: row };
+            index[id] = { tableName: tableName, record: rows[i] };
           }
-        });
+        }
       });
       state._recordIndex = index;
       return index;
+    }
+
+    // Incrementally add rows from a single table to the index
+    function indexTableRows(tableName, rows) {
+      if (!state._recordIndex) return; // will be built lazily
+      if (/^tbl[a-zA-Z0-9]+$/.test(tableName)) return;
+      for (var i = 0; i < rows.length; i++) {
+        var id = rows[i].recordId || rows[i].id;
+        if (id && !state._recordIndex[id]) {
+          state._recordIndex[id] = { tableName: tableName, record: rows[i] };
+        }
+      }
     }
 
     function getDisplayValue(record, tableName) {
@@ -967,6 +980,8 @@
     }
 
     // ============ Context Snapshot (from index.html sessionStorage) ============
+    var CONTEXT_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
     function loadContextSnapshot() {
       try {
         var raw = sessionStorage.getItem(CONTEXT_KEY);
@@ -975,6 +990,11 @@
         if (!parsed || !parsed.data) return null;
         // If context has a clientId, it should match our target
         if (parsed.clientId && state.clientId && parsed.clientId !== state.clientId) return null;
+        // Reject stale snapshots older than 5 minutes
+        if (parsed.timestamp && (Date.now() - parsed.timestamp) > CONTEXT_MAX_AGE_MS) {
+          console.warn('[Profile] Context snapshot is stale (' + Math.round((Date.now() - parsed.timestamp) / 1000) + 's old), skipping.');
+          return null;
+        }
         return parsed;
       } catch (e) { return null; }
     }
@@ -982,13 +1002,34 @@
     // ============ Data Loading ============
     async function loadDataFromContext(ctx) {
       state.data = {};
-      state._recordIndex = null; // invalidate resolution cache
+      state._recordIndex = null;
       var data = ctx.data || {};
       Object.keys(data).forEach(function(key) {
         var rows = data[key];
         if (!Array.isArray(rows)) return;
         state.data[key] = rows;
       });
+      // Eagerly build record index after loading all data
+      buildRecordIndex();
+    }
+
+    function getNeededTableNames() {
+      var needed = new Set();
+      var schema = state.schema || DEFAULT_SCHEMA;
+      // Always need client info
+      needed.add(norm('Client Info'));
+      needed.add(norm('Case Master View'));
+      (schema.tabs || []).forEach(function(tab) {
+        (tab.sections || []).forEach(function(sec) {
+          if (sec.table) {
+            needed.add(norm(sec.table));
+            // Include alias targets
+            var aliases = TABLE_ALIASES[norm(sec.table)];
+            if (aliases) aliases.forEach(function(a) { needed.add(norm(a)); });
+          }
+        });
+      });
+      return needed;
     }
 
     async function loadDataFromAminoData() {
@@ -996,23 +1037,46 @@
       state._recordIndex = null; // invalidate resolution cache
       try {
         var tables = await AminoData.getTables();
-        for (var i = 0; i < tables.length; i++) {
-          var table = tables[i];
+        var neededNames = getNeededTableNames();
+
+        // Filter to only tables referenced by the schema
+        var relevantTables = tables.filter(function(table) {
+          var tableName = table.table_name || table.name || table.table_id || table.id;
+          return neededNames.has(norm(tableName));
+        });
+        // Fall back to all tables if filter yields nothing (schema may use unknown names)
+        if (!relevantTables.length) relevantTables = tables;
+
+        // Build tableMap first (sync)
+        relevantTables.forEach(function(table) {
           var tableId = table.table_id || table.id;
           var tableName = table.table_name || table.name || tableId;
           state.tableMap[tableId] = tableName;
           state.tableMap[tableName] = tableName;
-          var rows = await AminoData.getTableRecords(tableId);
-          // Normalize rows: ensure each has a recordId
-          var normalized = rows.map(function(row) {
-            return {
-              recordId: row.recordId || row.id,
-              fields: row.fields || {}
-            };
-          });
-          state.data[tableName] = normalized;
-          if (tableId !== tableName) state.data[tableId] = normalized;
+        });
+
+        // Fetch all tables in parallel (batches of 4 to avoid overloading)
+        var BATCH_SIZE = 4;
+        for (var b = 0; b < relevantTables.length; b += BATCH_SIZE) {
+          var batch = relevantTables.slice(b, b + BATCH_SIZE);
+          await Promise.all(batch.map(function(table) {
+            var tableId = table.table_id || table.id;
+            var tableName = table.table_name || table.name || tableId;
+            // Prefer cached (no-clone) accessor if already hydrated
+            var cached = typeof AminoData.getTableRecordsCached === 'function'
+              ? AminoData.getTableRecordsCached(tableId) : null;
+            var promise = cached ? Promise.resolve(cached) : AminoData.getTableRecords(tableId);
+            return promise.then(function(rows) {
+              var normalized = rows.map(function(row) {
+                return { recordId: row.recordId || row.id, fields: row.fields || {} };
+              });
+              state.data[tableName] = normalized;
+              if (tableId !== tableName) state.data[tableId] = normalized;
+            });
+          }));
         }
+        // Eagerly build record index after all tables loaded
+        buildRecordIndex();
       } catch (e) {
         console.warn('[Profile] AminoData load failed:', e.message);
       }
@@ -1378,7 +1442,14 @@
     function renderRelatedSection(sec) {
       var resolution = resolveRelatedRows(sec.table);
       var rows = resolution.rows;
-      if (!rows.length) return '<div class="panel-body empty">No related records found.</div>';
+      if (!rows.length) {
+        var diagHtml = '<div class="panel-body empty">No related records found.';
+        if (resolution.note) {
+          diagHtml += '<div style="margin-top:8px;font-size:11px;color:var(--text-muted);opacity:0.8;">' + esc(resolution.note) + '</div>';
+        }
+        diagHtml += '</div>';
+        return diagHtml;
+      }
       var isCaseNotesSection = norm(sec.table) === 'case notes' || norm(sec.title) === 'case notes';
 
       if (isCaseNotesSection) {
@@ -1430,13 +1501,47 @@
       return html;
     }
 
+    var _caseNotesSearchTimer = null;
+
     function bindCaseNotesSearch() {
       var input = document.getElementById('caseNotesSearchInput');
       if (!input) return;
       input.addEventListener('input', function(e) {
         state.caseNotesSearch = e.target.value || '';
-        renderTabContent();
+        // Debounce: only re-render the case notes panel after 150ms of idle
+        clearTimeout(_caseNotesSearchTimer);
+        _caseNotesSearchTimer = setTimeout(function() {
+          rerenderCaseNotesPanel();
+        }, 150);
       });
+    }
+
+    // Re-render only the case notes panel without rebuilding the entire tab
+    function rerenderCaseNotesPanel() {
+      var panel = document.querySelector('[data-section-table="case notes"], [data-section-table="update tracker"]');
+      if (!panel) {
+        // Fallback: full re-render if targeted panel not found
+        renderTabContent();
+        return;
+      }
+      var tab = state.schema.tabs.find(function(t) { return t.id === state.activeTab; });
+      if (!tab) return;
+      var sec = null;
+      (tab.sections || []).forEach(function(s) {
+        if (norm(s.table) === 'case notes' || norm(s.table) === 'update tracker' || norm(s.title) === 'case notes') sec = s;
+      });
+      if (!sec) return;
+      var resolution = resolveRelatedRows(sec.table);
+      var count = '<span class="panel-count">' + resolution.rows.length + '</span>';
+      var body = renderRelatedSection(sec);
+      panel.innerHTML = '<div class="panel-header"><h3>' + esc(sec.title) + '</h3>' + count + '</div>' + body;
+      bindCaseNotesSearch();
+      // Restore cursor position in search input
+      var newInput = document.getElementById('caseNotesSearchInput');
+      if (newInput) {
+        newInput.focus();
+        newInput.setSelectionRange(newInput.value.length, newInput.value.length);
+      }
     }
 
     function renderTabContent() {
@@ -1449,17 +1554,20 @@
       var sections = tab.sections || [];
       var colClass = sections.length > 1 ? '' : ' single-col';
       var html = '<div class="tab-content-area' + colClass + '">';
-      sections.forEach(function(sec) {
+      sections.forEach(function(sec, idx) {
         var count = '';
         var body = '';
+        var sectionAttr = ' data-section-idx="' + idx + '"';
+        // Tag case notes / related sections for targeted re-render
         if (sec.type === 'related') {
-          var related = resolveRelatedRows(sec.table).rows;
-          count = '<span class="panel-count">' + related.length + '</span>';
+          var resolution = resolveRelatedRows(sec.table);
+          count = '<span class="panel-count">' + resolution.rows.length + '</span>';
           body = renderRelatedSection(sec);
+          sectionAttr += ' data-section-table="' + esc(norm(sec.table)) + '"';
         } else {
           body = renderFieldsSection(sec);
         }
-        html += '<div class="panel"><div class="panel-header"><h3>' + esc(sec.title) + '</h3>' + count + '</div>' + body + '</div>';
+        html += '<div class="panel"' + sectionAttr + '><div class="panel-header"><h3>' + esc(sec.title) + '</h3>' + count + '</div>' + body + '</div>';
       });
       html += '</div>';
       document.getElementById('tabContent').innerHTML = html;
@@ -1746,11 +1854,20 @@
         state.clientId = state.clientRecord.recordId;
       }
 
-      // 7. Render
+      // 7. Progressive render: show header + nav immediately, then tabs
       document.getElementById('loadingState').style.display = 'none';
       document.getElementById('profileContent').style.display = '';
       state.activeTab = state.schema.tabs[0] ? state.schema.tabs[0].id : null;
-      renderAll();
+
+      // Render header and nav first (fast — only needs client record)
+      renderNav();
+      renderHeader();
+      renderTabs();
+      renderAdminToggle();
+
+      // Render tab content (involves FK resolution across all tables)
+      renderTabContent();
+      renderAdminConfig();
     }
 
     // ============ Event Wiring ============
