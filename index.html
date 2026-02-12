@@ -1999,6 +1999,64 @@
         .iface-global-search::placeholder { color: var(--iface-text-light); }
         .iface-global-search:focus { border-color: var(--iface-accent); box-shadow: 0 0 0 2px rgba(167,118,83,0.15); background: white; }
 
+        .command-palette-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(2px);
+            z-index: 12000;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 10vh 16px 24px;
+        }
+        .command-palette-overlay.hidden { display: none; }
+        .command-palette-panel {
+            width: min(760px, 100%);
+            border-radius: 14px;
+            border: 1px solid var(--border-primary);
+            background: var(--bg-primary);
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+        }
+        .command-palette-input {
+            width: 100%;
+            border: 0;
+            border-bottom: 1px solid var(--border-primary);
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 15px;
+            padding: 14px 16px;
+            outline: none;
+        }
+        .command-palette-results { max-height: 52vh; overflow: auto; }
+        .command-palette-item {
+            width: 100%;
+            border: 0;
+            border-bottom: 1px solid var(--border-primary);
+            background: transparent;
+            color: var(--text-primary);
+            text-align: left;
+            padding: 12px 16px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .command-palette-item:hover { background: var(--bg-tertiary); }
+        .command-palette-item:last-child { border-bottom: 0; }
+        .command-palette-item-title { font-size: 13px; font-weight: 600; }
+        .command-palette-item-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+        .command-palette-item-type {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            white-space: nowrap;
+            align-self: center;
+        }
+        .command-palette-empty { padding: 20px 16px; font-size: 13px; color: var(--text-muted); }
+
         /* Interface page tabs (inside mainnav) */
         .iface-page-tabs {
             display: flex; align-items: center; gap: 2px;
@@ -5571,6 +5629,13 @@
         </div>
     </div>
 
+    <div class="command-palette-overlay hidden" id="command-palette-overlay" onclick="closeCommandPalette(event)">
+        <div class="command-palette-panel" onclick="event.stopPropagation()">
+            <input type="text" class="command-palette-input" id="command-palette-input" placeholder="Search clients, matters, tasks..." oninput="renderCommandPaletteResults(this.value)">
+            <div class="command-palette-results" id="command-palette-results"></div>
+        </div>
+    </div>
+
     <!-- Settings Sub-App -->
     <div id="settings-app">
         <div class="settings-header">
@@ -7136,14 +7201,147 @@ function initSidebarSearch() {
         }
     });
 
-    // Keyboard shortcut: Cmd+K / Ctrl+K to focus search
+    // Keyboard shortcut: Cmd+K / Ctrl+K opens CRM command palette in Interface app
     document.addEventListener('keydown', function(e) {
         if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
             e.preventDefault();
+            if (_currentApp === 'interface' && typeof openCommandPalette === 'function') {
+                openCommandPalette();
+                return;
+            }
             searchInput.focus();
             searchInput.select();
         }
     });
+}
+
+// Global CRM command palette state
+var COMMAND_PALETTE_STATE = {
+    open: false,
+    allRecords: null,
+    recentRecordIds: []
+};
+
+function _loadRecentProfileRecords() {
+    try {
+        var raw = localStorage.getItem('aminoRecentProfileRecords');
+        var parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function _saveRecentProfileRecord(entry) {
+    if (!entry || !entry.recordId) return;
+    var list = _loadRecentProfileRecords().filter(function(item) {
+        return item && item.recordId !== entry.recordId;
+    });
+    list.unshift({
+        recordId: entry.recordId,
+        tableId: entry.tableId || '',
+        title: entry.title || entry.recordId,
+        subtitle: entry.subtitle || ''
+    });
+    if (list.length > 15) list = list.slice(0, 15);
+    try { localStorage.setItem('aminoRecentProfileRecords', JSON.stringify(list)); } catch (e) {}
+}
+
+function _getCommandPaletteRecords() {
+    if (COMMAND_PALETTE_STATE.allRecords) return COMMAND_PALETTE_STATE.allRecords;
+    var records = [];
+    var tableIds = Object.keys(META_TABLES || {});
+    for (var i = 0; i < tableIds.length; i++) {
+        var tableId = tableIds[i];
+        var table = META_TABLES[tableId] || {};
+        var tableName = String(table.tableName || table.table_name || tableId);
+        var lowered = tableName.toLowerCase();
+        var category = '';
+        if (lowered.indexOf('client') !== -1) category = 'client';
+        else if (lowered.indexOf('matter') !== -1) category = 'matter';
+        else if (lowered.indexOf('task') !== -1) category = 'task';
+        if (!category) continue;
+
+        var rows = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) ? Object.values(window.IN_MEMORY_DATA[tableId]) : [];
+        for (var r = 0; r < rows.length; r++) {
+            var row = rows[r] || {};
+            var recordId = row.id || row.airtableRecordId || row.airtable_id || row.recordId;
+            if (!recordId) continue;
+            var title = '';
+            var subtitle = '';
+            for (var key in row) {
+                if (!title && /(name|title)/i.test(key) && row[key]) title = String(row[key]);
+                if (!subtitle && /(status|stage|owner|attny|attorney)/i.test(key) && row[key]) subtitle = String(row[key]);
+                if (title && subtitle) break;
+            }
+            if (!title) title = tableName + ' ' + String(recordId).slice(-6);
+            records.push({ recordId: recordId, tableId: tableId, title: title, subtitle: subtitle, type: category });
+        }
+    }
+    COMMAND_PALETTE_STATE.allRecords = records;
+    return records;
+}
+
+function openCommandPalette() {
+    var overlay = document.getElementById('command-palette-overlay');
+    var input = document.getElementById('command-palette-input');
+    if (!overlay || !input) return;
+    COMMAND_PALETTE_STATE.open = true;
+    overlay.classList.remove('hidden');
+    input.value = '';
+    renderCommandPaletteResults('');
+    setTimeout(function() { input.focus(); input.select(); }, 0);
+}
+
+function closeCommandPalette(event) {
+    if (event && event.target && event.target.id && event.target.id !== 'command-palette-overlay') return;
+    var overlay = document.getElementById('command-palette-overlay');
+    if (!overlay) return;
+    overlay.classList.add('hidden');
+    COMMAND_PALETTE_STATE.open = false;
+}
+
+function renderCommandPaletteResults(query) {
+    var container = document.getElementById('command-palette-results');
+    if (!container) return;
+    var q = String(query || '').trim().toLowerCase();
+    var recent = _loadRecentProfileRecords();
+    var recentIds = recent.map(function(r) { return r.recordId; });
+    var all = _getCommandPaletteRecords();
+    var filtered = q
+        ? all.filter(function(r) {
+            return String(r.title).toLowerCase().indexOf(q) !== -1 ||
+                String(r.subtitle || '').toLowerCase().indexOf(q) !== -1 ||
+                String(r.recordId).toLowerCase().indexOf(q) !== -1;
+        })
+        : all.filter(function(r) { return recentIds.indexOf(r.recordId) !== -1; });
+
+    if (!filtered.length) {
+        container.innerHTML = '<div class="command-palette-empty">No matching records. Try searching by name, status, or record ID.</div>';
+        return;
+    }
+
+    var html = filtered.slice(0, 20).map(function(item) {
+        var subtitle = item.subtitle ? _esc(item.subtitle) : 'Open ' + _esc(item.title) + ' profile';
+        var safeTable = _esc(item.tableId).replace(/'/g, '&#39;');
+        var safeRecord = _esc(item.recordId).replace(/'/g, '&#39;');
+        return '<button class="command-palette-item" onclick="openCommandPaletteRecord(\'' + safeTable + '\',\'' + safeRecord + '\')">' +
+            '<span><div class="command-palette-item-title">' + _esc(item.title) + '</div><div class="command-palette-item-meta">' + subtitle + '</div></span>' +
+            '<span class="command-palette-item-type">' + _esc(item.type) + '</span>' +
+            '</button>';
+    }).join('');
+    container.innerHTML = html;
+}
+
+function openCommandPaletteRecord(tableId, recordId) {
+    closeCommandPalette();
+    if (tableId && recordId && typeof openRecordProfile === 'function') {
+        openRecordProfile(tableId, recordId);
+        return;
+    }
+    if (typeof InterfaceApp !== 'undefined' && InterfaceApp.openClientProfilePage) {
+        InterfaceApp.openClientProfilePage(recordId);
+    }
 }
 
 // SVG icons for sidebar
@@ -18853,6 +19051,15 @@ async function openRecordProfile(tableId, recordId, viewId) {
 
     document.getElementById('profile-record-id').textContent = recordId;
 
+    try {
+        _saveRecentProfileRecord({
+            recordId: recordId,
+            tableId: tableId || '',
+            title: profileDisplayTitle || recordId,
+            subtitle: tableName || ''
+        });
+    } catch (e) {}
+
     // Reset configure mode
     profileConfigureMode = false;
     document.getElementById('profile-body').classList.remove('configure-mode');
@@ -24676,7 +24883,7 @@ var InterfaceApp = (function() {
                         id: 'home-action-cards',
                         type: 'action-cards',
                         items: [
-                            { label: 'Database', desc: 'Browse tables, run queries, and explore your Airtable data through the synchronized Matrix layer.', icon: 'database', color: 'blue', action: 'switchApp:database' },
+                            { label: 'Database (Admin)', desc: 'Admin console for schema changes, cleanup, and advanced maintenance over synchronized Airtable data.', icon: 'database', color: 'blue', action: 'switchApp:database' },
                             { label: 'Interface', desc: 'Client views, case dashboards, and custom forms \u2014 your workspace for day-to-day operations.', icon: 'interface', color: 'green', action: 'page:clients' },
                             { label: 'Settings', desc: 'Matrix sync configuration, user management, webhook endpoints, and system preferences.', icon: 'settings', color: 'slate', action: 'switchApp:settings' }
                         ]
@@ -27994,11 +28201,65 @@ var InterfaceApp = (function() {
         }, 120);
     }
 
-    function openClientProfilePage(recordId, event) {
+    async function _buildClientProfileContext(recordId) {
+        var REQUIRED_TABLES = {
+            'clients': true,
+            'client info': true,
+            'addresses': true,
+            'matters': true,
+            'matter notes': true,
+            'case notes': true,
+            'ead': true,
+            'activities': true,
+            'hearings/interviews': true,
+            'communications': true
+        };
+        var data = {};
+        var tableIds = Object.keys(META_TABLES || {}).filter(function(tableId) {
+            var table = META_TABLES[tableId] || {};
+            var tableName = String(table.tableName || table.table_name || '').trim().toLowerCase();
+            return REQUIRED_TABLES[tableName];
+        });
+
+        for (var i = 0; i < tableIds.length; i++) {
+            var tableId = tableIds[i];
+            var tableMeta = META_TABLES[tableId] || {};
+            var tableName = tableMeta.tableName || tableMeta.table_name || tableId;
+            var rows = await _getTableRecords(tableId);
+            data[tableName] = rows;
+            data[tableId] = rows;
+        }
+
+        return {
+            version: 1,
+            capturedAt: Date.now(),
+            clientId: recordId,
+            data: data
+        };
+    }
+
+    async function openClientProfilePage(recordId, event) {
         if (!recordId) return;
         if (event && event.target && event.target.closest('button, a, input, select, textarea')) {
             return;
         }
+
+        try {
+            var snapshot = await _buildClientProfileContext(recordId);
+            sessionStorage.setItem('amino.clientProfile.context.v1', JSON.stringify(snapshot));
+        } catch (e) {
+            console.warn('[Interface] Failed to persist client profile context:', e.message);
+        }
+
+        try {
+            _saveRecentProfileRecord({
+                recordId: recordId,
+                tableId: (_resolveTableByPattern('client info') || _resolveTableByPattern('client') || {}).id || '',
+                title: recordId,
+                subtitle: 'Recent client'
+            });
+        } catch (e) {}
+
         var targetUrl = 'client-profile.html?clientId=' + encodeURIComponent(recordId);
         window.location.href = targetUrl;
     }
@@ -28273,6 +28534,19 @@ var _settingsRooms = []; // Cached room list (tables with matrix_room_id)
 var _settingsPermissionGroups = { groups: [], assignments: {} }; // Shared room permission structures
 var _urlStateBootstrapped = false;
 
+function canAccessDatabaseApp() {
+    var role = String(_currentUserRole || '').toLowerCase();
+    return role === 'admin' || role === 'staff';
+}
+
+function applyAppNavPermissions() {
+    var dbBtn = document.getElementById('app-nav-database');
+    if (!dbBtn) return;
+    var allowed = canAccessDatabaseApp();
+    dbBtn.style.display = allowed ? '' : 'none';
+    dbBtn.setAttribute('aria-hidden', allowed ? 'false' : 'true');
+}
+
 function _setUrlParam(params, key, value) {
     if (value == null || value === '') params.delete(key);
     else params.set(key, String(value));
@@ -28336,6 +28610,10 @@ function getUrlState() {
 }
 
 function switchApp(appName) {
+    if (appName === 'database' && !canAccessDatabaseApp()) {
+        appName = 'interface';
+    }
+
     _currentApp = appName;
 
     // Update nav button states
@@ -28525,6 +28803,7 @@ function updateAppNavUser() {
     else if (_currentUserRole === 'staff') roleEl.classList.add('staff');
     var fhRole = document.getElementById('file-header-role');
     if (fhRole) fhRole.textContent = _currentUserRole || 'admin';
+    applyAppNavPermissions();
 }
 
 async function detectAndStoreUserRole() {
@@ -29725,14 +30004,16 @@ init = async function() {
         await renderTable();
     } else if (state.app === 'interface') {
         switchApp('interface');
-        InterfaceApp.setUrlState({ page: state.ifacePage, search: state.ifaceSearch });
+        InterfaceApp.setUrlState({ page: state.ifacePage || 'clients', search: state.ifaceSearch });
         if (InterfaceApp.activePage) await InterfaceApp.renderPage(InterfaceApp.activePage);
     } else if (state.app === 'settings') {
         switchApp('settings');
     } else if (state.app === 'database') {
         switchApp('database');
     } else {
-        switchApp('database');
+        switchApp('interface');
+        InterfaceApp.setUrlState({ page: 'clients', search: '' });
+        if (InterfaceApp.activePage) await InterfaceApp.renderPage(InterfaceApp.activePage);
     }
 
     persistUrlState();
@@ -29741,6 +30022,11 @@ init = async function() {
 // Keyboard handler for modals (Escape to close)
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
+        var commandPalette = document.getElementById('command-palette-overlay');
+        if (commandPalette && !commandPalette.classList.contains('hidden')) {
+            closeCommandPalette();
+            return;
+        }
         // Close room publish modal if open
         var pubModal = document.getElementById('room-publish-modal');
         if (pubModal && !pubModal.classList.contains('hidden')) {
