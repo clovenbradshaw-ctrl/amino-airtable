@@ -19,6 +19,7 @@ var AminoData = (function() {
     var SYNAPSE_SALT_PREFIX = 'amino-local-encrypt:';
     var ENCRYPTION_ALGORITHM = 'aes-gcm-256';
     var AIRTABLE_SYNC_WEBHOOK = 'https://n8n.intelechia.com/webhook/c875f674-9228-45ae-b6ec-10870df8a403';
+    var BOX_DOWNLOAD_WEBHOOK = 'https://n8n.intelechia.com/webhook/box-download';
     var AIRTABLE_SYNC_COOLDOWN = 60000; // 60 seconds minimum between triggers
     var CONNECTIVITY_CHECK_INTERVAL = 30000; // 30 seconds
     var DEFAULT_OFFLINE_ACCESS_MAX_DAYS = 30; // configurable per org
@@ -836,6 +837,135 @@ var AminoData = (function() {
     }
 
     // ============ Hydration & Sync ============
+
+    // Primary hydration: bulk download all records from Box via n8n webhook.
+    // Returns total record count on success, or throws so caller can fall back.
+    async function hydrateFromBoxDownload(onProgress) {
+        if (!_accessToken) throw new Error('Not authenticated');
+
+        console.log('[AminoData] Attempting primary hydration via box-download webhook');
+        var url = BOX_DOWNLOAD_WEBHOOK + '?access_token=' + encodeURIComponent(_accessToken);
+
+        var response;
+        try {
+            response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + _accessToken
+                },
+                body: JSON.stringify({ access_token: _accessToken })
+            });
+        } catch (fetchErr) {
+            throw new Error('Box download unreachable: ' + fetchErr.message);
+        }
+
+        if (!response.ok) {
+            throw new Error('Box download failed: HTTP ' + response.status);
+        }
+
+        var data = await response.json();
+
+        // Expect either:
+        //   { records: [ { id, table_id|tableId, fields, ... }, ... ] }
+        //   { tables: { tableId: [ records ] } }
+        //   or a flat array of records
+        var allRecords = [];
+        if (Array.isArray(data)) {
+            allRecords = data;
+        } else if (data && Array.isArray(data.records)) {
+            allRecords = data.records;
+        } else if (data && typeof data.tables === 'object' && !Array.isArray(data.tables)) {
+            // Records grouped by table
+            var tableKeys = Object.keys(data.tables);
+            for (var t = 0; t < tableKeys.length; t++) {
+                var tRecords = data.tables[tableKeys[t]];
+                if (Array.isArray(tRecords)) {
+                    for (var r = 0; r < tRecords.length; r++) {
+                        tRecords[r].tableId = tRecords[r].tableId || tRecords[r].table_id || tableKeys[t];
+                        allRecords.push(tRecords[r]);
+                    }
+                }
+            }
+        }
+
+        if (!allRecords.length) {
+            throw new Error('Box download returned no records');
+        }
+
+        console.log('[AminoData] Box download received', allRecords.length, 'records, grouping by table');
+
+        // Group records by tableId
+        var byTable = {};
+        for (var i = 0; i < allRecords.length; i++) {
+            var rec = allRecords[i];
+            var tableId = rec.tableId || rec.table_id;
+            if (!tableId) continue;
+            if (!byTable[tableId]) byTable[tableId] = [];
+            byTable[tableId].push(rec);
+        }
+
+        var tableIds = Object.keys(byTable);
+        var totalHydrated = 0;
+
+        for (var j = 0; j < tableIds.length; j++) {
+            var tid = tableIds[j];
+            var records = byTable[tid];
+
+            // Clear existing rows for this table so stale records don't linger
+            await deleteTableRecords(tid);
+
+            // Write in batches
+            var BATCH_SIZE = 200;
+            for (var b = 0; b < records.length; b += BATCH_SIZE) {
+                var batch = records.slice(b, b + BATCH_SIZE);
+                var encryptedBatch = await prepareEncryptedRecords(batch, tid);
+                var tx = _db.transaction('records', 'readwrite');
+                var store = tx.objectStore('records');
+                for (var k = 0; k < encryptedBatch.length; k++) {
+                    await idbPut(store, encryptedBatch[k].entry);
+                    cacheRecord(encryptedBatch[k].normalizedRecord);
+                }
+                await idbTxDone(tx);
+            }
+
+            // Update sync cursor
+            var syncTx = _db.transaction('sync', 'readwrite');
+            await idbPut(syncTx.objectStore('sync'), {
+                tableId: tid,
+                lastSynced: new Date().toISOString()
+            });
+            await idbTxDone(syncTx);
+
+            cacheFullTable(tid, records.map(function(record) {
+                return {
+                    id: record.id,
+                    tableId: tid,
+                    tableName: record.tableName || record.table_name || tid,
+                    fields: record.fields || {},
+                    lastSynced: record.lastSynced || new Date().toISOString()
+                };
+            }));
+
+            totalHydrated += records.length;
+
+            if (onProgress) {
+                onProgress({
+                    tableId: tid,
+                    tableName: (byTable[tid][0] || {}).tableName || (byTable[tid][0] || {}).table_name || tid,
+                    tableIndex: j,
+                    tableCount: tableIds.length,
+                    recordCount: records.length,
+                    totalRecords: totalHydrated
+                });
+            }
+
+            console.log('[AminoData] Box hydrated', records.length, 'records for table', tid);
+        }
+
+        console.log('[AminoData] Box download hydration complete:', totalHydrated, 'total records across', tableIds.length, 'tables');
+        return totalHydrated;
+    }
 
     async function hydrateTable(tableId) {
         console.log('[AminoData] Hydrating table:', tableId);
@@ -1897,6 +2027,16 @@ var AminoData = (function() {
     async function hydrateAll(onProgress) {
         if (!_initialized) throw new Error('Call init() first');
 
+        // Primary: try bulk hydration from Box download webhook (~70k records)
+        try {
+            var boxTotal = await hydrateFromBoxDownload(onProgress);
+            console.log('[AminoData] Primary hydration (box-download) succeeded:', boxTotal, 'records');
+            return boxTotal;
+        } catch (boxErr) {
+            console.warn('[AminoData] Primary hydration (box-download) failed, falling back to Postgres:', boxErr.message || boxErr);
+        }
+
+        // Fallback: per-table hydration from Postgres via /amino-records
         var totalHydrated = 0;
         for (var i = 0; i < _tableIds.length; i++) {
             var tableId = _tableIds[i];
@@ -2860,6 +3000,7 @@ var AminoData = (function() {
         isMatrixSyncActive: isMatrixSyncActive,
 
         // Constants (read-only access)
-        WEBHOOK_BASE_URL: WEBHOOK_BASE_URL
+        WEBHOOK_BASE_URL: WEBHOOK_BASE_URL,
+        BOX_DOWNLOAD_WEBHOOK: BOX_DOWNLOAD_WEBHOOK
     };
 })();
