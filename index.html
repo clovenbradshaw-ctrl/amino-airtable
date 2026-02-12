@@ -25804,7 +25804,11 @@ var InterfaceApp = (function() {
             html += '<tr><td colspan="' + emptyColspan + '" style="text-align:center;color:var(--text-muted);padding:40px;">No records found</td></tr>';
         } else {
             pageRecords.forEach(function(r) {
-                html += '<tr data-record-id="' + _esc(r.recordId) + '">';
+                var isClientTable = block.id === 'clients-table';
+                var rowClick = isClientTable
+                    ? ' onclick="InterfaceApp.openClientProfilePage(\'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"'
+                    : '';
+                html += '<tr data-record-id="' + _esc(r.recordId) + '"' + rowClick + '>';
                 columns.forEach(function(col) {
                     var val = _findFieldValue(r.fields || {}, col.field);
                     var label = (col.label || col.field || '').toLowerCase();
@@ -27674,6 +27678,15 @@ var InterfaceApp = (function() {
         }, 120);
     }
 
+    function openClientProfilePage(recordId, event) {
+        if (!recordId) return;
+        if (event && event.target && event.target.closest('button, a, input, select, textarea')) {
+            return;
+        }
+        var targetUrl = 'client-profile.html?clientId=' + encodeURIComponent(recordId);
+        window.location.href = targetUrl;
+    }
+
     // ============ Admin: Edit Mode ============
 
     function toggleEditMode() {
@@ -27831,6 +27844,7 @@ var InterfaceApp = (function() {
         onPageChange: onPageChange,
         caseNotesWidgetAction: caseNotesWidgetAction,
         openClientFromCaseNote: openClientFromCaseNote,
+        openClientProfilePage: openClientProfilePage,
         onClientGraphClientChange: onClientGraphClientChange,
         openClientRelationshipGraph: openClientRelationshipGraph,
         setUrlState: setUrlState,
