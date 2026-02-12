@@ -4,10 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DB Viewer</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="manifest" href="/manifest.webmanifest">
     <style>
         /* ===== Noema Design System - CSS Variables ===== */
         :root {
@@ -28908,6 +28905,16 @@ window.addEventListener('amino:auth-expired', function() {
 
     // No valid session or need re-authentication — login screen is already visible
 })();
+    </script>
+
+    <script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js').catch(function(err) {
+            console.warn('[ServiceWorker] Registration failed:', err && err.message ? err.message : err);
+        });
+    });
+}
     </script>
     <script type="module" src="src/formulas/bridge.js"></script>
 </body>
