@@ -1166,32 +1166,29 @@ var AminoData = (function() {
     async function hydrateTable(tableId) {
         console.log('[AminoData] Hydrating table:', tableId);
 
-        // ── Prefer room-based hydration (Given-Log) when Matrix is available.
-        // The room timeline is the append-only source of truth. amino.current_state
-        // (served by /amino-records) is a materialized projection that may be stale
-        // or lag behind n8n processing. Rebuilding from the room guarantees the
-        // client sees every event the Given-Log contains.
-        if (_tableRoomMap[tableId] && MatrixClient && MatrixClient.isLoggedIn()) {
-            try {
-                var roomCount = await rebuildTableFromRoom(tableId);
-                console.log('[AminoData] Hydrated', roomCount, 'records from room for table', tableId);
-                return roomCount;
-            } catch (roomErr) {
-                console.warn('[AminoData] Room-based hydration failed for table ' + tableId +
-                    ', falling back to amino.current_state:', roomErr.message || roomErr);
-            }
-        }
-
-        // ── Fallback: hydrate from amino.current_state via n8n API.
-        // Used when Matrix is unavailable (no room mapping, not logged in,
-        // or room rebuild failed).
+        // ── Prefer API hydration from amino.current_state via n8n.
+        // The box-download webhook is the primary bulk path (see hydrateAll);
+        // when falling back to per-table hydration, use the Postgres-backed
+        // /amino-records endpoint which is fast and consistent.
         var records = [];
         try {
             var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId), 'fullBackfill');
             records = data.records || [];
-        } catch (err) {
-            console.warn('[AminoData] API hydrate also failed for table ' + tableId + ':', err.message || err);
-            throw err;
+        } catch (apiErr) {
+            console.warn('[AminoData] API hydrate failed for table ' + tableId + ':', apiErr.message || apiErr);
+
+            // ── Last resort: rebuild from Matrix room timeline (Given-Log).
+            // Only used when the API is unreachable or errored.
+            if (_tableRoomMap[tableId] && MatrixClient && MatrixClient.isLoggedIn()) {
+                try {
+                    var roomCount = await rebuildTableFromRoom(tableId);
+                    console.log('[AminoData] Hydrated', roomCount, 'records from room for table', tableId);
+                    return roomCount;
+                } catch (roomErr) {
+                    console.warn('[AminoData] Room-based hydration also failed for table ' + tableId + ':', roomErr.message || roomErr);
+                }
+            }
+            throw apiErr;
         }
 
         // Full hydration should mirror current server state.
