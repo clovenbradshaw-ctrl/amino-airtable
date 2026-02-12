@@ -48,6 +48,7 @@ var AminoData = (function() {
     var _tableRecordIdIndex = {};    // tableId -> { recordId: true }
     var _tableCacheHydrated = {};    // tableId -> true when full table is cached
     var _keyDerivationCache = { fingerprint: null, key: null };
+    var _deferEncryption = false;        // when true, IndexedDB stores plaintext JSON (encrypt on logout)
 
     // ============ Sync Deduplication ============
     // Tracks Matrix event_ids already applied to IndexedDB so duplicate
@@ -218,6 +219,14 @@ var AminoData = (function() {
         var allRecords = await idbGetAll(store);
 
         if (allRecords.length === 0) return 0;
+
+        // Check if records are plaintext (left unencrypted from a previous
+        // deferred-encryption session crash). If so, they don't need key
+        // migration — they'll be handled by the new session's deferred mode.
+        if (typeof allRecords[0].fields === 'string') {
+            console.log('[AminoData] Records are plaintext (deferred-encryption crash recovery), no key migration needed');
+            return 0;
+        }
 
         // Verify oldKey can decrypt the data
         try {
@@ -590,12 +599,17 @@ var AminoData = (function() {
             fields: record.fields || {},
             lastSynced: record.lastSynced || new Date().toISOString()
         };
-        var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(normalizedRecord.fields));
+        var storedFields;
+        if (_deferEncryption) {
+            storedFields = JSON.stringify(normalizedRecord.fields); // plaintext string
+        } else {
+            storedFields = await encrypt(_cryptoKey, JSON.stringify(normalizedRecord.fields)); // ArrayBuffer
+        }
         await idbPut(store, {
             id: normalizedRecord.id,
             tableId: normalizedRecord.tableId,
             tableName: normalizedRecord.tableName,
-            fields: encryptedFields, // ArrayBuffer — encrypted
+            fields: storedFields,
             lastSynced: normalizedRecord.lastSynced
         });
         cacheRecord(normalizedRecord);
@@ -610,13 +624,18 @@ var AminoData = (function() {
                 fields: record.fields || {},
                 lastSynced: record.lastSynced || new Date().toISOString()
             };
-            var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(normalizedRecord.fields));
+            var storedFields;
+            if (_deferEncryption) {
+                storedFields = JSON.stringify(normalizedRecord.fields);
+            } else {
+                storedFields = await encrypt(_cryptoKey, JSON.stringify(normalizedRecord.fields));
+            }
             return {
                 entry: {
                     id: normalizedRecord.id,
                     tableId: normalizedRecord.tableId,
                     tableName: normalizedRecord.tableName,
-                    fields: encryptedFields,
+                    fields: storedFields,
                     lastSynced: normalizedRecord.lastSynced
                 },
                 normalizedRecord: normalizedRecord
@@ -625,7 +644,14 @@ var AminoData = (function() {
     }
 
     async function decryptRecord(entry) {
-        var fields = JSON.parse(await decrypt(_cryptoKey, entry.fields));
+        var fields;
+        if (typeof entry.fields === 'string') {
+            // Plaintext JSON (deferred-encryption mode or leftover from crash)
+            fields = JSON.parse(entry.fields);
+        } else {
+            // Encrypted ArrayBuffer — decrypt with crypto key
+            fields = JSON.parse(await decrypt(_cryptoKey, entry.fields));
+        }
         return {
             id: entry.id,
             tableId: entry.tableId,
@@ -661,6 +687,41 @@ var AminoData = (function() {
         delete _tableRecordIdIndex[tableId];
         delete _tableCacheHydrated[tableId];
         _searchIndexVersion++;
+    }
+
+    // ============ Encrypt-on-Logout: Bulk Encryption ============
+
+    // Encrypt all plaintext records in IndexedDB. Called on logout to ensure
+    // data-at-rest is encrypted. Processes in batches to avoid memory pressure.
+    // Returns the number of records encrypted.
+    async function encryptAllRecords() {
+        if (!_db || !_cryptoKey) return 0;
+
+        var tx = _db.transaction('records', 'readonly');
+        var allEntries = await idbGetAll(tx.objectStore('records'));
+        var BATCH_SIZE = 200;
+        var encrypted = 0;
+
+        for (var b = 0; b < allEntries.length; b += BATCH_SIZE) {
+            var batch = allEntries.slice(b, b + BATCH_SIZE);
+            var writeTx = _db.transaction('records', 'readwrite');
+            var store = writeTx.objectStore('records');
+
+            for (var i = 0; i < batch.length; i++) {
+                var entry = batch[i];
+                // Only encrypt entries that are currently plaintext strings
+                if (typeof entry.fields === 'string') {
+                    var encryptedFields = await encrypt(_cryptoKey, entry.fields);
+                    entry.fields = encryptedFields;
+                    await idbPut(store, entry);
+                    encrypted++;
+                }
+            }
+            await idbTxDone(writeTx);
+        }
+
+        console.log('[AminoData] Encrypted', encrypted, 'plaintext records on logout');
+        return encrypted;
     }
 
     function cacheRecord(record) {
@@ -900,12 +961,17 @@ var AminoData = (function() {
             for (var r = 0; r < batchIds.length; r++) {
                 var recId = batchIds[r];
                 var fields = recordStates[recId].fields;
-                var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(fields));
+                var storedFields;
+                if (_deferEncryption) {
+                    storedFields = JSON.stringify(fields);
+                } else {
+                    storedFields = await encrypt(_cryptoKey, JSON.stringify(fields));
+                }
                 await idbPut(writeStore, {
                     id: recId,
                     tableId: tableId,
                     tableName: tableName,
-                    fields: encryptedFields,
+                    fields: storedFields,
                     lastSynced: new Date().toISOString()
                 });
             }
@@ -1327,8 +1393,11 @@ var AminoData = (function() {
 
         var fields;
         if (existing) {
-            // Decrypt existing fields
-            fields = JSON.parse(await decrypt(_cryptoKey, existing.fields));
+            if (typeof existing.fields === 'string') {
+                fields = JSON.parse(existing.fields);
+            } else {
+                fields = JSON.parse(await decrypt(_cryptoKey, existing.fields));
+            }
         } else {
             fields = {};
         }
@@ -1387,14 +1456,19 @@ var AminoData = (function() {
             }
         }
 
-        // Encrypt and write back
-        var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(fields));
+        // Write back — plaintext when deferred, encrypted otherwise
+        var storedFields;
+        if (_deferEncryption) {
+            storedFields = JSON.stringify(fields);
+        } else {
+            storedFields = await encrypt(_cryptoKey, JSON.stringify(fields));
+        }
         var writeTx = _db.transaction('records', 'readwrite');
         await idbPut(writeTx.objectStore('records'), {
             id: recordId,
             tableId: tableId,
             tableName: (existing && existing.tableName) || tableId,
-            fields: encryptedFields,
+            fields: storedFields,
             lastSynced: new Date().toISOString()
         });
         await idbTxDone(writeTx);
@@ -2160,8 +2234,15 @@ var AminoData = (function() {
             console.warn('[AminoData] Using cached table metadata (offline):', err.message || err);
         }
 
+        // Enable deferred encryption: store plaintext in IndexedDB during
+        // the active session, encrypt everything on logout. Any records left
+        // unencrypted from a previous crash are safe to read (dual-format
+        // detection in decryptRecord handles both), and will be encrypted
+        // on the next clean logout.
+        _deferEncryption = true;
+
         _initialized = true;
-        console.log('[AminoData] Initialized with', _tables.length, 'tables (Synapse-derived encryption)');
+        console.log('[AminoData] Initialized with', _tables.length, 'tables (Synapse-derived encryption, encrypt-on-logout)');
 
         return _tables;
     }
@@ -2248,11 +2329,23 @@ var AminoData = (function() {
         return init(accessToken, userId, password);
     }
 
-    function logout(clearData) {
+    async function logout(clearData) {
         stopPolling();
         stopMatrixSync();
         stopViewDeletionSync();
         stopConnectivityMonitor();
+
+        // Encrypt all plaintext records before clearing state.
+        // Must happen while _cryptoKey and _db are still available.
+        if (_deferEncryption && _cryptoKey && _db && !clearData) {
+            try {
+                await encryptAllRecords();
+            } catch (encErr) {
+                console.error('[AminoData] Failed to encrypt records on logout:', encErr);
+            }
+        }
+        _deferEncryption = false;
+
         _cryptoKey = null;
         _accessToken = null;
         _userId = null;
@@ -2698,6 +2791,7 @@ var AminoData = (function() {
             }
         }
 
+        _deferEncryption = true;
         _initialized = true;
 
         // 8. Start connectivity monitoring
@@ -2706,7 +2800,7 @@ var AminoData = (function() {
         var lastSynced = await getLastSyncTime();
 
         console.log('[AminoData] Offline unlock successful for', session.userId,
-            '(' + _tables.length + ' cached tables, last synced:', lastSynced + ')');
+            '(' + _tables.length + ' cached tables, last synced:', lastSynced + ', encrypt-on-logout)');
 
         return {
             userId: session.userId,
@@ -2915,7 +3009,11 @@ var AminoData = (function() {
 
         var currentFields;
         if (existing) {
-            currentFields = JSON.parse(await decrypt(_cryptoKey, existing.fields));
+            if (typeof existing.fields === 'string') {
+                currentFields = JSON.parse(existing.fields);
+            } else {
+                currentFields = JSON.parse(await decrypt(_cryptoKey, existing.fields));
+            }
         } else {
             currentFields = {};
         }
@@ -2933,14 +3031,19 @@ var AminoData = (function() {
             }
         }
 
-        // Encrypt and write back
-        var encryptedFields = await encrypt(_cryptoKey, JSON.stringify(currentFields));
+        // Write back — plaintext when deferred, encrypted otherwise
+        var storedFields;
+        if (_deferEncryption) {
+            storedFields = JSON.stringify(currentFields);
+        } else {
+            storedFields = await encrypt(_cryptoKey, JSON.stringify(currentFields));
+        }
         var writeTx = _db.transaction('records', 'readwrite');
         await idbPut(writeTx.objectStore('records'), {
             id: recordId,
             tableId: tableId,
             tableName: (existing && existing.tableName) || tableId,
-            fields: encryptedFields,
+            fields: storedFields,
             lastSynced: (existing && existing.lastSynced) || new Date().toISOString()
         });
         await idbTxDone(writeTx);
@@ -3067,6 +3170,35 @@ var AminoData = (function() {
         return _matrixSyncRunning;
     }
 
+    // ============ Encrypt-on-Logout: Safety Handlers ============
+    // Best-effort encryption when the page is being discarded without a
+    // clean logout. visibilitychange → hidden fires before beforeunload
+    // and in some browsers allows async work to start.
+
+    var _encryptOnUnloadRunning = false;
+
+    function _tryEncryptOnUnload() {
+        if (!_deferEncryption || !_cryptoKey || !_db || _encryptOnUnloadRunning) return;
+        _encryptOnUnloadRunning = true;
+        encryptAllRecords()
+            .catch(function(err) {
+                console.error('[AminoData] Encrypt-on-unload failed:', err);
+            })
+            .finally(function() {
+                _encryptOnUnloadRunning = false;
+            });
+    }
+
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden' && _deferEncryption) {
+            _tryEncryptOnUnload();
+        }
+    });
+
+    window.addEventListener('beforeunload', function() {
+        _tryEncryptOnUnload();
+    });
+
     // ============ Public API ============
 
     return {
@@ -3117,6 +3249,7 @@ var AminoData = (function() {
         setAccessToken: setAccessToken,
         logout: logout,
         destroy: destroy,
+        encryptAllRecords: encryptAllRecords,
 
         // Offline access
         offlineUnlock: offlineUnlock,
