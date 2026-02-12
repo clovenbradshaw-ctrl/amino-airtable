@@ -21062,7 +21062,23 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         }
     }
     if (formulaFields.length === 0) return;
-    if (_shouldSkipFormulaColumns(Object.keys(recordMap).length, formulaFields.length)) return;
+
+    var recordCount = Object.keys(recordMap).length;
+    if (_shouldSkipFormulaColumns(recordCount, formulaFields.length)) {
+        // On very large tables, prioritize key display-name formulas so
+        // interface views can still render primary identifiers.
+        var highPriorityFormulaFields = {
+            'Client Name': true,
+            'Full Name Client': true,
+            'Display Name': true,
+            'Name': true
+        };
+        formulaFields = formulaFields.filter(function(field) {
+            return !!highPriorityFormulaFields[field.fieldName] || !!highPriorityFormulaFields[field.fieldId];
+        });
+        if (!formulaFields.length) return;
+        if (_shouldSkipFormulaColumns(recordCount, formulaFields.length)) return;
+    }
 
     // Build / reuse compiled formula cache per table
     var cacheKey = tableId + ':' + formulaFields.map(function(f) {
@@ -25068,7 +25084,7 @@ var InterfaceApp = (function() {
                             fallbackTablePattern: 'client'
                         },
                         columns: [
-                            { field: 'Full Name Client', label: 'Client Name', width: 200 },
+                            { field: 'Client Name', label: 'Client Name', width: 200 },
                             { field: 'File Case Status (from Case Master View // Activities)', label: 'File Status', width: 100 },
                             { field: 'A#', label: 'A#', width: 100 },
                             { field: 'DOB & Age', label: 'DOB & Age', width: 120 },
@@ -25089,7 +25105,7 @@ var InterfaceApp = (function() {
                         ],
                         segment: {
                             op: 'SEG',
-                            sort: { field: 'Full Name Client', dir: 'asc' },
+                            sort: { field: 'Client Name', dir: 'asc' },
                             pageSize: 50
                         }
                     }
