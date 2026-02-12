@@ -2869,6 +2869,10 @@
             overflow: hidden; text-overflow: ellipsis; max-width: 240px;
         }
         .iface-table-revamp td .client-name { font-weight: 500; }
+        .iface-table-revamp th[data-col="client-name"],
+        .iface-table-revamp td[data-col="client-name"],
+        .iface-table-revamp th[data-col="name"],
+        .iface-table-revamp td[data-col="name"] { min-width: 180px; max-width: 360px; }
         .iface-table-revamp td .cell-muted { color: var(--iface-text-muted, var(--text-muted)); font-size: 12px; }
         .iface-table-revamp td .cell-empty { color: var(--iface-text-light, #94a3b8); }
         .iface-table-revamp td .cell-array .tag { background: rgba(167,118,83,0.1); color: var(--iface-accent, #a77653); border-radius: 999px; }
