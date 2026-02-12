@@ -24759,10 +24759,26 @@ var InterfaceApp = (function() {
             console.warn('[Interface] Data fetch error for table', tableId, ':', e.message);
         }
 
+        // Compute formula fields for interface records before translating IDs.
+        // Stored records often omit formula values because they are computed at render-time.
+        var formulaFieldMeta = (typeof META_FIELDS !== 'undefined' && META_FIELDS[tableId]) ? META_FIELDS[tableId] : null;
+        if (formulaFieldMeta && records.length) {
+            var recordMap = {};
+            for (var rix = 0; rix < records.length; rix++) {
+                var ifaceRecord = records[rix] || {};
+                var ifaceRecordId = ifaceRecord.recordId;
+                if (!ifaceRecordId) continue;
+                recordMap[ifaceRecordId] = ifaceRecord.fields || {};
+            }
+            if (Object.keys(recordMap).length) {
+                _applyFormulaColumns(tableId, formulaFieldMeta, recordMap);
+            }
+        }
+
         // Translate field IDs to human-readable field names using META_FIELDS.
         // IN_MEMORY_DATA stores fields keyed by field IDs (e.g. "fldAbc123"),
         // but the interface schema references fields by name (e.g. "Client Name").
-        var fieldMeta = (typeof META_FIELDS !== 'undefined' && META_FIELDS[tableId]) ? META_FIELDS[tableId] : null;
+        var fieldMeta = formulaFieldMeta;
         if (fieldMeta) {
             records = records.map(function(r) {
                 var rawFields = r.fields || {};
