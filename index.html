@@ -7840,6 +7840,123 @@ async function hydrateFromBoxAmoFile() {
     }
 
     var amoData = AmoFormat.read(buffer);
+
+    // ---- Legacy snapshot format handling ----
+    // Older .amo files used type:"snapshot" with pre-materialized table data
+    // instead of type:"events" with a replayable event stream. Handle both.
+    if (amoData && amoData.type === 'snapshot' && amoData.tables) {
+        console.log('[BoxAmo] Detected legacy snapshot format — converting to in-memory data');
+
+        // Restore table/field metadata from the snapshot's meta property
+        var snapshotMeta = amoData.meta || {};
+        if (snapshotMeta.tables) {
+            var smTableIds = Object.keys(snapshotMeta.tables);
+            for (var sm = 0; sm < smTableIds.length; sm++) {
+                var smTid = smTableIds[sm];
+                META_TABLES[smTid] = snapshotMeta.tables[smTid];
+            }
+        }
+        if (snapshotMeta.fields) {
+            var smFieldTableIds = Object.keys(snapshotMeta.fields);
+            for (var sm = 0; sm < smFieldTableIds.length; sm++) {
+                var smTid = smFieldTableIds[sm];
+                if (!META_FIELDS[smTid]) META_FIELDS[smTid] = {};
+                var smFieldIds = Object.keys(snapshotMeta.fields[smTid]);
+                for (var sf = 0; sf < smFieldIds.length; sf++) {
+                    META_FIELDS[smTid][smFieldIds[sf]] = snapshotMeta.fields[smTid][smFieldIds[sf]];
+                }
+            }
+        }
+
+        // Convert snapshot tables into IN_MEMORY_DATA format.
+        // Snapshot tables: { tableName/tableId: [ { col1: val1, ... }, ... ] }
+        // IN_MEMORY_DATA:  { tableId: { recordId: { field1: val1, ... } } }
+        var tableDataMap = {};
+        var importedRecords = 0;
+        var snapshotTableKeys = Object.keys(amoData.tables);
+        for (var st = 0; st < snapshotTableKeys.length; st++) {
+            var tableKey = snapshotTableKeys[st];
+            var rows = amoData.tables[tableKey];
+            if (!rows || !Array.isArray(rows) || rows.length === 0) continue;
+
+            // Ensure table metadata exists (use key as tableId)
+            if (!META_TABLES[tableKey]) {
+                META_TABLES[tableKey] = { tableId: tableKey, tableName: tableKey, _placeholder: true };
+            }
+
+            var tblData = {};
+            for (var sr = 0; sr < rows.length; sr++) {
+                var row = rows[sr];
+                if (!row || typeof row !== 'object') continue;
+
+                // Detect record ID: check 'id', 'recordId', 'record_id'
+                var recId = row.id || row.recordId || row.record_id;
+                if (!recId) continue;
+
+                // Detect fields: if the row has a 'fields' sub-object, use it;
+                // otherwise treat all non-id properties as field values.
+                var fields;
+                if (row.fields && typeof row.fields === 'object') {
+                    fields = row.fields;
+                } else {
+                    fields = {};
+                    var rowKeys = Object.keys(row);
+                    for (var rk = 0; rk < rowKeys.length; rk++) {
+                        if (rowKeys[rk] !== 'id' && rowKeys[rk] !== 'recordId' &&
+                            rowKeys[rk] !== 'record_id' && rowKeys[rk] !== 'createdTime') {
+                            fields[rowKeys[rk]] = row[rowKeys[rk]];
+                        }
+                    }
+                }
+
+                // Auto-create placeholder field metadata
+                if (!META_FIELDS[tableKey]) META_FIELDS[tableKey] = {};
+                var fieldIds = Object.keys(fields);
+                for (var fi = 0; fi < fieldIds.length; fi++) {
+                    var fid = fieldIds[fi];
+                    if (!META_FIELDS[tableKey][fid]) {
+                        META_FIELDS[tableKey][fid] = {
+                            tableId: tableKey,
+                            fieldId: fid,
+                            fieldName: fid,
+                            fieldType: typeof inferFieldType === 'function' ? inferFieldType(fields[fid]) : 'unknown',
+                            _placeholder: true
+                        };
+                    }
+                }
+
+                tblData[recId] = fields;
+                importedRecords++;
+            }
+
+            if (Object.keys(tblData).length > 0) {
+                tableDataMap[tableKey] = tblData;
+            }
+        }
+
+        if (importedRecords === 0) {
+            throw new Error('Box .amo snapshot contained 0 usable records');
+        }
+
+        // Populate IN_MEMORY_DATA directly (no event replay needed)
+        window.IN_MEMORY_DATA = tableDataMap;
+        inMemoryEvents = [];
+        inMemoryEventsByRecord = new Map();
+
+        console.log('[BoxAmo] Legacy snapshot hydrated: ' + importedRecords + ' records across ' + Object.keys(tableDataMap).length + ' tables');
+
+        // Schedule a re-upload in the current events format so subsequent
+        // downloads get the proper event-stream .amo file.
+        setTimeout(function() {
+            uploadAmoSnapshotToBox('format-upgrade').catch(function(err) {
+                console.warn('[BoxAmo] Format upgrade re-upload failed:', err.message || err);
+            });
+        }, 30000); // 30s delay — let the app finish initializing first
+
+        return { importedEvents: importedRecords, cursor: amoData.cursor || 0 };
+    }
+
+    // ---- Standard events format handling ----
     if (!amoData || !Array.isArray(amoData.events) || amoData.events.length === 0) {
         var amoType = amoData && amoData.type ? amoData.type : 'unknown';
         throw new Error('Box .amo file contained "' + amoType + '" payload; expected non-empty event stream');
