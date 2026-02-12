@@ -16246,11 +16246,8 @@ async function init() {
     totalRecords = 0;
     lastEventTimestamp = null;
 
-    // Show loading overlay immediately so user never sees a blank screen
-    // between login fading out and content appearing.
-    showLoadingOverlay();
-    setLoadingOverlayMode('local-memory');
-    updateLoadingOverlay('Initializing...', 'Loading local data...', 0, 0, 0, 0, null);
+    // Keep the auth screen visible while we restore local metadata.
+    // This avoids flashing an extra "local memory" overlay for returning users.
 
     // Load sidebar state (pinned, recent, expanded sections)
     loadSidebarState();
