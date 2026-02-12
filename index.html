@@ -3193,6 +3193,27 @@
         .filter-remove-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: var(--radius-sm); }
         .filter-remove-btn:hover { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 
+        /* Filter dropdown — wider for nested groups */
+        .filter-dropdown { min-width: 520px; max-width: 680px; }
+        .filter-list { max-height: 420px; }
+
+        /* Filter Groups (nested AND/OR) */
+        .filter-group { border: 1px solid var(--border-primary); border-radius: var(--radius-md); padding: 8px; margin: 4px 0; background: var(--bg-secondary); }
+        .filter-group .filter-group { background: var(--bg-tertiary); border-color: var(--border-secondary); }
+        .filter-group .filter-group .filter-group { background: var(--bg-primary); }
+        .filter-group-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .filter-group-logic-toggle { display: inline-flex; align-items: center; border: 1px solid var(--border-primary); border-radius: var(--radius-sm); overflow: hidden; font-size: 11px; font-weight: 600; }
+        .filter-group-logic-toggle button { background: var(--bg-tertiary); border: none; padding: 3px 10px; cursor: pointer; color: var(--text-muted); transition: all var(--transition-fast); }
+        .filter-group-logic-toggle button.active { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
+        .filter-group-logic-toggle button:hover:not(.active) { background: var(--bg-primary); color: var(--text-secondary); }
+        .filter-group-actions { display: flex; gap: 4px; margin-left: auto; }
+        .filter-group-add-btn { background: transparent; border: none; color: var(--primary-400); font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: var(--radius-sm); white-space: nowrap; }
+        .filter-group-add-btn:hover { background: rgba(59, 130, 246, 0.15); }
+        .filter-group-remove-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 6px; border-radius: var(--radius-sm); font-size: 12px; }
+        .filter-group-remove-btn:hover { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .filter-group-conditions { display: flex; flex-direction: column; gap: 2px; }
+        .filter-row .filter-logic-label { font-size: 11px; color: var(--text-muted); font-weight: 600; min-width: 32px; text-align: center; text-transform: uppercase; }
+
         /* Sort Dropdown */
         .sort-list { padding: 12px 16px; max-height: 300px; overflow-y: auto; }
         .sort-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-primary); }
@@ -5184,7 +5205,8 @@
                         <div class="dropdown-section">
                             <div class="dropdown-header">
                                 <span>Filter records</span>
-                                <button class="dropdown-action-btn" onclick="addFilter()">+ Add filter</button>
+                                <button class="dropdown-action-btn" onclick="addFilter()">+ Add rule</button>
+                                <button class="dropdown-action-btn" onclick="addSubGroup([])">+ Add group</button>
                             </div>
                             <div class="dropdown-search-wrapper">
                                 <input type="text" class="dropdown-search-input" id="filter-search-input" placeholder="Find a field" oninput="filterFilterDropdown(this.value)">
@@ -10887,7 +10909,7 @@ async function saveViewFiltersAndSorts(tableId, viewId, filters, sorts, groupBy)
     }
 
     // Store filters, sorts, groupBy, and colorBy
-    META_VIEWS[tableId][viewId].filters = filters || [];
+    META_VIEWS[tableId][viewId].filters = filters || { logic: 'AND', conditions: [] };
     META_VIEWS[tableId][viewId].sorts = sorts || [];
     META_VIEWS[tableId][viewId].groupBy = groupBy || null;
     META_VIEWS[tableId][viewId].colorBy = currentColorBy || null;
@@ -10898,11 +10920,11 @@ async function saveViewFiltersAndSorts(tableId, viewId, filters, sorts, groupBy)
 
 // Get view filters, sorts, groupBy, and colorBy
 function getViewFiltersAndSorts(tableId, viewId) {
-    if (!tableId || !viewId) return { filters: [], sorts: [], groupBy: null, colorBy: null };
+    if (!tableId || !viewId) return { filters: normalizeFilterGroup([]), sorts: [], groupBy: null, colorBy: null };
 
     var view = META_VIEWS[tableId]?.[viewId];
     return {
-        filters: (view && view.filters) ? view.filters.slice() : [],
+        filters: normalizeFilterGroup((view && view.filters) ? view.filters : []),
         sorts: (view && view.sorts) ? view.sorts.slice() : [],
         groupBy: (view && view.groupBy) ? view.groupBy : null,
         colorBy: (view && view.colorBy) ? view.colorBy : null
@@ -14573,7 +14595,7 @@ async function renderTable() {
     }
 
     // Apply filters, search, and sorts
-    var needsFiltering = currentFilters.length > 0 || currentSearchQuery || currentSorts.length > 0;
+    var needsFiltering = hasFilterConditions(currentFilters) || currentSearchQuery || currentSorts.length > 0;
     if (needsFiltering) {
         currentRecordIds = await getFilteredSortedRecords();
         if (navVersion !== renderNav) return; // Navigation changed, abort stale render
@@ -14606,7 +14628,7 @@ async function renderTable() {
 
     if (displayRecordIds.length === 0) {
         if (tableEl) tableEl.innerHTML = '';
-        var emptyMsg = (currentFilters.length > 0 || currentSearchQuery)
+        var emptyMsg = (hasFilterConditions(currentFilters) || currentSearchQuery)
             ? '<div class="empty-state"><h3>No matching records</h3><p>Try adjusting your filters or search</p></div>'
             : '<div class="empty-state"><h3>No records</h3><p>This table is empty</p></div>';
         tableContainer.innerHTML = emptyMsg;
@@ -22694,12 +22716,63 @@ function esc(s) {
 
 // ============ View Controls (Filter, Sort, Group, etc.) ============
 
-var currentFilters = [];
+var currentFilters = { logic: 'AND', conditions: [] };
 var currentSorts = [];
 var currentGroupBy = null;
 var currentColorBy = null;
 var currentRowHeight = 'medium';
 var currentSearchQuery = '';
+
+// --- Filter Group Helpers ---
+// Normalize any filter value into the group structure.
+// Handles: legacy flat arrays, already-valid groups, or garbage input.
+function normalizeFilterGroup(raw) {
+    if (raw && raw.logic && Array.isArray(raw.conditions)) return raw; // already a group
+    if (Array.isArray(raw) && raw.length > 0) {
+        // Legacy flat array — wrap in AND group
+        return { logic: 'AND', conditions: raw.map(function(f) {
+            if (f && f.logic && Array.isArray(f.conditions)) return f; // nested group
+            return { type: 'condition', fieldId: f.fieldId, operator: f.operator, value: f.value || '' };
+        })};
+    }
+    return { logic: 'AND', conditions: [] };
+}
+// Count total leaf conditions in a group (recursive)
+function countFilterConditions(group) {
+    if (!group || !group.conditions) return 0;
+    var n = 0;
+    for (var i = 0; i < group.conditions.length; i++) {
+        var c = group.conditions[i];
+        if (c.type === 'group' || (c.logic && Array.isArray(c.conditions))) {
+            n += countFilterConditions(c);
+        } else {
+            n++;
+        }
+    }
+    return n;
+}
+// Check if filter group has any conditions
+function hasFilterConditions(group) {
+    return countFilterConditions(group) > 0;
+}
+// Get a condition by path (array of indices into nested conditions arrays)
+function getFilterByPath(group, path) {
+    var node = group;
+    for (var i = 0; i < path.length - 1; i++) {
+        node = node.conditions[path[i]];
+        if (!node) return null;
+    }
+    return node.conditions[path[path.length - 1]] || null;
+}
+// Get the parent group for a path
+function getFilterParent(group, path) {
+    var node = group;
+    for (var i = 0; i < path.length - 1; i++) {
+        node = node.conditions[path[i]];
+        if (!node) return null;
+    }
+    return node;
+}
 
 // Original unfiltered/unsorted record IDs
 var originalRecordIds = [];
@@ -22841,6 +22914,27 @@ function matchesFilter(record, filter) {
     }
 }
 
+// Recursively evaluate a filter group against a record.
+// group: { logic: 'AND'|'OR', conditions: [...] }
+// Each condition is either { type:'condition', fieldId, operator, value }
+// or { type:'group', logic, conditions } (nested group).
+function matchesFilterGroup(record, group) {
+    if (!group || !group.conditions || group.conditions.length === 0) return true;
+    var isAnd = group.logic === 'AND';
+    for (var i = 0; i < group.conditions.length; i++) {
+        var c = group.conditions[i];
+        var result;
+        if (c.type === 'group' || (c.logic && Array.isArray(c.conditions))) {
+            result = matchesFilterGroup(record, c);
+        } else {
+            result = matchesFilter(record, c);
+        }
+        if (isAnd && !result) return false;  // AND: short-circuit on first false
+        if (!isAnd && result) return true;   // OR: short-circuit on first true
+    }
+    return isAnd; // AND: all true → true; OR: none true → false
+}
+
 // Check if a record matches search query.
 // Uses the pre-built local search index for fast substring matching.
 // Falls back to field-by-field scanning if index entry is missing.
@@ -22916,7 +23010,7 @@ async function getFilteredSortedRecords() {
         return _filterCache.result.slice();
     }
 
-    var hasFilters = currentFilters.length > 0;
+    var hasFilters = hasFilterConditions(currentFilters);
     var hasSearch = !!currentSearchQuery;
     var hasSorts = currentSorts.length > 0;
     var needsRecordData = hasFilters || hasSearch || hasSorts;
@@ -22924,7 +23018,6 @@ async function getFilteredSortedRecords() {
     // If no filters/search/sorts, just return a copy
     if (!needsRecordData) return originalRecordIds.slice();
 
-    var filterCount = currentFilters.length;
     var searchTokens = hasSearch ? normalizeSearchTokens(currentSearchQuery) : [];
     hasSearch = searchTokens.length > 0;
 
@@ -22980,14 +23073,8 @@ async function getFilteredSortedRecords() {
             // Re-check search for records that didn't have an index entry
             if (hasSearch && !matchesSearch(record, currentSearchQuery)) continue;
 
-            // Inline filter check
-            if (hasFilters) {
-                var pass = true;
-                for (var fi = 0; fi < filterCount; fi++) {
-                    if (!matchesFilter(record, currentFilters[fi])) { pass = false; break; }
-                }
-                if (!pass) continue;
-            }
+            // Filter group check (supports nested AND/OR groups)
+            if (hasFilters && !matchesFilterGroup(record, currentFilters)) continue;
 
             filteredIds.push(id);
         }
@@ -23144,7 +23231,7 @@ var filterDropdownSearch = '';
 var sortDropdownSearch = '';
 var groupDropdownSearch = '';
 
-// Render filter dropdown
+// Render filter dropdown — renders the root filter group
 function renderFilterDropdown(filterText) {
     if (!currentTable) return;
     var list = document.getElementById('filter-list');
@@ -23153,55 +23240,100 @@ function renderFilterDropdown(filterText) {
         filterDropdownSearch = filterText;
     }
 
-    if (currentFilters.length === 0) {
+    currentFilters = normalizeFilterGroup(currentFilters);
+
+    if (!hasFilterConditions(currentFilters)) {
         list.innerHTML = '<div class="empty-filters">No filters applied</div>';
         return;
     }
 
     var fields = META_FIELDS[currentTable] || {};
+    var sortedFields = getSortedFieldsForDropdown(fields, [], filterDropdownSearch);
 
-    // Get used field IDs from current filters
-    var usedFieldIds = currentFilters.map(function(f) { return f.fieldId; });
-    var sortedFields = getSortedFieldsForDropdown(fields, usedFieldIds, filterDropdownSearch);
-
-    var html = '';
-
-    for (var i = 0; i < currentFilters.length; i++) {
-        var filter = currentFilters[i];
-        html += '<div class="filter-row">';
-        html += '<select onchange="updateFilter(' + i + ', \'field\', this.value)">';
-
-        // Add sorted fields to dropdown, ensuring selected field is always included
-        var selectedInList = false;
-        for (var j = 0; j < sortedFields.length; j++) {
-            var sf = sortedFields[j];
-            var sel = filter.fieldId === sf.fieldId ? ' selected' : '';
-            if (sel) selectedInList = true;
-            html += '<option value="' + esc(sf.fieldId) + '"' + sel + '>' + esc(sf.fieldName) + '</option>';
-        }
-        // If selected field was filtered out, still include it
-        if (!selectedInList && fields[filter.fieldId]) {
-            var selField = fields[filter.fieldId];
-            html += '<option value="' + esc(filter.fieldId) + '" selected>' + esc(selField.fieldName || filter.fieldId) + '</option>';
-        }
-
-        html += '</select>';
-        html += '<select onchange="updateFilter(' + i + ', \'operator\', this.value)">';
-        html += '<option value="contains"' + (filter.operator === 'contains' ? ' selected' : '') + '>contains</option>';
-        html += '<option value="equals"' + (filter.operator === 'equals' ? ' selected' : '') + '>equals</option>';
-        html += '<option value="not_equals"' + (filter.operator === 'not_equals' ? ' selected' : '') + '>does not equal</option>';
-        html += '<option value="is_empty"' + (filter.operator === 'is_empty' ? ' selected' : '') + '>is empty</option>';
-        html += '<option value="is_not_empty"' + (filter.operator === 'is_not_empty' ? ' selected' : '') + '>is not empty</option>';
-        html += '</select>';
-        if (filter.operator !== 'is_empty' && filter.operator !== 'is_not_empty') {
-            html += '<input type="text" value="' + esc(filter.value || '') + '" onchange="updateFilter(' + i + ', \'value\', this.value)" placeholder="Value">';
-        }
-        html += '<button class="filter-remove-btn" onclick="removeFilter(' + i + ')" title="Remove">&times;</button>';
-        html += '</div>';
-    }
-
-    list.innerHTML = html;
+    list.innerHTML = renderFilterGroupHtml(currentFilters, [], fields, sortedFields, true);
     updateFilterCount();
+}
+
+// Render a single filter group recursively. Returns HTML string.
+// path: array of indices leading to this group in the tree
+// isRoot: true for the top-level group (hides the remove-group button)
+function renderFilterGroupHtml(group, path, fields, sortedFields, isRoot) {
+    var pathStr = JSON.stringify(path);
+    var html = '<div class="filter-group">';
+
+    // Group header with AND/OR toggle
+    html += '<div class="filter-group-header">';
+    html += '<div class="filter-group-logic-toggle">';
+    html += '<button class="' + (group.logic === 'AND' ? 'active' : '') + '" onclick="setFilterGroupLogic(' + esc(pathStr) + ', \'AND\')">AND</button>';
+    html += '<button class="' + (group.logic === 'OR' ? 'active' : '') + '" onclick="setFilterGroupLogic(' + esc(pathStr) + ', \'OR\')">OR</button>';
+    html += '</div>';
+    html += '<div class="filter-group-actions">';
+    html += '<button class="filter-group-add-btn" onclick="addFilterToGroup(' + esc(pathStr) + ')">+ Rule</button>';
+    html += '<button class="filter-group-add-btn" onclick="addSubGroup(' + esc(pathStr) + ')">+ Group</button>';
+    if (!isRoot) {
+        html += '<button class="filter-group-remove-btn" onclick="removeFilterAtPath(' + esc(pathStr) + ')" title="Remove group">&times;</button>';
+    }
+    html += '</div>';
+    html += '</div>';
+
+    // Conditions
+    html += '<div class="filter-group-conditions">';
+    for (var i = 0; i < group.conditions.length; i++) {
+        var c = group.conditions[i];
+        var childPath = path.concat([i]);
+
+        if (c.type === 'group' || (c.logic && Array.isArray(c.conditions))) {
+            // Nested group
+            c.type = 'group'; // normalize
+            html += renderFilterGroupHtml(c, childPath, fields, sortedFields, false);
+        } else {
+            // Leaf condition row
+            var childPathStr = JSON.stringify(childPath);
+            html += '<div class="filter-row">';
+
+            // Logic label for 2nd+ conditions
+            if (i > 0) {
+                html += '<span class="filter-logic-label">' + esc(group.logic) + '</span>';
+            } else {
+                html += '<span class="filter-logic-label">Where</span>';
+            }
+
+            // Field select
+            html += '<select onchange="updateFilterAtPath(' + esc(childPathStr) + ', \'fieldId\', this.value)">';
+            var selectedInList = false;
+            for (var j = 0; j < sortedFields.length; j++) {
+                var sf = sortedFields[j];
+                var sel = c.fieldId === sf.fieldId ? ' selected' : '';
+                if (sel) selectedInList = true;
+                html += '<option value="' + esc(sf.fieldId) + '"' + sel + '>' + esc(sf.fieldName) + '</option>';
+            }
+            if (!selectedInList && fields[c.fieldId]) {
+                var selField = fields[c.fieldId];
+                html += '<option value="' + esc(c.fieldId) + '" selected>' + esc(selField.fieldName || c.fieldId) + '</option>';
+            }
+            html += '</select>';
+
+            // Operator select
+            html += '<select onchange="updateFilterAtPath(' + esc(childPathStr) + ', \'operator\', this.value)">';
+            html += '<option value="contains"' + (c.operator === 'contains' ? ' selected' : '') + '>contains</option>';
+            html += '<option value="equals"' + (c.operator === 'equals' ? ' selected' : '') + '>equals</option>';
+            html += '<option value="not_equals"' + (c.operator === 'not_equals' ? ' selected' : '') + '>does not equal</option>';
+            html += '<option value="is_empty"' + (c.operator === 'is_empty' ? ' selected' : '') + '>is empty</option>';
+            html += '<option value="is_not_empty"' + (c.operator === 'is_not_empty' ? ' selected' : '') + '>is not empty</option>';
+            html += '</select>';
+
+            // Value input (hidden for empty/not-empty operators)
+            if (c.operator !== 'is_empty' && c.operator !== 'is_not_empty') {
+                html += '<input type="text" value="' + esc(c.value || '') + '" onchange="updateFilterAtPath(' + esc(childPathStr) + ', \'value\', this.value)" placeholder="Value">';
+            }
+
+            html += '<button class="filter-remove-btn" onclick="removeFilterAtPath(' + esc(childPathStr) + ')" title="Remove">&times;</button>';
+            html += '</div>';
+        }
+    }
+    html += '</div>';
+    html += '</div>';
+    return html;
 }
 
 // Filter filter dropdown based on search input
@@ -23209,16 +23341,46 @@ function filterFilterDropdown(filterText) {
     renderFilterDropdown(filterText);
 }
 
-// Add filter
-function addFilter() {
+// Resolve a path to the parent group node
+function _resolveFilterParent(path) {
+    var node = currentFilters;
+    for (var i = 0; i < path.length - 1; i++) {
+        node = node.conditions[path[i]];
+        if (!node) return null;
+    }
+    return node;
+}
+
+// Set the logic (AND/OR) for a filter group at the given path
+function setFilterGroupLogic(path, logic) {
+    var node = currentFilters;
+    for (var i = 0; i < path.length; i++) {
+        node = node.conditions[path[i]];
+        if (!node) return;
+    }
+    if (path.length === 0) node = currentFilters;
+    node.logic = logic;
+    renderFilterDropdown();
+    applyFilters();
+}
+
+// Add a leaf condition to the group at the given path
+function addFilterToGroup(path) {
     if (!currentTable) return;
     var fields = META_FIELDS[currentTable] || {};
-    // Get sorted fields (alphabetically)
     var sortedFields = getSortedFieldsForDropdown(fields, [], '');
     var firstFieldId = sortedFields.length > 0 ? sortedFields[0].fieldId : null;
     if (!firstFieldId) return;
 
-    currentFilters.push({
+    var node = currentFilters;
+    for (var i = 0; i < path.length; i++) {
+        node = node.conditions[path[i]];
+        if (!node) return;
+    }
+    if (path.length === 0) node = currentFilters;
+
+    node.conditions.push({
+        type: 'condition',
         fieldId: firstFieldId,
         operator: 'contains',
         value: ''
@@ -23227,28 +23389,68 @@ function addFilter() {
     applyFilters();
 }
 
-// Update filter
-function updateFilter(index, prop, value) {
-    if (currentFilters[index]) {
-        currentFilters[index][prop] = value;
+// Add a nested sub-group to the group at the given path
+function addSubGroup(path) {
+    var node = currentFilters;
+    for (var i = 0; i < path.length; i++) {
+        node = node.conditions[path[i]];
+        if (!node) return;
+    }
+    if (path.length === 0) node = currentFilters;
+
+    // Default to opposite logic of parent for useful nesting
+    var childLogic = node.logic === 'AND' ? 'OR' : 'AND';
+    node.conditions.push({
+        type: 'group',
+        logic: childLogic,
+        conditions: []
+    });
+    renderFilterDropdown();
+    applyFilters();
+}
+
+// Add filter to root group (called from the main "+ Add filter" button)
+function addFilter() {
+    addFilterToGroup([]);
+}
+
+// Update a filter condition property at the given path
+function updateFilterAtPath(path, prop, value) {
+    var parent = _resolveFilterParent(path);
+    if (!parent) return;
+    var idx = path[path.length - 1];
+    if (parent.conditions[idx]) {
+        parent.conditions[idx][prop] = value;
         renderFilterDropdown();
         applyFilters();
     }
 }
 
-// Remove filter
-function removeFilter(index) {
-    currentFilters.splice(index, 1);
+// Remove a filter condition or group at the given path
+function removeFilterAtPath(path) {
+    var parent = _resolveFilterParent(path);
+    if (!parent) return;
+    var idx = path[path.length - 1];
+    parent.conditions.splice(idx, 1);
     renderFilterDropdown();
     applyFilters();
+}
+
+// Legacy compat: updateFilter and removeFilter by flat index (updates root group)
+function updateFilter(index, prop, value) {
+    updateFilterAtPath([index], prop, value);
+}
+function removeFilter(index) {
+    removeFilterAtPath([index]);
 }
 
 // Update filter count badge
 function updateFilterCount() {
     var countEl = document.getElementById('filter-count');
     var btn = document.getElementById('filter-btn');
-    if (currentFilters.length > 0) {
-        countEl.textContent = currentFilters.length;
+    var count = countFilterConditions(currentFilters);
+    if (count > 0) {
+        countEl.textContent = count;
         countEl.style.display = 'inline-block';
         btn.classList.add('active');
     } else {
@@ -23516,7 +23718,7 @@ function updateColorButtonState() {
 function updateRecordCountBadge() {
     var badge = document.getElementById('record-count-badge');
     if (!badge) return;
-    var isFiltered = currentFilters.length > 0 || currentSearchQuery;
+    var isFiltered = hasFilterConditions(currentFilters) || currentSearchQuery;
     if (isFiltered) {
         badge.textContent = currentRecordIds.length.toLocaleString() + '/' + originalRecordIds.length.toLocaleString();
         badge.className = 'record-count-badge filtered';
@@ -29567,7 +29769,7 @@ function persistUrlState() {
         _setUrlParam(params, 'view', currentView || '');
         _setUrlParam(params, 'search', currentSearchQuery || '');
         _setUrlParam(params, 'page', currentPage || 0);
-        _setUrlParam(params, 'filters', currentFilters && currentFilters.length ? _encodeUrlJson(currentFilters) : '');
+        _setUrlParam(params, 'filters', currentFilters && hasFilterConditions(currentFilters) ? _encodeUrlJson(currentFilters) : '');
     } else {
         params.delete('table');
         params.delete('view');
@@ -30987,8 +31189,8 @@ init = async function() {
         switchApp('database');
         await showTable(state.table);
         if (state.view) await selectView(state.view);
-        if (Array.isArray(state.filters)) {
-            currentFilters = state.filters;
+        if (state.filters) {
+            currentFilters = normalizeFilterGroup(state.filters);
             updateFilterCount();
         }
         if (typeof state.search === 'string') {
