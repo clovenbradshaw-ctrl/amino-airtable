@@ -7004,6 +7004,11 @@ var lastEventTimestamp = null; // ISO timestamp of last synced event
 var pollInterval = null;
 var navVersion = 0; // Navigation guard to prevent race conditions when rapidly switching views
 
+// Targeted DOM update tracking — allows cell-level patching instead of full DOM rebuild
+var _lastRenderedRecordIds = null;
+var _lastRenderedTable = null;
+var _lastRenderedPage = null;
+
 // View field configuration cache (in-memory, persisted to IndexedDB)
 // Structure: VIEW_FIELD_CONFIG[tableId][viewId] = { hiddenFieldIds: [...], fieldOrder: [...] }
 // Note: Views default to showing ALL fields; hiddenFieldIds stores fields to hide
@@ -9037,11 +9042,13 @@ async function getRecord(tableId, recordId) {
 // re-renders (same page, filter tweaks, view toggles, table back-nav) avoid
 // hitting IndexedDB.  Keyed by "tableId|recordId" and supports records from
 // multiple tables simultaneously.
-var _recordCache = {};  // key: "tableId|recordId" -> record object
+// Uses a Map for LRU eviction: on access, delete+re-set moves the entry to
+// the end; on eviction, the oldest entries (front of iteration order) are removed.
+var _recordCache = new Map();  // key: "tableId|recordId" -> record object
 var _recordCacheTable = null;
 var _RECORD_CACHE_MAX = 2000; // cap to avoid unbounded growth (raised from 600 for fewer IDB reads)
 function _rcKey(tid, rid) { return tid + '|' + rid; }
-function clearRecordCache() { _recordCache = {}; _recordCacheTable = null; invalidateLocalSearchIndex(); }
+function clearRecordCache() { _recordCache = new Map(); _recordCacheTable = null; invalidateLocalSearchIndex(); }
 
 async function getRecordsByIds(tableId, recordIds) {
     if (!recordIds.length) return [];
@@ -9049,13 +9056,18 @@ async function getRecordsByIds(tableId, recordIds) {
     // Track current table (no longer evicts — cache is multi-table now)
     _recordCacheTable = tableId;
 
-    // Serve from cache where possible, only fetch missing IDs
+    // Serve from cache where possible, only fetch missing IDs.
+    // On cache hit, delete+re-set to move the entry to the end (LRU refresh).
     var cached = [];
     var missingForCache = [];
     for (var ci = 0; ci < recordIds.length; ci++) {
         var ck = _rcKey(tableId, recordIds[ci]);
-        if (_recordCache[ck]) {
-            cached.push(_recordCache[ck]);
+        var cachedRec = _recordCache.get(ck);
+        if (cachedRec) {
+            // LRU refresh: move to end of Map iteration order
+            _recordCache.delete(ck);
+            _recordCache.set(ck, cachedRec);
+            cached.push(cachedRec);
         } else {
             missingForCache.push(recordIds[ci]);
         }
@@ -9088,15 +9100,18 @@ async function getRecordsByIds(tableId, recordIds) {
         fetched = fetched.concat(dbResults);
     }
 
-    // Populate cache (cap size to avoid unbounded growth)
-    var cacheKeys = Object.keys(_recordCache);
-    if (cacheKeys.length + fetched.length > _RECORD_CACHE_MAX) {
-        // Evict oldest half of entries to make room
-        var toRemove = cacheKeys.slice(0, Math.floor(cacheKeys.length / 2));
-        for (var ri = 0; ri < toRemove.length; ri++) delete _recordCache[toRemove[ri]];
+    // Populate cache (cap size to avoid unbounded growth).
+    // LRU eviction: remove oldest entries (front of Map iteration) to make room.
+    var spaceNeeded = (_recordCache.size + fetched.length) - _RECORD_CACHE_MAX;
+    if (spaceNeeded > 0) {
+        var iter = _recordCache.keys();
+        for (var ri = 0; ri < spaceNeeded; ri++) {
+            var oldKey = iter.next().value;
+            _recordCache.delete(oldKey);
+        }
     }
     for (var fi = 0; fi < fetched.length; fi++) {
-        _recordCache[_rcKey(tableId, fetched[fi].recordId)] = fetched[fi];
+        _recordCache.set(_rcKey(tableId, fetched[fi].recordId), fetched[fi]);
     }
 
     return cached.concat(fetched);
@@ -14580,7 +14595,7 @@ function renderTableHeaders() {
     container.innerHTML = html;
 }
 
-async function renderTable() {
+async function renderTable(paginationOnly) {
     if (!currentTable) return;
     // Skip rendering if we're in a special view (Events or Sync Status)
     if (currentTable === '_events' || currentTable === '_sync_status') return;
@@ -14594,14 +14609,17 @@ async function renderTable() {
         return;
     }
 
-    // Apply filters, search, and sorts
-    var needsFiltering = hasFilterConditions(currentFilters) || currentSearchQuery || currentSorts.length > 0;
-    if (needsFiltering) {
-        currentRecordIds = await getFilteredSortedRecords();
-        if (navVersion !== renderNav) return; // Navigation changed, abort stale render
-    } else {
-        // Reuse original array directly when no filters are active (avoid copying large arrays)
-        currentRecordIds = originalRecordIds;
+    // When paginationOnly is true (e.g. prev/next page), skip the expensive
+    // filter+sort pipeline and reuse the already-computed currentRecordIds.
+    if (!paginationOnly) {
+        var needsFiltering = hasFilterConditions(currentFilters) || currentSearchQuery || currentSorts.length > 0;
+        if (needsFiltering) {
+            currentRecordIds = await getFilteredSortedRecords();
+            if (navVersion !== renderNav) return; // Navigation changed, abort stale render
+        } else {
+            // Reuse original array directly when no filters are active (avoid copying large arrays)
+            currentRecordIds = originalRecordIds;
+        }
     }
     totalRecords = currentRecordIds.length;
 
@@ -14805,10 +14823,47 @@ async function renderTable() {
 
     html += '</tbody>';
 
-    // Replace container content in one shot after data is ready (no intermediate blank state)
-    tableContainer.innerHTML = '<table id="table"></table>';
-    tableEl = document.getElementById('table');
-    tableEl.innerHTML = html;
+    // Targeted DOM update: if the same set of record IDs is already rendered
+    // (e.g. a sync-triggered re-render on the same page), diff and update only
+    // cells whose content changed instead of destroying and rebuilding 2000+ nodes.
+    var _canPatch = !isGrouped && tableEl && tableEl.querySelector('tbody') &&
+        _lastRenderedRecordIds && _lastRenderedTable === currentTable &&
+        _lastRenderedPage === currentPage &&
+        displayRecordIds.length === _lastRenderedRecordIds.length &&
+        displayRecordIds.every(function(id, i) { return id === _lastRenderedRecordIds[i]; });
+
+    if (_canPatch) {
+        // Patch existing DOM cells with new values
+        for (var pi = 0; pi < displayRecordIds.length; pi++) {
+            var prid = displayRecordIds[pi];
+            var prow = recordMap[prid] || {};
+            var domRow = tableEl.querySelector('tr[data-record-id="' + CSS.escape(prid) + '"]');
+            if (!domRow) { _canPatch = false; break; }
+            for (var pci = 0; pci < _colMeta.length; pci++) {
+                var pcm = _colMeta[pci];
+                var pval = prow[pcm.id];
+                if (pval === undefined) pval = prow[pcm.name];
+                var newHtml = formatCell(pval, pcm.fieldType);
+                var cell = domRow.querySelector('td[data-field-id="' + CSS.escape(pcm.id) + '"]');
+                if (cell && cell === _inlineEditingCell) continue; // don't clobber active edit
+                if (cell && cell.innerHTML !== newHtml) {
+                    cell.innerHTML = newHtml;
+                }
+            }
+        }
+    }
+
+    if (!_canPatch) {
+        // Full DOM replacement (table/page/columns changed)
+        tableContainer.innerHTML = '<table id="table"></table>';
+        tableEl = document.getElementById('table');
+        tableEl.innerHTML = html;
+    }
+
+    // Track what we just rendered for future diff checks
+    _lastRenderedRecordIds = displayRecordIds.slice();
+    _lastRenderedTable = currentTable;
+    _lastRenderedPage = currentPage;
 
     // Update pagination (hide when grouped)
     if (isGrouped) {
@@ -14987,7 +15042,7 @@ function prevPage() {
     if (currentPage > 0) {
         currentPage--;
         if (_urlStateBootstrapped) persistUrlState();
-        renderTable();
+        renderTable(true);
     }
 }
 
@@ -14996,7 +15051,7 @@ function nextPage() {
     if (currentPage < totalPages - 1) {
         currentPage++;
         if (_urlStateBootstrapped) persistUrlState();
-        renderTable();
+        renderTable(true);
     }
 }
 
@@ -16224,27 +16279,26 @@ async function hydrateFromWebhooks() {
 
         updateLoadingOverlay('Downloading from API...', 'Found ' + webhookTables.length + ' tables', 0, webhookTables.length, 0, 0, null);
 
-        // 2. For each table, fetch records and store in main app IndexedDB
-        for (var idx = 0; idx < webhookTables.length; idx++) {
-            var wt = webhookTables[idx];
+        // 2. For each table, fetch records and store in main app IndexedDB.
+        // Processes up to CONCURRENCY tables in parallel to overlap network I/O
+        // with encryption/IDB writes. IDB transactions are per-batch so they
+        // don't conflict across concurrent tables.
+        var HYDRATION_CONCURRENCY = 3;
+        var _tablesCompleted = 0;
+
+        async function _hydrateOneTable(wt) {
             var tableId = wt.table_id;
             var tableName = wt.table_name || tableId;
-            var progressPct = Math.round((idx / webhookTables.length) * 100);
-
-            updateStatus('Downloading ' + tableName + '...', false, progressPct, 'Table ' + (idx + 1) + ' of ' + webhookTables.length);
-            updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, 'Fetching records...');
 
             // Save table metadata
             await saveTable({ tableId: tableId, tableName: tableName });
             META_TABLES[tableId] = { tableId: tableId, tableName: tableName };
 
-            // Fetch records for this table
             try {
                 var recordsData = await webhookFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
                 var records = recordsData.records || [];
 
                 if (records.length > 0) {
-                    // Process records in batches to avoid blocking
                     var BATCH = 200;
                     for (var b = 0; b < records.length; b += BATCH) {
                         var batch = records.slice(b, b + BATCH);
@@ -16256,7 +16310,6 @@ async function hydrateFromWebhooks() {
                             var fields = rec.fields;
                             if (!fields || typeof fields !== 'object') continue;
 
-                            // If fields is a string (JSON from postgres), parse it
                             if (typeof fields === 'string') {
                                 try { fields = JSON.parse(fields); } catch (e) { continue; }
                             }
@@ -16266,7 +16319,6 @@ async function hydrateFromWebhooks() {
                                 maxCursorTimestamp = cursorTs;
                             }
 
-                            // Auto-discover field metadata from record data
                             if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
                             var fieldIds = Object.keys(fields);
                             for (var fi = 0; fi < fieldIds.length; fi++) {
@@ -16292,35 +16344,46 @@ async function hydrateFromWebhooks() {
                             });
                         }
 
-                        // Save field metadata
-                        for (var fs = 0; fs < fieldsToSave.length; fs++) {
-                            await saveField(fieldsToSave[fs]);
-                        }
-
-                        // Save data records (uses main app's encryption)
-                        if (dataRecords.length > 0) {
-                            await saveBatch([], [], [], dataRecords);
+                        if (dataRecords.length > 0 || fieldsToSave.length > 0) {
+                            await saveBatch([], fieldsToSave, [], dataRecords);
                         }
 
                         totalRecords += dataRecords.length;
 
-                        // Update progress within this table's batch processing
                         var recordsSoFar = Math.min(b + BATCH, records.length);
-                        updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, recordsSoFar.toLocaleString() + ' of ' + records.length.toLocaleString() + ' records saved');
+                        var progressPct = Math.round((_tablesCompleted / webhookTables.length) * 100);
+                        updateLoadingOverlay('Downloading ' + tableName + '...', _tablesCompleted + ' of ' + webhookTables.length + ' tables done', progressPct, webhookTables.length, totalFields, totalRecords, recordsSoFar.toLocaleString() + ' of ' + records.length.toLocaleString() + ' records saved');
                     }
                 }
 
                 successfulTables++;
+                _tablesCompleted++;
+                var progressPct = Math.round((_tablesCompleted / webhookTables.length) * 100);
                 console.log('[WebhookHydration] ' + tableName + ': ' + records.length + ' records');
-                updateLoadingOverlay('Downloading ' + tableName + '...', 'Table ' + (idx + 1) + ' of ' + webhookTables.length, progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records ✔');
+                updateLoadingOverlay('Downloaded ' + tableName, _tablesCompleted + ' of ' + webhookTables.length + ' tables done', progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records ✔');
 
             } catch (recErr) {
                 failedTables++;
+                _tablesCompleted++;
                 console.warn('[WebhookHydration] Failed to fetch records for ' + tableName + ':', recErr);
                 SyncStatusFeed.error('Failed to fetch records for ' + tableName + ': ' + recErr.message);
-                // Continue with remaining tables so one outage does not block all data.
             }
         }
+
+        // Concurrency pool: run up to HYDRATION_CONCURRENCY tables at a time.
+        // Each slot is independent — when one finishes, the next table fills it.
+        var _tableIdx = 0;
+        async function _hydrateSlot() {
+            while (_tableIdx < webhookTables.length) {
+                var myIdx = _tableIdx++;
+                await _hydrateOneTable(webhookTables[myIdx]);
+            }
+        }
+        var slots = [];
+        for (var s = 0; s < Math.min(HYDRATION_CONCURRENCY, webhookTables.length); s++) {
+            slots.push(_hydrateSlot());
+        }
+        await Promise.all(slots);
 
         updateLoadingOverlay('Sync complete', totalRecords.toLocaleString() + ' records downloaded', 100, webhookTables.length, totalFields, totalRecords, '');
         updateStatus('Webhook hydration complete: ' + totalRecords + ' records', true, 100, null);
@@ -20985,13 +21048,60 @@ var CaseNotesAPI = (function() {
 
 // ============ Record Update Event Listener ============
 
+// Debounce sync-triggered re-renders: collect record-update events over a short
+// window and apply a single batched re-render instead of N re-renders per burst.
+var _syncRenderTimer = null;
+var _syncRenderPendingUpdates = []; // { tableId, recordId, fields }
+
+function _flushSyncRenderUpdates() {
+    _syncRenderTimer = null;
+    var pending = _syncRenderPendingUpdates;
+    _syncRenderPendingUpdates = [];
+    if (pending.length === 0) return;
+
+    // Check if any updates are for the current table
+    var currentTableUpdates = pending.filter(function(u) { return u.tableId === currentTable; });
+    if (currentTableUpdates.length === 0) return;
+
+    // Try targeted cell updates for each changed record on the current page
+    var didFullRender = false;
+    for (var i = 0; i < currentTableUpdates.length; i++) {
+        var upd = currentTableUpdates[i];
+        var row = document.querySelector('tr[data-record-id="' + CSS.escape(upd.recordId) + '"]');
+        if (row && upd.fields) {
+            // Record is visible on current page — update cells in place
+            var cells = row.querySelectorAll('td.inline-editable, td.cell-formula, td.cell-readonly');
+            cells.forEach(function(cell) {
+                if (cell === _inlineEditingCell) return;
+                var fid = cell.dataset.fieldId;
+                if (fid) {
+                    var val = upd.fields[fid];
+                    var f = META_FIELDS[upd.tableId]?.[fid];
+                    if (val === undefined && f?.fieldName) val = upd.fields[f.fieldName];
+                    if (val !== undefined) cell.innerHTML = formatCell(val, f?.fieldType);
+                }
+            });
+        } else if (!didFullRender) {
+            // Record not visible or no field data — full re-render (once)
+            _inlineEditingCell = null;
+            renderTable();
+            didFullRender = true;
+        }
+    }
+}
+
 window.addEventListener('amino:record-updated', function(e) {
     var detail = e.detail;
     if (!detail || !detail.tableId || !detail.recordId) return;
 
-    _recordSearchDataVersion++;
-    invalidateFilterCache();
+    // Only invalidate filter cache when the update is for the current table.
+    // Updates to other tables don't affect the currently displayed filter results.
+    if (detail.tableId === currentTable) {
+        _recordSearchDataVersion++;
+        invalidateFilterCache();
+    }
     invalidateLocalSearchIndex(detail.tableId, detail.recordId);
+    invalidateFormulaResultCache(detail.tableId, detail.recordId);
 
     // Re-render the record profile if it's showing this record
     if (profileCurrentTableId === detail.tableId && profileCurrentRecordId === detail.recordId) {
@@ -21000,23 +21110,20 @@ window.addEventListener('amino:record-updated', function(e) {
 
     // Re-render the table grid if showing the same table
     if (currentTable === detail.tableId) {
-        // If an inline edit just committed, update only the affected cells instead of a full re-render.
-        // This prevents destroying any active editing state and avoids visual flicker.
+        // If an inline edit just committed, update only the affected cells immediately
+        // (no debounce for user's own edits — they expect instant feedback).
         if (_inlineEditJustCommitted) {
             _inlineEditJustCommitted = false;
-            // Update all cells for this record in the DOM without a full re-render
             var row = document.querySelector('tr[data-record-id="' + CSS.escape(detail.recordId) + '"]');
             if (row) {
                 var cells = row.querySelectorAll('td.inline-editable, td.cell-formula, td.cell-readonly');
                 cells.forEach(function(cell) {
-                    // Skip cell currently being edited
                     if (cell === _inlineEditingCell) return;
                     var fid = cell.dataset.fieldId;
                     if (fid && detail.fields) {
                         var val = detail.fields[fid];
                         var f = META_FIELDS[detail.tableId]?.[fid];
                         if (val === undefined) {
-                            // Try field name
                             if (f?.fieldName) val = detail.fields[f.fieldName];
                         }
                         cell.innerHTML = formatCell(val, f?.fieldType);
@@ -21025,9 +21132,16 @@ window.addEventListener('amino:record-updated', function(e) {
             }
             return;
         }
-        // Clear inline editing cell before full re-render to avoid stale DOM
-        _inlineEditingCell = null;
-        renderTable();
+
+        // Debounce background sync updates: collect over 300ms, then batch render
+        _syncRenderPendingUpdates.push({
+            tableId: detail.tableId,
+            recordId: detail.recordId,
+            fields: detail.fields || null
+        });
+        if (!_syncRenderTimer) {
+            _syncRenderTimer = setTimeout(_flushSyncRenderUpdates, 300);
+        }
     }
 });
 
@@ -21557,6 +21671,39 @@ var _compiledFormulaCache = {};   // tableId -> { fieldId -> { fn, deps, fieldNa
 var _compiledFormulaCacheKeys = {}; // tableId -> invalidation key
 var _disableFormulaEvaluation = false;
 
+// Formula result memoization — caches computed values keyed by
+// "tableId|recordId|fieldId" -> { inputHash, value }.
+// Avoids re-evaluating formulas when input fields haven't changed.
+var _formulaResultCache = {};  // key -> { inputHash, value }
+var _FORMULA_RESULT_CACHE_MAX = 20000;
+
+function _formulaInputHash(row, deps) {
+    // Fast string hash of the dependency values. Uses JSON.stringify for
+    // correctness (handles objects/arrays) with a length cap for speed.
+    var parts = '';
+    for (var i = 0; i < deps.length; i++) {
+        var v = row[deps[i]];
+        if (v === undefined || v === null) {
+            parts += '|_';
+        } else if (typeof v === 'object') {
+            parts += '|' + JSON.stringify(v).slice(0, 100);
+        } else {
+            parts += '|' + String(v);
+        }
+    }
+    return parts;
+}
+
+function invalidateFormulaResultCache(tableId, recordId) {
+    // Invalidate all formula results for a specific record
+    if (!tableId || !recordId) { _formulaResultCache = {}; return; }
+    var prefix = tableId + '|' + recordId + '|';
+    var keys = Object.keys(_formulaResultCache);
+    for (var i = 0; i < keys.length; i++) {
+        if (keys[i].indexOf(prefix) === 0) delete _formulaResultCache[keys[i]];
+    }
+}
+
 function _shouldSkipFormulaColumns(recordCount, formulaCount) {
     if (_disableFormulaEvaluation) return true;
     // Budget guard for very large formula workloads.
@@ -21671,7 +21818,12 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         }
     }
 
-    // Execute every formula on every record in dependency order
+    // Execute every formula on every record in dependency order.
+    // Uses memoization: if the input values (deps) haven't changed since last
+    // evaluation, return the cached result instead of re-executing the formula.
+    var _frcSize = Object.keys(_formulaResultCache).length;
+    if (_frcSize > _FORMULA_RESULT_CACHE_MAX) _formulaResultCache = {};
+
     for (var rid in recordMap) {
         var row = recordMap[rid];
         // Populate bidirectional name↔id aliases so formulas can resolve refs
@@ -21686,12 +21838,26 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         for (var i = 0; i < sorted.length; i++) {
             var c = sorted[i];
             try {
+                // Check formula result cache
+                var frcKey = tableId + '|' + rid + '|' + c.fieldId;
+                var inputHash = _formulaInputHash(row, c.deps);
+                var frcEntry = _formulaResultCache[frcKey];
+                if (frcEntry && frcEntry.inputHash === inputHash) {
+                    // Cache hit — reuse previous value
+                    row[c.fieldId] = frcEntry.value;
+                    if (c.fieldName && c.fieldName !== c.fieldId) {
+                        row[c.fieldName] = frcEntry.value;
+                    }
+                    continue;
+                }
+
                 var value = c.fn(row, { recordId: rid });
                 if (value !== null && value !== undefined && !(value && value.__error)) {
                     row[c.fieldId] = value;
                     if (c.fieldName && c.fieldName !== c.fieldId) {
                         row[c.fieldName] = value;
                     }
+                    _formulaResultCache[frcKey] = { inputHash: inputHash, value: value };
                 }
             } catch (_e) {
                 // Formula runtime error — leave cell empty
