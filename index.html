@@ -28520,17 +28520,35 @@ var InterfaceApp = (function() {
     }
 
     async function _buildClientProfileContext(recordId) {
+        // Use actual Airtable table names (lowercased) — includes display tables
+        // plus lookup tables needed to resolve linked record IDs to names.
         var REQUIRED_TABLES = {
-            'clients': true,
+            // Primary profile tables
             'client info': true,
-            'addresses': true,
-            'matters': true,
-            'matter notes': true,
-            'case notes': true,
-            'ead': true,
-            'activities': true,
-            'hearings/interviews': true,
-            'communications': true
+            'case master view': true,
+            'applications': true,
+            'update tracker': true,
+            'global eads': true,
+            'events': true,
+            'imported table 4': true,
+            'support comments': true,
+            'relationships': true,
+            'deadlines 2.0': true,
+            // Lookup / resolution tables
+            'users': true,
+            'locations': true,
+            'status': true,
+            'event type': true,
+            'hearing type': true,
+            'activity dictionary': true,
+            'activity sub types': true,
+            'custodian': true,
+            'abandoning parent': true,
+            'sij engagement interviews': true,
+            'foia request': true,
+            'office locations': true,
+            'templates': true,
+            'placeholder fields': true
         };
         var data = {};
         var tableIds = Object.keys(META_TABLES || {}).filter(function(tableId) {
