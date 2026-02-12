@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DB Viewer</title>
     <link rel="manifest" href="/manifest.webmanifest">
     <style>
@@ -4019,6 +4019,19 @@
             to { transform: rotate(360deg); }
         }
 
+
+        .app-dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1200; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; }
+        .app-dialog-overlay.open { opacity: 1; visibility: visible; }
+        .app-dialog { background: var(--bg-secondary); color: var(--text-primary); width: min(460px, 92vw); border: 1px solid var(--border-primary); border-radius: var(--radius-xl); box-shadow: var(--shadow-xl); transform: translateY(12px); transition: transform 0.2s; }
+        .app-dialog-overlay.open .app-dialog { transform: translateY(0); }
+        .app-dialog-header { padding: 18px 20px 8px; }
+        .app-dialog-header h2 { margin: 0; font-size: 18px; }
+        .app-dialog-body { padding: 0 20px 16px; }
+        .app-dialog-message { margin: 8px 0 0; font-size: 14px; color: var(--text-muted); line-height: 1.45; white-space: pre-wrap; }
+        .app-dialog-select, .app-dialog-input { width: 100%; margin-top: 14px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); padding: 10px 12px; font-size: 14px; }
+        .app-dialog-error { min-height: 18px; margin-top: 8px; color: #f87171; font-size: 12px; }
+        .app-dialog-footer { padding: 12px 20px 18px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border-primary); }
+
         /* ===== Mobile Sidebar Toggle ===== */
         .mobile-sidebar-toggle {
             display: none;
@@ -4392,6 +4405,25 @@
 <body>
     <!-- Toast Notification Container -->
     <div id="toast-container"></div>
+
+
+    <div id="app-dialog-overlay" class="app-dialog-overlay" aria-hidden="true">
+        <div class="app-dialog" role="dialog" aria-modal="true" aria-labelledby="app-dialog-title" aria-describedby="app-dialog-message">
+            <div class="app-dialog-header">
+                <h2 id="app-dialog-title"></h2>
+            </div>
+            <div class="app-dialog-body">
+                <p id="app-dialog-message" class="app-dialog-message"></p>
+                <select id="app-dialog-select" class="app-dialog-select" style="display:none"></select>
+                <input id="app-dialog-input" class="app-dialog-input" type="text" style="display:none" />
+                <div id="app-dialog-error" class="app-dialog-error"></div>
+            </div>
+            <div class="app-dialog-footer">
+                <button id="app-dialog-cancel" class="btn">Cancel</button>
+                <button id="app-dialog-confirm" class="btn">Confirm</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Encryption Unlock Screen -->
     <div id="unlock-screen" class="hidden">
@@ -12422,8 +12454,20 @@ async function toggleViewFolder(tableId, folderId, event) {
 
 // Create a new view folder
 async function createViewFolder(tableId) {
-    var folderName = prompt('Enter folder name:');
-    if (!folderName) return;
+    var result = await showAppDialog({
+        title: 'Create folder',
+        message: 'Enter a name for the new folder.',
+        input: true,
+        defaultValue: '',
+        placeholder: 'Folder name',
+        confirmText: 'Create',
+        validate: function(data) {
+            if (!data.value || !data.value.trim()) return 'Folder name is required.';
+            return '';
+        }
+    });
+    if (!result.confirmed) return;
+    var folderName = result.value.trim();
 
     var folderId = 'vfld' + Date.now();
     var folder = {
@@ -12453,8 +12497,21 @@ async function renameViewFolder(tableId, folderId, event) {
     var folder = VIEW_FOLDERS[tableId]?.[folderId];
     if (!folder) return;
 
-    var newName = prompt('Enter new folder name:', folder.folderName);
-    if (!newName || newName === folder.folderName) return;
+    var renameResult = await showAppDialog({
+        title: 'Rename folder',
+        message: 'Update the folder name.',
+        input: true,
+        defaultValue: folder.folderName || '',
+        placeholder: 'Folder name',
+        confirmText: 'Save',
+        validate: function(data) {
+            if (!data.value || !data.value.trim()) return 'Folder name is required.';
+            return '';
+        }
+    });
+    if (!renameResult.confirmed) return;
+    var newName = renameResult.value.trim();
+    if (newName === folder.folderName) return;
 
     folder.folderName = newName;
     await saveFolder(folder);
@@ -12470,7 +12527,13 @@ async function renameViewFolder(tableId, folderId, event) {
 async function deleteViewFolder(tableId, folderId, event) {
     event.stopPropagation();
 
-    if (!confirm('Delete this folder? Views will be moved to the root level.')) return;
+    var deleteResult = await showAppDialog({
+        title: 'Delete folder?',
+        message: 'Views in this folder will be moved to the root level.',
+        confirmText: 'Delete',
+        cancelText: 'Cancel'
+    });
+    if (!deleteResult.confirmed) return;
 
     // Move all views in this folder to root
     var viewIds = Object.keys(META_VIEWS[tableId] || {});
@@ -12903,9 +12966,19 @@ async function addViewToWorkspaceMenu() {
     var wsIds = Object.keys(WORKSPACES);
 
     if (wsIds.length === 0) {
-        var name = prompt('No workspaces exist. Enter a name to create one:');
-        if (name) {
-            var wsId = await createWorkspace(name);
+        var firstWorkspaceResult = await showAppDialog({
+            title: 'Create workspace',
+            message: 'No workspaces exist yet. Create one to continue.',
+            input: true,
+            placeholder: 'Workspace name',
+            confirmText: 'Create',
+            validate: function(data) {
+                if (!data.value || !data.value.trim()) return 'Workspace name is required.';
+                return '';
+            }
+        });
+        if (firstWorkspaceResult.confirmed) {
+            var wsId = await createWorkspace(firstWorkspaceResult.value.trim());
             await addViewToWorkspace(contextMenuViewId, wsId);
             renderWorkspaceTabs();
             await loadTableViewsAsync(contextMenuTableId);
@@ -12914,24 +12987,39 @@ async function addViewToWorkspaceMenu() {
         return;
     }
 
-    var options = wsIds.map((wid, i) => {
+    var selectionOptions = wsIds.map(function(wid) {
         var ws = WORKSPACES[wid];
-        var inWs = ws.viewIds.includes(contextMenuViewId) ? ' [already added]' : '';
-        return i + ': ' + ws.workspaceName + inWs;
+        var inWs = ws.viewIds.includes(contextMenuViewId) ? ' (already added)' : '';
+        return { label: ws.workspaceName + inWs, workspaceId: wid };
     });
-    options.push(wsIds.length + ': Create new workspace...');
+    selectionOptions.push({ label: 'Create new workspace…', workspaceId: '__new__' });
 
-    var choice = prompt('Add to workspace:\n' + options.join('\n') + '\n\nEnter number:');
+    var chooseWorkspaceResult = await showAppDialog({
+        title: 'Add view to workspace',
+        message: 'Choose where this view should be added.',
+        selectOptions: selectionOptions,
+        confirmText: 'Continue'
+    });
 
-    if (choice !== null) {
-        var idx = parseInt(choice);
-        if (idx >= 0 && idx < wsIds.length) {
-            await addViewToWorkspace(contextMenuViewId, wsIds[idx]);
+    if (chooseWorkspaceResult.confirmed) {
+        var picked = selectionOptions[chooseWorkspaceResult.selectedIndex];
+        if (picked && picked.workspaceId && picked.workspaceId !== '__new__') {
+            await addViewToWorkspace(contextMenuViewId, picked.workspaceId);
             renderWorkspaceTabs();
-        } else if (idx === wsIds.length) {
-            var name = prompt('Enter workspace name:');
-            if (name) {
-                var wsId = await createWorkspace(name);
+        } else if (picked && picked.workspaceId === '__new__') {
+            var newWorkspaceResult = await showAppDialog({
+                title: 'Create workspace',
+                message: 'Enter a workspace name.',
+                input: true,
+                placeholder: 'Workspace name',
+                confirmText: 'Create',
+                validate: function(data) {
+                    if (!data.value || !data.value.trim()) return 'Workspace name is required.';
+                    return '';
+                }
+            });
+            if (newWorkspaceResult.confirmed) {
+                var wsId = await createWorkspace(newWorkspaceResult.value.trim());
                 await addViewToWorkspace(contextMenuViewId, wsId);
                 renderWorkspaceTabs();
             }
@@ -12964,12 +13052,20 @@ async function setViewParent() {
         idx++;
     }
 
-    var choice = prompt('Set parent view (for nesting):\n' + options.join('\n') + '\n\nEnter number:');
+    var parentOptions = viewIds.map(function(vid, i) {
+        return { label: options[i].replace(/^\d+:\s*/, ''), viewId: vid };
+    });
+    var parentResult = await showAppDialog({
+        title: 'Set parent view',
+        message: 'Choose a parent to nest this view, or select root level.',
+        selectOptions: parentOptions,
+        confirmText: 'Save'
+    });
 
-    if (choice !== null) {
-        var choiceIdx = parseInt(choice);
-        if (choiceIdx >= 0 && choiceIdx < viewIds.length) {
-            view.parentViewId = viewIds[choiceIdx] || null;
+    if (parentResult.confirmed) {
+        var selected = parentOptions[parentResult.selectedIndex];
+        if (selected) {
+            view.parentViewId = selected.viewId || null;
             await saveView(view);
             markViewDirty('parentViewId', view.parentViewId);
             await loadTableViewsAsync(contextMenuTableId);
@@ -19184,6 +19280,105 @@ function cancelProfileFieldEdit() {
 }
 
 // ============ Toast Notifications ============
+
+var _appDialogResolver = null;
+
+function _closeAppDialog(result) {
+    var overlay = document.getElementById('app-dialog-overlay');
+    if (overlay) {
+        overlay.classList.remove('open');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+    document.removeEventListener('keydown', _onAppDialogKeydown);
+    if (_appDialogResolver) {
+        var resolver = _appDialogResolver;
+        _appDialogResolver = null;
+        resolver(result);
+    }
+}
+
+function _onAppDialogKeydown(event) {
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        _closeAppDialog({ confirmed: false });
+    }
+}
+
+function showAppDialog(options) {
+    options = options || {};
+    var overlay = document.getElementById('app-dialog-overlay');
+    var titleEl = document.getElementById('app-dialog-title');
+    var messageEl = document.getElementById('app-dialog-message');
+    var errorEl = document.getElementById('app-dialog-error');
+    var inputEl = document.getElementById('app-dialog-input');
+    var selectEl = document.getElementById('app-dialog-select');
+    var cancelBtn = document.getElementById('app-dialog-cancel');
+    var confirmBtn = document.getElementById('app-dialog-confirm');
+    if (!overlay || !titleEl || !messageEl || !cancelBtn || !confirmBtn) return Promise.resolve({ confirmed: false });
+
+    titleEl.textContent = options.title || 'Confirm';
+    messageEl.textContent = options.message || '';
+    errorEl.textContent = '';
+    cancelBtn.textContent = options.cancelText || 'Cancel';
+    confirmBtn.textContent = options.confirmText || 'Confirm';
+
+    inputEl.style.display = options.input ? '' : 'none';
+    inputEl.value = options.defaultValue || '';
+    inputEl.placeholder = options.placeholder || '';
+
+    selectEl.style.display = options.selectOptions ? '' : 'none';
+    selectEl.innerHTML = '';
+    if (options.selectOptions) {
+        options.selectOptions.forEach(function(opt, idx) {
+            var option = document.createElement('option');
+            option.value = String(idx);
+            option.textContent = opt.label;
+            option.disabled = !!opt.disabled;
+            selectEl.appendChild(option);
+        });
+        if (typeof options.defaultSelectedIndex === 'number') {
+            selectEl.value = String(options.defaultSelectedIndex);
+        }
+    }
+
+    var overlayClick = function(e) {
+        if (e.target === overlay) _closeAppDialog({ confirmed: false });
+    };
+    var onCancel = function() { _closeAppDialog({ confirmed: false }); };
+    var onConfirm = function() {
+        var value = options.input ? inputEl.value : null;
+        var selectedIndex = options.selectOptions ? parseInt(selectEl.value, 10) : null;
+        if (options.validate) {
+            var validation = options.validate({ value: value, selectedIndex: selectedIndex });
+            if (validation) {
+                errorEl.textContent = validation;
+                return;
+            }
+        }
+        _closeAppDialog({ confirmed: true, value: value, selectedIndex: selectedIndex });
+    };
+
+    cancelBtn.onclick = onCancel;
+    confirmBtn.onclick = onConfirm;
+    overlay.onclick = overlayClick;
+    document.addEventListener('keydown', _onAppDialogKeydown);
+
+    overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+
+    setTimeout(function() {
+        if (options.input) inputEl.focus();
+        else if (options.selectOptions) selectEl.focus();
+        else confirmBtn.focus();
+    }, 0);
+
+    return new Promise(function(resolve) {
+        _appDialogResolver = function(result) {
+            overlay.onclick = null;
+            resolve(result);
+        };
+    });
+}
 
 function showToast(type, message, durationMs) {
     var container = document.getElementById('toast-container');
