@@ -27678,11 +27678,56 @@ var InterfaceApp = (function() {
         }, 120);
     }
 
-    function openClientProfilePage(recordId, event) {
+    async function _buildClientProfileContext(recordId) {
+        var REQUIRED_TABLES = {
+            'clients': true,
+            'client info': true,
+            'addresses': true,
+            'matters': true,
+            'matter notes': true,
+            'case notes': true,
+            'ead': true,
+            'activities': true,
+            'hearings/interviews': true,
+            'communications': true
+        };
+        var data = {};
+        var tableIds = Object.keys(META_TABLES || {}).filter(function(tableId) {
+            var table = META_TABLES[tableId] || {};
+            var tableName = String(table.tableName || table.table_name || '').trim().toLowerCase();
+            return REQUIRED_TABLES[tableName];
+        });
+
+        for (var i = 0; i < tableIds.length; i++) {
+            var tableId = tableIds[i];
+            var tableMeta = META_TABLES[tableId] || {};
+            var tableName = tableMeta.tableName || tableMeta.table_name || tableId;
+            var rows = await _getTableRecords(tableId);
+            data[tableName] = rows;
+            data[tableId] = rows;
+        }
+
+        return {
+            version: 1,
+            capturedAt: Date.now(),
+            clientId: recordId,
+            data: data
+        };
+    }
+
+    async function openClientProfilePage(recordId, event) {
         if (!recordId) return;
         if (event && event.target && event.target.closest('button, a, input, select, textarea')) {
             return;
         }
+
+        try {
+            var snapshot = await _buildClientProfileContext(recordId);
+            sessionStorage.setItem('amino.clientProfile.context.v1', JSON.stringify(snapshot));
+        } catch (e) {
+            console.warn('[Interface] Failed to persist client profile context:', e.message);
+        }
+
         var targetUrl = 'client-profile.html?clientId=' + encodeURIComponent(recordId);
         window.location.href = targetUrl;
     }
