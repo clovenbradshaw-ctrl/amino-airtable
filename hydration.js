@@ -46,9 +46,11 @@ var AminoHydration = (function() {
 
         // Tier selection
         TIER_ORDER: ['postgres', 'matrix-room'],  // Tiers to try, in order
-        // Possible values: 'bulk-download', 'postgres', 'matrix-room'
+        // Possible values: 'bulk-download', 'postgres', 'csv', 'url', 'matrix-room'
         // 'bulk-download' = single request for all tables (hydrateFromBoxDownload)
         // 'postgres'      = per-table from /amino-records (hydrateAllFromPostgres)
+        // 'csv'           = parse local CSV file (tierCSV)
+        // 'url'           = fetch from arbitrary URL (tierURL)
         // 'matrix-room'   = replay room timeline (rebuildTableFromRoom)
 
         // Table ordering strategy for per-table hydration
@@ -1061,6 +1063,10 @@ var AminoHydration = (function() {
                     result = await tierBulkDownload(ctx, options);
                 } else if (tier === 'postgres') {
                     result = await tierPostgres(ctx, options);
+                } else if (tier === 'csv') {
+                    result = await tierCSV(ctx, options);
+                } else if (tier === 'url') {
+                    result = await tierURL(ctx, options);
                 } else if (tier === 'matrix-room') {
                     // Matrix room is per-table, hydrate all
                     var total = 0;
@@ -1094,12 +1100,462 @@ var AminoHydration = (function() {
     }
 
     // ========================================================================
+    // TIER 4: CSV FILE — Hydrate from a local .csv file.
+    //
+    // Expected CSV schema:
+    //   id (integer), created_at (timestamp), recordId (text),
+    //   operator (text), payload (json), uuid (uuid), set (text)
+    //
+    // Each CSV row is an event. Rows are grouped by recordId+set (table),
+    // field operations are replayed in created_at order to build current state,
+    // then written to IDB.
+    // ========================================================================
+
+    // Minimal CSV line parser — handles quoted fields and escaped quotes.
+    function _parseCSVLine(line) {
+        var result = [];
+        var current = '';
+        var inQuotes = false;
+        for (var i = 0; i < line.length; i++) {
+            var ch = line.charAt(i);
+            if (inQuotes) {
+                if (ch === '"') {
+                    if (i + 1 < line.length && line.charAt(i + 1) === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = false;
+                    }
+                } else {
+                    current += ch;
+                }
+            } else {
+                if (ch === '"') {
+                    inQuotes = true;
+                } else if (ch === ',') {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += ch;
+                }
+            }
+        }
+        result.push(current);
+        return result;
+    }
+
+    // Parse CSV text into an array of event objects.
+    // Returns { events: [...], errors: [...] }
+    function _parseCSVEvents(csvText) {
+        var lines = csvText.split(/\r?\n/);
+        var headers = null;
+        var colMap = {};
+        var events = [];
+        var errors = [];
+
+        // Canonical column name mapping
+        var canonical = {
+            'id': 'id', 'created_at': 'created_at', 'createdat': 'created_at',
+            'recordid': 'recordId', 'record_id': 'recordId',
+            'operator': 'operator', 'payload': 'payload',
+            'uuid': 'uuid', 'set': 'set'
+        };
+
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (!line) continue;
+
+            if (!headers) {
+                headers = _parseCSVLine(line);
+                for (var h = 0; h < headers.length; h++) {
+                    var lower = headers[h].toLowerCase().trim().replace(/"/g, '');
+                    colMap[h] = canonical[lower] || headers[h].trim().replace(/"/g, '');
+                }
+                continue;
+            }
+
+            var values = _parseCSVLine(line);
+            var obj = {};
+            for (var v = 0; v < values.length; v++) {
+                var key = colMap[v];
+                if (!key) continue;
+                var val = values[v];
+                if (key === 'id') {
+                    var numVal = parseInt(val, 10);
+                    obj[key] = isNaN(numVal) ? val : numVal;
+                } else if (key === 'payload') {
+                    try {
+                        obj[key] = (typeof val === 'string' && val.trim()) ? JSON.parse(val) : {};
+                    } catch (e) {
+                        obj[key] = {};
+                        errors.push('Row ' + (i + 1) + ': invalid JSON in payload');
+                    }
+                } else {
+                    obj[key] = val;
+                }
+            }
+
+            if (obj.recordId) {
+                events.push(obj);
+            }
+        }
+
+        if (!headers) {
+            errors.push('CSV has no header row');
+        }
+
+        return { events: events, errors: errors };
+    }
+
+    // Build current state from CSV events by replaying mutations in order.
+    // Returns { byTable: { tableId: { recordId: { fields } } } }
+    function _buildStateFromCSVEvents(events) {
+        // Sort by created_at ascending (earliest first)
+        events.sort(function(a, b) {
+            var tsA = a.created_at || '';
+            var tsB = b.created_at || '';
+            return tsA < tsB ? -1 : tsA > tsB ? 1 : 0;
+        });
+
+        var byTable = {};  // set (tableId) → { recordId → { fields } }
+
+        for (var i = 0; i < events.length; i++) {
+            var evt = events[i];
+            var tableId = evt.set || 'unknown';
+            var recordId = evt.recordId;
+            var op = evt.operator || 'ALT';
+            var payload = evt.payload || {};
+
+            if (!byTable[tableId]) byTable[tableId] = {};
+            if (!byTable[tableId][recordId]) byTable[tableId][recordId] = {};
+
+            var fields = byTable[tableId][recordId];
+
+            // Extract field operations from payload
+            var fieldOps = {};
+            if (payload.fields) {
+                fieldOps = payload.fields;
+            } else if (payload.ALT || payload.INS || payload.NUL) {
+                fieldOps = payload;
+            } else {
+                // Flat payload: treat entire payload as ALT fields
+                // (exclude internal keys)
+                var altFields = {};
+                var payloadKeys = Object.keys(payload);
+                for (var k = 0; k < payloadKeys.length; k++) {
+                    if (payloadKeys[k].charAt(0) !== '_') {
+                        altFields[payloadKeys[k]] = payload[payloadKeys[k]];
+                    }
+                }
+                if (Object.keys(altFields).length > 0) {
+                    fieldOps = { ALT: altFields };
+                }
+            }
+
+            // Normalize to { ALT, INS, NUL } using op if flat
+            if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL) {
+                if (op === 'ALT' || op === 'INS') {
+                    fieldOps = {};
+                    fieldOps[op] = payload.fields || payload;
+                } else if (op === 'NUL') {
+                    fieldOps = { NUL: payload.fields || payload };
+                }
+            }
+
+            applyFieldOps(fields, fieldOps);
+        }
+
+        return { byTable: byTable };
+    }
+
+    async function tierCSV(ctx, options) {
+        var csvText = options.csvText || null;
+        var csvFile = options.csvFile || null;
+        var onProgress = options.onProgress || null;
+
+        if (!csvText && csvFile) {
+            // Read File object as text
+            csvText = await new Promise(function(resolve, reject) {
+                var reader = new FileReader();
+                reader.onload = function() { resolve(reader.result); };
+                reader.onerror = function() { reject(reader.error); };
+                reader.readAsText(csvFile);
+            });
+        }
+
+        if (!csvText) {
+            throw new Error('CSV hydration requires csvText or csvFile in options');
+        }
+
+        console.log('[Hydration] Tier csv: parsing CSV data (' + csvText.length + ' chars)');
+
+        var parsed = _parseCSVEvents(csvText);
+        if (parsed.errors.length > 0) {
+            console.warn('[Hydration] CSV parse warnings:', parsed.errors);
+        }
+        if (parsed.events.length === 0) {
+            throw new Error('CSV contained no valid events');
+        }
+
+        console.log('[Hydration] CSV parsed:', parsed.events.length, 'events');
+
+        // Build current state by replaying events
+        var state = _buildStateFromCSVEvents(parsed.events);
+        var tableIds = Object.keys(state.byTable);
+        var totalHydrated = 0;
+
+        for (var t = 0; t < tableIds.length; t++) {
+            var tableId = tableIds[t];
+            var recordMap = state.byTable[tableId];
+            var recordIds = Object.keys(recordMap);
+
+            // Build normalized records
+            var records = [];
+            for (var r = 0; r < recordIds.length; r++) {
+                records.push({
+                    id: recordIds[r],
+                    tableId: tableId,
+                    tableName: _getTableName(ctx, tableId) || tableId,
+                    fields: recordMap[recordIds[r]],
+                    lastSynced: new Date().toISOString()
+                });
+            }
+
+            if (records.length === 0) continue;
+
+            // Clear existing rows and write new data
+            await ctx.deleteTableRecords(tableId);
+            await writeRecordsBatched(ctx, records, tableId);
+
+            // Write cursor
+            await VersionTracker.writeCursor(ctx, tableId, new Date().toISOString(), 'csv-import');
+
+            // Cache
+            ctx.cacheFullTable(tableId, records);
+
+            totalHydrated += records.length;
+
+            if (onProgress) {
+                onProgress({
+                    tableId: tableId,
+                    tableName: _getTableName(ctx, tableId) || tableId,
+                    tableIndex: t,
+                    tableCount: tableIds.length,
+                    recordCount: records.length,
+                    totalRecords: totalHydrated
+                });
+            }
+        }
+
+        return {
+            success: true,
+            totalRecords: totalHydrated,
+            totalTables: tableIds.length,
+            parsedEvents: parsed.events.length,
+            parseErrors: parsed.errors
+        };
+    }
+
+    // ========================================================================
+    // TIER 5: URL — Fetch data from an arbitrary URL (JSON or CSV).
+    //
+    // Supports:
+    //   - JSON array of records: [{ id, tableId, fields, ... }, ...]
+    //   - JSON object with tables: { tables: { tblXXX: [...], ... } }
+    //   - JSON object with records: { records: [...] }
+    //   - CSV text (detected by content-type or first-line heuristic)
+    // ========================================================================
+
+    async function tierURL(ctx, options) {
+        var url = options.url;
+        var onProgress = options.onProgress || null;
+
+        if (!url) {
+            throw new Error('URL hydration requires a url in options');
+        }
+
+        console.log('[Hydration] Tier url: fetching from', url);
+
+        var response = await fetch(url, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json, text/csv, text/plain' }
+        });
+
+        if (!response.ok) {
+            throw new Error('URL hydration failed: HTTP ' + response.status);
+        }
+
+        var contentType = (response.headers.get('content-type') || '').toLowerCase();
+        var text = await response.text();
+
+        if (!text || !text.trim()) {
+            throw new Error('URL returned empty response');
+        }
+
+        // Detect CSV vs JSON
+        var isCSV = contentType.indexOf('csv') !== -1 ||
+                    contentType.indexOf('text/plain') !== -1;
+
+        // Heuristic: if first non-whitespace char is not [ or {, treat as CSV
+        if (!isCSV) {
+            var firstChar = text.trim().charAt(0);
+            if (firstChar !== '[' && firstChar !== '{') {
+                isCSV = true;
+            }
+        }
+
+        if (isCSV) {
+            // Delegate to CSV tier
+            return tierCSV(ctx, {
+                csvText: text,
+                onProgress: onProgress
+            });
+        }
+
+        // JSON path — parse and process like bulk-download
+        var data = JSON.parse(text);
+        var allRecords = [];
+
+        if (Array.isArray(data)) {
+            allRecords = data;
+        } else if (data && Array.isArray(data.records)) {
+            allRecords = data.records;
+        } else if (data && typeof data.tables === 'object' && !Array.isArray(data.tables)) {
+            var tableKeys = Object.keys(data.tables);
+            for (var tk = 0; tk < tableKeys.length; tk++) {
+                var tRecords = data.tables[tableKeys[tk]];
+                if (Array.isArray(tRecords)) {
+                    for (var tr = 0; tr < tRecords.length; tr++) {
+                        tRecords[tr].tableId = tRecords[tr].tableId || tRecords[tr].table_id || tableKeys[tk];
+                        allRecords.push(tRecords[tr]);
+                    }
+                }
+            }
+        }
+
+        if (!allRecords.length) {
+            throw new Error('URL response contained no records');
+        }
+
+        // Group by table
+        var byTable = {};
+        for (var i = 0; i < allRecords.length; i++) {
+            var rec = allRecords[i];
+            var tableId = rec.tableId || rec.table_id || rec.set || 'unknown';
+            if (!byTable[tableId]) byTable[tableId] = [];
+            byTable[tableId].push(rec);
+        }
+
+        var tableIds = Object.keys(byTable);
+        var totalHydrated = 0;
+
+        for (var j = 0; j < tableIds.length; j++) {
+            var tid = tableIds[j];
+            var records = byTable[tid];
+
+            await ctx.deleteTableRecords(tid);
+            await writeRecordsBatched(ctx, records, tid);
+
+            var cursorInfo = VersionTracker.resolveCursorFromResponse(data, records);
+            await VersionTracker.writeCursor(ctx, tid, cursorInfo.value, 'url-import');
+
+            ctx.cacheFullTable(tid, records.map(function(record) {
+                return normalizeRecord(record, tid);
+            }));
+
+            totalHydrated += records.length;
+
+            if (onProgress) {
+                onProgress({
+                    tableId: tid,
+                    tableName: (records[0] || {}).tableName || (records[0] || {}).table_name || tid,
+                    tableIndex: j,
+                    tableCount: tableIds.length,
+                    recordCount: records.length,
+                    totalRecords: totalHydrated
+                });
+            }
+        }
+
+        return {
+            success: true,
+            totalRecords: totalHydrated,
+            totalTables: tableIds.length
+        };
+    }
+
+    // ========================================================================
+    // HYDRATION SOURCE SELECTION
+    //
+    // Manages which hydration source the user has chosen. Persisted to
+    // localStorage so it survives page reloads. The background hydration
+    // flow reads this to decide which tier(s) to attempt.
+    //
+    // Sources:
+    //   'postgres'      — Default. Fetch from Postgres via webhook API.
+    //   'csv'           — Load from a local .csv file (user provides File).
+    //   'box'           — Download from Box AMO snapshot.
+    //   'url'           — Fetch from an arbitrary URL.
+    //   'none'          — No local data. Use postgres for current state,
+    //                     room data for historical. (online-only mode)
+    // ========================================================================
+
+    var HYDRATION_SOURCE_KEY = 'amino_hydration_source';
+    var HYDRATION_URL_KEY = 'amino_hydration_url';
+
+    function getHydrationSource() {
+        try {
+            return localStorage.getItem(HYDRATION_SOURCE_KEY) || 'postgres';
+        } catch (e) {
+            return 'postgres';
+        }
+    }
+
+    function setHydrationSource(source) {
+        try {
+            localStorage.setItem(HYDRATION_SOURCE_KEY, source);
+        } catch (e) {
+            console.warn('[Hydration] Could not persist hydration source:', e);
+        }
+        console.log('[Hydration] Hydration source set to:', source);
+    }
+
+    function getHydrationURL() {
+        try {
+            return localStorage.getItem(HYDRATION_URL_KEY) || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function setHydrationURL(url) {
+        try {
+            localStorage.setItem(HYDRATION_URL_KEY, url);
+        } catch (e) {
+            console.warn('[Hydration] Could not persist hydration URL:', e);
+        }
+    }
+
+    // Pending CSV file — set by the UI before calling run().
+    // Not persisted (File objects can't be serialized).
+    var _pendingCSVFile = null;
+
+    function setPendingCSVFile(file) {
+        _pendingCSVFile = file;
+    }
+
+    function getPendingCSVFile() {
+        return _pendingCSVFile;
+    }
+
+    // ========================================================================
     // RESET — Clear all dedup/tracking state (call on logout).
     // ========================================================================
 
     function reset() {
         _processedEventIds = {};
         _optimisticWrites = {};
+        _pendingCSVFile = null;
     }
 
     // ========================================================================
@@ -1112,6 +1568,14 @@ var AminoHydration = (function() {
 
         // Configuration (mutable — change before calling run())
         config: config,
+
+        // Hydration source selection
+        getHydrationSource: getHydrationSource,
+        setHydrationSource: setHydrationSource,
+        getHydrationURL: getHydrationURL,
+        setHydrationURL: setHydrationURL,
+        setPendingCSVFile: setPendingCSVFile,
+        getPendingCSVFile: getPendingCSVFile,
 
         // Deduplication (used by data-layer for real-time sync)
         markEventProcessed: markEventProcessed,
@@ -1140,8 +1604,14 @@ var AminoHydration = (function() {
         tierBulkDownload: tierBulkDownload,
         tierPostgres: tierPostgres,
         tierMatrixRoom: tierMatrixRoom,
+        tierCSV: tierCSV,
+        tierURL: tierURL,
         syncTableFromPostgres: syncTableFromPostgres,
         hydrateTableFromPostgres: hydrateTableFromPostgres,
+
+        // CSV parsing utilities (exposed for direct use)
+        parseCSVEvents: _parseCSVEvents,
+        buildStateFromCSVEvents: _buildStateFromCSVEvents,
 
         // Table ordering
         orderTables: orderTables,
