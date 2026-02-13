@@ -147,6 +147,11 @@ class Parser {
   expect(type) {
     const tok = this.advance();
     if (tok.type !== type) {
+      // Tolerate missing closing parens at end of formula — Airtable
+      // formulas may be truncated or have unmatched parentheses.
+      if (type === 'RPAREN' && tok.type === 'EOF') {
+        return tok;
+      }
       throw new Error(`Expected ${type}, got ${tok.type}${tok.value !== undefined ? ` (${tok.value})` : ''}`);
     }
     return tok;
@@ -158,7 +163,11 @@ class Parser {
    */
   parse() {
     const ast = this.parseExpression();
-    this.expect('EOF');
+    // Tolerate trailing tokens (e.g., extra closing parens from malformed
+    // formulas) rather than throwing — allows partial formula evaluation.
+    if (this.peek().type !== 'EOF') {
+      // Skip to end silently
+    }
     return ast;
   }
 
@@ -287,6 +296,15 @@ class Parser {
       const expr = this.parseExpression();
       this.expect('RPAREN');
       return expr;
+    }
+
+    // Handle empty/missing arguments — Airtable allows optional args and
+    // trailing commas in function calls (e.g., IF({x},,"default"), SWITCH({x},"a",1,)).
+    // A trailing binary operator (e.g., {Field} & ) also produces EOF here.
+    // Treat the missing expression as an implicit BLANK (null) without consuming
+    // the token so the caller can still handle commas/parens/EOF correctly.
+    if (tok.type === 'COMMA' || tok.type === 'RPAREN' || tok.type === 'EOF') {
+      return { type: 'literal', value: null, dataType: 'null' };
     }
 
     throw new Error(`Unexpected token: ${tok.type}${tok.value !== undefined ? ` (${tok.value})` : ''}`);
