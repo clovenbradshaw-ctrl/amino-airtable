@@ -639,6 +639,69 @@
         .sync-feed-footer button { background: var(--bg-tertiary); border: none; color: var(--text-muted); font-size: 10px; padding: 4px 8px; border-radius: 3px; cursor: pointer; }
         .sync-feed-footer button:hover { background: var(--bg-hover); color: var(--text-primary); }
 
+        /* ===== Sync Banner (top of main content) ===== */
+        .sync-banner {
+            display: none; align-items: center; gap: 10px;
+            padding: 8px 20px; font-size: 12px;
+            background: linear-gradient(90deg, color-mix(in srgb, var(--primary-500) 12%, transparent), color-mix(in srgb, var(--primary-500) 6%, transparent));
+            border-bottom: 1px solid color-mix(in srgb, var(--primary-500) 25%, var(--border-primary));
+            color: var(--text-secondary); overflow: hidden; position: relative;
+        }
+        .sync-banner.visible { display: flex; }
+        .sync-banner.error {
+            background: linear-gradient(90deg, color-mix(in srgb, var(--danger-500) 10%, transparent), color-mix(in srgb, var(--danger-500) 4%, transparent));
+            border-bottom-color: color-mix(in srgb, var(--danger-500) 25%, var(--border-primary));
+        }
+        .sync-banner-spinner {
+            width: 14px; height: 14px; border: 2px solid color-mix(in srgb, var(--primary-500) 30%, transparent);
+            border-top-color: var(--primary-500); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+        }
+        .sync-banner.error .sync-banner-spinner { display: none; }
+        .sync-banner-icon { flex-shrink: 0; font-size: 14px; }
+        .sync-banner-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sync-banner-progress { width: 120px; height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+        .sync-banner-progress-fill { height: 100%; background: var(--primary-500); border-radius: 2px; transition: width 0.3s ease; width: 0%; }
+        .sync-banner-dismiss { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 0 2px; flex-shrink: 0; }
+        .sync-banner-dismiss:hover { color: var(--text-primary); }
+
+        /* ===== Table Loading Overlay (shown over table during filter/sort) ===== */
+        .table-loading-overlay {
+            position: absolute; inset: 0; z-index: 5;
+            background: color-mix(in srgb, var(--bg-primary) 75%, transparent);
+            display: none; align-items: center; justify-content: center;
+            backdrop-filter: blur(1px); animation: fadeIn 0.1s ease-out;
+        }
+        .table-loading-overlay.visible { display: flex; }
+        .table-loading-overlay-content { text-align: center; color: var(--text-muted); }
+        .table-loading-overlay-content .loading-spinner { margin-bottom: 8px; }
+        .table-loading-overlay-content p { font-size: 12px; margin: 0; }
+
+        /* ===== Offline Queue Badge ===== */
+        .offline-badge {
+            display: none; align-items: center; gap: 5px;
+            padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+            background: color-mix(in srgb, var(--warning-500) 15%, transparent);
+            color: var(--warning-500); border: 1px solid color-mix(in srgb, var(--warning-500) 30%, transparent);
+            cursor: pointer; white-space: nowrap;
+        }
+        .offline-badge.visible { display: inline-flex; }
+        .offline-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning-500); animation: pulse 2s infinite; }
+        .offline-badge.syncing { background: color-mix(in srgb, var(--primary-500) 15%, transparent); color: var(--primary-500); border-color: color-mix(in srgb, var(--primary-500) 30%, transparent); }
+        .offline-badge.syncing .offline-badge-dot { background: var(--primary-500); }
+
+        /* ===== Improved sync status indicator in status bar ===== */
+        .sync-status-indicator {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 2px 8px; border-radius: 10px; font-size: 11px; cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .sync-status-indicator:hover { background: var(--bg-hover); }
+        .sync-status-indicator .sync-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success-500); flex-shrink: 0; }
+        .sync-status-indicator .sync-status-dot.syncing { background: var(--primary-500); animation: pulse 1.5s infinite; }
+        .sync-status-indicator .sync-status-dot.error { background: var(--danger-500); }
+        .sync-status-indicator .sync-status-dot.offline { background: var(--text-muted); }
+        .sync-status-indicator .sync-status-label { color: var(--text-muted); }
+
         /* ===== Table Container ===== */
         .table-container { flex: 1; overflow: auto; }
 
@@ -5616,8 +5679,15 @@
                     <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
                 </div>
                 <span id="status-detail" style="color: #999; font-size: 11px;"></span>
+                <span class="offline-badge" id="offline-badge" onclick="SyncStatusFeed.show()" title="Pending offline edits">
+                    <span class="offline-badge-dot"></span>
+                    <span id="offline-badge-text">0 pending</span>
+                </span>
                 <div class="sync-toggle-wrapper">
-                    <button class="sync-feed-btn" id="sync-feed-btn" onclick="SyncStatusFeed.toggle()" title="View sync activity log">[log]</button>
+                    <span class="sync-status-indicator" id="sync-status-indicator" onclick="SyncStatusFeed.toggle()" title="View sync activity">
+                        <span class="sync-status-dot" id="sync-indicator-dot"></span>
+                        <span class="sync-status-label" id="sync-indicator-label">Synced</span>
+                    </span>
                 </div>
                 <span style="flex: 1;"></span>
                 <span class="refresh-indicator" id="refresh-indicator">
@@ -5625,7 +5695,24 @@
                     <span id="last-refresh-text">Auto-refresh in 60s</span>
                 </span>
             </div>
-            <div class="table-container" id="table-container">
+            <!-- Sync Banner: shown during background hydration/sync -->
+            <div class="sync-banner" id="sync-banner">
+                <div class="sync-banner-spinner"></div>
+                <span class="sync-banner-icon" id="sync-banner-icon" style="display:none;"></span>
+                <span class="sync-banner-text" id="sync-banner-text">Syncing data in the background...</span>
+                <div class="sync-banner-progress" id="sync-banner-progress" style="display:none;">
+                    <div class="sync-banner-progress-fill" id="sync-banner-progress-fill"></div>
+                </div>
+                <button class="sync-banner-dismiss" id="sync-banner-dismiss" onclick="SyncBanner.dismiss()" title="Dismiss">&times;</button>
+            </div>
+            <div class="table-container" id="table-container" style="position: relative;">
+                <!-- Table loading overlay for filter/sort operations -->
+                <div class="table-loading-overlay" id="table-loading-overlay">
+                    <div class="table-loading-overlay-content">
+                        <div class="loading-spinner"></div>
+                        <p id="table-loading-overlay-text">Applying filters...</p>
+                    </div>
+                </div>
                 <table id="table"></table>
             </div>
             <div class="pagination" id="pagination">
@@ -8367,6 +8454,10 @@ var SyncStatusFeed = {
             dot.className = 'sync-feed-status-dot' + (active ? ' active' : '');
         }
         this.updateStats();
+        // Drive the status bar sync indicator
+        if (typeof SyncIndicatorUI !== 'undefined') {
+            SyncIndicatorUI.setState(active ? 'syncing' : 'synced');
+        }
     },
 
     // Set error state
@@ -8375,13 +8466,24 @@ var SyncStatusFeed = {
         if (dot) {
             dot.className = 'sync-feed-status-dot error';
         }
+        if (typeof SyncIndicatorUI !== 'undefined') {
+            SyncIndicatorUI.setState('error');
+        }
     },
 
-    // Update the [log] button to indicate activity
+    // Update the sync indicator to show new activity
     updateButton() {
         var btn = document.getElementById('sync-feed-btn');
         if (btn && this.lines.length > 0) {
             btn.classList.add('has-activity');
+        }
+        // Also flash the sync indicator label briefly for new messages
+        var labelEl = document.getElementById('sync-indicator-label');
+        if (labelEl && this.lines.length > 0) {
+            var lastLine = this.lines[this.lines.length - 1];
+            if (lastLine && lastLine.type === 'error') {
+                labelEl.textContent = 'Sync error';
+            }
         }
     },
 
@@ -8451,6 +8553,173 @@ var SyncStatusFeed = {
         this.render();
         var btn = document.getElementById('sync-feed-btn');
         if (btn) btn.classList.remove('has-activity');
+        // Reset sync indicator label
+        if (typeof SyncIndicatorUI !== 'undefined') SyncIndicatorUI.setState('synced');
+    }
+};
+
+// ============ Sync Banner ============
+// Persistent banner below the status bar that shows during background sync/hydration.
+// Unlike the status bar dot, this is highly visible and tells the user what's happening.
+
+var SyncBanner = {
+    _dismissed: false,
+    _currentMode: null, // 'syncing' | 'error' | null
+
+    show(message, opts) {
+        opts = opts || {};
+        this._dismissed = false;
+        this._currentMode = opts.error ? 'error' : 'syncing';
+        var banner = document.getElementById('sync-banner');
+        var textEl = document.getElementById('sync-banner-text');
+        var progressEl = document.getElementById('sync-banner-progress');
+        var iconEl = document.getElementById('sync-banner-icon');
+        if (!banner) return;
+
+        textEl.textContent = message || 'Syncing data...';
+        banner.classList.toggle('error', !!opts.error);
+
+        if (opts.error) {
+            iconEl.textContent = '\u26A0';
+            iconEl.style.display = '';
+        } else {
+            iconEl.style.display = 'none';
+        }
+
+        if (typeof opts.progress === 'number') {
+            progressEl.style.display = '';
+            document.getElementById('sync-banner-progress-fill').style.width = Math.min(100, opts.progress) + '%';
+        } else {
+            progressEl.style.display = 'none';
+        }
+
+        banner.classList.add('visible');
+    },
+
+    updateProgress(progress, message) {
+        if (this._dismissed) return;
+        var progressEl = document.getElementById('sync-banner-progress');
+        var fillEl = document.getElementById('sync-banner-progress-fill');
+        var textEl = document.getElementById('sync-banner-text');
+        if (progressEl && typeof progress === 'number') {
+            progressEl.style.display = '';
+            fillEl.style.width = Math.min(100, progress) + '%';
+        }
+        if (textEl && message) textEl.textContent = message;
+    },
+
+    hide() {
+        var banner = document.getElementById('sync-banner');
+        if (banner) banner.classList.remove('visible');
+        this._currentMode = null;
+    },
+
+    dismiss() {
+        this._dismissed = true;
+        this.hide();
+    }
+};
+
+// ============ Table Loading Overlay ============
+// Semi-transparent overlay shown over the table grid during expensive operations
+// (filter/sort on large datasets). Prevents the user from seeing a blank table.
+
+var TableLoadingOverlay = {
+    _timer: null,
+    _visible: false,
+
+    // Show overlay after a short delay (avoids flicker for fast operations)
+    show(message, delay) {
+        var self = this;
+        delay = typeof delay === 'number' ? delay : 150;
+        this.cancel();
+        this._timer = setTimeout(function() {
+            var overlay = document.getElementById('table-loading-overlay');
+            var textEl = document.getElementById('table-loading-overlay-text');
+            if (overlay) {
+                if (textEl) textEl.textContent = message || 'Loading...';
+                overlay.classList.add('visible');
+                self._visible = true;
+            }
+        }, delay);
+    },
+
+    hide() {
+        this.cancel();
+        var overlay = document.getElementById('table-loading-overlay');
+        if (overlay) overlay.classList.remove('visible');
+        this._visible = false;
+    },
+
+    cancel() {
+        if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+    }
+};
+
+// ============ Offline Queue Badge ============
+// Shows a badge in the status bar when there are pending offline edits.
+
+var OfflineBadgeUI = {
+    _count: 0,
+
+    async refresh() {
+        if (typeof OfflineSyncQueue === 'undefined' || !db) return;
+        try {
+            var count = await OfflineSyncQueue.getCount();
+            this._count = count;
+            this._render();
+        } catch (e) { /* ignore */ }
+    },
+
+    _render() {
+        var badge = document.getElementById('offline-badge');
+        var textEl = document.getElementById('offline-badge-text');
+        if (!badge) return;
+
+        if (this._count > 0) {
+            badge.classList.add('visible');
+            textEl.textContent = this._count + ' pending';
+        } else {
+            badge.classList.remove('visible');
+        }
+    },
+
+    // Show syncing state while draining
+    setSyncing(syncing) {
+        var badge = document.getElementById('offline-badge');
+        if (badge) badge.classList.toggle('syncing', syncing);
+    }
+};
+
+// ============ Sync Indicator (Status Bar) ============
+// Replaces the simple [log] button with a clear status indicator.
+
+var SyncIndicatorUI = {
+    _state: 'synced', // 'synced' | 'syncing' | 'error' | 'offline'
+
+    setState(state, label) {
+        this._state = state;
+        var dot = document.getElementById('sync-indicator-dot');
+        var labelEl = document.getElementById('sync-indicator-label');
+        if (!dot) return;
+
+        dot.className = 'sync-status-dot';
+        switch (state) {
+            case 'syncing':
+                dot.classList.add('syncing');
+                labelEl.textContent = label || 'Syncing...';
+                break;
+            case 'error':
+                dot.classList.add('error');
+                labelEl.textContent = label || 'Sync error';
+                break;
+            case 'offline':
+                dot.classList.add('offline');
+                labelEl.textContent = label || 'Offline';
+                break;
+            default:
+                labelEl.textContent = label || 'Synced';
+        }
     }
 };
 
@@ -8651,6 +8920,7 @@ var OfflineSyncQueue = {
             tx.onerror = function() { reject(tx.error); };
         });
         this._notify();
+        if (typeof OfflineBadgeUI !== 'undefined') OfflineBadgeUI.refresh();
         SyncStatusFeed.warn('Edit queued offline: ' + recordId + ' — will retry when online');
     },
 
@@ -8706,6 +8976,7 @@ var OfflineSyncQueue = {
             if (pending.length === 0) { this._draining = false; return; }
 
             SyncStatusFeed.info('Draining offline queue: ' + pending.length + ' edit' + (pending.length !== 1 ? 's' : '') + ' to retry');
+            if (typeof OfflineBadgeUI !== 'undefined') OfflineBadgeUI.setSyncing(true);
 
             var _syncedCount = 0;
             var _failedCount = 0;
@@ -8790,6 +9061,7 @@ var OfflineSyncQueue = {
         } finally {
             this._draining = false;
             this._notify();
+            if (typeof OfflineBadgeUI !== 'undefined') { OfflineBadgeUI.setSyncing(false); OfflineBadgeUI.refresh(); }
         }
     },
 
@@ -8797,6 +9069,7 @@ var OfflineSyncQueue = {
     async discard(id) {
         await this.remove(id);
         this._notify();
+        if (typeof OfflineBadgeUI !== 'undefined') OfflineBadgeUI.refresh();
         SyncStatusFeed.info('Queued edit discarded');
     },
 
@@ -8807,6 +9080,7 @@ var OfflineSyncQueue = {
             await this.remove(entries[i].id);
         }
         this._notify();
+        if (typeof OfflineBadgeUI !== 'undefined') OfflineBadgeUI.refresh();
         SyncStatusFeed.info('All queued edits discarded');
     },
 
@@ -8825,6 +9099,7 @@ var OfflineSyncQueue = {
 
 window.addEventListener('online', function() {
     SyncStatusFeed.info('Network connection restored');
+    SyncIndicatorUI.setState('synced', 'Online');
     // Auto-drain offline queue when back online
     if (db) {
         OfflineSyncQueue.drain();
@@ -8833,6 +9108,7 @@ window.addEventListener('online', function() {
 
 window.addEventListener('offline', function() {
     SyncStatusFeed.warn('Network connection lost — edits will be queued locally');
+    SyncIndicatorUI.setState('offline');
 });
 
 // ============ Post-Hydration Auto-Poll (Deprecated) ============
@@ -15638,7 +15914,14 @@ async function renderTable(paginationOnly) {
     if (!paginationOnly) {
         var needsFiltering = hasFilterConditions(currentFilters) || currentSearchQuery || currentSorts.length > 0;
         if (needsFiltering) {
+            // Show a loading overlay if the dataset is large enough that filtering may be noticeable
+            var _showFilterOverlay = originalRecordIds.length > 500;
+            if (_showFilterOverlay) {
+                var _overlayMsg = currentSearchQuery ? 'Searching...' : 'Applying filters...';
+                TableLoadingOverlay.show(_overlayMsg, 100);
+            }
             currentRecordIds = await getFilteredSortedRecords();
+            if (_showFilterOverlay) TableLoadingOverlay.hide();
             if (navVersion !== renderNav) return; // Navigation changed, abort stale render
         } else {
             // Reuse original array directly when no filters are active (avoid copying large arrays)
@@ -17421,6 +17704,7 @@ async function hydrateFromWebhooks() {
                 var progressPct = Math.round((_tablesCompleted / webhookTables.length) * 100);
                 console.log('[WebhookHydration] ' + tableName + ': ' + records.length + ' records');
                 updateLoadingOverlay('Downloaded ' + tableName, _tablesCompleted + ' of ' + webhookTables.length + ' tables done', progressPct, webhookTables.length, totalFields, totalRecords, records.length.toLocaleString() + ' records ✔');
+                if (typeof SyncBanner !== 'undefined') SyncBanner.updateProgress(progressPct, 'Downloading: ' + _tablesCompleted + '/' + webhookTables.length + ' tables (' + totalRecords.toLocaleString() + ' records)');
 
             } catch (recErr) {
                 failedTables++;
@@ -17676,6 +17960,7 @@ function _startBackgroundHydration() {
 
     _backgroundHydrationInFlight = (async function() {
         var hydrated = false;
+        SyncBanner.show('Downloading your data in the background...', { progress: 0 });
 
         // Tier 1: Box AMO snapshot — fastest bulk hydration path.
         SyncStatusFeed.info('Attempting Box snapshot hydration...');
@@ -17686,6 +17971,7 @@ function _startBackgroundHydration() {
             if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
                 hydrated = true;
                 SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
+                SyncBanner.updateProgress(80, 'Processing downloaded data...');
                 console.log('[BackgroundHydration] Box AMO hydration succeeded:', boxResult.importedEvents, 'events');
                 await setSyncMeta('lastWebhookSync', new Date().toISOString());
                 try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
@@ -17696,6 +17982,7 @@ function _startBackgroundHydration() {
 
         // Tier 2: Postgres current_state via webhook API (fallback if Box unavailable).
         if (!hydrated) {
+            SyncBanner.updateProgress(10, 'Downloading from database...');
             SyncStatusFeed.info('Falling back to Postgres current_state webhook API...');
             updateLoadingOverlay('Loading from database...', 'Fetching from current_state webhooks...', 0, 0, 0, 0, null);
             console.log('[BackgroundHydration] Falling back to Postgres webhook hydration from current_state');
@@ -17715,6 +18002,7 @@ function _startBackgroundHydration() {
 
         if (!hydrated) {
             SyncStatusFeed.warn('All hydration sources unavailable. Use Settings → Refresh Database to retry.');
+            SyncBanner.show('Data sync failed — use Settings to retry', { error: true });
             updateLoadingOverlay('Hydration failed', 'Use Settings → Refresh Database to retry', 0, 0, 0, 0, null);
             console.warn('[BackgroundHydration] All hydration sources failed.');
         }
@@ -17776,12 +18064,15 @@ function _startBackgroundHydration() {
             }
 
             updateStatus('Up to date', true, null, null);
+            SyncBanner.hide();
         } else {
             updateStatus('No data available — waiting for sync', true, null, null);
             await renderSidebar(true);
         }
     })().finally(function() {
         _backgroundHydrationInFlight = null;
+        // Ensure banner is hidden on completion (success path already hides it)
+        if (SyncBanner._currentMode === 'syncing') SyncBanner.hide();
     });
 
     return _backgroundHydrationInFlight;
@@ -18012,6 +18303,10 @@ async function init() {
     }
 
     updateStatus('Up to date', true, null, null);
+
+    // Initialize UI badges
+    OfflineBadgeUI.refresh();
+    if (!navigator.onLine) SyncIndicatorUI.setState('offline');
 
     // Start the refresh indicator countdown
     lastSyncTime = Date.now();
