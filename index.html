@@ -6973,8 +6973,32 @@
                 <div id="online-only-active-banner" style="display: none; margin-bottom: 12px; padding: 8px 12px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 6px; font-size: 12px; color: var(--text-secondary);">
                     Online-only mode is active. Records are held in memory only and will not persist after this session ends.
                 </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Hydration Source</label>
+                    <select id="settings-hydration-source" style="font-size: 13px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color, #d1d5db); background: var(--surface-color, #fff); color: var(--text-primary); min-width: 200px;" onchange="onHydrationSourceChanged(this.value)">
+                        <option value="postgres">Postgres API (default)</option>
+                        <option value="csv">CSV File</option>
+                        <option value="box">Box Download</option>
+                        <option value="url">URL</option>
+                        <option value="none">No Local Data</option>
+                    </select>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="settings-hydration-source-desc">
+                        Fetch current state table-by-table from the Postgres-backed webhook API.
+                    </p>
+                </div>
+                <div id="settings-hydration-url-row" style="display: none; margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Data URL</label>
+                    <input type="url" id="settings-hydration-url" placeholder="https://example.com/data.json" style="font-size: 13px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color, #d1d5db); background: var(--surface-color, #fff); color: var(--text-primary); width: 100%; box-sizing: border-box;" onchange="AminoHydration.setHydrationURL(this.value)">
+                </div>
+                <div id="settings-hydration-csv-row" style="display: none; margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">CSV File</label>
+                    <input type="file" id="settings-hydration-csv" accept=".csv,text/csv" style="font-size: 12px;" onchange="AminoHydration.setPendingCSVFile(this.files[0] || null)">
+                    <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                        Schema: id, created_at, recordId, operator, payload (JSON), uuid, set
+                    </p>
+                </div>
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <button class="settings-action-btn" id="refresh-db-btn" onclick="refreshLocalDB('box')">
+                    <button class="settings-action-btn" id="refresh-db-btn" onclick="refreshLocalDB()">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
                             <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
                         </svg>
@@ -6982,24 +7006,78 @@
                     </button>
                     <span id="refresh-db-status" style="font-size: 12px; color: var(--text-muted);"></span>
                 </div>
-                <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
-                    Default source: <strong>Box webhook</strong>. Clears locally cached records and re-downloads the full dataset.
-                </p>
                 <details style="margin-top: 8px;">
                     <summary style="font-size: 12px; color: var(--text-muted); cursor: pointer;">Alternative data sources (manual)</summary>
                     <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
                         <button class="settings-action-btn" style="font-size: 12px; padding: 4px 10px;" onclick="refreshLocalDB('postgres')">Postgres API</button>
+                        <button class="settings-action-btn" style="font-size: 12px; padding: 4px 10px;" onclick="refreshLocalDB('box')">Box Download</button>
                         <button class="settings-action-btn" style="font-size: 12px; padding: 4px 10px;" onclick="refreshLocalDB('synapse')">Synapse Replay</button>
                     </div>
-                    <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-                        Use these only if the Box snapshot is unavailable or producing incorrect data. Postgres API fetches table-by-table from the database. Synapse Replay rebuilds state from Matrix room events.
-                    </p>
                 </details>
             </div>
         </div>
     </div>
 
     </div><!-- /app-content-wrapper -->
+
+    <!-- Hydration Source Picker Modal (shown on startup when no hydration has completed) -->
+    <div id="hydration-picker-modal" style="display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+        <div style="background:var(--surface-color, #fff); border-radius:12px; padding:28px 32px; max-width:480px; width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.3); color:var(--text-primary);">
+            <h2 style="margin:0 0 4px 0; font-size:18px; font-weight:700;">Data Source</h2>
+            <p style="margin:0 0 20px 0; font-size:13px; color:var(--text-muted);">Choose how to load your data. This can be changed later in Settings.</p>
+
+            <div id="hydration-picker-options" style="display:flex; flex-direction:column; gap:8px;">
+                <label style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--border-color, #d1d5db); border-radius:8px; cursor:pointer; transition:border-color 0.15s;" onmouseover="this.style.borderColor='var(--primary-500, #3b82f6)'" onmouseout="this.style.borderColor='var(--border-color, #d1d5db)'">
+                    <input type="radio" name="hydration-source-pick" value="postgres" checked style="margin-top:3px;">
+                    <div>
+                        <strong style="font-size:13px;">Postgres API</strong>
+                        <span style="display:block; font-size:11px; color:var(--text-muted); margin-top:2px;">Fetch current state from the Postgres database via webhook API. Default and recommended.</span>
+                    </div>
+                </label>
+                <label style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--border-color, #d1d5db); border-radius:8px; cursor:pointer; transition:border-color 0.15s;" onmouseover="this.style.borderColor='var(--primary-500, #3b82f6)'" onmouseout="this.style.borderColor='var(--border-color, #d1d5db)'">
+                    <input type="radio" name="hydration-source-pick" value="csv" style="margin-top:3px;">
+                    <div>
+                        <strong style="font-size:13px;">CSV File</strong>
+                        <span style="display:block; font-size:11px; color:var(--text-muted); margin-top:2px;">Load data from a local .csv file. Schema: id, created_at, recordId, operator, payload, uuid, set</span>
+                    </div>
+                </label>
+                <label style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--border-color, #d1d5db); border-radius:8px; cursor:pointer; transition:border-color 0.15s;" onmouseover="this.style.borderColor='var(--primary-500, #3b82f6)'" onmouseout="this.style.borderColor='var(--border-color, #d1d5db)'">
+                    <input type="radio" name="hydration-source-pick" value="box" style="margin-top:3px;">
+                    <div>
+                        <strong style="font-size:13px;">Box Download</strong>
+                        <span style="display:block; font-size:11px; color:var(--text-muted); margin-top:2px;">Download a bulk snapshot from the Box webhook. Fast for initial load.</span>
+                    </div>
+                </label>
+                <label style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--border-color, #d1d5db); border-radius:8px; cursor:pointer; transition:border-color 0.15s;" onmouseover="this.style.borderColor='var(--primary-500, #3b82f6)'" onmouseout="this.style.borderColor='var(--border-color, #d1d5db)'">
+                    <input type="radio" name="hydration-source-pick" value="url" style="margin-top:3px;">
+                    <div>
+                        <strong style="font-size:13px;">URL</strong>
+                        <span style="display:block; font-size:11px; color:var(--text-muted); margin-top:2px;">Fetch data from a URL (JSON or CSV). Enter the URL below after selecting.</span>
+                    </div>
+                </label>
+                <label style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid var(--border-color, #d1d5db); border-radius:8px; cursor:pointer; transition:border-color 0.15s;" onmouseover="this.style.borderColor='var(--primary-500, #3b82f6)'" onmouseout="this.style.borderColor='var(--border-color, #d1d5db)'">
+                    <input type="radio" name="hydration-source-pick" value="none" style="margin-top:3px;">
+                    <div>
+                        <strong style="font-size:13px;">No Local Data</strong>
+                        <span style="display:block; font-size:11px; color:var(--text-muted); margin-top:2px;">Postgres for current state, room data for historical. Nothing persisted locally.</span>
+                    </div>
+                </label>
+            </div>
+
+            <div id="hydration-picker-csv-row" style="display:none; margin-top:12px;">
+                <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">Select CSV File</label>
+                <input type="file" id="hydration-picker-csv" accept=".csv,text/csv" style="font-size:12px;">
+            </div>
+            <div id="hydration-picker-url-row" style="display:none; margin-top:12px;">
+                <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">Data URL</label>
+                <input type="url" id="hydration-picker-url" placeholder="https://example.com/data.json" style="font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid var(--border-color, #d1d5db); background:var(--surface-color, #fff); color:var(--text-primary); width:100%; box-sizing:border-box;">
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                <button onclick="confirmHydrationPicker()" style="padding:8px 20px; border-radius:8px; border:none; background:var(--primary-500, #3b82f6); color:#fff; font-size:13px; font-weight:600; cursor:pointer;">Continue</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Room Assignment Modal (shown after inviting a user) -->
     <div class="room-assign-modal" id="room-assign-modal" onclick="closeRoomAssignModal(event)">
@@ -13610,16 +13688,19 @@ async function clearLocalAndReset() {
 // re-downloading from the selected source. Box webhook is default;
 // Postgres webhook API and Synapse room replay are manual options.
 async function refreshLocalDB(sourceOverride) {
-    // sourceOverride: 'box' (default), 'postgres', or 'synapse'
-    var source = sourceOverride || 'box';
+    // sourceOverride: 'postgres' (default), 'box', 'synapse', 'csv', 'url', or 'none'
+    // When called without override, uses the persisted hydration source preference (default: postgres).
+    var source = sourceOverride || AminoHydration.getHydrationSource();
 
-    if (source === 'box') {
-        if (!confirm('Refresh local database from Box snapshot?\n\nThis will clear all locally cached data and re-download from the Box webhook. The app will be unavailable during the refresh.')) return;
-    } else if (source === 'postgres') {
-        if (!confirm('Refresh from Postgres webhook API?\n\nThis will clear all locally cached data and re-download table-by-table from the Postgres-backed API. This is slower than the Box snapshot.')) return;
-    } else if (source === 'synapse') {
-        if (!confirm('Refresh from Synapse room replay?\n\nThis will clear all locally cached data and rebuild state by replaying Matrix room events. This is the slowest method.')) return;
-    }
+    var confirmMessages = {
+        'box': 'Refresh local database from Box snapshot?\n\nThis will clear all locally cached data and re-download from the Box webhook.',
+        'postgres': 'Refresh from Postgres webhook API?\n\nThis will clear all locally cached data and re-download table-by-table from the Postgres-backed API.',
+        'synapse': 'Refresh from Synapse room replay?\n\nThis will clear all locally cached data and rebuild state by replaying Matrix room events.',
+        'csv': 'Refresh from CSV file?\n\nThis will clear all locally cached data and re-import from the selected CSV file.',
+        'url': 'Refresh from URL?\n\nThis will clear all locally cached data and re-download from the configured URL.',
+        'none': 'Switch to no-local-data mode?\n\nThis will clear all locally cached data. Postgres will be used for current state and room data for historical.'
+    };
+    if (!confirm(confirmMessages[source] || ('Refresh from ' + source + '?'))) return;
 
     var btn = document.getElementById('refresh-db-btn');
     var statusEl = document.getElementById('refresh-db-status');
@@ -13654,8 +13735,168 @@ async function refreshLocalDB(sourceOverride) {
 
         var hydrated = false;
 
-        if (source === 'box') {
-            // Default: Box AMO snapshot
+        if (source === 'csv') {
+            // CSV file import
+            updateLoadingOverlay('Refreshing database...', 'Parsing CSV file...', 0, 0, 0, 0, null);
+            var csvFile = AminoHydration.getPendingCSVFile();
+            if (!csvFile) {
+                // Prompt user to select a file
+                var csvInput = document.getElementById('settings-hydration-csv');
+                if (csvInput && csvInput.files && csvInput.files[0]) {
+                    csvFile = csvInput.files[0];
+                }
+            }
+            if (csvFile) {
+                try {
+                    var csvText = await new Promise(function(resolve, reject) {
+                        var reader = new FileReader();
+                        reader.onload = function() { resolve(reader.result); };
+                        reader.onerror = function() { reject(reader.error); };
+                        reader.readAsText(csvFile);
+                    });
+                    var parsed = AminoHydration.parseCSVEvents(csvText);
+                    if (parsed.events.length > 0) {
+                        var state = AminoHydration.buildStateFromCSVEvents(parsed.events);
+                        var csvTableIds = Object.keys(state.byTable);
+                        var csvTotalRecords = 0;
+                        for (var cti = 0; cti < csvTableIds.length; cti++) {
+                            var ctId = csvTableIds[cti];
+                            var cRecordMap = state.byTable[ctId];
+                            var cRecordIds = Object.keys(cRecordMap);
+                            for (var cri = 0; cri < cRecordIds.length; cri++) {
+                                await saveRecord(ctId, cRecordIds[cri], cRecordMap[cRecordIds[cri]]);
+                                csvTotalRecords++;
+                            }
+                        }
+                        hydrated = true;
+                        await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                        SyncStatusFeed.success('Refreshed from CSV: ' + csvTotalRecords + ' records');
+                        console.log('[RefreshDB] CSV hydration:', csvTotalRecords, 'records from', csvTableIds.length, 'tables');
+                        if (statusEl) {
+                            statusEl.style.color = 'var(--success-500, #22c55e)';
+                            statusEl.textContent = 'Refreshed from CSV — ' + csvTotalRecords + ' records';
+                        }
+                    }
+                } catch (csvErr) {
+                    console.error('[RefreshDB] CSV hydration failed:', csvErr);
+                    SyncStatusFeed.error('CSV refresh failed: ' + csvErr.message);
+                    if (statusEl) {
+                        statusEl.style.color = 'var(--danger-500, #ef4444)';
+                        statusEl.textContent = 'CSV refresh failed: ' + csvErr.message;
+                    }
+                }
+            } else {
+                SyncStatusFeed.warn('No CSV file selected. Use Settings to select a file.');
+                if (statusEl) {
+                    statusEl.style.color = 'var(--danger-500, #ef4444)';
+                    statusEl.textContent = 'No CSV file selected';
+                }
+            }
+        } else if (source === 'url') {
+            // URL import
+            var refreshUrl = AminoHydration.getHydrationURL();
+            if (!refreshUrl) {
+                var urlInput = document.getElementById('settings-hydration-url');
+                if (urlInput) refreshUrl = urlInput.value;
+            }
+            if (refreshUrl) {
+                updateLoadingOverlay('Refreshing database...', 'Fetching from URL...', 0, 0, 0, 0, null);
+                try {
+                    var urlResp = await fetch(refreshUrl, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json, text/csv, text/plain' }
+                    });
+                    if (!urlResp.ok) throw new Error('HTTP ' + urlResp.status);
+                    var urlCt = (urlResp.headers.get('content-type') || '').toLowerCase();
+                    var urlBody = await urlResp.text();
+                    var urlIsCSV = urlCt.indexOf('csv') !== -1 || urlCt.indexOf('text/plain') !== -1;
+                    if (!urlIsCSV) {
+                        var fc = urlBody.trim().charAt(0);
+                        if (fc !== '[' && fc !== '{') urlIsCSV = true;
+                    }
+                    if (urlIsCSV) {
+                        var urlParsed = AminoHydration.parseCSVEvents(urlBody);
+                        if (urlParsed.events.length > 0) {
+                            var urlState = AminoHydration.buildStateFromCSVEvents(urlParsed.events);
+                            var urlTblIds = Object.keys(urlState.byTable);
+                            var urlTotal = 0;
+                            for (var uti2 = 0; uti2 < urlTblIds.length; uti2++) {
+                                var utId2 = urlTblIds[uti2];
+                                var uMap = urlState.byTable[utId2];
+                                var uIds = Object.keys(uMap);
+                                for (var ui = 0; ui < uIds.length; ui++) {
+                                    await saveRecord(utId2, uIds[ui], uMap[uIds[ui]]);
+                                    urlTotal++;
+                                }
+                            }
+                            hydrated = true;
+                        }
+                    } else {
+                        var urlJson = JSON.parse(urlBody);
+                        var urlRecs = [];
+                        if (Array.isArray(urlJson)) urlRecs = urlJson;
+                        else if (urlJson && Array.isArray(urlJson.records)) urlRecs = urlJson.records;
+                        else if (urlJson && typeof urlJson.tables === 'object') {
+                            var tk = Object.keys(urlJson.tables);
+                            for (var tki = 0; tki < tk.length; tki++) {
+                                var tRecs = urlJson.tables[tk[tki]];
+                                if (Array.isArray(tRecs)) {
+                                    for (var tri = 0; tri < tRecs.length; tri++) {
+                                        tRecs[tri].tableId = tRecs[tri].tableId || tRecs[tri].table_id || tk[tki];
+                                        urlRecs.push(tRecs[tri]);
+                                    }
+                                }
+                            }
+                        }
+                        for (var uRi = 0; uRi < urlRecs.length; uRi++) {
+                            var uR = urlRecs[uRi];
+                            var uTid = uR.tableId || uR.table_id || 'unknown';
+                            var uRid = uR.id || uR.record_id || uR.recordId;
+                            if (uRid) await saveRecord(uTid, uRid, uR.fields || uR);
+                        }
+                        if (urlRecs.length > 0) hydrated = true;
+                    }
+                    if (hydrated) {
+                        await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                        SyncStatusFeed.success('Refreshed from URL');
+                        if (statusEl) {
+                            statusEl.style.color = 'var(--success-500, #22c55e)';
+                            statusEl.textContent = 'Refreshed from URL';
+                        }
+                    }
+                } catch (urlErr) {
+                    console.error('[RefreshDB] URL hydration failed:', urlErr);
+                    SyncStatusFeed.error('URL refresh failed: ' + urlErr.message);
+                    if (statusEl) {
+                        statusEl.style.color = 'var(--danger-500, #ef4444)';
+                        statusEl.textContent = 'URL refresh failed: ' + urlErr.message;
+                    }
+                }
+            } else {
+                SyncStatusFeed.warn('No URL configured. Use Settings to enter a URL.');
+                if (statusEl) {
+                    statusEl.style.color = 'var(--danger-500, #ef4444)';
+                    statusEl.textContent = 'No URL configured';
+                }
+            }
+        } else if (source === 'none') {
+            // No local data — enable online-only mode
+            if (typeof AminoData !== 'undefined' && AminoData.setOnlineOnlyMode) {
+                AminoData.setOnlineOnlyMode(true);
+            }
+            updateLoadingOverlay('Refreshing database...', 'Fetching current state from Postgres (online-only)...', 0, 0, 0, 0, null);
+            var onlineWebhook = await hydrateFromWebhooks();
+            hydrated = !!(onlineWebhook && onlineWebhook.success);
+            if (hydrated) {
+                await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                if (statusEl) {
+                    statusEl.style.color = 'var(--success-500, #22c55e)';
+                    statusEl.textContent = 'Online-only mode — ' + (onlineWebhook.totalRecords || 0).toLocaleString() + ' records in memory';
+                }
+                SyncStatusFeed.success('No-local-data mode active');
+            }
+        } else if (source === 'box') {
+            // Box AMO snapshot
             updateLoadingOverlay('Refreshing database...', 'Downloading Box snapshot...', 0, 0, 0, 0, null);
             try {
                 var boxResult = await hydrateFromBoxAmoFile();
@@ -13671,14 +13912,14 @@ async function refreshLocalDB(sourceOverride) {
                 }
             } catch (boxErr) {
                 console.error('[RefreshDB] Box hydration failed:', boxErr);
-                SyncStatusFeed.error('Box refresh failed: ' + boxErr.message + '. Try an alternative source via the dropdown.');
+                SyncStatusFeed.error('Box refresh failed: ' + boxErr.message);
                 if (statusEl) {
                     statusEl.style.color = 'var(--danger-500, #ef4444)';
-                    statusEl.textContent = 'Box refresh failed — try Postgres or Synapse source';
+                    statusEl.textContent = 'Box refresh failed — try another source';
                 }
             }
         } else if (source === 'postgres') {
-            // Manual: Postgres webhook API
+            // Postgres webhook API
             updateLoadingOverlay('Refreshing database...', 'Downloading from Postgres API...', 0, 0, 0, 0, null);
             var webhookHydration = await hydrateFromWebhooks();
             hydrated = !!(webhookHydration && webhookHydration.success);
@@ -13693,7 +13934,7 @@ async function refreshLocalDB(sourceOverride) {
                 SyncStatusFeed.success('Database refresh complete: ' + (webhookHydration.totalRecords || 0) + ' records');
             }
         } else if (source === 'synapse') {
-            // Manual: Synapse room replay
+            // Synapse room replay
             updateLoadingOverlay('Refreshing database...', 'Replaying Synapse rooms...', 0, 0, 0, 0, null);
             hydrated = await hydrateFromSynapse();
             if (hydrated) {
@@ -18710,39 +18951,205 @@ function _startBackgroundHydration() {
 
     _backgroundHydrationInFlight = (async function() {
         var hydrated = false;
+        var source = AminoHydration.getHydrationSource(); // default: 'postgres'
         SyncBanner.show('Downloading your data in the background...', { progress: 0 });
+        console.log('[BackgroundHydration] Hydration source:', source);
 
-        // Tier 1: Box AMO snapshot — fastest bulk hydration path.
-        SyncStatusFeed.info('Attempting Box snapshot hydration...');
-        updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
-        console.log('[BackgroundHydration] Attempting Tier 1 hydration via Box AMO snapshot');
-        try {
-            var boxResult = await hydrateFromBoxAmoFile();
-            if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
-                hydrated = true;
-                SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
-                SyncBanner.updateProgress(80, 'Processing downloaded data...');
-                console.log('[BackgroundHydration] Box AMO hydration succeeded:', boxResult.importedEvents, 'events');
-                await setSyncMeta('lastWebhookSync', new Date().toISOString());
-                try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+        // Source: none — enable online-only mode, skip local hydration
+        if (source === 'none') {
+            console.log('[BackgroundHydration] No-local-data mode: enabling online-only');
+            if (typeof AminoData !== 'undefined' && AminoData.setOnlineOnlyMode) {
+                AminoData.setOnlineOnlyMode(true);
             }
-        } catch (boxErr) {
-            console.warn('[BackgroundHydration] Box AMO hydration failed:', boxErr.message || boxErr);
-        }
-
-        // Tier 2: Postgres current_state via webhook API (fallback if Box unavailable).
-        if (!hydrated) {
-            SyncBanner.updateProgress(10, 'Downloading from database...');
-            SyncStatusFeed.info('Falling back to Postgres current_state webhook API...');
-            updateLoadingOverlay('Loading from database...', 'Fetching from current_state webhooks...', 0, 0, 0, 0, null);
-            console.log('[BackgroundHydration] Falling back to Postgres webhook hydration from current_state');
+            // Still hydrate from Postgres into memory for current state
+            SyncBanner.updateProgress(10, 'Fetching current state...');
+            SyncStatusFeed.info('No-local-data mode: fetching current state from Postgres...');
+            updateLoadingOverlay('Loading from database...', 'Fetching current state (online-only)...', 0, 0, 0, 0, null);
             try {
                 var webhookResult = await hydrateFromWebhooks();
                 if (webhookResult && webhookResult.success) {
                     hydrated = true;
-                    SyncStatusFeed.success('Hydrated from Postgres current_state (' + (webhookResult.totalRecords || 0).toLocaleString() + ' records)');
-                    console.log('[BackgroundHydration] Postgres webhook hydration succeeded:', webhookResult.totalRecords, 'records');
-                    await setSyncMeta('lastWebhookSync', webhookResult.nextCursor || new Date().toISOString());
+                    SyncStatusFeed.success('Online-only: loaded ' + (webhookResult.totalRecords || 0).toLocaleString() + ' records from Postgres');
+                    console.log('[BackgroundHydration] Online-only Postgres hydration succeeded:', webhookResult.totalRecords, 'records');
+                }
+            } catch (pgErr) {
+                console.warn('[BackgroundHydration] Online-only Postgres hydration failed:', pgErr.message || pgErr);
+            }
+        }
+
+        // Source: csv — hydrate from a pending CSV file
+        if (!hydrated && source === 'csv') {
+            var csvFile = AminoHydration.getPendingCSVFile();
+            if (csvFile) {
+                SyncBanner.updateProgress(10, 'Parsing CSV file...');
+                SyncStatusFeed.info('Hydrating from CSV file: ' + csvFile.name);
+                updateLoadingOverlay('Loading from CSV...', 'Parsing ' + csvFile.name + '...', 0, 0, 0, 0, null);
+                console.log('[BackgroundHydration] Hydrating from CSV file:', csvFile.name);
+                try {
+                    var csvText = await new Promise(function(resolve, reject) {
+                        var reader = new FileReader();
+                        reader.onload = function() { resolve(reader.result); };
+                        reader.onerror = function() { reject(reader.error); };
+                        reader.readAsText(csvFile);
+                    });
+                    var parsed = AminoHydration.parseCSVEvents(csvText);
+                    if (parsed.events.length > 0) {
+                        // Process events through the standard hydration pipeline
+                        var state = AminoHydration.buildStateFromCSVEvents(parsed.events);
+                        var tableIds = Object.keys(state.byTable);
+                        var totalRecords = 0;
+                        for (var ti = 0; ti < tableIds.length; ti++) {
+                            var tblId = tableIds[ti];
+                            var recordMap = state.byTable[tblId];
+                            var recordIds = Object.keys(recordMap);
+                            for (var ri = 0; ri < recordIds.length; ri++) {
+                                var recId = recordIds[ri];
+                                await saveRecord(tblId, recId, recordMap[recId]);
+                                totalRecords++;
+                            }
+                        }
+                        hydrated = true;
+                        SyncStatusFeed.success('CSV hydrated: ' + totalRecords + ' records from ' + tableIds.length + ' tables');
+                        SyncBanner.updateProgress(80, 'Processing CSV data...');
+                        console.log('[BackgroundHydration] CSV hydration succeeded:', totalRecords, 'records');
+                        await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                        try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+                    }
+                } catch (csvErr) {
+                    console.warn('[BackgroundHydration] CSV hydration failed:', csvErr.message || csvErr);
+                    SyncStatusFeed.error('CSV hydration failed: ' + csvErr.message);
+                }
+            } else {
+                console.warn('[BackgroundHydration] CSV source selected but no file provided');
+                SyncStatusFeed.warn('CSV source selected but no file was provided. Use Settings to select a file.');
+            }
+        }
+
+        // Source: url — fetch from a URL
+        if (!hydrated && source === 'url') {
+            var hydrationUrl = AminoHydration.getHydrationURL();
+            if (hydrationUrl) {
+                SyncBanner.updateProgress(10, 'Fetching from URL...');
+                SyncStatusFeed.info('Hydrating from URL: ' + hydrationUrl);
+                updateLoadingOverlay('Loading from URL...', 'Fetching ' + hydrationUrl + '...', 0, 0, 0, 0, null);
+                console.log('[BackgroundHydration] Hydrating from URL:', hydrationUrl);
+                try {
+                    var urlResponse = await fetch(hydrationUrl, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json, text/csv, text/plain' }
+                    });
+                    if (!urlResponse.ok) throw new Error('HTTP ' + urlResponse.status);
+                    var urlContentType = (urlResponse.headers.get('content-type') || '').toLowerCase();
+                    var urlText = await urlResponse.text();
+
+                    var isCSV = urlContentType.indexOf('csv') !== -1 || urlContentType.indexOf('text/plain') !== -1;
+                    if (!isCSV) {
+                        var firstCh = urlText.trim().charAt(0);
+                        if (firstCh !== '[' && firstCh !== '{') isCSV = true;
+                    }
+
+                    if (isCSV) {
+                        var urlParsed = AminoHydration.parseCSVEvents(urlText);
+                        if (urlParsed.events.length > 0) {
+                            var urlState = AminoHydration.buildStateFromCSVEvents(urlParsed.events);
+                            var urlTableIds = Object.keys(urlState.byTable);
+                            var urlTotalRecords = 0;
+                            for (var uti = 0; uti < urlTableIds.length; uti++) {
+                                var utId = urlTableIds[uti];
+                                var uRecordMap = urlState.byTable[utId];
+                                var uRecordIds = Object.keys(uRecordMap);
+                                for (var uri = 0; uri < uRecordIds.length; uri++) {
+                                    await saveRecord(utId, uRecordIds[uri], uRecordMap[uRecordIds[uri]]);
+                                    urlTotalRecords++;
+                                }
+                            }
+                            hydrated = true;
+                            SyncStatusFeed.success('URL (CSV) hydrated: ' + urlTotalRecords + ' records');
+                        }
+                    } else {
+                        // JSON path
+                        var urlData = JSON.parse(urlText);
+                        var urlRecords = [];
+                        if (Array.isArray(urlData)) {
+                            urlRecords = urlData;
+                        } else if (urlData && Array.isArray(urlData.records)) {
+                            urlRecords = urlData.records;
+                        } else if (urlData && typeof urlData.tables === 'object') {
+                            var tblKeys = Object.keys(urlData.tables);
+                            for (var tk = 0; tk < tblKeys.length; tk++) {
+                                var tblRecs = urlData.tables[tblKeys[tk]];
+                                if (Array.isArray(tblRecs)) {
+                                    for (var tr = 0; tr < tblRecs.length; tr++) {
+                                        tblRecs[tr].tableId = tblRecs[tr].tableId || tblRecs[tr].table_id || tblKeys[tk];
+                                        urlRecords.push(tblRecs[tr]);
+                                    }
+                                }
+                            }
+                        }
+                        if (urlRecords.length > 0) {
+                            for (var ur = 0; ur < urlRecords.length; ur++) {
+                                var uRec = urlRecords[ur];
+                                var uTblId = uRec.tableId || uRec.table_id || 'unknown';
+                                var uRecIdVal = uRec.id || uRec.record_id || uRec.recordId;
+                                if (uRecIdVal) {
+                                    await saveRecord(uTblId, uRecIdVal, uRec.fields || uRec);
+                                }
+                            }
+                            hydrated = true;
+                            SyncStatusFeed.success('URL (JSON) hydrated: ' + urlRecords.length + ' records');
+                        }
+                    }
+
+                    if (hydrated) {
+                        console.log('[BackgroundHydration] URL hydration succeeded');
+                        await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                        try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+                    }
+                } catch (urlErr) {
+                    console.warn('[BackgroundHydration] URL hydration failed:', urlErr.message || urlErr);
+                    SyncStatusFeed.error('URL hydration failed: ' + urlErr.message);
+                }
+            } else {
+                console.warn('[BackgroundHydration] URL source selected but no URL provided');
+                SyncStatusFeed.warn('URL source selected but no URL was provided. Use Settings to enter a URL.');
+            }
+        }
+
+        // Source: box — Box AMO snapshot (bulk download)
+        if (!hydrated && (source === 'box' || source === 'postgres')) {
+            if (source === 'box') {
+                SyncStatusFeed.info('Attempting Box snapshot hydration...');
+                updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
+                console.log('[BackgroundHydration] Attempting hydration via Box AMO snapshot');
+                try {
+                    var boxResult = await hydrateFromBoxAmoFile();
+                    if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
+                        hydrated = true;
+                        SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
+                        SyncBanner.updateProgress(80, 'Processing downloaded data...');
+                        console.log('[BackgroundHydration] Box AMO hydration succeeded:', boxResult.importedEvents, 'events');
+                        await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                        try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+                    }
+                } catch (boxErr) {
+                    console.warn('[BackgroundHydration] Box AMO hydration failed:', boxErr.message || boxErr);
+                }
+            }
+        }
+
+        // Source: postgres (default) — or fallback from box/other failed sources
+        if (!hydrated && source !== 'none') {
+            SyncBanner.updateProgress(10, 'Downloading from database...');
+            SyncStatusFeed.info('Hydrating from Postgres current_state webhook API...');
+            updateLoadingOverlay('Loading from database...', 'Fetching from current_state webhooks...', 0, 0, 0, 0, null);
+            console.log('[BackgroundHydration] Hydrating from Postgres webhook API (source: ' + source + ')');
+            try {
+                var webhookResult2 = await hydrateFromWebhooks();
+                if (webhookResult2 && webhookResult2.success) {
+                    hydrated = true;
+                    SyncStatusFeed.success('Hydrated from Postgres current_state (' + (webhookResult2.totalRecords || 0).toLocaleString() + ' records)');
+                    console.log('[BackgroundHydration] Postgres webhook hydration succeeded:', webhookResult2.totalRecords, 'records');
+                    await setSyncMeta('lastWebhookSync', webhookResult2.nextCursor || new Date().toISOString());
                     try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
                 }
             } catch (pgErr) {
@@ -18750,7 +19157,7 @@ function _startBackgroundHydration() {
             }
         }
 
-        if (!hydrated) {
+        if (!hydrated && source !== 'none') {
             SyncStatusFeed.warn('All hydration sources unavailable. Use Settings → Refresh Database to retry.');
             SyncBanner.show('Data sync failed — use Settings to retry', { error: true });
             updateLoadingOverlay('Hydration failed', 'Use Settings → Refresh Database to retry', 0, 0, 0, 0, null);
@@ -18826,6 +19233,126 @@ function _startBackgroundHydration() {
     });
 
     return _backgroundHydrationInFlight;
+}
+
+// ============ Hydration Source Picker ============
+// Shows a modal on startup when hydration hasn't completed yet, letting the
+// user choose how to load data. Defaults to postgres. Persisted in localStorage.
+
+function showHydrationPicker() {
+    var modal = document.getElementById('hydration-picker-modal');
+    if (!modal) return Promise.resolve('postgres');
+
+    return new Promise(function(resolve) {
+        modal.style.display = 'flex';
+
+        // Toggle CSV/URL sub-rows based on radio selection
+        var radios = modal.querySelectorAll('input[name="hydration-source-pick"]');
+        for (var i = 0; i < radios.length; i++) {
+            radios[i].addEventListener('change', function() {
+                var csvRow = document.getElementById('hydration-picker-csv-row');
+                var urlRow = document.getElementById('hydration-picker-url-row');
+                if (csvRow) csvRow.style.display = this.value === 'csv' ? 'block' : 'none';
+                if (urlRow) urlRow.style.display = this.value === 'url' ? 'block' : 'none';
+            });
+        }
+
+        window._hydrationPickerResolve = resolve;
+    });
+}
+
+function confirmHydrationPicker() {
+    var modal = document.getElementById('hydration-picker-modal');
+    var selected = 'postgres';
+
+    var radios = modal ? modal.querySelectorAll('input[name="hydration-source-pick"]') : [];
+    for (var i = 0; i < radios.length; i++) {
+        if (radios[i].checked) {
+            selected = radios[i].value;
+            break;
+        }
+    }
+
+    // Persist the choice
+    AminoHydration.setHydrationSource(selected);
+
+    // Handle CSV file
+    if (selected === 'csv') {
+        var csvInput = document.getElementById('hydration-picker-csv');
+        if (csvInput && csvInput.files && csvInput.files[0]) {
+            AminoHydration.setPendingCSVFile(csvInput.files[0]);
+        }
+    }
+
+    // Handle URL
+    if (selected === 'url') {
+        var urlInput = document.getElementById('hydration-picker-url');
+        if (urlInput && urlInput.value) {
+            AminoHydration.setHydrationURL(urlInput.value);
+        }
+    }
+
+    // Handle no-local-data mode
+    if (selected === 'none') {
+        if (typeof AminoData !== 'undefined' && AminoData.setOnlineOnlyMode) {
+            AminoData.setOnlineOnlyMode(true);
+        }
+    }
+
+    // Hide modal
+    if (modal) modal.style.display = 'none';
+
+    // Resolve the promise
+    if (window._hydrationPickerResolve) {
+        window._hydrationPickerResolve(selected);
+        window._hydrationPickerResolve = null;
+    }
+}
+
+// Settings page handler for hydration source dropdown
+function onHydrationSourceChanged(value) {
+    AminoHydration.setHydrationSource(value);
+
+    var csvRow = document.getElementById('settings-hydration-csv-row');
+    var urlRow = document.getElementById('settings-hydration-url-row');
+    var desc = document.getElementById('settings-hydration-source-desc');
+
+    if (csvRow) csvRow.style.display = value === 'csv' ? 'block' : 'none';
+    if (urlRow) urlRow.style.display = value === 'url' ? 'block' : 'none';
+
+    var descriptions = {
+        'postgres': 'Fetch current state table-by-table from the Postgres-backed webhook API.',
+        'csv': 'Load data from a local CSV file with columns: id, created_at, recordId, operator, payload, uuid, set.',
+        'box': 'Download a bulk AMO snapshot from the Box webhook.',
+        'url': 'Fetch data from a URL (JSON array or CSV).',
+        'none': 'No data stored locally. Postgres for current state, room data for historical. Online-only mode.'
+    };
+    if (desc) desc.textContent = descriptions[value] || '';
+
+    // Enable/disable online-only based on 'none' selection
+    if (value === 'none') {
+        if (typeof AminoData !== 'undefined' && AminoData.setOnlineOnlyMode) {
+            AminoData.setOnlineOnlyMode(true);
+        }
+        var toggle = document.getElementById('pref-online-only-mode');
+        if (toggle) toggle.checked = true;
+    }
+}
+
+// Initialize the settings hydration source dropdown on page load
+function _initSettingsHydrationSource() {
+    var dropdown = document.getElementById('settings-hydration-source');
+    if (!dropdown) return;
+
+    var current = AminoHydration.getHydrationSource();
+    dropdown.value = current;
+    onHydrationSourceChanged(current);
+
+    // Populate URL field if saved
+    var urlInput = document.getElementById('settings-hydration-url');
+    if (urlInput) {
+        urlInput.value = AminoHydration.getHydrationURL();
+    }
 }
 
 // ============ Session Render Cache (OPTIMIZATION 4) ============
@@ -19190,9 +19717,27 @@ async function init() {
         // Prioritize app access: enter UI immediately, run room/data hydration in background.
         hideLoadingOverlay();
         updateStatus('Syncing data in background...', false, null, null);
-        _startBackgroundHydration().catch(function(err) {
-            console.warn('[init] Background hydration failed:', err);
-        });
+
+        // Show the hydration source picker if this is the first hydration
+        // (no prior successful hydration in localStorage). Otherwise use the
+        // persisted source preference (default: postgres).
+        var hasHydratedBefore = false;
+        try { hasHydratedBefore = !!localStorage.getItem('amino_hydration_complete'); } catch(e) {}
+
+        if (!hasHydratedBefore) {
+            // First time — show picker, then start hydration with chosen source
+            showHydrationPicker().then(function(chosenSource) {
+                console.log('[init] User chose hydration source:', chosenSource);
+                _startBackgroundHydration().catch(function(err) {
+                    console.warn('[init] Background hydration failed:', err);
+                });
+            });
+        } else {
+            // Returning user — use persisted source (default: postgres)
+            _startBackgroundHydration().catch(function(err) {
+                console.warn('[init] Background hydration failed:', err);
+            });
+        }
 
         // Defer non-critical network operations for the hydration path too
         _deferNetworkInit();
@@ -19200,8 +19745,9 @@ async function init() {
 
     updateStatus('Up to date', true, null, null);
 
-    // Initialize UI badges
+    // Initialize UI badges and settings
     OfflineBadgeUI.refresh();
+    _initSettingsHydrationSource();
     if (!navigator.onLine) SyncIndicatorUI.setState('offline');
 
     // Start the refresh indicator countdown
