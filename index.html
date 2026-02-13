@@ -9847,10 +9847,12 @@ function saveFieldHistory(historyEntries) {
 var _edgesCache = null; // in-memory cache, invalidated on rebuild
 var _edgesRebuildPending = false;
 var _edgesRebuildTimer = null;
+var _edgesRebuildSuppressed = false; // set during bulk operations to defer rebuilds
 
 // Schedule an edge rebuild with debounce (coalesces rapid field updates)
 function scheduleEdgeRebuild() {
     _edgesCache = null; // invalidate cache immediately
+    if (_edgesRebuildSuppressed) return; // bulk operation in progress — will rebuild at end
     if (_edgesRebuildTimer) clearTimeout(_edgesRebuildTimer);
     _edgesRebuildTimer = setTimeout(function() {
         _edgesRebuildTimer = null;
@@ -12784,6 +12786,7 @@ async function manualAirtableSync() {
 
         if (result.error) {
             console.warn('[ManualSync] Airtable trigger had error:', result.error);
+            SyncStatusFeed.error('Airtable sync failed: ' + result.error);
         }
 
         // 2. Also ensure Synapse sync is running to pick up the changes
@@ -12802,6 +12805,7 @@ async function manualAirtableSync() {
 
     } catch (err) {
         console.error('[ManualSync] Error:', err);
+        SyncStatusFeed.error('Sync error: ' + err.message);
         if (btn) btn.classList.remove('syncing');
         if (textEl) textEl.textContent = 'Sync';
     }
@@ -16927,6 +16931,9 @@ async function backfillHistoryFromMatrix() {
         SyncStatusFeed.log('Backfilling field history from Matrix...');
         updateLoadingOverlay('Backfilling history...', 'Reading ' + tableRooms.length + ' rooms', 0, tableRooms.length, 0, 0, null);
 
+        // Suppress per-table edge rebuilds during bulk backfill — one rebuild at the end
+        _edgesRebuildSuppressed = true;
+
         var totalEvents = 0;
 
         for (var idx = 0; idx < tableRooms.length; idx++) {
@@ -17020,10 +17027,15 @@ async function backfillHistoryFromMatrix() {
             allRoomEvents = null; // release memory for this room
         }
 
+        // Resume edge rebuilds and do a single rebuild now that all fields are loaded
+        _edgesRebuildSuppressed = false;
+        rebuildEdges();
+
         SyncStatusFeed.success('History backfill complete: ' + totalEvents + ' events from ' + tableRooms.length + ' rooms');
         console.log('[HistoryBackfill] Complete: ' + totalEvents + ' total events (history only — record data preserved from webhook)');
         return totalEvents > 0;
     } catch (err) {
+        _edgesRebuildSuppressed = false;
         console.error('[HistoryBackfill] Failed:', err);
         SyncStatusFeed.error('History backfill failed: ' + err.message);
         return false;
