@@ -18250,27 +18250,10 @@ async function init() {
 
     updateStatus('Loading local data...', false, null, null);
 
-    // Attempt Box AMO hydration first (Tier 1 — fastest bulk path).
-    // If it succeeds, _boxHydrationSucceeded = true and downstream merge
-    // uses additive (||) logic to preserve the fresh snapshot data.
-    var _boxHydrationSucceeded = false;
-    try {
-        console.log('[init] Attempting Tier 1 hydration via Box AMO snapshot');
-        SyncStatusFeed.info('Attempting Box snapshot hydration...');
-        updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
-        var boxResult = await hydrateFromBoxAmoFile();
-        if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
-            _boxHydrationSucceeded = true;
-            console.log('[init] Box AMO hydration succeeded:', boxResult.importedEvents, 'events across', Object.keys(META_TABLES).length, 'tables');
-            SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
-            try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
-        }
-    } catch (boxErr) {
-        console.warn('[init] Box AMO hydration failed (will fall back to Postgres):', boxErr.message || boxErr);
-        SyncStatusFeed.warn('Box snapshot unavailable — falling back to Postgres...');
-    }
-
-    // Load all metadata + max event ID in parallel — single IDB round-trip
+    // ── Fast path: check for existing local data FIRST ──
+    // Load all metadata + max event ID in parallel — single IDB round-trip.
+    // This is purely local (IndexedDB) so it's fast. We check whether we
+    // already have a complete dataset before attempting any network calls.
     var metaResults = await Promise.all([
         getAllTables(),
         getAllFields(),
@@ -18284,39 +18267,20 @@ async function init() {
     // metaResults[3] = loadTableSettings (void)
     appOpenedEventId = metaResults[4];
 
-    // Merge IDB metadata into in-memory state.  When Box AMO hydration
-    // succeeded, use additive merge (||) so the fresh snapshot data takes
-    // precedence over potentially stale IDB entries.  This matches the
-    // pattern used in _startBackgroundHydration.
-    if (_boxHydrationSucceeded) {
-        tables.forEach(t => META_TABLES[t.tableId] = META_TABLES[t.tableId] || t);
-        fields.forEach(f => {
-            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-            META_FIELDS[f.tableId][f.fieldId] = META_FIELDS[f.tableId][f.fieldId] || f;
-        });
-        views.forEach(v => {
-            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-            META_VIEWS[v.tableId][v.viewId] = META_VIEWS[v.tableId][v.viewId] || v;
-        });
-    } else {
-        tables.forEach(t => META_TABLES[t.tableId] = t);
-        fields.forEach(f => {
-            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-            META_FIELDS[f.tableId][f.fieldId] = f;
-        });
-        views.forEach(v => {
-            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-            META_VIEWS[v.tableId][v.viewId] = v;
-        });
-    }
+    // Merge IDB metadata into in-memory state
+    tables.forEach(t => META_TABLES[t.tableId] = t);
+    fields.forEach(f => {
+        if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+        META_FIELDS[f.tableId][f.fieldId] = f;
+    });
+    views.forEach(v => {
+        if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+        META_VIEWS[v.tableId][v.viewId] = v;
+    });
 
     // Build edges from field metadata on startup (debounced — may coalesce with hydration)
     scheduleEdgeRebuild();
 
-    // Use in-memory META_TABLES as the authoritative table list. After Box
-    // AMO hydration, processEventsMemoryOnly populates META_TABLES before
-    // the background IDB save finishes, so the IDB read above may return
-    // fewer tables than actually exist in memory.
     var tableCount = Object.keys(META_TABLES).length;
 
     // Load user preferences (local-only, fast) — don't await network-dependent prefs yet
@@ -18338,34 +18302,17 @@ async function init() {
     // Initialize online-only mode UI state from localStorage
     _initOnlineOnlyModeUI();
 
-    // Check if records actually exist AND previous hydration completed fully.
-    // After Box AMO hydration, records live in IN_MEMORY_DATA (IDB save is
-    // still in flight), so check both IDB and memory.
+    // ── Determine whether local data is sufficient to render immediately ──
     var hasRecords = false;
     var hydrationWasComplete = false;
 
-    // Box hydration is considered complete for rendering purposes — we have
-    // tables and records in memory and will catch up via room sync.
-    if (_boxHydrationSucceeded && window.IN_MEMORY_DATA) {
-        var inMemoryRecordCount = 0;
-        var memTableIds = Object.keys(window.IN_MEMORY_DATA);
-        for (var mt = 0; mt < memTableIds.length; mt++) {
-            inMemoryRecordCount += Object.keys(window.IN_MEMORY_DATA[memTableIds[mt]]).length;
-        }
-        hasRecords = inMemoryRecordCount > 0;
-        hydrationWasComplete = hasRecords;
-    }
-
-    if (!hasRecords && tableCount > 0) {
+    if (tableCount > 0) {
         try {
             var existenceResults = await Promise.all([
                 getCurrentRecordsCount().catch(function() { return 0; }),
                 getSyncMeta('lastWebhookSync').catch(function() { return null; })
             ]);
             hasRecords = existenceResults[0] > 0;
-            // Check both IDB sync meta AND localStorage flag (localStorage is more
-            // reliable since it persists synchronously even if IDB transactions were
-            // still in-flight when the page was navigated away).
             var lsHydrationComplete = false;
             try { lsHydrationComplete = !!localStorage.getItem('amino_hydration_complete'); } catch(e) {}
             hydrationWasComplete = hasRecords && (!!existenceResults[1] || lsHydrationComplete);
@@ -18373,7 +18320,8 @@ async function init() {
     }
 
     if (tableCount > 0 && hasRecords && hydrationWasComplete) {
-        // Data exists (from local IDB cache or Box AMO hydration) — render it
+        // ── FAST PATH: Local data is complete — render from cache, no network blocking ──
+        console.log('[init] Local data complete (' + tableCount + ' tables) — rendering from cache');
         updateStatus('Found ' + tableCount + ' tables', false, null, 'Loading data...');
 
         // Determine the first table early so we can pre-warm its record IDs
@@ -18405,10 +18353,69 @@ async function init() {
         // Local data loaded — dismiss loading overlay
         hideLoadingOverlay();
 
-        // After Box hydration: kick off room-data catch-up in the background
-        // to apply any mutations that occurred after the AMO snapshot timestamp,
-        // and to backfill field-level edit history from room timelines.
-        if (_boxHydrationSucceeded) {
+        // Defer non-critical network operations to AFTER the UI is visible.
+        // These run in the background and don't block the user from interacting.
+        _deferNetworkInit();
+    } else {
+        // ── HYDRATION PATH: No local data or incomplete — need network hydration ──
+        // Attempt Box AMO hydration first (Tier 1 — fastest bulk path).
+        var _boxHydrationSucceeded = false;
+        try {
+            console.log('[init] Attempting Tier 1 hydration via Box AMO snapshot');
+            SyncStatusFeed.info('Attempting Box snapshot hydration...');
+            updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
+            var boxResult = await hydrateFromBoxAmoFile();
+            if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
+                _boxHydrationSucceeded = true;
+                console.log('[init] Box AMO hydration succeeded:', boxResult.importedEvents, 'events across', Object.keys(META_TABLES).length, 'tables');
+                SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
+                try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+            }
+        } catch (boxErr) {
+            console.warn('[init] Box AMO hydration failed (will fall back to Postgres):', boxErr.message || boxErr);
+            SyncStatusFeed.warn('Box snapshot unavailable — falling back to Postgres...');
+        }
+
+        // If Box hydration populated META_TABLES/IN_MEMORY_DATA, re-check counts
+        tableCount = Object.keys(META_TABLES).length;
+
+        if (_boxHydrationSucceeded && window.IN_MEMORY_DATA) {
+            var inMemoryRecordCount = 0;
+            var memTableIds = Object.keys(window.IN_MEMORY_DATA);
+            for (var mt = 0; mt < memTableIds.length; mt++) {
+                inMemoryRecordCount += Object.keys(window.IN_MEMORY_DATA[memTableIds[mt]]).length;
+            }
+            hasRecords = inMemoryRecordCount > 0;
+            hydrationWasComplete = hasRecords;
+        }
+
+        if (tableCount > 0 && hasRecords && hydrationWasComplete) {
+            // Box hydration succeeded — render immediately
+            updateStatus('Found ' + tableCount + ' tables', false, null, 'Loading data...');
+
+            var firstTable = Object.keys(META_TABLES)[0];
+            var preWarmPromise = firstTable
+                ? getRecordIdsForTable(firstTable).catch(function() { return []; })
+                : Promise.resolve([]);
+
+            var sidebarAndWarm = await Promise.all([
+                renderSidebar(true),
+                preWarmPromise
+            ]);
+            var preWarmedRecordIds = sidebarAndWarm[1];
+
+            if (firstTable && preWarmedRecordIds.length > 0) {
+                var firstPageIds = preWarmedRecordIds.slice(0, PAGE_SIZE);
+                getRecordsByIds(firstTable, firstPageIds).catch(function() {});
+            }
+
+            if (firstTable) {
+                await showTable(firstTable);
+            }
+
+            hideLoadingOverlay();
+
+            // After Box hydration: kick off room-data catch-up in the background
             (async function _boxCatchUp() {
                 try {
                     await ensureRoomMembership();
@@ -18417,36 +18424,28 @@ async function init() {
                     console.warn('[init] Post-Box room catch-up failed (non-fatal):', err);
                 }
             })();
+
+            _deferNetworkInit();
+        } else {
+            // Box failed or not enough data — fall back to background hydration
+            if (tableCount > 0 && hasRecords) {
+                console.log('[init] Tables and records exist but hydration was incomplete — retrying');
+                SyncStatusFeed.info('Previous hydration incomplete — retrying...');
+                await renderSidebar(true);
+            } else if (tableCount > 0) {
+                console.log('[init] Tables exist but no records — retrying hydration');
+                SyncStatusFeed.info('Records missing — retrying hydration...');
+                await renderSidebar(true);
+            }
+
+            hideLoadingOverlay();
+            updateStatus('Syncing data in background...', false, null, null);
+            _startBackgroundHydration().catch(function(err) {
+                console.warn('[init] Background hydration failed:', err);
+            });
+
+            _deferNetworkInit();
         }
-
-        // Defer non-critical network operations to AFTER the UI is visible.
-        // These run in the background and don't block the user from interacting.
-        _deferNetworkInit();
-    } else {
-        // Missing tables, records, or previous hydration was incomplete —
-        // need hydration (retry on every load until it fully succeeds so
-        // transient API failures don't strand the user with partial data).
-        if (tableCount > 0 && hasRecords) {
-            console.log('[init] Tables and records exist but hydration was incomplete — retrying');
-            SyncStatusFeed.info('Previous hydration incomplete — retrying...');
-            // Render table sidebar immediately for better UX while hydrating
-            await renderSidebar(true);
-        } else if (tableCount > 0) {
-            console.log('[init] Tables exist but no records — retrying hydration');
-            SyncStatusFeed.info('Records missing — retrying hydration...');
-            // Render table sidebar immediately for better UX while hydrating
-            await renderSidebar(true);
-        }
-
-        // Prioritize app access: enter UI immediately, run room/data hydration in background.
-        hideLoadingOverlay();
-        updateStatus('Syncing data in background...', false, null, null);
-        _startBackgroundHydration().catch(function(err) {
-            console.warn('[init] Background hydration failed:', err);
-        });
-
-        // Defer non-critical network operations for the hydration path too
-        _deferNetworkInit();
     }
 
     updateStatus('Up to date', true, null, null);
