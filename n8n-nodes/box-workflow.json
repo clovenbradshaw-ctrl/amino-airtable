@@ -1,0 +1,363 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "box-upload",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "98a21307-8da4-4563-9c1d-611ccd45f085",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -4064,
+        3200
+      ],
+      "webhookId": "27286e8f-aafe-4cdc-a62a-bbc1f8e70516"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://upload.box.com/api/2.0/files/content",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "boxOAuth2Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "attributes",
+              "value": "={\"name\":\"{{ $binary.file.fileName }}\",\"parent\":{\"id\":\"364363223627\"}}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "file"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "b3100062-622e-40e0-9954-12d01cbc4427",
+      "name": "Try Upload to Box",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3616,
+        3200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8smzU1ors4so56Qb",
+          "name": "Header Auth account"
+        },
+        "boxOAuth2Api": {
+          "id": "DYLRFtpk6g8f5LeA",
+          "name": "Box account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-409",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 409,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2e32f924-7fb9-4a79-be64-2333de77913c",
+      "name": "File Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -3392,
+        3200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://upload.box.com/api/2.0/files/{{ $json.body.context_info.conflicts.id }}/content",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "attributes",
+              "value": "={\"name\":\"{{ $('Webhook').item.json.headers['x-file-name'] || $('Webhook').item.binary.file.fileName }}\"}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "file"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "891068e3-b8de-48de-8db5-c594a3452fc3",
+      "name": "Upload New Version",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3168,
+        3104
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8smzU1ors4so56Qb",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: 'overwritten', file: $json.body.entries ? $json.body.entries[0] : $json.body }) }}",
+        "options": {}
+      },
+      "id": "15446178-4437-4c1e-b5e3-735c44181074",
+      "name": "Respond Overwritten",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2944,
+        3104
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: 'uploaded', file: $json.body.entries ? $json.body.entries[0] : $json.body }) }}",
+        "options": {}
+      },
+      "id": "c9253786-582a-4ce6-a149-dad93b924689",
+      "name": "Respond New Upload",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -3168,
+        3296
+      ]
+    },
+    {
+      "parameters": {
+        "path": "box-download",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5ec1aab6-e859-471f-b242-196e0f781b21",
+      "name": "GET Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -4064,
+        3520
+      ],
+      "webhookId": "c2d3e4f5-1111-4aaa-bbbb-222222222222"
+    },
+    {
+      "parameters": {
+        "url": "https://api.box.com/2.0/folders/364363223627/items?fields=id,name,modified_at,type&limit=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "boxOAuth2Api",
+        "options": {}
+      },
+      "id": "912080be-82c9-4ab6-a3c6-feb1a859b770",
+      "name": "List Folder for Download",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3696,
+        3520
+      ],
+      "credentials": {
+        "boxOAuth2Api": {
+          "id": "DYLRFtpk6g8f5LeA",
+          "name": "Box account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.box.com/2.0/files/{{ $json.entries[0].id }}/content",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "boxOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "833aa532-5048-44c8-9102-d58594b1ce7a",
+      "name": "Download from Box",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3184,
+        3520
+      ],
+      "credentials": {
+        "boxOAuth2Api": {
+          "id": "DYLRFtpk6g8f5LeA",
+          "name": "Box account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "responseDataSource": "set",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Disposition",
+                "value": "=attachment; filename=\"{{ $binary.data.fileName }}\""
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/octet-stream"
+              }
+            ]
+          }
+        }
+      },
+      "id": "682f7cd1-14e0-408e-a8de-ef2eded777a7",
+      "name": "Respond With File",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2960,
+        3520
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Try Upload to Box",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Try Upload to Box": {
+      "main": [
+        [
+          {
+            "node": "File Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Exists?": {
+      "main": [
+        [
+          {
+            "node": "Upload New Version",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond New Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload New Version": {
+      "main": [
+        [
+          {
+            "node": "Respond Overwritten",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Webhook": {
+      "main": [
+        [
+          {
+            "node": "List Folder for Download",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Folder for Download": {
+      "main": [
+        [
+          {
+            "node": "Download from Box",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download from Box": {
+      "main": [
+        [
+          {
+            "node": "Respond With File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "5c737be3fd9beebae6ccb42a087a71b95589b90d613100d5ba10c73188a40d22"
+  }
+}
