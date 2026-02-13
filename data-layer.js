@@ -1598,6 +1598,9 @@ var AminoData = (function() {
             lastSynced: new Date().toISOString()
         });
 
+        // Queue for incremental room state mirror
+        _queueIncrementalMirror(tableId, recordId);
+
         // Emit sync event so UI can react
         window.dispatchEvent(new CustomEvent('amino:record-update', {
             detail: { recordId: recordId, tableId: tableId, source: 'matrix' }
@@ -2605,13 +2608,19 @@ var AminoData = (function() {
             startPolling(pollInterval);
         }
 
+        // Start gentle background room state mirror after a delay.
+        // This writes record snapshots as state events to table rooms so
+        // the database can be reconstructed from room data alone.
+        scheduleMirrorStart();
+
         return {
             tables: tables,
             totalRecords: totalRecords,
             tableRoomMap: getTableRoomMap(),
             usingMatrixSync: matrixSyncStarted,
             stopPolling: stopPolling,
-            stopMatrixSync: stopMatrixSync
+            stopMatrixSync: stopMatrixSync,
+            stopRoomMirror: stopRoomMirror
         };
     }
 
@@ -2630,6 +2639,7 @@ var AminoData = (function() {
         stopPolling();
         stopMatrixSync();
         stopViewDeletionSync();
+        stopRoomMirror();
         _removeGlobalListeners(); // G-9 fix: clean up all event listeners
         clearKeyFromStorage();
 
@@ -3521,6 +3531,362 @@ var AminoData = (function() {
         return _matrixSyncRunning;
     }
 
+    // ============ Room State Mirror ============
+    // Gentle background process that writes full record snapshots as Matrix
+    // state events (law.firm.record) to table rooms. This creates a complete
+    // mirror of the database state so that, in theory, the database could be
+    // reconstructed from room data alone — with the benefit of having the
+    // full mutation history in the timeline.
+    //
+    // Design:
+    //   - Uses law.firm.record state events (type + state_key idempotent),
+    //     NOT EO events (law.firm.schema.object). State events are keyed by
+    //     tableId|recordId so multiple clients writing the same record just
+    //     overwrite in-place — no duplication.
+    //   - Coordination via a law.firm.mirror.status state event prevents
+    //     multiple clients from mirroring simultaneously.
+    //   - Skips records whose state events already match local data.
+    //   - Respects rate limits, pauses when the tab is hidden, and uses
+    //     small batches with delays between them.
+    //
+    // Lifecycle:
+    //   - Auto-starts 30s after initAndHydrate completes.
+    //   - Full mirror runs at most once per hour (MIRROR_COOLDOWN).
+    //   - Changed records are also mirrored incrementally (debounced).
+
+    var _mirrorRunning = false;
+    var _mirrorAbort = false;
+    var _mirrorStartupTimer = null;
+    var _mirrorIncrementalQueue = {};        // recordId -> { tableId, roomId }
+    var _mirrorIncrementalTimer = null;
+
+    var MIRROR_BATCH_SIZE = 5;               // records per batch
+    var MIRROR_BATCH_DELAY = 2000;           // ms between batches (gentle)
+    var MIRROR_COOLDOWN = 3600000;           // 1 hour between full mirrors
+    var MIRROR_LOCK_TIMEOUT = 300000;        // 5 min — treat lock as stale
+    var MIRROR_STARTUP_DELAY = 30000;        // 30s delay before first mirror
+    var MIRROR_INCREMENTAL_DEBOUNCE = 10000; // 10s debounce for incremental
+    var MIRROR_INCREMENTAL_MAX_QUEUE = 100;  // cap incremental queue size
+    var MIRROR_STATE_TYPE = 'law.firm.mirror.status';
+
+    // Get the coordination room (org space preferred, else first table room)
+    function _getMirrorCoordRoom() {
+        if (_orgSpaceId) return _orgSpaceId;
+        var rooms = Object.values(_tableRoomMap);
+        return rooms.length > 0 ? rooms[0] : null;
+    }
+
+    // Check if another client is mirroring or if a mirror was done recently
+    async function _checkMirrorLock() {
+        var coordRoom = _getMirrorCoordRoom();
+        if (!coordRoom) return { skip: false };
+
+        try {
+            var status = await MatrixClient.getStateEvent(coordRoom, MIRROR_STATE_TYPE, '');
+            if (!status) return { skip: false };
+
+            var now = Date.now();
+
+            // Another client is actively mirroring and lock is not stale
+            if (status.status === 'running' && status.lockedBy !== _userId) {
+                if (now - status.lockedAt < MIRROR_LOCK_TIMEOUT) {
+                    return { skip: true, reason: 'another client is mirroring (' + status.lockedBy + ')' };
+                }
+            }
+
+            // Mirror was completed recently by anyone
+            if (status.status === 'complete' && status.completedAt) {
+                if (now - status.completedAt < MIRROR_COOLDOWN) {
+                    return {
+                        skip: true,
+                        reason: 'completed ' + Math.round((now - status.completedAt) / 60000) + 'min ago by ' + (status.completedBy || 'unknown')
+                    };
+                }
+            }
+        } catch (e) {
+            // State event doesn't exist or not accessible — proceed
+        }
+
+        return { skip: false };
+    }
+
+    async function _claimMirrorLock() {
+        var coordRoom = _getMirrorCoordRoom();
+        if (!coordRoom) return;
+
+        try {
+            await MatrixClient.sendStateEvent(coordRoom, MIRROR_STATE_TYPE, '', {
+                status: 'running',
+                lockedBy: _userId,
+                lockedAt: Date.now(),
+                version: 1
+            });
+        } catch (e) {
+            console.warn('[AminoData] Could not claim mirror lock:', e.message);
+        }
+    }
+
+    async function _releaseMirrorLock(stats) {
+        var coordRoom = _getMirrorCoordRoom();
+        if (!coordRoom) return;
+
+        try {
+            await MatrixClient.sendStateEvent(coordRoom, MIRROR_STATE_TYPE, '', {
+                status: 'complete',
+                completedBy: _userId,
+                completedAt: Date.now(),
+                stats: stats,
+                version: 1
+            });
+        } catch (e) {
+            console.warn('[AminoData] Could not release mirror lock:', e.message);
+        }
+    }
+
+    // Quick deep-equal for record data (JSON comparison)
+    function _recordDataMatches(existingData, localFields) {
+        try {
+            return JSON.stringify(existingData) === JSON.stringify(localFields);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Wait until the browser tab is visible (pause mirroring when hidden)
+    function _waitForVisible() {
+        return new Promise(function(resolve) {
+            if (typeof document === 'undefined' || !document.hidden) {
+                resolve();
+                return;
+            }
+            var handler = function() {
+                if (!document.hidden) {
+                    document.removeEventListener('visibilitychange', handler);
+                    resolve();
+                }
+            };
+            document.addEventListener('visibilitychange', handler);
+        });
+    }
+
+    // Main mirror loop: iterates all tables and writes missing/stale state events
+    async function _runMirrorLoop() {
+        await _claimMirrorLock();
+
+        var totalMirrored = 0;
+        var totalSkipped = 0;
+        var totalErrors = 0;
+        var tableIds = Object.keys(_tableRoomMap);
+
+        for (var t = 0; t < tableIds.length; t++) {
+            if (_mirrorAbort) break;
+
+            var tableId = tableIds[t];
+            var roomId = _tableRoomMap[tableId];
+
+            // Get cached records for this table
+            var records = getTableRecordsCached(tableId);
+            if (!records || records.length === 0) continue;
+
+            // Fetch existing record state events from the room to diff
+            var existingRecords = {};
+            try {
+                var stateEvents = await MatrixClient.getRoomState(roomId);
+                for (var s = 0; s < stateEvents.length; s++) {
+                    var evt = stateEvents[s];
+                    if (evt.type === 'law.firm.record' && evt.state_key) {
+                        existingRecords[evt.state_key] = evt.content;
+                    }
+                }
+            } catch (e) {
+                console.warn('[AminoData] Mirror: could not fetch room state for', tableId, ':', e.message);
+            }
+
+            console.log('[AminoData] Mirror: table', tableId, '—',
+                records.length, 'local records,',
+                Object.keys(existingRecords).length, 'existing state events');
+
+            // Process records in small batches
+            var batchCount = 0;
+            for (var r = 0; r < records.length; r++) {
+                if (_mirrorAbort) break;
+
+                var record = records[r];
+                if (!record || !record.id || !record.fields) continue;
+
+                var stateKey = tableId + '|' + record.id;
+                var existing = existingRecords[stateKey];
+
+                // Skip if state event already has matching data
+                if (existing && existing.data && _recordDataMatches(existing.data, record.fields)) {
+                    totalSkipped++;
+                    continue;
+                }
+
+                // Write state event for this record
+                try {
+                    await MatrixClient.writeRecord(roomId, tableId, record.id, record.fields);
+                    totalMirrored++;
+                } catch (err) {
+                    totalErrors++;
+                    if (err.httpStatus === 429) {
+                        // Rate limited — wait and retry once
+                        var wait = err.retryAfterMs || 5000;
+                        console.warn('[AminoData] Mirror: rate-limited, waiting', wait, 'ms');
+                        await new Promise(function(resolve) { setTimeout(resolve, wait); });
+                        try {
+                            await MatrixClient.writeRecord(roomId, tableId, record.id, record.fields);
+                            totalMirrored++;
+                            totalErrors--;
+                        } catch (retryErr) {
+                            console.warn('[AminoData] Mirror: write failed after retry:', record.id);
+                        }
+                    } else {
+                        console.warn('[AminoData] Mirror: write failed:', record.id, err.message);
+                    }
+                }
+
+                batchCount++;
+                if (batchCount >= MIRROR_BATCH_SIZE) {
+                    batchCount = 0;
+
+                    // Pause when tab is hidden
+                    if (typeof document !== 'undefined' && document.hidden) {
+                        await _waitForVisible();
+                    }
+
+                    // Gentle delay between batches
+                    await new Promise(function(resolve) { setTimeout(resolve, MIRROR_BATCH_DELAY); });
+                }
+            }
+        }
+
+        var stats = {
+            tables: tableIds.length,
+            mirrored: totalMirrored,
+            skipped: totalSkipped,
+            errors: totalErrors,
+            aborted: _mirrorAbort
+        };
+
+        await _releaseMirrorLock(stats);
+        return stats;
+    }
+
+    // Start the full background mirror. Checks coordination lock first.
+    async function startRoomMirror() {
+        if (_mirrorRunning) {
+            console.log('[AminoData] Mirror already running');
+            return false;
+        }
+        if (_offlineMode || !_initialized) return false;
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) return false;
+        if (Object.keys(_tableRoomMap).length === 0) return false;
+
+        // Check coordination lock
+        try {
+            var lock = await _checkMirrorLock();
+            if (lock.skip) {
+                console.log('[AminoData] Mirror skipped:', lock.reason);
+                return false;
+            }
+        } catch (e) {
+            console.warn('[AminoData] Mirror lock check failed, proceeding:', e.message);
+        }
+
+        _mirrorRunning = true;
+        _mirrorAbort = false;
+        console.log('[AminoData] Starting background room state mirror');
+
+        _runMirrorLoop().then(function(stats) {
+            _mirrorRunning = false;
+            console.log('[AminoData] Mirror complete:', JSON.stringify(stats));
+            window.dispatchEvent(new CustomEvent('amino:mirror-complete', { detail: stats }));
+        }).catch(function(err) {
+            _mirrorRunning = false;
+            console.error('[AminoData] Mirror failed:', err);
+        });
+
+        return true;
+    }
+
+    function stopRoomMirror() {
+        _mirrorAbort = true;
+        if (_mirrorStartupTimer) {
+            clearTimeout(_mirrorStartupTimer);
+            _mirrorStartupTimer = null;
+        }
+        if (_mirrorIncrementalTimer) {
+            clearTimeout(_mirrorIncrementalTimer);
+            _mirrorIncrementalTimer = null;
+        }
+    }
+
+    // Schedule mirror start after a delay (called after init/hydration)
+    function scheduleMirrorStart() {
+        if (_mirrorStartupTimer) clearTimeout(_mirrorStartupTimer);
+        _mirrorStartupTimer = setTimeout(function() {
+            _mirrorStartupTimer = null;
+            startRoomMirror();
+        }, MIRROR_STARTUP_DELAY);
+    }
+
+    // ── Incremental Mirroring ──
+    // Queue a record for incremental mirror when it changes locally.
+    // Debounced so rapid successive changes to the same record produce
+    // only one state event write.
+    function _queueIncrementalMirror(tableId, recordId) {
+        if (_offlineMode || !_initialized || _mirrorRunning) return;
+        if (!MatrixClient || !MatrixClient.isLoggedIn()) return;
+
+        var roomId = _tableRoomMap[tableId];
+        if (!roomId) return;
+
+        // Cap queue size — full mirror will catch overflow
+        if (Object.keys(_mirrorIncrementalQueue).length >= MIRROR_INCREMENTAL_MAX_QUEUE) return;
+
+        _mirrorIncrementalQueue[recordId] = { tableId: tableId, roomId: roomId };
+
+        // Debounce
+        if (_mirrorIncrementalTimer) clearTimeout(_mirrorIncrementalTimer);
+        _mirrorIncrementalTimer = setTimeout(function() {
+            _mirrorIncrementalTimer = null;
+            _flushIncrementalMirror();
+        }, MIRROR_INCREMENTAL_DEBOUNCE);
+    }
+
+    async function _flushIncrementalMirror() {
+        var queue = _mirrorIncrementalQueue;
+        _mirrorIncrementalQueue = {};
+
+        var recordIds = Object.keys(queue);
+        if (recordIds.length === 0) return;
+
+        console.log('[AminoData] Incremental mirror: flushing', recordIds.length, 'records');
+
+        for (var i = 0; i < recordIds.length; i++) {
+            var recordId = recordIds[i];
+            var info = queue[recordId];
+            var record = getRecordCached(recordId);
+            if (!record || !record.fields) continue;
+
+            try {
+                await MatrixClient.writeRecord(info.roomId, info.tableId, recordId, record.fields);
+            } catch (err) {
+                console.warn('[AminoData] Incremental mirror failed for', recordId, ':', err.message);
+            }
+
+            // Small delay between writes
+            if (i < recordIds.length - 1) {
+                await new Promise(function(resolve) { setTimeout(resolve, 500); });
+            }
+        }
+    }
+
+    function isMirrorRunning() {
+        return _mirrorRunning;
+    }
+
     // ============ Encrypt-on-Logout: Safety Handlers ============
     // Best-effort encryption when the page is being discarded without a
     // clean logout. visibilitychange → hidden fires before beforeunload
@@ -3609,6 +3975,12 @@ var AminoData = (function() {
         deleteView: deleteView,
         restoreView: restoreView,
         getViewDeletionHistory: getViewDeletionHistory,
+
+        // Room state mirror (background database → room sync)
+        startRoomMirror: startRoomMirror,
+        stopRoomMirror: stopRoomMirror,
+        scheduleMirrorStart: scheduleMirrorStart,
+        isMirrorRunning: isMirrorRunning,
 
         // Encrypted record writing (fields encrypted in Matrix events)
         sendEncryptedRecord: sendEncryptedRecord,
