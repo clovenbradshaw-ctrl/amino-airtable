@@ -16100,8 +16100,17 @@ async function renderTable(paginationOnly) {
     // Get columns from view configuration
     var fields = META_FIELDS[currentTable] || {};
 
-    // Compute formula column values for all displayed records
-    _applyFormulaColumns(currentTable, fields, recordMap);
+    // OPTIMIZATION 5: Defer formula computation until after first paint.
+    // Instead of blocking the HTML build with _applyFormulaColumns(), render
+    // the table with raw data first (formula cells show as empty/loading),
+    // then compute formulas in a requestAnimationFrame callback and surgically
+    // update only the formula cells in the DOM. This lets the browser paint
+    // the table grid ~100-500ms sooner on tables with complex formulas.
+    var _deferFormulas = !paginationOnly && displayRecordIds.length > 0;
+    if (!_deferFormulas) {
+        // Pagination or empty — compute inline (fast, no visible difference)
+        _applyFormulaColumns(currentTable, fields, recordMap);
+    }
     var viewId = currentView || '_default';
     var colList = getVisibleFieldsForView(currentTable, viewId);
 
@@ -16316,6 +16325,40 @@ async function renderTable(paginationOnly) {
 
     // Update record count badge
     updateRecordCountBadge();
+
+    // OPTIMIZATION 5 (cont.): After the table DOM is painted, compute formula
+    // columns in a rAF callback and surgically update only the formula cells.
+    // This lets the browser paint the full grid (with non-formula data) first.
+    if (_deferFormulas) {
+        var _dfTable = currentTable;
+        var _dfNav = renderNav;
+        var _dfRecordMap = recordMap;
+        var _dfFields = fields;
+        var _dfColMeta = _colMeta;
+        var _dfDisplayIds = displayRecordIds;
+        requestAnimationFrame(function() {
+            if (navVersion !== _dfNav) return; // Navigation changed, skip stale update
+            _applyFormulaColumns(_dfTable, _dfFields, _dfRecordMap);
+            // Surgically update only formula cells in the DOM
+            var _tbl = document.getElementById('table');
+            if (!_tbl) return;
+            for (var _dfi = 0; _dfi < _dfDisplayIds.length; _dfi++) {
+                var _dfRid = _dfDisplayIds[_dfi];
+                var _dfRow = _dfRecordMap[_dfRid] || {};
+                for (var _dfci = 0; _dfci < _dfColMeta.length; _dfci++) {
+                    var _dfCm = _dfColMeta[_dfci];
+                    if (!_dfCm.isComputed) continue; // Only update formula cells
+                    var _dfVal = _dfRow[_dfCm.id];
+                    if (_dfVal === undefined) _dfVal = _dfRow[_dfCm.name];
+                    var _dfNewHtml = formatCell(_dfVal, _dfCm.fieldType);
+                    var _dfCell = _tbl.querySelector('tr[data-record-id="' + CSS.escape(_dfRid) + '"] td[data-field-id="' + CSS.escape(_dfCm.id) + '"]');
+                    if (_dfCell && _dfCell.innerHTML !== _dfNewHtml) {
+                        _dfCell.innerHTML = _dfNewHtml;
+                    }
+                }
+            }
+        });
+    }
 }
 
 // Group records by a field value
@@ -18225,6 +18268,65 @@ function _startBackgroundHydration() {
     return _backgroundHydrationInFlight;
 }
 
+// ============ Session Render Cache (OPTIMIZATION 4) ============
+// Snapshots the first table's first page of decrypted records + metadata into
+// sessionStorage so on page refresh we can render the table grid instantly
+// without waiting for IDB reads + AES-GCM decryption of each record.
+// sessionStorage survives refresh but is cleared on tab close (privacy-safe).
+
+var _SESSION_RENDER_CACHE_KEY = 'amino_render_cache';
+var _SESSION_RENDER_CACHE_MAX_RECORDS = 100; // PAGE_SIZE
+
+function _saveRenderCacheToSession(tableId, records, recordIds) {
+    try {
+        var cache = {
+            tableId: tableId,
+            recordIds: recordIds.slice(0, _SESSION_RENDER_CACHE_MAX_RECORDS),
+            records: {},
+            tables: META_TABLES,
+            fields: META_FIELDS[tableId] || {},
+            views: META_VIEWS[tableId] || {},
+            ts: Date.now()
+        };
+        // Only cache the first page of decrypted record data
+        var pageIds = cache.recordIds;
+        for (var i = 0; i < pageIds.length; i++) {
+            var rid = pageIds[i];
+            // Try _recordCache first (already decrypted), then IN_MEMORY_DATA
+            var ck = _rcKey(tableId, rid);
+            var cached = _recordCache.get(ck);
+            if (cached) {
+                cache.records[rid] = cached.fields || {};
+            } else if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][rid]) {
+                cache.records[rid] = window.IN_MEMORY_DATA[tableId][rid];
+            }
+        }
+        var json = JSON.stringify(cache);
+        // sessionStorage quota is ~5MB; skip if too large
+        if (json.length < 4 * 1024 * 1024) {
+            sessionStorage.setItem(_SESSION_RENDER_CACHE_KEY, json);
+        }
+    } catch (e) {
+        // Quota exceeded or serialization error — non-fatal
+    }
+}
+
+function _loadRenderCacheFromSession() {
+    try {
+        var raw = sessionStorage.getItem(_SESSION_RENDER_CACHE_KEY);
+        if (!raw) return null;
+        var cache = JSON.parse(raw);
+        // Expire after 10 minutes (stale data guard)
+        if (!cache || !cache.ts || (Date.now() - cache.ts) > 600000) {
+            sessionStorage.removeItem(_SESSION_RENDER_CACHE_KEY);
+            return null;
+        }
+        return cache;
+    } catch (e) {
+        return null;
+    }
+}
+
 // ============ Init ============
 
 async function init() {
@@ -18246,31 +18348,21 @@ async function init() {
     loadSidebarState();
     initSidebarSearch();
 
-    db = await openDB();
+    // OPTIMIZATION 3: Use the DB connection started early in the startup IIFE
+    // (runs in parallel with session verify + crypto key import). Falls back
+    // to opening fresh if the early promise failed or wasn't set.
+    db = (window._earlyDbPromise ? await window._earlyDbPromise : null) || await openDB();
 
     updateStatus('Loading local data...', false, null, null);
 
-    // Attempt Box AMO hydration first (Tier 1 — fastest bulk path).
-    // If it succeeds, _boxHydrationSucceeded = true and downstream merge
-    // uses additive (||) logic to preserve the fresh snapshot data.
+    // OPTIMIZATION 2: Check IDB for existing data FIRST before attempting
+    // Box AMO hydration. If we already have tables+records from a previous
+    // session, skip the blocking network fetch entirely and defer Box AMO
+    // to a background refresh. This removes 0-45s from the critical path.
     var _boxHydrationSucceeded = false;
-    try {
-        console.log('[init] Attempting Tier 1 hydration via Box AMO snapshot');
-        SyncStatusFeed.info('Attempting Box snapshot hydration...');
-        updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
-        var boxResult = await hydrateFromBoxAmoFile();
-        if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
-            _boxHydrationSucceeded = true;
-            console.log('[init] Box AMO hydration succeeded:', boxResult.importedEvents, 'events across', Object.keys(META_TABLES).length, 'tables');
-            SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
-            try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
-        }
-    } catch (boxErr) {
-        console.warn('[init] Box AMO hydration failed (will fall back to Postgres):', boxErr.message || boxErr);
-        SyncStatusFeed.warn('Box snapshot unavailable — falling back to Postgres...');
-    }
+    var _boxHydrationDeferred = false;
 
-    // Load all metadata + max event ID in parallel — single IDB round-trip
+    // Quick IDB metadata read to check if we have cached data
     var metaResults = await Promise.all([
         getAllTables(),
         getAllFields(),
@@ -18281,13 +18373,49 @@ async function init() {
     var tables = metaResults[0];
     var fields = metaResults[1];
     var views = metaResults[2];
-    // metaResults[3] = loadTableSettings (void)
     appOpenedEventId = metaResults[4];
+
+    // Check if IDB has enough data to skip Box AMO
+    var _idbHasData = tables.length > 0;
+    var _lsHydrationComplete = false;
+    try { _lsHydrationComplete = !!localStorage.getItem('amino_hydration_complete'); } catch(e) {}
+
+    if (_idbHasData && _lsHydrationComplete) {
+        // IDB has tables and a previous hydration completed — use cached data,
+        // defer Box AMO to background refresh after UI is visible.
+        console.log('[init] IDB cache hit (' + tables.length + ' tables, hydration complete) — skipping blocking Box AMO');
+        SyncStatusFeed.info('Using cached data — Box refresh deferred to background');
+        _boxHydrationDeferred = true;
+    } else {
+        // No IDB data or incomplete hydration — need Box AMO synchronously
+        try {
+            console.log('[init] Attempting Tier 1 hydration via Box AMO snapshot');
+            SyncStatusFeed.info('Attempting Box snapshot hydration...');
+            updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
+            var boxResult = await hydrateFromBoxAmoFile();
+            if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
+                _boxHydrationSucceeded = true;
+                console.log('[init] Box AMO hydration succeeded:', boxResult.importedEvents, 'events across', Object.keys(META_TABLES).length, 'tables');
+                SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
+                try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+            }
+        } catch (boxErr) {
+            console.warn('[init] Box AMO hydration failed (will fall back to Postgres):', boxErr.message || boxErr);
+            SyncStatusFeed.warn('Box snapshot unavailable — falling back to Postgres...');
+        }
+
+        // Re-read metadata in case Box hydration populated new tables
+        if (_boxHydrationSucceeded) {
+            var freshMeta = await Promise.all([getAllTables(), getAllFields(), getAllViews()]);
+            tables = freshMeta[0];
+            fields = freshMeta[1];
+            views = freshMeta[2];
+        }
+    }
 
     // Merge IDB metadata into in-memory state.  When Box AMO hydration
     // succeeded, use additive merge (||) so the fresh snapshot data takes
-    // precedence over potentially stale IDB entries.  This matches the
-    // pattern used in _startBackgroundHydration.
+    // precedence over potentially stale IDB entries.
     if (_boxHydrationSucceeded) {
         tables.forEach(t => META_TABLES[t.tableId] = META_TABLES[t.tableId] || t);
         fields.forEach(f => {
@@ -18356,6 +18484,11 @@ async function init() {
         hydrationWasComplete = hasRecords;
     }
 
+    // When Box was deferred (IDB cache hit), check IDB directly for records
+    if (_boxHydrationDeferred) {
+        hydrationWasComplete = _lsHydrationComplete;
+    }
+
     if (!hasRecords && tableCount > 0) {
         try {
             var existenceResults = await Promise.all([
@@ -18376,9 +18509,35 @@ async function init() {
         // Data exists (from local IDB cache or Box AMO hydration) — render it
         updateStatus('Found ' + tableCount + ' tables', false, null, 'Loading data...');
 
+        // OPTIMIZATION 4: Restore first table's decrypted records from sessionStorage.
+        // This pre-populates IN_MEMORY_DATA and the record cache so showTable() can
+        // render the grid without waiting for IDB reads + AES-GCM decryption.
+        var _renderCache = _loadRenderCacheFromSession();
+        if (_renderCache && _renderCache.records && Object.keys(_renderCache.records).length > 0) {
+            var cacheTableId = _renderCache.tableId;
+            console.log('[init] Restoring render cache for table', cacheTableId, '(' + Object.keys(_renderCache.records).length + ' records)');
+            // Populate IN_MEMORY_DATA so getRecordsByIds() finds immediate cache hits
+            if (!window.IN_MEMORY_DATA) window.IN_MEMORY_DATA = {};
+            if (!window.IN_MEMORY_DATA[cacheTableId]) window.IN_MEMORY_DATA[cacheTableId] = {};
+            var cacheRecordIds = Object.keys(_renderCache.records);
+            for (var cri = 0; cri < cacheRecordIds.length; cri++) {
+                var crid = cacheRecordIds[cri];
+                window.IN_MEMORY_DATA[cacheTableId][crid] = _renderCache.records[crid];
+            }
+            // Also pre-populate field metadata from cache if not already loaded
+            if (_renderCache.fields && !META_FIELDS[cacheTableId]) {
+                META_FIELDS[cacheTableId] = _renderCache.fields;
+            }
+            if (_renderCache.views && !META_VIEWS[cacheTableId]) {
+                META_VIEWS[cacheTableId] = _renderCache.views;
+            }
+        }
+
         // Determine the first table early so we can pre-warm its record IDs
         // in parallel with the sidebar render (sidebar counts + first table data)
-        var firstTable = Object.keys(META_TABLES)[0];
+        var firstTable = (_renderCache && _renderCache.tableId && META_TABLES[_renderCache.tableId])
+            ? _renderCache.tableId
+            : Object.keys(META_TABLES)[0];
         var preWarmPromise = firstTable
             ? getRecordIdsForTable(firstTable).catch(function() { return []; })
             : Promise.resolve([]);
@@ -18405,6 +18564,15 @@ async function init() {
         // Local data loaded — dismiss loading overlay
         hideLoadingOverlay();
 
+        // OPTIMIZATION 4: Snapshot first table's decrypted records to sessionStorage
+        // so the next page refresh can render instantly without IDB reads + decryption.
+        if (firstTable && preWarmedRecordIds && preWarmedRecordIds.length > 0) {
+            // Defer to avoid blocking the main thread right after render
+            setTimeout(function() {
+                _saveRenderCacheToSession(firstTable, null, preWarmedRecordIds);
+            }, 1000);
+        }
+
         // After Box hydration: kick off room-data catch-up in the background
         // to apply any mutations that occurred after the AMO snapshot timestamp,
         // and to backfill field-level edit history from room timelines.
@@ -18415,6 +18583,27 @@ async function init() {
                     await backfillHistoryFromMatrix();
                 } catch (err) {
                     console.warn('[init] Post-Box room catch-up failed (non-fatal):', err);
+                }
+            })();
+        }
+
+        // OPTIMIZATION 2 (cont.): When Box AMO was deferred because we had
+        // IDB cache, run it now in the background to freshen the local data.
+        // This catches up any changes since the last session without blocking startup.
+        if (_boxHydrationDeferred) {
+            (async function _deferredBoxRefresh() {
+                try {
+                    console.log('[init] Running deferred Box AMO refresh in background');
+                    var boxResult = await hydrateFromBoxAmoFile();
+                    if (boxResult && boxResult.importedEvents > 0) {
+                        console.log('[init] Deferred Box refresh completed:', boxResult.importedEvents, 'events');
+                        SyncStatusFeed.success('Background refresh: ' + boxResult.importedEvents.toLocaleString() + ' events');
+                        try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+                    }
+                    await ensureRoomMembership();
+                    await backfillHistoryFromMatrix();
+                } catch (err) {
+                    console.warn('[init] Deferred Box refresh failed (non-fatal):', err);
                 }
             })();
         }
@@ -34028,14 +34217,50 @@ window.addEventListener('beforeunload', function() {
 
 // Initialize: Synapse login is the gate — everything derives from it
 (async function() {
+    // OPTIMIZATION 3: Start opening IndexedDB immediately, in parallel with
+    // session verification and crypto key import. openDB() has no dependency
+    // on auth state — it just opens the database connection. By starting it
+    // here, the IDB open runs concurrently with network/crypto operations
+    // and is usually already resolved by the time init() needs it.
+    window._earlyDbPromise = openDB().catch(function(err) {
+        console.warn('[Startup] Early DB open failed (will retry in init):', err);
+        return null;
+    });
+
     // Check for existing valid Synapse session
     var session = _loadSynapseSession();
     if (session && session.accessToken) {
-        var valid = await verifySynapseSession();
-        if (valid) {
-            // Set up MatrixClient with existing session
+        // OPTIMIZATION 1: Skip blocking network verification on refresh.
+        // If we have a session key in sessionStorage (survives refresh), optimistically
+        // trust the cached session and verify in the background. This removes 100-2000ms
+        // of network latency from the critical startup path.
+        var hasSessionKey = !!sessionStorage.getItem('amino_session_key');
+        var valid;
+        if (hasSessionKey) {
+            // Optimistically assume valid — verify in background after init
+            valid = true;
+            // Set up MatrixClient immediately
             MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
-
+            // Background verification: if session is actually expired, log out gracefully
+            verifySynapseSession().then(function(actuallyValid) {
+                if (!actuallyValid) {
+                    console.warn('[Startup] Background session verification failed — session expired');
+                    _clearSynapseSession();
+                    clearSessionKey();
+                    showSynapseLoginScreen();
+                    showSynapseError('Session expired. Please sign in again.');
+                }
+            }).catch(function() {
+                // Network error during background check — stay logged in (offline-friendly)
+            });
+        } else {
+            // No session key (first login or key cleared) — must verify synchronously
+            valid = await verifySynapseSession();
+            if (valid) {
+                MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+            }
+        }
+        if (valid) {
             // Try to restore encryption from session key
             var sessionKey = await loadSessionKey();
             var config = getEncryptionConfig();
