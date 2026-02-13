@@ -29,9 +29,6 @@ var AminoHydration = (function() {
     var config = {
         // Hydration
         BATCH_SIZE: 200,                    // Records per IDB write transaction
-        MAX_ROOM_PAGES: 1000,               // Max pages to paginate in Matrix room rebuild
-        ROOM_PAGE_SIZE: 200,                // Events per page in room rebuild
-
         // Sync
         POLL_INTERVAL_MS: 15000,            // HTTP polling interval (ms)
         MATRIX_SYNC_TIMEOUT_MS: 30000,      // Matrix long-poll timeout
@@ -45,13 +42,12 @@ var AminoHydration = (function() {
         OPTIMISTIC_WRITE_TTL_MS: 30000,     // 30 seconds — echo suppression window
 
         // Tier selection
-        TIER_ORDER: ['postgres', 'matrix-room'],  // Tiers to try, in order
-        // Possible values: 'bulk-download', 'postgres', 'csv', 'url', 'matrix-room'
+        TIER_ORDER: ['postgres'],  // Tiers to try, in order
+        // Possible values: 'bulk-download', 'postgres', 'csv', 'url'
         // 'bulk-download' = single request for all tables (hydrateFromBoxDownload)
         // 'postgres'      = per-table from /amino-records (hydrateAllFromPostgres)
         // 'csv'           = parse local CSV file (tierCSV)
         // 'url'           = fetch from arbitrary URL (tierURL)
-        // 'matrix-room'   = replay room timeline (rebuildTableFromRoom)
 
         // Table ordering strategy for per-table hydration
         // 'api-order'    = order returned by /amino-tables (current default)
@@ -598,10 +594,6 @@ var AminoHydration = (function() {
             } catch (err) {
                 console.error('[Hydration] Failed to hydrate table', tableId, ':', err);
                 if (err.status === 401) throw err;
-
-                // Per-table failure: try Matrix room rebuild if available
-                var roomCount = await _tryMatrixRoomFallback(ctx, tableId);
-                if (roomCount > 0) totalHydrated += roomCount;
             }
         }
         return totalHydrated;
@@ -649,15 +641,11 @@ var AminoHydration = (function() {
                             }
                             active--;
                             completed++;
-                            // Try fallback
-                            _tryMatrixRoomFallback(ctx, tid).then(function(roomCount) {
-                                if (roomCount > 0) totalHydrated += roomCount;
-                                if (queue.length === 0 && active === 0) {
-                                    resolve(totalHydrated);
-                                } else {
-                                    next();
-                                }
-                            });
+                            if (queue.length === 0 && active === 0) {
+                                resolve(totalHydrated);
+                            } else {
+                                next();
+                            }
                         });
                     })(tableId);
                 }
@@ -667,300 +655,6 @@ var AminoHydration = (function() {
             } else {
                 next();
             }
-        });
-    }
-
-    // ========================================================================
-    // TIER 3: MATRIX ROOM REBUILD (last resort)
-    //
-    // Reconstructs current state by replaying all mutations from the Matrix
-    // room timeline in reverse chronological order.
-    // ========================================================================
-
-    async function tierMatrixRoom(ctx, tableId) {
-        var roomId = ctx.tableRoomMap[tableId];
-        if (!roomId) throw new Error('No Matrix room mapped for table: ' + tableId);
-        if (!ctx.MatrixClient || !ctx.MatrixClient.isLoggedIn()) {
-            throw new Error('Matrix client unavailable for room-based rebuild');
-        }
-
-        console.warn('[Hydration] Rebuilding table from room history:', tableId, roomId);
-
-        var recordStates = {};   // recordId → { fields, resolved }
-        var paginationToken = null;
-
-        for (var page = 0; page < config.MAX_ROOM_PAGES; page++) {
-            var options = {
-                dir: 'b',  // newest first
-                limit: config.ROOM_PAGE_SIZE,
-                filter: { types: ['law.firm.record.mutate'] }
-            };
-            if (paginationToken) options.from = paginationToken;
-
-            var response = await ctx.MatrixClient.getRoomMessages(roomId, options);
-            if (!response || !response.chunk || response.chunk.length === 0) break;
-
-            var chunk = response.chunk;
-            for (var i = 0; i < chunk.length; i++) {
-                var evt = chunk[i];
-                if (!evt.content || !evt.content.recordId) continue;
-
-                var content = evt.content;
-
-                // Skip metadata events
-                var payloadSet = content.payload && content.payload._set;
-                if (payloadSet === 'table' || payloadSet === 'field' ||
-                    payloadSet === 'view' || payloadSet === 'viewConfig' ||
-                    payloadSet === 'tableSettings') {
-                    continue;
-                }
-
-                // Decrypt if needed
-                if (ctx.isEncryptedPayload && ctx.isEncryptedPayload(content)) {
-                    try {
-                        var decryptedFields = await ctx.decryptEventPayload(content);
-                        content = {
-                            recordId: content.recordId,
-                            tableId: content.tableId,
-                            op: content.op || 'ALT',
-                            payload: content.payload,
-                            set: content.set,
-                            fields: decryptedFields
-                        };
-                    } catch (decErr) {
-                        continue;  // Skip undecryptable events
-                    }
-                }
-
-                var recordId = content.recordId;
-                var state = recordStates[recordId];
-                if (!state) {
-                    state = { fields: {}, resolved: {} };
-                    recordStates[recordId] = state;
-                }
-
-                var fieldOps = normalizeFieldOps(content);
-
-                // NUL: mark fields as resolved (deleted)
-                if (fieldOps.NUL) {
-                    var nulFields = Array.isArray(fieldOps.NUL) ? fieldOps.NUL : Object.keys(fieldOps.NUL);
-                    for (var n = 0; n < nulFields.length; n++) {
-                        if (!state.resolved[nulFields[n]]) {
-                            state.resolved[nulFields[n]] = true;
-                        }
-                    }
-                }
-
-                // ALT/INS: set field value if not yet resolved
-                var assignOps = ['ALT', 'INS'];
-                for (var a = 0; a < assignOps.length; a++) {
-                    var opFields = fieldOps[assignOps[a]];
-                    if (!opFields) continue;
-                    var keys = Object.keys(opFields);
-                    for (var k = 0; k < keys.length; k++) {
-                        var key = keys[k];
-                        if (!state.resolved[key]) {
-                            state.fields[key] = opFields[key];
-                            state.resolved[key] = true;
-                        }
-                    }
-                }
-            }
-
-            if (!response.end || chunk.length < config.ROOM_PAGE_SIZE) break;
-            paginationToken = response.end;
-        }
-
-        // Clear and write
-        await ctx.deleteTableRecords(tableId);
-
-        var recordIds = Object.keys(recordStates);
-        var tableName = _getTableName(ctx, tableId);
-
-        for (var b = 0; b < recordIds.length; b += config.BATCH_SIZE) {
-            var batchIds = recordIds.slice(b, b + config.BATCH_SIZE);
-            var batchRecords = batchIds.map(function(id) {
-                return {
-                    id: id,
-                    tableId: tableId,
-                    tableName: tableName,
-                    fields: recordStates[id].fields,
-                    lastSynced: new Date().toISOString()
-                };
-            });
-            await writeRecordBatch(ctx, batchRecords, tableId);
-        }
-
-        // Write cursor (client-clock — Matrix rooms don't provide a sync cursor)
-        await VersionTracker.writeCursor(ctx, tableId, new Date().toISOString(), 'matrix-room-rebuild');
-
-        // Cache
-        var allRebuilt = recordIds.map(function(id) {
-            return {
-                id: id,
-                tableId: tableId,
-                tableName: tableName,
-                fields: recordStates[id].fields,
-                lastSynced: new Date().toISOString()
-            };
-        });
-        ctx.cacheFullTable(tableId, allRebuilt);
-
-        console.warn('[Hydration] Rebuilt', recordIds.length, 'records for', tableId, 'from room history');
-        return recordIds.length;
-    }
-
-    // Try Matrix room fallback for a single table. Returns record count or 0.
-    async function _tryMatrixRoomFallback(ctx, tableId) {
-        if (!ctx.tableRoomMap[tableId] || !ctx.MatrixClient || !ctx.MatrixClient.isLoggedIn()) {
-            return 0;
-        }
-        try {
-            var count = await tierMatrixRoom(ctx, tableId);
-            console.log('[Hydration] Fallback: rebuilt', count, 'records from room for', tableId);
-            return count;
-        } catch (roomErr) {
-            console.warn('[Hydration] Room fallback also failed for', tableId, ':', roomErr.message || roomErr);
-            return 0;
-        }
-    }
-
-    // ========================================================================
-    // REAL-TIME SYNC — Post-hydration event application.
-    //
-    // applyMutateEvent is the core function that applies a single mutation
-    // to a local record. Used by both Matrix sync and HTTP polling.
-    // ========================================================================
-
-    async function applyMutateEvent(ctx, event, roomId) {
-        var content = event.content;
-        if (!content) return;
-
-        // --- DEDUP: skip events already processed ---
-        var eventId = event.event_id;
-        if (markEventProcessed(eventId)) {
-            return;  // Already applied
-        }
-
-        // --- FILTER: skip metadata events ---
-        var payloadSet = content.payload && content.payload._set;
-        if (payloadSet === 'table' || payloadSet === 'field' ||
-            payloadSet === 'view' || payloadSet === 'viewConfig' ||
-            payloadSet === 'tableSettings') {
-            return;
-        }
-
-        // --- DECRYPT if encrypted ---
-        if (ctx.isEncryptedPayload && ctx.isEncryptedPayload(content)) {
-            try {
-                var decryptedFields = await ctx.decryptEventPayload(content);
-                content = {
-                    recordId: content.recordId,
-                    tableId: content.tableId,
-                    op: content.op || 'ALT',
-                    fields: decryptedFields
-                };
-            } catch (err) {
-                ctx.onDecryptFailure && ctx.onDecryptFailure(eventId, err);
-                return;
-            }
-        }
-
-        if (!content.recordId) return;
-
-        var recordId = content.recordId;
-        var tableId = ctx.roomTableMap[roomId];
-        if (!tableId && content.set) {
-            tableId = content.set.replace(/^airtable:/, '');
-        }
-        if (!tableId) {
-            console.warn('[Hydration] Cannot determine tableId for event in room', roomId);
-            return;
-        }
-
-        // --- READ existing record ---
-        var tx = ctx.db.transaction('records', 'readonly');
-        var existing = await ctx.idbGet(tx.objectStore('records'), recordId);
-
-        var fields;
-        if (existing) {
-            if (typeof existing.fields === 'string') {
-                fields = JSON.parse(existing.fields);
-            } else {
-                fields = JSON.parse(await ctx.decrypt(existing.fields));
-            }
-        } else {
-            fields = {};
-        }
-
-        // --- NORMALIZE field ops ---
-        var fieldOps = normalizeFieldOps(content);
-
-        // --- ECHO CHECK ---
-        if (isOptimisticEcho(recordId, fieldOps)) {
-            // Still emit for field history, but skip the write cycle
-            ctx.emitEvent && ctx.emitEvent('amino:record-mutate', {
-                recordId: recordId,
-                tableId: tableId,
-                eventId: eventId,
-                sender: event.sender || null,
-                timestamp: event.origin_server_ts || Date.now(),
-                fieldOps: fieldOps,
-                echoSuppressed: true
-            });
-            return;
-        }
-
-        // --- MERGE: apply field operations ---
-        applyFieldOps(fields, fieldOps);
-
-        // --- WRITE back to IDB ---
-        var storedFields;
-        if (ctx.deferEncryption) {
-            storedFields = JSON.stringify(fields);
-        } else {
-            storedFields = await ctx.encrypt(JSON.stringify(fields));
-        }
-
-        // Use server timestamp for lastSynced, not client clock
-        var lastSynced = Timestamps.fromMatrixEvent(event);
-
-        var writeTx = ctx.db.transaction('records', 'readwrite');
-        await ctx.idbPut(writeTx.objectStore('records'), {
-            id: recordId,
-            tableId: tableId,
-            tableName: (existing && existing.tableName) || tableId,
-            fields: storedFields,
-            lastSynced: lastSynced
-        });
-        await ctx.idbTxDone(writeTx);
-
-        // --- CACHE ---
-        ctx.cacheRecord({
-            id: recordId,
-            tableId: tableId,
-            tableName: (existing && existing.tableName) || tableId,
-            fields: fields,
-            lastSynced: lastSynced
-        });
-
-        // --- EMIT ---
-        ctx.emitEvent && ctx.emitEvent('amino:record-update', {
-            recordId: recordId,
-            tableId: tableId,
-            source: 'matrix'
-        });
-        ctx.emitEvent && ctx.emitEvent('amino:record-mutate', {
-            recordId: recordId,
-            tableId: tableId,
-            eventId: eventId,
-            sender: event.sender || null,
-            timestamp: event.origin_server_ts || Date.now(),
-            fieldOps: fieldOps,
-            source: content.source || null,
-            sourceTimestamp: content.sourceTimestamp || null,
-            actor: (content.payload && content.payload._a) || null,
-            device: (content.payload && content.payload._d) || content.device || null
         });
     }
 
@@ -1067,18 +761,6 @@ var AminoHydration = (function() {
                     result = await tierCSV(ctx, options);
                 } else if (tier === 'url') {
                     result = await tierURL(ctx, options);
-                } else if (tier === 'matrix-room') {
-                    // Matrix room is per-table, hydrate all
-                    var total = 0;
-                    var orderedIds = orderTables(ctx.tableIds, ctx.tables);
-                    for (var t = 0; t < orderedIds.length; t++) {
-                        try {
-                            total += await tierMatrixRoom(ctx, orderedIds[t]);
-                        } catch (err) {
-                            console.error('[Hydration] Matrix room failed for', orderedIds[t], ':', err);
-                        }
-                    }
-                    result = { success: true, totalRecords: total, totalTables: orderedIds.length };
                 } else {
                     console.warn('[Hydration] Unknown tier:', tier);
                     continue;
@@ -1593,9 +1275,6 @@ var AminoHydration = (function() {
         normalizeFieldOps: normalizeFieldOps,
         applyFieldOps: applyFieldOps,
 
-        // Real-time event application
-        applyMutateEvent: applyMutateEvent,
-
         // Record pipeline
         normalizeRecord: normalizeRecord,
         writeRecordsBatched: writeRecordsBatched,
@@ -1603,7 +1282,6 @@ var AminoHydration = (function() {
         // Individual tiers (for direct use or testing)
         tierBulkDownload: tierBulkDownload,
         tierPostgres: tierPostgres,
-        tierMatrixRoom: tierMatrixRoom,
         tierCSV: tierCSV,
         tierURL: tierURL,
         syncTableFromPostgres: syncTableFromPostgres,
@@ -1640,12 +1318,11 @@ var AminoHydration = (function() {
 //       roomTableMap: _roomTableMap,
 //       onlineOnlyMode: _onlineOnlyMode,
 //       deferEncryption: _deferEncryption,
-//       MatrixClient: MatrixClient,
 //       BOX_DOWNLOAD_WEBHOOK: BOX_DOWNLOAD_WEBHOOK,
 //
 //       // Auth
 //       getAuthToken: function() {
-//           return (MatrixClient && MatrixClient.getAccessToken && MatrixClient.getAccessToken())
+//           return (typeof MatrixClient !== 'undefined' && MatrixClient.getAccessToken && MatrixClient.getAccessToken())
 //               ? MatrixClient.getAccessToken() : _accessToken;
 //       },
 //
@@ -1664,8 +1341,6 @@ var AminoHydration = (function() {
 //       // Encryption
 //       encrypt: function(plaintext) { return encrypt(_cryptoKey, plaintext); },
 //       decrypt: function(ciphertext) { return decrypt(_cryptoKey, ciphertext); },
-//       isEncryptedPayload: isEncryptedPayload,
-//       decryptEventPayload: decryptEventPayload,
 //
 //       // API
 //       apiFetch: apiFetch,
@@ -1673,17 +1348,6 @@ var AminoHydration = (function() {
 //       // Events
 //       emitEvent: function(name, detail) {
 //           window.dispatchEvent(new CustomEvent(name, { detail: detail }));
-//       },
-//
-//       // Error hooks
-//       onDecryptFailure: function(eventId, err) {
-//           _consecutiveDecryptFailures++;
-//           console.warn('[Hydration] Decrypt failure:', err.message);
-//           if (_consecutiveDecryptFailures >= DECRYPT_FAILURE_THRESHOLD) {
-//               window.dispatchEvent(new CustomEvent('amino:sync-error', {
-//                   detail: { type: 'decrypt-failure-critical', consecutiveFailures: _consecutiveDecryptFailures }
-//               }));
-//           }
 //       }
 //   };
 // ============================================================================
