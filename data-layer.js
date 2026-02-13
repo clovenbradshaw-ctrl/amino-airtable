@@ -34,8 +34,6 @@ var AminoData = (function() {
     var _onlineOnlyMode = false;     // when true, skip IndexedDB reads/writes — always fetch from API
     var _connectivityCheckTimer = null;
     var _tables = [];
-    var _tableRoomMap = {}; // tableId -> matrixRoomId
-    var _roomTableMap = {}; // matrixRoomId -> tableId (reverse lookup)
     var _initialized = false;
     var _lastAirtableSyncTrigger = 0;
     var _airtableSyncInFlight = false;
@@ -484,18 +482,6 @@ var AminoData = (function() {
         _tables = tables;
         _tableIds = tables.map(function(t) { return t.table_id; });
 
-        // Build tableId <-> matrixRoomId lookup maps
-        _tableRoomMap = {};
-        _roomTableMap = {};
-        for (var j = 0; j < tables.length; j++) {
-            var t = tables[j];
-            if (t.matrix_room_id) {
-                _tableRoomMap[t.table_id] = t.matrix_room_id;
-                _roomTableMap[t.matrix_room_id] = t.table_id;
-            }
-        }
-        console.log('[AminoData] Built table-room map:', Object.keys(_tableRoomMap).length, 'mappings');
-
         return tables;
     }
 
@@ -507,16 +493,6 @@ var AminoData = (function() {
 
         _tables = tables;
         _tableIds = tables.map(function(t) { return t.table_id; });
-
-        _tableRoomMap = {};
-        _roomTableMap = {};
-        for (var j = 0; j < tables.length; j++) {
-            var t = tables[j];
-            if (t.matrix_room_id) {
-                _tableRoomMap[t.table_id] = t.matrix_room_id;
-                _roomTableMap[t.matrix_room_id] = t.table_id;
-            }
-        }
 
         return tables;
     }
@@ -788,8 +764,6 @@ var AminoData = (function() {
             db: _db,
             tableIds: _tableIds,
             tables: _tables,
-            tableRoomMap: _tableRoomMap,
-            roomTableMap: _roomTableMap,
             onlineOnlyMode: _onlineOnlyMode,
             deferEncryption: _deferEncryption,
             BOX_DOWNLOAD_WEBHOOK: BOX_DOWNLOAD_WEBHOOK,
@@ -1760,17 +1734,6 @@ var AminoData = (function() {
         _tables = await idbGetAll(tablesTx.objectStore('tables'));
         _tableIds = _tables.map(function(t) { return t.table_id; });
 
-        // Rebuild table-room map from cached tables
-        _tableRoomMap = {};
-        _roomTableMap = {};
-        for (var i = 0; i < _tables.length; i++) {
-            var t = _tables[i];
-            if (t.matrix_room_id) {
-                _tableRoomMap[t.table_id] = t.matrix_room_id;
-                _roomTableMap[t.matrix_room_id] = t.table_id;
-            }
-        }
-
         _deferEncryption = true;
         _initialized = true;
 
@@ -2181,18 +2144,6 @@ var AminoData = (function() {
         return _tableIds.slice();
     }
 
-    function getTableRoomMap() {
-        return Object.assign({}, _tableRoomMap); // Return copy
-    }
-
-    function getRoomForTable(tableId) {
-        return _tableRoomMap[tableId] || null;
-    }
-
-    function getTableForRoom(roomId) {
-        return _roomTableMap[roomId] || null;
-    }
-
     // ============ Encrypt-on-Logout: Safety Handlers ============
     // Best-effort encryption when the page is being discarded without a
     // clean logout. visibilitychange → hidden fires before beforeunload
@@ -2310,9 +2261,6 @@ var AminoData = (function() {
         setOnlineOnlyMode: setOnlineOnlyMode,
         getTableList: getTableList,
         getTableIds: getTableIds,
-        getTableRoomMap: getTableRoomMap,
-        getRoomForTable: getRoomForTable,
-        getTableForRoom: getTableForRoom,
 
         // Sync deduplication (called by editRecord in index.html)
         trackOptimisticWrite: _trackOptimisticWrite,
