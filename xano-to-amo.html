@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xano → AMO Converter</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+}
+h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #fff;
+}
+.subtitle {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 32px;
+}
+.container {
+    width: 100%;
+    max-width: 720px;
+}
+.drop-zone {
+    border: 2px dashed #333;
+    border-radius: 12px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: #161822;
+    margin-bottom: 24px;
+}
+.drop-zone:hover, .drop-zone.dragover {
+    border-color: #5b7fff;
+    background: #1a1e30;
+}
+.drop-zone p {
+    font-size: 15px;
+    color: #aaa;
+    margin-bottom: 12px;
+}
+.drop-zone .formats {
+    font-size: 12px;
+    color: #666;
+}
+.drop-zone input[type="file"] { display: none; }
+.status-panel {
+    background: #161822;
+    border: 1px solid #222;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 24px;
+    display: none;
+}
+.status-panel.visible { display: block; }
+.status-panel h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 12px;
+}
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.stat-box {
+    background: #1e2130;
+    border-radius: 8px;
+    padding: 12px;
+}
+.stat-box .label {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+.stat-box .value {
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+}
+.progress-bar {
+    width: 100%;
+    height: 4px;
+    background: #222;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+.progress-bar .fill {
+    height: 100%;
+    background: #5b7fff;
+    width: 0%;
+    transition: width 0.3s;
+    border-radius: 2px;
+}
+.progress-text {
+    font-size: 12px;
+    color: #888;
+}
+.table-preview {
+    background: #161822;
+    border: 1px solid #222;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 24px;
+    display: none;
+    max-height: 360px;
+    overflow-y: auto;
+}
+.table-preview.visible { display: block; }
+.table-preview h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 12px;
+}
+.table-preview table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.table-preview th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid #333;
+    color: #aaa;
+    font-weight: 500;
+    position: sticky;
+    top: 0;
+    background: #161822;
+}
+.table-preview td {
+    padding: 6px 12px;
+    border-bottom: 1px solid #1e2130;
+    color: #ccc;
+}
+.table-preview tr:hover td { background: #1a1e30; }
+.download-btn {
+    display: none;
+    width: 100%;
+    padding: 14px;
+    background: #5b7fff;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.download-btn:hover { background: #4a6fee; }
+.download-btn.visible { display: block; }
+.error-box {
+    background: #2a1a1a;
+    border: 1px solid #5a2020;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 24px;
+    display: none;
+    color: #ff8888;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.error-box.visible { display: block; }
+.log-panel {
+    background: #161822;
+    border: 1px solid #222;
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 24px;
+    display: none;
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    color: #888;
+    line-height: 1.6;
+}
+.log-panel.visible { display: block; }
+.log-panel .log-info { color: #888; }
+.log-panel .log-warn { color: #dda044; }
+.log-panel .log-ok { color: #44bb77; }
+</style>
+</head>
+<body>
+
+<h1>Xano &rarr; AMO Converter</h1>
+<p class="subtitle">Convert a Xano aminoStream export to a current-state .amo file</p>
+
+<div class="container">
+    <div class="drop-zone" id="dropZone">
+        <p>Drop your Xano export file here, or click to browse</p>
+        <span class="formats">Accepts JSON array or CSV (aminoStream table export)</span>
+        <input type="file" id="fileInput" accept=".json,.csv,.txt">
+    </div>
+
+    <div class="error-box" id="errorBox"></div>
+
+    <div class="status-panel" id="statusPanel">
+        <h3>Processing</h3>
+        <div class="stat-grid">
+            <div class="stat-box">
+                <div class="label">Events</div>
+                <div class="value" id="statEvents">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Tables</div>
+                <div class="value" id="statTables">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Records</div>
+                <div class="value" id="statRecords">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Fields</div>
+                <div class="value" id="statFields">0</div>
+            </div>
+        </div>
+        <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+        <div class="progress-text" id="progressText">Waiting...</div>
+    </div>
+
+    <div class="table-preview" id="tablePreview">
+        <h3>Tables in snapshot</h3>
+        <table>
+            <thead><tr><th>Table</th><th>Records</th><th>Fields</th></tr></thead>
+            <tbody id="tablePreviewBody"></tbody>
+        </table>
+    </div>
+
+    <button class="download-btn" id="downloadBtn">Download .amo file</button>
+
+    <div class="log-panel" id="logPanel"></div>
+</div>
+
+<!-- MessagePack (msgpack-lite browser build) -->
+<script src="https://cdn.jsdelivr.net/npm/@peergrade/msgpack-lite@0.1.27/dist/msgpack.min.js"></script>
+<!-- pako (gzip) -->
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
+<script>
+(function() {
+    'use strict';
+
+    // ---- Resolve library references ----
+    // msgpack-lite browser build exposes window.msgpack
+    // pako exposes window.pako
+    var MessagePack = window.msgpack;
+    if (!MessagePack && typeof msgpack !== 'undefined') MessagePack = msgpack;
+
+    // ---- DOM refs ----
+    var dropZone = document.getElementById('dropZone');
+    var fileInput = document.getElementById('fileInput');
+    var errorBox = document.getElementById('errorBox');
+    var statusPanel = document.getElementById('statusPanel');
+    var statEvents = document.getElementById('statEvents');
+    var statTables = document.getElementById('statTables');
+    var statRecords = document.getElementById('statRecords');
+    var statFields = document.getElementById('statFields');
+    var progressFill = document.getElementById('progressFill');
+    var progressText = document.getElementById('progressText');
+    var tablePreview = document.getElementById('tablePreview');
+    var tablePreviewBody = document.getElementById('tablePreviewBody');
+    var downloadBtn = document.getElementById('downloadBtn');
+    var logPanel = document.getElementById('logPanel');
+
+    var generatedBlob = null;
+    var generatedFilename = 'amino-export.amo';
+
+    // ---- Logging ----
+    function log(msg, cls) {
+        logPanel.classList.add('visible');
+        var line = document.createElement('div');
+        line.className = cls || 'log-info';
+        line.textContent = msg;
+        logPanel.appendChild(line);
+        logPanel.scrollTop = logPanel.scrollHeight;
+    }
+
+    function showError(msg) {
+        errorBox.textContent = msg;
+        errorBox.classList.add('visible');
+    }
+
+    function clearError() {
+        errorBox.textContent = '';
+        errorBox.classList.remove('visible');
+    }
+
+    // ---- Drop zone ----
+    dropZone.addEventListener('click', function() { fileInput.click(); });
+    dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', function() {
+        if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
+    });
+
+    // ---- Download ----
+    downloadBtn.addEventListener('click', function() {
+        if (!generatedBlob) return;
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(generatedBlob);
+        a.download = generatedFilename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+    });
+
+    // ---- Main handler ----
+    function handleFile(file) {
+        clearError();
+        statusPanel.classList.add('visible');
+        tablePreview.classList.remove('visible');
+        downloadBtn.classList.remove('visible');
+        logPanel.innerHTML = '';
+        logPanel.classList.remove('visible');
+        generatedBlob = null;
+
+        progressText.textContent = 'Reading file...';
+        progressFill.style.width = '0%';
+        statEvents.textContent = '0';
+        statTables.textContent = '0';
+        statRecords.textContent = '0';
+        statFields.textContent = '0';
+
+        log('Reading: ' + file.name + ' (' + formatBytes(file.size) + ')');
+
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                var text = e.target.result;
+                log('Parsing input...');
+                var events = parseXanoExport(text, file.name);
+                log('Parsed ' + events.length + ' events', 'log-ok');
+                processAndConvert(events, file.name);
+            } catch (err) {
+                showError('Failed to parse file:\n' + err.message);
+                progressText.textContent = 'Error';
+                log('ERROR: ' + err.message, 'log-warn');
+            }
+        };
+        reader.onerror = function() {
+            showError('Failed to read file');
+            log('ERROR: File read failed', 'log-warn');
+        };
+        reader.readAsText(file);
+    }
+
+    // ---- Parse Xano export (JSON or CSV) ----
+    function parseXanoExport(text, filename) {
+        text = text.trim();
+
+        // Try JSON first
+        if (text.charAt(0) === '[' || text.charAt(0) === '{') {
+            var parsed = JSON.parse(text);
+
+            // If it's a single object wrapping an array (some Xano exports do this)
+            if (!Array.isArray(parsed)) {
+                // Look for an array property (items, records, data, result, etc.)
+                var arrayKeys = ['items', 'records', 'data', 'result', 'rows', 'aminoStream'];
+                for (var i = 0; i < arrayKeys.length; i++) {
+                    if (Array.isArray(parsed[arrayKeys[i]])) {
+                        parsed = parsed[arrayKeys[i]];
+                        break;
+                    }
+                }
+                // If still not an array, look for any array property
+                if (!Array.isArray(parsed)) {
+                    var keys = Object.keys(parsed);
+                    for (var k = 0; k < keys.length; k++) {
+                        if (Array.isArray(parsed[keys[k]]) && parsed[keys[k]].length > 0) {
+                            parsed = parsed[keys[k]];
+                            break;
+                        }
+                    }
+                }
+                if (!Array.isArray(parsed)) {
+                    throw new Error('JSON is not an array and no array property found. Expected an array of aminoStream events.');
+                }
+            }
+
+            if (parsed.length === 0) {
+                throw new Error('Empty array — no events to process.');
+            }
+
+            // Validate that these look like aminoStream events
+            validateEvents(parsed);
+            return normalizeEvents(parsed);
+        }
+
+        // Try CSV
+        return parseCSV(text);
+    }
+
+    // ---- CSV parser ----
+    function parseCSV(text) {
+        var lines = text.split(/\r?\n/);
+        if (lines.length < 2) throw new Error('CSV has no data rows');
+
+        var headers = parseCSVLine(lines[0]);
+
+        // Validate required columns
+        var requiredCols = ['id', 'set', 'recordId', 'operator'];
+        var headerLower = headers.map(function(h) { return h.toLowerCase().trim(); });
+        for (var r = 0; r < requiredCols.length; r++) {
+            if (headerLower.indexOf(requiredCols[r].toLowerCase()) === -1) {
+                throw new Error('CSV missing required column: ' + requiredCols[r] + '\nFound: ' + headers.join(', '));
+            }
+        }
+
+        // Map header names to their expected casing
+        var colMap = {};
+        var canonical = { 'id': 'id', 'set': 'set', 'recordid': 'recordId', 'record_id': 'recordId',
+                          'operator': 'operator', 'created_at': 'created_at', 'createdat': 'created_at',
+                          'payload': 'payload', 'uuid': 'uuid' };
+        for (var h = 0; h < headers.length; h++) {
+            var lower = headers[h].toLowerCase().trim().replace(/"/g, '');
+            colMap[h] = canonical[lower] || headers[h].trim().replace(/"/g, '');
+        }
+
+        var events = [];
+        for (var i = 1; i < lines.length; i++) {
+            if (!lines[i].trim()) continue;
+            var values = parseCSVLine(lines[i]);
+            var obj = {};
+            for (var v = 0; v < values.length; v++) {
+                var key = colMap[v] || ('col_' + v);
+                var val = values[v];
+                // Try to parse numeric id
+                if (key === 'id') {
+                    var numVal = parseInt(val, 10);
+                    obj[key] = isNaN(numVal) ? val : numVal;
+                } else if (key === 'payload') {
+                    // Payload may be JSON string — keep as-is, we parse it later
+                    obj[key] = val;
+                } else {
+                    obj[key] = val;
+                }
+            }
+            events.push(obj);
+        }
+
+        if (events.length === 0) throw new Error('CSV has headers but no data rows');
+        validateEvents(events);
+        return normalizeEvents(events);
+    }
+
+    function parseCSVLine(line) {
+        var result = [];
+        var current = '';
+        var inQuotes = false;
+        for (var i = 0; i < line.length; i++) {
+            var ch = line.charAt(i);
+            if (inQuotes) {
+                if (ch === '"') {
+                    if (i + 1 < line.length && line.charAt(i + 1) === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = false;
+                    }
+                } else {
+                    current += ch;
+                }
+            } else {
+                if (ch === '"') {
+                    inQuotes = true;
+                } else if (ch === ',') {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += ch;
+                }
+            }
+        }
+        result.push(current);
+        return result;
+    }
+
+    // ---- Validation ----
+    function validateEvents(events) {
+        var sample = events[0];
+        var hasId = ('id' in sample);
+        var hasSet = ('set' in sample);
+        var hasRecordId = ('recordId' in sample || 'record_id' in sample || 'recordid' in sample);
+        var hasOperator = ('operator' in sample);
+
+        if (!hasId || !hasSet || !hasRecordId || !hasOperator) {
+            var found = Object.keys(sample).join(', ');
+            throw new Error(
+                'Events do not look like aminoStream records.\n' +
+                'Required: id, set, recordId, operator\n' +
+                'Found keys: ' + found
+            );
+        }
+    }
+
+    // Normalize field names from various Xano export formats
+    function normalizeEvents(events) {
+        return events.map(function(e) {
+            var norm = {};
+            // Map known variant names
+            norm.id = e.id != null ? (typeof e.id === 'number' ? e.id : parseInt(e.id, 10) || 0) : 0;
+            norm.set = e.set || '';
+            norm.recordId = e.recordId || e.record_id || e.recordid || '';
+            norm.operator = e.operator || '';
+            norm.created_at = e.created_at || e.createdAt || e.createdat || null;
+            norm.uuid = e.uuid || null;
+
+            // Payload: could be string (needs parsing later), object, or missing
+            if (e.payload !== undefined && e.payload !== null) {
+                norm.payload = e.payload;
+            } else {
+                norm.payload = null;
+            }
+
+            // Preserve any extra columns
+            var knownKeys = { id:1, set:1, recordId:1, record_id:1, recordid:1,
+                              operator:1, created_at:1, createdAt:1, createdat:1,
+                              payload:1, uuid:1 };
+            var keys = Object.keys(e);
+            for (var k = 0; k < keys.length; k++) {
+                if (!knownKeys[keys[k]]) {
+                    norm[keys[k]] = e[keys[k]];
+                }
+            }
+            return norm;
+        });
+    }
+
+    // ---- Parse payload safely ----
+    function parsePayload(payload) {
+        if (payload === null || payload === undefined) return null;
+        if (typeof payload === 'object') return payload;
+        if (typeof payload === 'string') {
+            var s = payload.trim();
+            if (!s) return null;
+            try { return JSON.parse(s); } catch (e) { return null; }
+        }
+        return null;
+    }
+
+    // ---- Infer field type from sample value ----
+    function inferFieldType(value) {
+        if (value === null || value === undefined) return 'unknown';
+        if (Array.isArray(value)) {
+            if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && value[0].url) return 'multipleAttachments';
+            if (value.length > 0 && typeof value[0] === 'string' && value[0].substring(0, 3) === 'rec') return 'multipleRecordLinks';
+            return 'multipleSelects';
+        }
+        if (typeof value === 'object') {
+            if (value.url) return 'multipleAttachments';
+            return 'object';
+        }
+        if (typeof value === 'number') return 'number';
+        if (typeof value === 'boolean') return 'checkbox';
+        if (typeof value === 'string') {
+            if (/^\d{4}-\d{2}-\d{2}/.test(value)) return 'date';
+            if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'email';
+            if (/^https?:\/\//.test(value)) return 'url';
+            return 'singleLineText';
+        }
+        return 'unknown';
+    }
+
+    // ---- Process events into current state + produce AMO ----
+    function processAndConvert(events, filename) {
+        var META_TABLES = {};
+        var META_FIELDS = {};
+        var META_VIEWS = {};
+        var tableDataMap = {}; // tableId -> { recordId -> fields }
+        var total = events.length;
+        var totalRecordCount = 0;
+        var totalFieldCount = 0;
+
+        log('Replaying ' + total + ' events to build current state...');
+        statEvents.textContent = total.toLocaleString();
+        progressText.textContent = 'Processing events...';
+        progressFill.style.width = '10%';
+
+        // Sort events by id to ensure correct replay order
+        events.sort(function(a, b) { return a.id - b.id; });
+
+        var maxId = 0;
+
+        for (var i = 0; i < total; i++) {
+            var e = events[i];
+            if (!e || !e.set || !e.recordId) continue;
+
+            var payload = parsePayload(e.payload);
+            if (!payload || typeof payload !== 'object') continue;
+
+            var recordType = payload._set;
+            var setName = e.set;
+            var recordId = e.recordId;
+
+            if (e.id > maxId) maxId = e.id;
+
+            if (recordType === 'table') {
+                var tableId = recordId;
+                if (!META_TABLES[tableId]) META_TABLES[tableId] = {};
+                var tableData = META_TABLES[tableId];
+                tableData.tableId = tableId;
+                applyPayloadFieldsSimple(tableData, payload);
+                if (payload.tableName) tableData.tableName = payload.tableName;
+                if (payload.primaryFieldId) tableData.primaryFieldId = payload.primaryFieldId;
+                if (payload.displayNameFieldId) tableData.displayNameFieldId = payload.displayNameFieldId;
+                if (payload.tableId) tableData.tableId = payload.tableId;
+
+            } else if (recordType === 'field') {
+                var tblId = payload.tableId || setName.replace('airtable:', '');
+                var fieldId = recordId;
+                if (!META_FIELDS[tblId]) META_FIELDS[tblId] = {};
+                if (!META_FIELDS[tblId][fieldId]) META_FIELDS[tblId][fieldId] = {};
+                var fieldData = META_FIELDS[tblId][fieldId];
+                fieldData.tableId = tblId;
+                fieldData.fieldId = fieldId;
+                applyPayloadFieldsSimple(fieldData, payload);
+                if (payload.fieldName) fieldData.fieldName = payload.fieldName;
+                if (payload.fieldType) fieldData.fieldType = payload.fieldType;
+                if (payload.fieldId) fieldData.fieldId = payload.fieldId;
+                if (payload.options) fieldData.options = payload.options;
+                if (payload.readOnly != null) fieldData.readOnly = payload.readOnly;
+
+            } else if (recordType === 'view') {
+                var tblId2 = payload.tableId || setName.replace('airtable:', '');
+                var viewId = recordId;
+                if (!META_VIEWS[tblId2]) META_VIEWS[tblId2] = {};
+                if (!META_VIEWS[tblId2][viewId]) META_VIEWS[tblId2][viewId] = {};
+                var viewData = META_VIEWS[tblId2][viewId];
+                viewData.tableId = tblId2;
+                viewData.viewId = viewId;
+                applyPayloadFieldsSimple(viewData, payload);
+                if (payload.viewName) viewData.viewName = payload.viewName;
+                if (payload.viewType) viewData.viewType = payload.viewType;
+                if (payload.viewId) viewData.viewId = payload.viewId;
+
+            } else if (recordType === 'viewConfig') {
+                var tblId3 = payload.tableId || setName.replace('airtable:', '');
+                var viewId2 = recordId;
+                if (!META_VIEWS[tblId3]) META_VIEWS[tblId3] = {};
+                if (!META_VIEWS[tblId3][viewId2]) META_VIEWS[tblId3][viewId2] = { tableId: tblId3, viewId: viewId2 };
+                var vd = META_VIEWS[tblId3][viewId2];
+                if (payload.viewName) vd.viewName = payload.viewName;
+                if (payload.hiddenFieldIds) vd.hiddenFieldIds = payload.hiddenFieldIds;
+                if (payload.fieldOrder) vd.fieldOrder = payload.fieldOrder;
+                if (payload.filters) vd.filters = payload.filters;
+                if (payload.sorts) vd.sorts = payload.sorts;
+
+            } else if (recordType === 'tableSettings') {
+                // Skip user-specific settings for the export
+
+            } else {
+                // Data record
+                var dtblId = setName.replace('airtable:', '');
+                var pfields = payload.fields;
+                if (!pfields || typeof pfields !== 'object') continue;
+
+                // Auto-create placeholder table
+                if (!META_TABLES[dtblId]) {
+                    META_TABLES[dtblId] = { tableId: dtblId, tableName: dtblId, _placeholder: true };
+                }
+
+                // Auto-create placeholder fields
+                if (!META_FIELDS[dtblId]) META_FIELDS[dtblId] = {};
+                var allFieldIds = Object.keys(pfields.INS || {})
+                    .concat(Object.keys(pfields.ALT || {}))
+                    .concat(Object.keys(pfields.SYN || {}))
+                    .concat(Array.isArray(pfields.NUL) ? pfields.NUL : []);
+                for (var fi = 0; fi < allFieldIds.length; fi++) {
+                    var fid = allFieldIds[fi];
+                    if (!META_FIELDS[dtblId][fid]) {
+                        var sv = (pfields.INS && pfields.INS[fid]) || (pfields.ALT && pfields.ALT[fid]) || (pfields.SYN && pfields.SYN[fid]);
+                        META_FIELDS[dtblId][fid] = {
+                            tableId: dtblId, fieldId: fid, fieldName: fid,
+                            fieldType: inferFieldType(sv), _placeholder: true
+                        };
+                    }
+                }
+
+                if (!tableDataMap[dtblId]) tableDataMap[dtblId] = {};
+                if (!tableDataMap[dtblId][recordId]) tableDataMap[dtblId][recordId] = {};
+
+                var state = tableDataMap[dtblId][recordId];
+                if (pfields.INS) assignShallow(state, pfields.INS);
+                if (pfields.ALT) assignShallow(state, pfields.ALT);
+                if (pfields.SYN) assignShallow(state, pfields.SYN);
+                if (pfields.NUL && Array.isArray(pfields.NUL)) {
+                    for (var ni = 0; ni < pfields.NUL.length; ni++) {
+                        delete state[pfields.NUL[ni]];
+                    }
+                }
+            }
+
+            // Update progress periodically
+            if (i > 0 && i % 2000 === 0) {
+                var pct = Math.round((i / total) * 80) + 10;
+                progressFill.style.width = pct + '%';
+            }
+        }
+
+        progressFill.style.width = '90%';
+        progressText.textContent = 'Building AMO binary...';
+
+        // Count totals
+        var tableNames = Object.keys(META_TABLES);
+        for (var t = 0; t < tableNames.length; t++) {
+            var tid = tableNames[t];
+            if (tableDataMap[tid]) totalRecordCount += Object.keys(tableDataMap[tid]).length;
+            if (META_FIELDS[tid]) totalFieldCount += Object.keys(META_FIELDS[tid]).length;
+        }
+
+        statTables.textContent = tableNames.length.toLocaleString();
+        statRecords.textContent = totalRecordCount.toLocaleString();
+        statFields.textContent = totalFieldCount.toLocaleString();
+
+        log('Found ' + tableNames.length + ' tables, ' + totalRecordCount + ' records, ' + totalFieldCount + ' fields', 'log-ok');
+
+        // Show table preview
+        tablePreviewBody.innerHTML = '';
+        for (var tp = 0; tp < tableNames.length; tp++) {
+            var tpId = tableNames[tp];
+            var tName = META_TABLES[tpId].tableName || tpId;
+            var recCount = tableDataMap[tpId] ? Object.keys(tableDataMap[tpId]).length : 0;
+            var fldCount = META_FIELDS[tpId] ? Object.keys(META_FIELDS[tpId]).length : 0;
+            var row = document.createElement('tr');
+            row.innerHTML = '<td>' + escapeHtml(tName) + '</td><td>' + recCount.toLocaleString() + '</td><td>' + fldCount + '</td>';
+            tablePreviewBody.appendChild(row);
+        }
+        tablePreview.classList.add('visible');
+
+        // Build AMO binary
+        var meta = { tables: META_TABLES, fields: META_FIELDS };
+        var amoBinary = produceAmo(events, meta, maxId);
+
+        log('AMO file size: ' + formatBytes(amoBinary.length), 'log-ok');
+
+        // Create downloadable blob
+        generatedBlob = new Blob([amoBinary], { type: 'application/x-amino-snapshot' });
+        generatedFilename = (filename || 'export').replace(/\.[^.]+$/, '') + '.amo';
+
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Done — ready to download';
+        downloadBtn.classList.add('visible');
+        log('Conversion complete. Click Download to save.', 'log-ok');
+    }
+
+    function applyPayloadFieldsSimple(target, payload) {
+        if (!payload.fields) return;
+        var fields = payload.fields;
+        if (fields.INS) assignShallow(target, fields.INS);
+        if (fields.ALT) assignShallow(target, fields.ALT);
+        if (fields.SYN) assignShallow(target, fields.SYN);
+        if (fields.NUL && Array.isArray(fields.NUL)) {
+            for (var i = 0; i < fields.NUL.length; i++) delete target[fields.NUL[i]];
+        }
+    }
+
+    function assignShallow(target, source) {
+        var keys = Object.keys(source);
+        for (var i = 0; i < keys.length; i++) target[keys[i]] = source[keys[i]];
+    }
+
+    // ---- Produce AMO binary (mirrors AmoFormat.produceEvents) ----
+    function produceAmo(events, meta, maxId) {
+        // Build columnar schema
+        var colSet = {};
+        for (var i = 0; i < events.length; i++) {
+            var keys = Object.keys(events[i]);
+            for (var k = 0; k < keys.length; k++) {
+                if (keys[k] !== '_encryptedPayload') colSet[keys[k]] = true;
+            }
+        }
+
+        var coreColumns = ['id', 'set', 'recordId', 'operator', 'created_at', 'payload', 'uuid'];
+        var columns = [];
+        for (var c = 0; c < coreColumns.length; c++) {
+            if (colSet[coreColumns[c]]) {
+                columns.push(coreColumns[c]);
+                delete colSet[coreColumns[c]];
+            }
+        }
+        var extra = Object.keys(colSet);
+        for (var e2 = 0; e2 < extra.length; e2++) columns.push(extra[e2]);
+
+        // Convert to positional arrays
+        var rows = [];
+        for (var j = 0; j < events.length; j++) {
+            var ev = events[j];
+            var row = [];
+            for (var col = 0; col < columns.length; col++) {
+                var val = ev[columns[col]];
+                // Ensure payload is stored as object, not string
+                if (columns[col] === 'payload' && typeof val === 'string') {
+                    try { val = JSON.parse(val); } catch (e) { /* keep as string */ }
+                }
+                row.push(val !== undefined ? val : null);
+            }
+            rows.push(row);
+        }
+
+        var schema = { '_events': columns };
+        var records = { '_events': rows };
+
+        var payload = {
+            v: 1,
+            type: 'events',
+            ts: Math.floor(Date.now() / 1000),
+            cursor: maxId,
+            schema: schema,
+            records: records
+        };
+        if (meta) payload.meta = meta;
+
+        // Encode with MessagePack
+        var encoded = MessagePack.encode(payload);
+
+        // Compress with gzip
+        var compressed = pako.gzip(encoded);
+
+        // Prepend 8-byte header: "AMO1" + version(1) + flags(0) + reserved(0,0)
+        var header = new Uint8Array([0x41, 0x4D, 0x4F, 0x31, 0x01, 0x00, 0x00, 0x00]);
+        var out = new Uint8Array(8 + compressed.length);
+        out.set(header);
+        out.set(compressed, 8);
+        return out;
+    }
+
+    // ---- Helpers ----
+    function formatBytes(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    }
+
+})();
+</script>
+
+</body>
+</html>
