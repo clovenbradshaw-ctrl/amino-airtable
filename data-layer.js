@@ -32,6 +32,7 @@ var AminoData = (function() {
     var _pollInterval = null;
     var _tableIds = [];
     var _offlineMode = false;
+    var _onlineOnlyMode = false;     // when true, skip IndexedDB reads/writes — always fetch from API
     var _connectivityCheckTimer = null;
     var _tables = [];
     var _tableRoomMap = {}; // tableId -> matrixRoomId
@@ -500,10 +501,11 @@ var AminoData = (function() {
         var allowedIntents = {
             metadataSync: true,
             fullBackfill: true,
-            incrementalBackfill: true
+            incrementalBackfill: true,
+            onlineRead: true
         };
         if (!allowedIntents[intent]) {
-            throw new Error('apiFetch requires a sync intent (metadataSync/fullBackfill/incrementalBackfill)');
+            throw new Error('apiFetch requires a sync intent (metadataSync/fullBackfill/incrementalBackfill/onlineRead)');
         }
 
         // Prefer the live Matrix access token when available so the n8n
@@ -1234,6 +1236,24 @@ var AminoData = (function() {
             throw apiErr;
         }
 
+        // Online-only mode: populate in-memory cache only, skip all IndexedDB writes.
+        if (_onlineOnlyMode) {
+            var normalized = records.map(function(rec) {
+                var nr = {
+                    id: rec.id,
+                    tableId: tableId,
+                    tableName: rec.tableName || tableId,
+                    fields: rec.fields || {},
+                    lastSynced: rec.lastSynced || new Date().toISOString()
+                };
+                cacheRecord(nr);
+                return nr;
+            });
+            cacheFullTable(tableId, normalized);
+            console.log('[AminoData] Hydrated', records.length, 'records from API for table', tableId, '(online-only, no IDB)');
+            return records.length;
+        }
+
         // Full hydration should mirror current server state.
         // Clear existing table rows first so deleted upstream records
         // do not linger as stale local entries.
@@ -1276,6 +1296,12 @@ var AminoData = (function() {
     }
 
     async function syncTable(tableId) {
+        // Online-only mode: always do a full hydration from the API
+        // (no sync cursors stored in IndexedDB).
+        if (_onlineOnlyMode) {
+            return hydrateTable(tableId);
+        }
+
         var syncTx = _db.transaction('sync', 'readonly');
         var syncRecord = await idbGet(syncTx.objectStore('sync'), tableId);
         var since = syncRecord ? syncRecord.lastSynced : null;
@@ -2287,6 +2313,30 @@ var AminoData = (function() {
     // ============ Data Accessors (Decrypted) ============
 
     async function getTableRecords(tableId) {
+        // Online-only mode: serve from in-memory cache if available,
+        // otherwise fetch directly from the API (skip IndexedDB entirely).
+        if (_onlineOnlyMode) {
+            if (_tableCacheHydrated[tableId]) {
+                var cachedIds = Object.keys(_tableRecordIdIndex[tableId] || {});
+                return cachedIds.map(function(recordId) {
+                    return cloneRecord(_recordCacheById[recordId]);
+                });
+            }
+            // Fetch fresh from API
+            var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId), 'onlineRead');
+            var apiRecords = (data.records || []).map(function(rec) {
+                return {
+                    id: rec.id,
+                    tableId: tableId,
+                    tableName: rec.tableName || tableId,
+                    fields: rec.fields || {},
+                    lastSynced: rec.lastSynced || new Date().toISOString()
+                };
+            }).filter(function(r) { return !_isTombstone(r); });
+            cacheFullTable(tableId, apiRecords);
+            return apiRecords.map(function(record) { return cloneRecord(record); });
+        }
+
         if (!_db || !_cryptoKey) throw new Error('Data layer not initialized');
 
         if (_tableCacheHydrated[tableId]) {
@@ -2310,6 +2360,14 @@ var AminoData = (function() {
     }
 
     async function getRecord(recordId) {
+        // Online-only mode: serve from in-memory cache only (no IndexedDB).
+        if (_onlineOnlyMode) {
+            if (_recordCacheById[recordId]) {
+                return cloneRecord(_recordCacheById[recordId]);
+            }
+            return null;
+        }
+
         if (!_db || !_cryptoKey) throw new Error('Data layer not initialized');
 
         if (_recordCacheById[recordId]) {
@@ -2590,6 +2648,13 @@ var AminoData = (function() {
         var onProgress = options.onProgress || null;
         var useMatrixSync = options.useMatrixSync !== false; // default true
 
+        // Apply online-only mode from options or persisted localStorage setting
+        if (options.onlineOnly !== undefined) {
+            _onlineOnlyMode = !!options.onlineOnly;
+        } else {
+            _onlineOnlyMode = localStorage.getItem('amino_online_only_mode') === 'true';
+        }
+
         var tables = await init(accessToken, userId, password);
         var totalRecords = await hydrateAll(onProgress);
 
@@ -2611,17 +2676,59 @@ var AminoData = (function() {
         // Start gentle background room state mirror after a delay.
         // This writes record snapshots as state events to table rooms so
         // the database can be reconstructed from room data alone.
-        scheduleMirrorStart();
+        // Skip in online-only mode (no local data to mirror).
+        if (!_onlineOnlyMode) {
+            scheduleMirrorStart();
+        }
 
         return {
             tables: tables,
             totalRecords: totalRecords,
             tableRoomMap: getTableRoomMap(),
             usingMatrixSync: matrixSyncStarted,
+            onlineOnlyMode: _onlineOnlyMode,
             stopPolling: stopPolling,
             stopMatrixSync: stopMatrixSync,
             stopRoomMirror: stopRoomMirror
         };
+    }
+
+    // ============ Online-Only Mode ============
+
+    // Toggle online-only mode. When enabled, the data layer fetches all data
+    // directly from the API and keeps it only in memory — nothing is written
+    // to or read from IndexedDB. This is useful on shared/public machines
+    // where no data should persist after the session ends.
+    function setOnlineOnlyMode(enabled) {
+        var wasEnabled = _onlineOnlyMode;
+        _onlineOnlyMode = !!enabled;
+        localStorage.setItem('amino_online_only_mode', _onlineOnlyMode ? 'true' : 'false');
+        console.log('[AminoData] Online-only mode:', _onlineOnlyMode ? 'ENABLED' : 'DISABLED');
+
+        if (_onlineOnlyMode && !wasEnabled) {
+            // Entering online-only mode: clear local IndexedDB data
+            // so no data lingers from previous sessions.
+            if (_db) {
+                try {
+                    var storeNames = ['records', 'sync'];
+                    var tx = _db.transaction(storeNames, 'readwrite');
+                    storeNames.forEach(function(name) { tx.objectStore(name).clear(); });
+                    console.log('[AminoData] Cleared IndexedDB records/sync stores (online-only mode)');
+                } catch (e) {
+                    console.warn('[AminoData] Could not clear IndexedDB on online-only switch:', e);
+                }
+            }
+            // Stop room mirror (no point mirroring when we don't store locally)
+            stopRoomMirror();
+        }
+
+        window.dispatchEvent(new CustomEvent('amino:online-only-mode-changed', {
+            detail: { enabled: _onlineOnlyMode }
+        }));
+    }
+
+    function isOnlineOnly() {
+        return _onlineOnlyMode;
     }
 
     // ============ Session Lifecycle ============
@@ -2645,7 +2752,8 @@ var AminoData = (function() {
 
         // Encrypt all plaintext records before clearing state.
         // Must happen while _cryptoKey and _db are still available.
-        if (_deferEncryption && _cryptoKey && _db && !clearData) {
+        // Skip encryption in online-only mode (no persistent IDB data).
+        if (_deferEncryption && _cryptoKey && _db && !clearData && !_onlineOnlyMode) {
             try {
                 await encryptAllRecords();
             } catch (encErr) {
@@ -2661,6 +2769,8 @@ var AminoData = (function() {
         _roomTableMap = {};
         _orgSpaceId = null;
         _offlineMode = false;
+        // Note: _onlineOnlyMode is NOT reset on logout — it persists via localStorage
+        // so the preference survives across sessions.
         _initialized = false;
         _keyDerivationCache = { fingerprint: null, key: null };
         _processedEventIds = {};
@@ -4015,6 +4125,8 @@ var AminoData = (function() {
         // State
         isInitialized: isInitialized,
         isOffline: isOffline,
+        isOnlineOnly: isOnlineOnly,
+        setOnlineOnlyMode: setOnlineOnlyMode,
         getTableList: getTableList,
         getTableIds: getTableIds,
         getTableRoomMap: getTableRoomMap,
