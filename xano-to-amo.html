@@ -72,7 +72,7 @@ h1 {
 }
 .stat-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 12px;
     margin-bottom: 16px;
 }
@@ -93,6 +93,7 @@ h1 {
     font-weight: 600;
     color: #fff;
 }
+.stat-box .value.small { font-size: 13px; }
 .progress-bar {
     width: 100%;
     height: 4px;
@@ -105,7 +106,7 @@ h1 {
     height: 100%;
     background: #5b7fff;
     width: 0%;
-    transition: width 0.3s;
+    transition: width 0.15s;
     border-radius: 2px;
 }
 .progress-text {
@@ -185,7 +186,7 @@ h1 {
     padding: 16px;
     margin-top: 24px;
     display: none;
-    max-height: 200px;
+    max-height: 240px;
     overflow-y: auto;
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 12px;
@@ -206,14 +207,14 @@ h1 {
 <div class="container">
     <div class="drop-zone" id="dropZone">
         <p>Drop your Xano export file here, or click to browse</p>
-        <span class="formats">Accepts JSON array or CSV (aminoStream table export)</span>
+        <span class="formats">Accepts JSON array or CSV (aminoStream table export) &mdash; any size</span>
         <input type="file" id="fileInput" accept=".json,.csv,.txt">
     </div>
 
     <div class="error-box" id="errorBox"></div>
 
     <div class="status-panel" id="statusPanel">
-        <h3>Processing</h3>
+        <h3 id="phaseLabel">Processing</h3>
         <div class="stat-grid">
             <div class="stat-box">
                 <div class="label">Events</div>
@@ -230,6 +231,14 @@ h1 {
             <div class="stat-box">
                 <div class="label">Fields</div>
                 <div class="value" id="statFields">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Elapsed</div>
+                <div class="value small" id="statElapsed">--</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Memory</div>
+                <div class="value small" id="statMemory">--</div>
             </div>
         </div>
         <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
@@ -249,39 +258,86 @@ h1 {
     <div class="log-panel" id="logPanel"></div>
 </div>
 
-<!-- MessagePack (msgpack-lite browser build) -->
-<script src="https://cdn.jsdelivr.net/npm/@peergrade/msgpack-lite@0.1.27/dist/msgpack.min.js"></script>
 <!-- pako (gzip) -->
 <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+<!-- MessagePack (msgpack-lite browser build) -->
+<script src="https://cdn.jsdelivr.net/npm/@peergrade/msgpack-lite@0.1.27/dist/msgpack.min.js"></script>
 
 <script>
 (function() {
     'use strict';
 
     // ---- Resolve library references ----
-    // msgpack-lite browser build exposes window.msgpack
-    // pako exposes window.pako
     var MessagePack = window.msgpack;
     if (!MessagePack && typeof msgpack !== 'undefined') MessagePack = msgpack;
 
+    // ---- Constants ----
+    var READ_CHUNK_SIZE = 16 * 1024 * 1024; // 16 MB chunks for file reading
+    var YIELD_INTERVAL = 3000;              // yield to UI every N events
+    var AMO_YIELD_INTERVAL = 5000;          // yield during AMO row building
+
     // ---- DOM refs ----
-    var dropZone = document.getElementById('dropZone');
-    var fileInput = document.getElementById('fileInput');
-    var errorBox = document.getElementById('errorBox');
-    var statusPanel = document.getElementById('statusPanel');
-    var statEvents = document.getElementById('statEvents');
-    var statTables = document.getElementById('statTables');
-    var statRecords = document.getElementById('statRecords');
-    var statFields = document.getElementById('statFields');
+    var dropZone     = document.getElementById('dropZone');
+    var fileInput    = document.getElementById('fileInput');
+    var errorBox     = document.getElementById('errorBox');
+    var statusPanel  = document.getElementById('statusPanel');
+    var phaseLabel   = document.getElementById('phaseLabel');
+    var statEvents   = document.getElementById('statEvents');
+    var statTables   = document.getElementById('statTables');
+    var statRecords  = document.getElementById('statRecords');
+    var statFields   = document.getElementById('statFields');
+    var statElapsed  = document.getElementById('statElapsed');
+    var statMemory   = document.getElementById('statMemory');
     var progressFill = document.getElementById('progressFill');
     var progressText = document.getElementById('progressText');
     var tablePreview = document.getElementById('tablePreview');
     var tablePreviewBody = document.getElementById('tablePreviewBody');
-    var downloadBtn = document.getElementById('downloadBtn');
-    var logPanel = document.getElementById('logPanel');
+    var downloadBtn  = document.getElementById('downloadBtn');
+    var logPanel     = document.getElementById('logPanel');
 
     var generatedBlob = null;
     var generatedFilename = 'amino-export.amo';
+    var startTime = 0;
+    var memTimer = null;
+    var aborted = false;
+
+    // ---- Helpers ----
+    function formatBytes(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+        return (bytes / 1073741824).toFixed(2) + ' GB';
+    }
+
+    function formatDuration(ms) {
+        if (ms < 1000) return ms + 'ms';
+        var s = Math.floor(ms / 1000);
+        if (s < 60) return s + 's';
+        var m = Math.floor(s / 60);
+        s = s % 60;
+        return m + 'm ' + s + 's';
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    }
+
+    // yield to the browser for UI painting
+    function yieldUI() {
+        return new Promise(function(resolve) { setTimeout(resolve, 0); });
+    }
+
+    function updateMemory() {
+        if (performance && performance.memory) {
+            statMemory.textContent = formatBytes(performance.memory.usedJSHeapSize);
+        }
+    }
+
+    function updateElapsed() {
+        statElapsed.textContent = formatDuration(Date.now() - startTime);
+    }
 
     // ---- Logging ----
     function log(msg, cls) {
@@ -301,6 +357,11 @@ h1 {
     function clearError() {
         errorBox.textContent = '';
         errorBox.classList.remove('visible');
+    }
+
+    function setProgress(pct, text) {
+        progressFill.style.width = pct + '%';
+        if (text) progressText.textContent = text;
     }
 
     // ---- Drop zone ----
@@ -328,143 +389,231 @@ h1 {
         URL.revokeObjectURL(a.href);
     });
 
-    // ---- Main handler ----
-    function handleFile(file) {
-        clearError();
-        statusPanel.classList.add('visible');
-        tablePreview.classList.remove('visible');
-        downloadBtn.classList.remove('visible');
-        logPanel.innerHTML = '';
-        logPanel.classList.remove('visible');
-        generatedBlob = null;
-
-        progressText.textContent = 'Reading file...';
-        progressFill.style.width = '0%';
-        statEvents.textContent = '0';
-        statTables.textContent = '0';
-        statRecords.textContent = '0';
-        statFields.textContent = '0';
-
-        log('Reading: ' + file.name + ' (' + formatBytes(file.size) + ')');
-
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                var text = e.target.result;
-                log('Parsing input...');
-                var events = parseXanoExport(text, file.name);
-                log('Parsed ' + events.length + ' events', 'log-ok');
-                processAndConvert(events, file.name);
-            } catch (err) {
-                showError('Failed to parse file:\n' + err.message);
-                progressText.textContent = 'Error';
-                log('ERROR: ' + err.message, 'log-warn');
-            }
-        };
-        reader.onerror = function() {
-            showError('Failed to read file');
-            log('ERROR: File read failed', 'log-warn');
-        };
-        reader.readAsText(file);
+    // ==================================================================
+    //  Read a File slice as text — returns a Promise<string>
+    // ==================================================================
+    function readSliceAsText(file, start, end) {
+        return new Promise(function(resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function() { resolve(reader.result); };
+            reader.onerror = function() { reject(reader.error); };
+            reader.readAsText(file.slice(start, end));
+        });
     }
 
-    // ---- Parse Xano export (JSON or CSV) ----
-    function parseXanoExport(text, filename) {
-        text = text.trim();
+    // ==================================================================
+    //  Streaming JSON array parser
+    //  Reads File in chunks, extracts top-level array elements one at a
+    //  time via bracket/string tracking, then JSON.parse each element.
+    //  Memory: only one chunk + one element string in flight at a time.
+    // ==================================================================
+    async function streamJsonArray(file, onEvent, onProgress) {
+        var fileSize = file.size;
+        var offset = 0;
+        var buffer = '';
 
-        // Try JSON first
-        if (text.charAt(0) === '[' || text.charAt(0) === '{') {
-            var parsed = JSON.parse(text);
+        // State machine for finding top-level objects inside [ ... ]
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+        var arrayStarted = false;
+        var elemStart = -1;
+        var count = 0;
 
-            // If it's a single object wrapping an array (some Xano exports do this)
-            if (!Array.isArray(parsed)) {
-                // Look for an array property (items, records, data, result, etc.)
-                var arrayKeys = ['items', 'records', 'data', 'result', 'rows', 'aminoStream'];
-                for (var i = 0; i < arrayKeys.length; i++) {
-                    if (Array.isArray(parsed[arrayKeys[i]])) {
-                        parsed = parsed[arrayKeys[i]];
-                        break;
+        while (offset < fileSize) {
+            var end = Math.min(offset + READ_CHUNK_SIZE, fileSize);
+            var chunk = await readSliceAsText(file, offset, end);
+            buffer += chunk;
+            chunk = null; // free ref
+            if (onProgress) onProgress(end, fileSize);
+
+            var i = 0;
+            while (i < buffer.length) {
+                var ch = buffer.charCodeAt(i);
+
+                if (escaped) {
+                    escaped = false;
+                    i++;
+                    continue;
+                }
+
+                if (inString) {
+                    if (ch === 0x5C) { // backslash
+                        escaped = true;
+                    } else if (ch === 0x22) { // "
+                        inString = false;
+                    }
+                    i++;
+                    continue;
+                }
+
+                if (ch === 0x22) { // "
+                    inString = true;
+                    i++;
+                    continue;
+                }
+
+                // Skip whitespace / commas outside strings when at depth 0
+                if (!arrayStarted) {
+                    // Looking for the opening [
+                    if (ch === 0x5B) { // [
+                        arrayStarted = true;
+                        i++;
+                        continue;
+                    }
+                    if (ch === 0x7B) { // { — wrapped object, bail out
+                        throw new Error('WRAPPED_OBJECT');
+                    }
+                    i++;
+                    continue;
+                }
+
+                // Inside the top-level array
+                if (ch === 0x7B || ch === 0x5B) { // { or [
+                    if (depth === 0) elemStart = i;
+                    depth++;
+                } else if (ch === 0x7D || ch === 0x5D) { // } or ]
+                    depth--;
+                    if (depth === 0 && elemStart >= 0) {
+                        // Complete element
+                        var jsonStr = buffer.substring(elemStart, i + 1);
+                        var parsed = JSON.parse(jsonStr);
+                        count++;
+                        onEvent(parsed, count);
+                        elemStart = -1;
+                    }
+                    if (depth < 0) {
+                        // End of array
+                        buffer = '';
+                        return count;
                     }
                 }
-                // If still not an array, look for any array property
-                if (!Array.isArray(parsed)) {
-                    var keys = Object.keys(parsed);
-                    for (var k = 0; k < keys.length; k++) {
-                        if (Array.isArray(parsed[keys[k]]) && parsed[keys[k]].length > 0) {
-                            parsed = parsed[keys[k]];
-                            break;
+
+                i++;
+            }
+
+            // Trim processed portion of buffer
+            if (elemStart >= 0) {
+                buffer = buffer.substring(elemStart);
+                elemStart = 0;
+            } else {
+                buffer = '';
+            }
+
+            offset = end;
+        }
+
+        return count;
+    }
+
+    // ==================================================================
+    //  Streaming CSV parser
+    //  Reads File in chunks, splits by newlines, parses each row.
+    // ==================================================================
+    async function streamCsv(file, onEvent, onProgress) {
+        var fileSize = file.size;
+        var offset = 0;
+        var leftover = '';
+        var headers = null;
+        var colMap = null;
+        var count = 0;
+
+        var canonical = {
+            'id': 'id', 'set': 'set', 'recordid': 'recordId', 'record_id': 'recordId',
+            'operator': 'operator', 'created_at': 'created_at', 'createdat': 'created_at',
+            'payload': 'payload', 'uuid': 'uuid'
+        };
+
+        while (offset < fileSize) {
+            var end = Math.min(offset + READ_CHUNK_SIZE, fileSize);
+            var chunk = await readSliceAsText(file, offset, end);
+            var text = leftover + chunk;
+            chunk = null;
+            leftover = '';
+            if (onProgress) onProgress(end, fileSize);
+
+            // Split into lines — keep last incomplete line in leftover
+            var lines = text.split(/\r?\n/);
+            if (end < fileSize) {
+                leftover = lines.pop(); // last line may be incomplete
+            }
+            text = null;
+
+            for (var li = 0; li < lines.length; li++) {
+                var line = lines[li];
+                if (!line.trim()) continue;
+
+                if (!headers) {
+                    // First non-empty line = headers
+                    headers = parseCSVLine(line);
+                    colMap = {};
+                    for (var h = 0; h < headers.length; h++) {
+                        var lower = headers[h].toLowerCase().trim().replace(/"/g, '');
+                        colMap[h] = canonical[lower] || headers[h].trim().replace(/"/g, '');
+                    }
+                    // Validate
+                    var headerLower = headers.map(function(hh) { return hh.toLowerCase().trim().replace(/"/g, ''); });
+                    var required = ['id', 'set', 'recordid', 'operator'];
+                    for (var r = 0; r < required.length; r++) {
+                        var found = false;
+                        for (var hl = 0; hl < headerLower.length; hl++) {
+                            if (headerLower[hl] === required[r] || headerLower[hl] === 'record_id' && required[r] === 'recordid') {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found && required[r] === 'recordid') {
+                            // Also accept record_id
+                            for (var hl2 = 0; hl2 < headerLower.length; hl2++) {
+                                if (headerLower[hl2] === 'record_id') { found = true; break; }
+                            }
+                        }
+                        if (!found) {
+                            throw new Error('CSV missing required column: ' + required[r] + '\nFound: ' + headers.join(', '));
                         }
                     }
+                    continue;
                 }
-                if (!Array.isArray(parsed)) {
-                    throw new Error('JSON is not an array and no array property found. Expected an array of aminoStream events.');
+
+                // Data row
+                var values = parseCSVLine(line);
+                var obj = {};
+                for (var v = 0; v < values.length; v++) {
+                    var key = colMap[v] || ('col_' + v);
+                    var val = values[v];
+                    if (key === 'id') {
+                        var numVal = parseInt(val, 10);
+                        obj[key] = isNaN(numVal) ? val : numVal;
+                    } else {
+                        obj[key] = val;
+                    }
                 }
-            }
-
-            if (parsed.length === 0) {
-                throw new Error('Empty array — no events to process.');
-            }
-
-            // Validate that these look like aminoStream events
-            validateEvents(parsed);
-            return normalizeEvents(parsed);
-        }
-
-        // Try CSV
-        return parseCSV(text);
-    }
-
-    // ---- CSV parser ----
-    function parseCSV(text) {
-        var lines = text.split(/\r?\n/);
-        if (lines.length < 2) throw new Error('CSV has no data rows');
-
-        var headers = parseCSVLine(lines[0]);
-
-        // Validate required columns
-        var requiredCols = ['id', 'set', 'recordId', 'operator'];
-        var headerLower = headers.map(function(h) { return h.toLowerCase().trim(); });
-        for (var r = 0; r < requiredCols.length; r++) {
-            if (headerLower.indexOf(requiredCols[r].toLowerCase()) === -1) {
-                throw new Error('CSV missing required column: ' + requiredCols[r] + '\nFound: ' + headers.join(', '));
+                count++;
+                onEvent(obj, count);
             }
         }
 
-        // Map header names to their expected casing
-        var colMap = {};
-        var canonical = { 'id': 'id', 'set': 'set', 'recordid': 'recordId', 'record_id': 'recordId',
-                          'operator': 'operator', 'created_at': 'created_at', 'createdat': 'created_at',
-                          'payload': 'payload', 'uuid': 'uuid' };
-        for (var h = 0; h < headers.length; h++) {
-            var lower = headers[h].toLowerCase().trim().replace(/"/g, '');
-            colMap[h] = canonical[lower] || headers[h].trim().replace(/"/g, '');
-        }
-
-        var events = [];
-        for (var i = 1; i < lines.length; i++) {
-            if (!lines[i].trim()) continue;
-            var values = parseCSVLine(lines[i]);
-            var obj = {};
-            for (var v = 0; v < values.length; v++) {
-                var key = colMap[v] || ('col_' + v);
-                var val = values[v];
-                // Try to parse numeric id
-                if (key === 'id') {
-                    var numVal = parseInt(val, 10);
-                    obj[key] = isNaN(numVal) ? val : numVal;
-                } else if (key === 'payload') {
-                    // Payload may be JSON string — keep as-is, we parse it later
-                    obj[key] = val;
+        // Process any final leftover line
+        if (leftover.trim() && headers) {
+            var values2 = parseCSVLine(leftover);
+            var obj2 = {};
+            for (var v2 = 0; v2 < values2.length; v2++) {
+                var key2 = colMap[v2] || ('col_' + v2);
+                var val2 = values2[v2];
+                if (key2 === 'id') {
+                    var nv = parseInt(val2, 10);
+                    obj2[key2] = isNaN(nv) ? val2 : nv;
                 } else {
-                    obj[key] = val;
+                    obj2[key2] = val2;
                 }
             }
-            events.push(obj);
+            count++;
+            onEvent(obj2, count);
         }
 
-        if (events.length === 0) throw new Error('CSV has headers but no data rows');
-        validateEvents(events);
-        return normalizeEvents(events);
+        if (!headers) throw new Error('CSV has no header row');
+        if (count === 0) throw new Error('CSV has headers but no data rows');
+        return count;
     }
 
     function parseCSVLine(line) {
@@ -499,58 +648,122 @@ h1 {
         return result;
     }
 
-    // ---- Validation ----
-    function validateEvents(events) {
-        var sample = events[0];
-        var hasId = ('id' in sample);
-        var hasSet = ('set' in sample);
-        var hasRecordId = ('recordId' in sample || 'record_id' in sample || 'recordid' in sample);
-        var hasOperator = ('operator' in sample);
-
-        if (!hasId || !hasSet || !hasRecordId || !hasOperator) {
-            var found = Object.keys(sample).join(', ');
-            throw new Error(
-                'Events do not look like aminoStream records.\n' +
-                'Required: id, set, recordId, operator\n' +
-                'Found keys: ' + found
-            );
-        }
-    }
-
-    // Normalize field names from various Xano export formats
-    function normalizeEvents(events) {
-        return events.map(function(e) {
-            var norm = {};
-            // Map known variant names
-            norm.id = e.id != null ? (typeof e.id === 'number' ? e.id : parseInt(e.id, 10) || 0) : 0;
-            norm.set = e.set || '';
-            norm.recordId = e.recordId || e.record_id || e.recordid || '';
-            norm.operator = e.operator || '';
-            norm.created_at = e.created_at || e.createdAt || e.createdat || null;
-            norm.uuid = e.uuid || null;
-
-            // Payload: could be string (needs parsing later), object, or missing
-            if (e.payload !== undefined && e.payload !== null) {
-                norm.payload = e.payload;
-            } else {
-                norm.payload = null;
-            }
-
-            // Preserve any extra columns
-            var knownKeys = { id:1, set:1, recordId:1, record_id:1, recordid:1,
-                              operator:1, created_at:1, createdAt:1, createdat:1,
-                              payload:1, uuid:1 };
-            var keys = Object.keys(e);
-            for (var k = 0; k < keys.length; k++) {
-                if (!knownKeys[keys[k]]) {
-                    norm[keys[k]] = e[keys[k]];
-                }
-            }
-            return norm;
+    // ==================================================================
+    //  Fallback: read entire file and JSON.parse (for wrapped objects)
+    // ==================================================================
+    function readFullText(file) {
+        return new Promise(function(resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function() { resolve(reader.result); };
+            reader.onerror = function() { reject(reader.error); };
+            reader.readAsText(file);
         });
     }
 
-    // ---- Parse payload safely ----
+    async function fallbackJsonParse(file, onEvent, onProgress) {
+        if (onProgress) onProgress(0, file.size);
+        log('File has a wrapper object — reading full JSON...', 'log-warn');
+        var text = await readFullText(file);
+        if (onProgress) onProgress(file.size, file.size);
+
+        var parsed = JSON.parse(text);
+        text = null; // free raw string
+
+        // Find the array inside the object
+        if (!Array.isArray(parsed)) {
+            var arrayKeys = ['items', 'records', 'data', 'result', 'rows', 'aminoStream'];
+            for (var i = 0; i < arrayKeys.length; i++) {
+                if (Array.isArray(parsed[arrayKeys[i]])) {
+                    parsed = parsed[arrayKeys[i]];
+                    break;
+                }
+            }
+            if (!Array.isArray(parsed)) {
+                var keys = Object.keys(parsed);
+                for (var k = 0; k < keys.length; k++) {
+                    if (Array.isArray(parsed[keys[k]]) && parsed[keys[k]].length > 0) {
+                        parsed = parsed[keys[k]];
+                        break;
+                    }
+                }
+            }
+            if (!Array.isArray(parsed)) {
+                throw new Error('JSON is not an array and no array property found.');
+            }
+        }
+
+        if (parsed.length === 0) throw new Error('Empty array — no events to process.');
+
+        var count = 0;
+        for (var j = 0; j < parsed.length; j++) {
+            count++;
+            onEvent(parsed[j], count);
+            // Null out the reference so GC can reclaim as we go
+            parsed[j] = null;
+            if (j % YIELD_INTERVAL === 0) await yieldUI();
+        }
+        parsed = null;
+        return count;
+    }
+
+    // ==================================================================
+    //  Detect file type from first bytes
+    // ==================================================================
+    async function detectFileType(file) {
+        var head = await readSliceAsText(file, 0, Math.min(4096, file.size));
+        var trimmed = head.trim();
+        if (trimmed.charAt(0) === '[') return 'json-array';
+        if (trimmed.charAt(0) === '{') return 'json-object';
+        // Check for CSV: first line has commas and contains 'id'
+        var firstLine = trimmed.split(/\r?\n/)[0];
+        if (firstLine && firstLine.indexOf(',') !== -1) {
+            var cols = firstLine.split(',');
+            for (var i = 0; i < cols.length; i++) {
+                if (cols[i].replace(/"/g, '').trim().toLowerCase() === 'id') return 'csv';
+            }
+        }
+        throw new Error('Unrecognized file format. Expected a JSON array or CSV with aminoStream events.');
+    }
+
+    // ==================================================================
+    //  Normalize a single raw event object in-place
+    // ==================================================================
+    function normalizeEvent(e) {
+        // Remap variant field names
+        if (e.record_id !== undefined && e.recordId === undefined) {
+            e.recordId = e.record_id;
+            delete e.record_id;
+        }
+        if (e.recordid !== undefined && e.recordId === undefined) {
+            e.recordId = e.recordid;
+            delete e.recordid;
+        }
+        if (e.createdAt !== undefined && e.created_at === undefined) {
+            e.created_at = e.createdAt;
+            delete e.createdAt;
+        }
+        if (e.createdat !== undefined && e.created_at === undefined) {
+            e.created_at = e.createdat;
+            delete e.createdat;
+        }
+        // Ensure id is numeric
+        if (typeof e.id !== 'number') {
+            var n = parseInt(e.id, 10);
+            e.id = isNaN(n) ? 0 : n;
+        }
+        // Ensure required fields exist
+        if (!e.set) e.set = '';
+        if (!e.recordId) e.recordId = '';
+        if (!e.operator) e.operator = '';
+        if (e.payload === undefined) e.payload = null;
+        // Remove encrypted payload marker
+        delete e._encryptedPayload;
+        return e;
+    }
+
+    // ==================================================================
+    //  Parse payload safely
+    // ==================================================================
     function parsePayload(payload) {
         if (payload === null || payload === undefined) return null;
         if (typeof payload === 'object') return payload;
@@ -562,7 +775,9 @@ h1 {
         return null;
     }
 
-    // ---- Infer field type from sample value ----
+    // ==================================================================
+    //  Infer field type from a sample value
+    // ==================================================================
     function inferFieldType(value) {
         if (value === null || value === undefined) return 'unknown';
         if (Array.isArray(value)) {
@@ -585,280 +800,428 @@ h1 {
         return 'unknown';
     }
 
-    // ---- Process events into current state + produce AMO ----
-    function processAndConvert(events, filename) {
-        var META_TABLES = {};
-        var META_FIELDS = {};
-        var META_VIEWS = {};
-        var tableDataMap = {}; // tableId -> { recordId -> fields }
-        var total = events.length;
-        var totalRecordCount = 0;
-        var totalFieldCount = 0;
-
-        log('Replaying ' + total + ' events to build current state...');
-        statEvents.textContent = total.toLocaleString();
-        progressText.textContent = 'Processing events...';
-        progressFill.style.width = '10%';
-
-        // Sort events by id to ensure correct replay order
-        events.sort(function(a, b) { return a.id - b.id; });
-
-        var maxId = 0;
-
-        for (var i = 0; i < total; i++) {
-            var e = events[i];
-            if (!e || !e.set || !e.recordId) continue;
-
-            var payload = parsePayload(e.payload);
-            if (!payload || typeof payload !== 'object') continue;
-
-            var recordType = payload._set;
-            var setName = e.set;
-            var recordId = e.recordId;
-
-            if (e.id > maxId) maxId = e.id;
-
-            if (recordType === 'table') {
-                var tableId = recordId;
-                if (!META_TABLES[tableId]) META_TABLES[tableId] = {};
-                var tableData = META_TABLES[tableId];
-                tableData.tableId = tableId;
-                applyPayloadFieldsSimple(tableData, payload);
-                if (payload.tableName) tableData.tableName = payload.tableName;
-                if (payload.primaryFieldId) tableData.primaryFieldId = payload.primaryFieldId;
-                if (payload.displayNameFieldId) tableData.displayNameFieldId = payload.displayNameFieldId;
-                if (payload.tableId) tableData.tableId = payload.tableId;
-
-            } else if (recordType === 'field') {
-                var tblId = payload.tableId || setName.replace('airtable:', '');
-                var fieldId = recordId;
-                if (!META_FIELDS[tblId]) META_FIELDS[tblId] = {};
-                if (!META_FIELDS[tblId][fieldId]) META_FIELDS[tblId][fieldId] = {};
-                var fieldData = META_FIELDS[tblId][fieldId];
-                fieldData.tableId = tblId;
-                fieldData.fieldId = fieldId;
-                applyPayloadFieldsSimple(fieldData, payload);
-                if (payload.fieldName) fieldData.fieldName = payload.fieldName;
-                if (payload.fieldType) fieldData.fieldType = payload.fieldType;
-                if (payload.fieldId) fieldData.fieldId = payload.fieldId;
-                if (payload.options) fieldData.options = payload.options;
-                if (payload.readOnly != null) fieldData.readOnly = payload.readOnly;
-
-            } else if (recordType === 'view') {
-                var tblId2 = payload.tableId || setName.replace('airtable:', '');
-                var viewId = recordId;
-                if (!META_VIEWS[tblId2]) META_VIEWS[tblId2] = {};
-                if (!META_VIEWS[tblId2][viewId]) META_VIEWS[tblId2][viewId] = {};
-                var viewData = META_VIEWS[tblId2][viewId];
-                viewData.tableId = tblId2;
-                viewData.viewId = viewId;
-                applyPayloadFieldsSimple(viewData, payload);
-                if (payload.viewName) viewData.viewName = payload.viewName;
-                if (payload.viewType) viewData.viewType = payload.viewType;
-                if (payload.viewId) viewData.viewId = payload.viewId;
-
-            } else if (recordType === 'viewConfig') {
-                var tblId3 = payload.tableId || setName.replace('airtable:', '');
-                var viewId2 = recordId;
-                if (!META_VIEWS[tblId3]) META_VIEWS[tblId3] = {};
-                if (!META_VIEWS[tblId3][viewId2]) META_VIEWS[tblId3][viewId2] = { tableId: tblId3, viewId: viewId2 };
-                var vd = META_VIEWS[tblId3][viewId2];
-                if (payload.viewName) vd.viewName = payload.viewName;
-                if (payload.hiddenFieldIds) vd.hiddenFieldIds = payload.hiddenFieldIds;
-                if (payload.fieldOrder) vd.fieldOrder = payload.fieldOrder;
-                if (payload.filters) vd.filters = payload.filters;
-                if (payload.sorts) vd.sorts = payload.sorts;
-
-            } else if (recordType === 'tableSettings') {
-                // Skip user-specific settings for the export
-
-            } else {
-                // Data record
-                var dtblId = setName.replace('airtable:', '');
-                var pfields = payload.fields;
-                if (!pfields || typeof pfields !== 'object') continue;
-
-                // Auto-create placeholder table
-                if (!META_TABLES[dtblId]) {
-                    META_TABLES[dtblId] = { tableId: dtblId, tableName: dtblId, _placeholder: true };
-                }
-
-                // Auto-create placeholder fields
-                if (!META_FIELDS[dtblId]) META_FIELDS[dtblId] = {};
-                var allFieldIds = Object.keys(pfields.INS || {})
-                    .concat(Object.keys(pfields.ALT || {}))
-                    .concat(Object.keys(pfields.SYN || {}))
-                    .concat(Array.isArray(pfields.NUL) ? pfields.NUL : []);
-                for (var fi = 0; fi < allFieldIds.length; fi++) {
-                    var fid = allFieldIds[fi];
-                    if (!META_FIELDS[dtblId][fid]) {
-                        var sv = (pfields.INS && pfields.INS[fid]) || (pfields.ALT && pfields.ALT[fid]) || (pfields.SYN && pfields.SYN[fid]);
-                        META_FIELDS[dtblId][fid] = {
-                            tableId: dtblId, fieldId: fid, fieldName: fid,
-                            fieldType: inferFieldType(sv), _placeholder: true
-                        };
-                    }
-                }
-
-                if (!tableDataMap[dtblId]) tableDataMap[dtblId] = {};
-                if (!tableDataMap[dtblId][recordId]) tableDataMap[dtblId][recordId] = {};
-
-                var state = tableDataMap[dtblId][recordId];
-                if (pfields.INS) assignShallow(state, pfields.INS);
-                if (pfields.ALT) assignShallow(state, pfields.ALT);
-                if (pfields.SYN) assignShallow(state, pfields.SYN);
-                if (pfields.NUL && Array.isArray(pfields.NUL)) {
-                    for (var ni = 0; ni < pfields.NUL.length; ni++) {
-                        delete state[pfields.NUL[ni]];
-                    }
-                }
-            }
-
-            // Update progress periodically
-            if (i > 0 && i % 2000 === 0) {
-                var pct = Math.round((i / total) * 80) + 10;
-                progressFill.style.width = pct + '%';
-            }
-        }
-
-        progressFill.style.width = '90%';
-        progressText.textContent = 'Building AMO binary...';
-
-        // Count totals
-        var tableNames = Object.keys(META_TABLES);
-        for (var t = 0; t < tableNames.length; t++) {
-            var tid = tableNames[t];
-            if (tableDataMap[tid]) totalRecordCount += Object.keys(tableDataMap[tid]).length;
-            if (META_FIELDS[tid]) totalFieldCount += Object.keys(META_FIELDS[tid]).length;
-        }
-
-        statTables.textContent = tableNames.length.toLocaleString();
-        statRecords.textContent = totalRecordCount.toLocaleString();
-        statFields.textContent = totalFieldCount.toLocaleString();
-
-        log('Found ' + tableNames.length + ' tables, ' + totalRecordCount + ' records, ' + totalFieldCount + ' fields', 'log-ok');
-
-        // Show table preview
-        tablePreviewBody.innerHTML = '';
-        for (var tp = 0; tp < tableNames.length; tp++) {
-            var tpId = tableNames[tp];
-            var tName = META_TABLES[tpId].tableName || tpId;
-            var recCount = tableDataMap[tpId] ? Object.keys(tableDataMap[tpId]).length : 0;
-            var fldCount = META_FIELDS[tpId] ? Object.keys(META_FIELDS[tpId]).length : 0;
-            var row = document.createElement('tr');
-            row.innerHTML = '<td>' + escapeHtml(tName) + '</td><td>' + recCount.toLocaleString() + '</td><td>' + fldCount + '</td>';
-            tablePreviewBody.appendChild(row);
-        }
-        tablePreview.classList.add('visible');
-
-        // Build AMO binary
-        var meta = { tables: META_TABLES, fields: META_FIELDS };
-        var amoBinary = produceAmo(events, meta, maxId);
-
-        log('AMO file size: ' + formatBytes(amoBinary.length), 'log-ok');
-
-        // Create downloadable blob
-        generatedBlob = new Blob([amoBinary], { type: 'application/x-amino-snapshot' });
-        generatedFilename = (filename || 'export').replace(/\.[^.]+$/, '') + '.amo';
-
-        progressFill.style.width = '100%';
-        progressText.textContent = 'Done — ready to download';
-        downloadBtn.classList.add('visible');
-        log('Conversion complete. Click Download to save.', 'log-ok');
-    }
-
-    function applyPayloadFieldsSimple(target, payload) {
-        if (!payload.fields) return;
-        var fields = payload.fields;
-        if (fields.INS) assignShallow(target, fields.INS);
-        if (fields.ALT) assignShallow(target, fields.ALT);
-        if (fields.SYN) assignShallow(target, fields.SYN);
-        if (fields.NUL && Array.isArray(fields.NUL)) {
-            for (var i = 0; i < fields.NUL.length; i++) delete target[fields.NUL[i]];
-        }
-    }
-
     function assignShallow(target, source) {
         var keys = Object.keys(source);
         for (var i = 0; i < keys.length; i++) target[keys[i]] = source[keys[i]];
     }
 
-    // ---- Produce AMO binary (mirrors AmoFormat.produceEvents) ----
-    function produceAmo(events, meta, maxId) {
-        // Build columnar schema
-        var colSet = {};
-        for (var i = 0; i < events.length; i++) {
-            var keys = Object.keys(events[i]);
-            for (var k = 0; k < keys.length; k++) {
-                if (keys[k] !== '_encryptedPayload') colSet[keys[k]] = true;
-            }
-        }
+    // ==================================================================
+    //  MAIN: handleFile — orchestrates the full pipeline
+    // ==================================================================
+    async function handleFile(file) {
+        clearError();
+        aborted = false;
+        statusPanel.classList.add('visible');
+        tablePreview.classList.remove('visible');
+        downloadBtn.classList.remove('visible');
+        logPanel.innerHTML = '';
+        logPanel.classList.remove('visible');
+        generatedBlob = null;
 
-        var coreColumns = ['id', 'set', 'recordId', 'operator', 'created_at', 'payload', 'uuid'];
-        var columns = [];
-        for (var c = 0; c < coreColumns.length; c++) {
-            if (colSet[coreColumns[c]]) {
-                columns.push(coreColumns[c]);
-                delete colSet[coreColumns[c]];
-            }
-        }
-        var extra = Object.keys(colSet);
-        for (var e2 = 0; e2 < extra.length; e2++) columns.push(extra[e2]);
+        phaseLabel.textContent = 'Processing';
+        setProgress(0, 'Detecting format...');
+        statEvents.textContent = '0';
+        statTables.textContent = '0';
+        statRecords.textContent = '0';
+        statFields.textContent = '0';
+        statElapsed.textContent = '--';
+        statMemory.textContent = '--';
 
-        // Convert to positional arrays
-        var rows = [];
-        for (var j = 0; j < events.length; j++) {
-            var ev = events[j];
-            var row = [];
-            for (var col = 0; col < columns.length; col++) {
-                var val = ev[columns[col]];
-                // Ensure payload is stored as object, not string
-                if (columns[col] === 'payload' && typeof val === 'string') {
-                    try { val = JSON.parse(val); } catch (e) { /* keep as string */ }
+        startTime = Date.now();
+        memTimer = setInterval(function() { updateElapsed(); updateMemory(); }, 500);
+
+        log('File: ' + file.name + ' (' + formatBytes(file.size) + ')');
+
+        try {
+            // ---- Phase 1: Detect format ----
+            var fileType = await detectFileType(file);
+            log('Format: ' + fileType);
+
+            // ---- Phase 2: Stream-parse events ----
+            phaseLabel.textContent = 'Phase 1/3 — Parsing';
+            var events = [];
+            var validated = false;
+
+            function onEvent(rawEvent, count) {
+                // Validate first event
+                if (!validated) {
+                    var hasId = ('id' in rawEvent);
+                    var hasSet = ('set' in rawEvent);
+                    var hasRecordId = ('recordId' in rawEvent || 'record_id' in rawEvent || 'recordid' in rawEvent);
+                    var hasOperator = ('operator' in rawEvent);
+                    if (!hasId || !hasSet || !hasRecordId || !hasOperator) {
+                        throw new Error(
+                            'Events do not look like aminoStream records.\n' +
+                            'Required: id, set, recordId, operator\n' +
+                            'Found keys: ' + Object.keys(rawEvent).join(', ')
+                        );
+                    }
+                    validated = true;
                 }
-                row.push(val !== undefined ? val : null);
+                normalizeEvent(rawEvent);
+                events.push(rawEvent);
+                if (count % 10000 === 0) {
+                    statEvents.textContent = count.toLocaleString();
+                }
             }
-            rows.push(row);
+
+            function onReadProgress(bytesRead, totalBytes) {
+                var pct = Math.round((bytesRead / totalBytes) * 30);
+                setProgress(pct, 'Reading... ' + formatBytes(bytesRead) + ' / ' + formatBytes(totalBytes));
+            }
+
+            var totalParsed;
+            if (fileType === 'json-array') {
+                try {
+                    totalParsed = await streamJsonArray(file, onEvent, onReadProgress);
+                } catch (e) {
+                    if (e.message === 'WRAPPED_OBJECT') {
+                        totalParsed = await fallbackJsonParse(file, onEvent, onReadProgress);
+                    } else {
+                        throw e;
+                    }
+                }
+            } else if (fileType === 'json-object') {
+                totalParsed = await fallbackJsonParse(file, onEvent, onReadProgress);
+            } else {
+                totalParsed = await streamCsv(file, onEvent, onReadProgress);
+            }
+
+            statEvents.textContent = events.length.toLocaleString();
+            log('Parsed ' + events.length.toLocaleString() + ' events', 'log-ok');
+
+            if (events.length === 0) {
+                throw new Error('No valid events found in file.');
+            }
+
+            // ---- Phase 3: Replay events to build current state ----
+            phaseLabel.textContent = 'Phase 2/3 — Replaying Events';
+            setProgress(30, 'Sorting events...');
+            await yieldUI();
+
+            events.sort(function(a, b) { return a.id - b.id; });
+            await yieldUI();
+
+            setProgress(32, 'Replaying events...');
+            log('Replaying ' + events.length.toLocaleString() + ' events to build current state...');
+
+            var META_TABLES = {};
+            var META_FIELDS = {};
+            var META_VIEWS = {};
+            var tableDataMap = {};
+            var maxId = 0;
+            var total = events.length;
+
+            for (var i = 0; i < total; i++) {
+                var e = events[i];
+                if (!e || !e.set || !e.recordId) continue;
+
+                // Parse payload once — store parsed object back
+                var payload = parsePayload(e.payload);
+                if (payload && typeof payload === 'object' && typeof e.payload === 'string') {
+                    e.payload = payload; // replace string with parsed object to avoid re-parsing
+                }
+                if (!payload || typeof payload !== 'object') continue;
+
+                var recordType = payload._set;
+                var setName = e.set;
+                var recordId = e.recordId;
+                if (e.id > maxId) maxId = e.id;
+
+                if (recordType === 'table') {
+                    if (!META_TABLES[recordId]) META_TABLES[recordId] = {};
+                    var td = META_TABLES[recordId];
+                    td.tableId = recordId;
+                    if (payload.fields) {
+                        var pf = payload.fields;
+                        if (pf.INS) assignShallow(td, pf.INS);
+                        if (pf.ALT) assignShallow(td, pf.ALT);
+                        if (pf.SYN) assignShallow(td, pf.SYN);
+                    }
+                    if (payload.tableName) td.tableName = payload.tableName;
+                    if (payload.primaryFieldId) td.primaryFieldId = payload.primaryFieldId;
+                    if (payload.displayNameFieldId) td.displayNameFieldId = payload.displayNameFieldId;
+                    if (payload.tableId) td.tableId = payload.tableId;
+
+                } else if (recordType === 'field') {
+                    var tblId = payload.tableId || setName.replace('airtable:', '');
+                    if (!META_FIELDS[tblId]) META_FIELDS[tblId] = {};
+                    if (!META_FIELDS[tblId][recordId]) META_FIELDS[tblId][recordId] = {};
+                    var fd = META_FIELDS[tblId][recordId];
+                    fd.tableId = tblId;
+                    fd.fieldId = recordId;
+                    if (payload.fields) {
+                        var pf2 = payload.fields;
+                        if (pf2.INS) assignShallow(fd, pf2.INS);
+                        if (pf2.ALT) assignShallow(fd, pf2.ALT);
+                        if (pf2.SYN) assignShallow(fd, pf2.SYN);
+                    }
+                    if (payload.fieldName) fd.fieldName = payload.fieldName;
+                    if (payload.fieldType) fd.fieldType = payload.fieldType;
+                    if (payload.fieldId) fd.fieldId = payload.fieldId;
+                    if (payload.options) fd.options = payload.options;
+                    if (payload.readOnly != null) fd.readOnly = payload.readOnly;
+
+                } else if (recordType === 'view') {
+                    var tblId2 = payload.tableId || setName.replace('airtable:', '');
+                    if (!META_VIEWS[tblId2]) META_VIEWS[tblId2] = {};
+                    if (!META_VIEWS[tblId2][recordId]) META_VIEWS[tblId2][recordId] = {};
+                    var vd = META_VIEWS[tblId2][recordId];
+                    vd.tableId = tblId2;
+                    vd.viewId = recordId;
+                    if (payload.fields) {
+                        var pf3 = payload.fields;
+                        if (pf3.INS) assignShallow(vd, pf3.INS);
+                        if (pf3.ALT) assignShallow(vd, pf3.ALT);
+                        if (pf3.SYN) assignShallow(vd, pf3.SYN);
+                    }
+                    if (payload.viewName) vd.viewName = payload.viewName;
+                    if (payload.viewType) vd.viewType = payload.viewType;
+                    if (payload.viewId) vd.viewId = payload.viewId;
+
+                } else if (recordType === 'viewConfig') {
+                    var tblId3 = payload.tableId || setName.replace('airtable:', '');
+                    if (!META_VIEWS[tblId3]) META_VIEWS[tblId3] = {};
+                    if (!META_VIEWS[tblId3][recordId]) META_VIEWS[tblId3][recordId] = { tableId: tblId3, viewId: recordId };
+                    var vc = META_VIEWS[tblId3][recordId];
+                    if (payload.viewName) vc.viewName = payload.viewName;
+                    if (payload.hiddenFieldIds) vc.hiddenFieldIds = payload.hiddenFieldIds;
+                    if (payload.fieldOrder) vc.fieldOrder = payload.fieldOrder;
+                    if (payload.filters) vc.filters = payload.filters;
+                    if (payload.sorts) vc.sorts = payload.sorts;
+
+                } else if (recordType === 'tableSettings') {
+                    // Skip user-specific settings
+
+                } else {
+                    // Data record
+                    var dtblId = setName.replace('airtable:', '');
+                    var pfields = payload.fields;
+                    if (!pfields || typeof pfields !== 'object') continue;
+
+                    if (!META_TABLES[dtblId]) {
+                        META_TABLES[dtblId] = { tableId: dtblId, tableName: dtblId, _placeholder: true };
+                    }
+                    if (!META_FIELDS[dtblId]) META_FIELDS[dtblId] = {};
+
+                    // Auto-discover placeholder fields
+                    var ops = [pfields.INS, pfields.ALT, pfields.SYN];
+                    for (var oi = 0; oi < ops.length; oi++) {
+                        if (!ops[oi]) continue;
+                        var opKeys = Object.keys(ops[oi]);
+                        for (var ok = 0; ok < opKeys.length; ok++) {
+                            var fid = opKeys[ok];
+                            if (!META_FIELDS[dtblId][fid]) {
+                                META_FIELDS[dtblId][fid] = {
+                                    tableId: dtblId, fieldId: fid, fieldName: fid,
+                                    fieldType: inferFieldType(ops[oi][fid]), _placeholder: true
+                                };
+                            }
+                        }
+                    }
+                    if (Array.isArray(pfields.NUL)) {
+                        for (var ni = 0; ni < pfields.NUL.length; ni++) {
+                            var nfid = pfields.NUL[ni];
+                            if (!META_FIELDS[dtblId][nfid]) {
+                                META_FIELDS[dtblId][nfid] = {
+                                    tableId: dtblId, fieldId: nfid, fieldName: nfid,
+                                    fieldType: 'unknown', _placeholder: true
+                                };
+                            }
+                        }
+                    }
+
+                    if (!tableDataMap[dtblId]) tableDataMap[dtblId] = {};
+                    if (!tableDataMap[dtblId][recordId]) tableDataMap[dtblId][recordId] = {};
+
+                    var state = tableDataMap[dtblId][recordId];
+                    if (pfields.INS) assignShallow(state, pfields.INS);
+                    if (pfields.ALT) assignShallow(state, pfields.ALT);
+                    if (pfields.SYN) assignShallow(state, pfields.SYN);
+                    if (pfields.NUL && Array.isArray(pfields.NUL)) {
+                        for (var nk = 0; nk < pfields.NUL.length; nk++) {
+                            delete state[pfields.NUL[nk]];
+                        }
+                    }
+                }
+
+                // Yield to UI periodically
+                if (i > 0 && i % YIELD_INTERVAL === 0) {
+                    var replayPct = 32 + Math.round((i / total) * 33);
+                    setProgress(replayPct, 'Replaying... ' + i.toLocaleString() + ' / ' + total.toLocaleString());
+                    statTables.textContent = Object.keys(META_TABLES).length.toLocaleString();
+                    await yieldUI();
+                }
+            }
+
+            // Compute final stats
+            var tableNames = Object.keys(META_TABLES);
+            var totalRecordCount = 0;
+            var totalFieldCount = 0;
+            for (var t = 0; t < tableNames.length; t++) {
+                var tid = tableNames[t];
+                if (tableDataMap[tid]) totalRecordCount += Object.keys(tableDataMap[tid]).length;
+                if (META_FIELDS[tid]) totalFieldCount += Object.keys(META_FIELDS[tid]).length;
+            }
+
+            statTables.textContent = tableNames.length.toLocaleString();
+            statRecords.textContent = totalRecordCount.toLocaleString();
+            statFields.textContent = totalFieldCount.toLocaleString();
+
+            log('State: ' + tableNames.length + ' tables, ' + totalRecordCount.toLocaleString() + ' records, ' + totalFieldCount + ' fields', 'log-ok');
+            setProgress(65, 'State materialized');
+            await yieldUI();
+
+            // Show table preview
+            tablePreviewBody.innerHTML = '';
+            for (var tp = 0; tp < tableNames.length; tp++) {
+                var tpId = tableNames[tp];
+                var tName = META_TABLES[tpId].tableName || tpId;
+                var recCount = tableDataMap[tpId] ? Object.keys(tableDataMap[tpId]).length : 0;
+                var fldCount = META_FIELDS[tpId] ? Object.keys(META_FIELDS[tpId]).length : 0;
+                var row = document.createElement('tr');
+                row.innerHTML = '<td>' + escapeHtml(tName) + '</td><td>' + recCount.toLocaleString() + '</td><td>' + fldCount + '</td>';
+                tablePreviewBody.appendChild(row);
+            }
+            tablePreview.classList.add('visible');
+
+            // Free the materialized state — not needed for AMO output
+            tableDataMap = null;
+
+            // ---- Phase 4: Build AMO binary ----
+            phaseLabel.textContent = 'Phase 3/3 — Building AMO';
+            setProgress(66, 'Building columnar schema...');
+            await yieldUI();
+
+            log('Building AMO binary from ' + events.length.toLocaleString() + ' events...');
+
+            // Collect columns from first event (representative) + accumulate extras
+            var colSet = {};
+            // Sample first 1000 + last 100 for column discovery to avoid full scan if uniform
+            var sampleLimit = Math.min(events.length, 1000);
+            for (var si = 0; si < sampleLimit; si++) {
+                var skeys = Object.keys(events[si]);
+                for (var sk = 0; sk < skeys.length; sk++) colSet[skeys[sk]] = true;
+            }
+            if (events.length > 1000) {
+                var tailStart = Math.max(1000, events.length - 100);
+                for (var si2 = tailStart; si2 < events.length; si2++) {
+                    var skeys2 = Object.keys(events[si2]);
+                    for (var sk2 = 0; sk2 < skeys2.length; sk2++) colSet[skeys2[sk2]] = true;
+                }
+            }
+            // Also do a full scan in chunks to catch any stragglers
+            for (var ci = 0; ci < events.length; ci += 5000) {
+                var cend = Math.min(ci + 10, events.length); // spot-check 10 events per 5000
+                for (var cj = ci; cj < cend; cj++) {
+                    var ckeys = Object.keys(events[cj]);
+                    for (var ck = 0; ck < ckeys.length; ck++) colSet[ckeys[ck]] = true;
+                }
+            }
+            delete colSet._encryptedPayload;
+
+            var coreColumns = ['id', 'set', 'recordId', 'operator', 'created_at', 'payload', 'uuid'];
+            var columns = [];
+            for (var c = 0; c < coreColumns.length; c++) {
+                if (colSet[coreColumns[c]]) {
+                    columns.push(coreColumns[c]);
+                    delete colSet[coreColumns[c]];
+                }
+            }
+            var extraCols = Object.keys(colSet);
+            for (var ec = 0; ec < extraCols.length; ec++) columns.push(extraCols[ec]);
+
+            // Find payload column index for optimized handling
+            var payloadColIdx = columns.indexOf('payload');
+
+            // Build rows in async batches
+            setProgress(68, 'Building row data...');
+            var rows = new Array(events.length);
+
+            for (var ri = 0; ri < events.length; ri++) {
+                var ev = events[ri];
+                var row2 = new Array(columns.length);
+                for (var col = 0; col < columns.length; col++) {
+                    var val = ev[columns[col]];
+                    // Parse payload string → object if still a string
+                    if (col === payloadColIdx && typeof val === 'string') {
+                        try { val = JSON.parse(val); } catch (e3) { /* keep as string */ }
+                    }
+                    row2[col] = (val !== undefined) ? val : null;
+                }
+                rows[ri] = row2;
+
+                // Free the event object — row is our canonical copy now
+                events[ri] = null;
+
+                if (ri > 0 && ri % AMO_YIELD_INTERVAL === 0) {
+                    var rowPct = 68 + Math.round((ri / events.length) * 15);
+                    setProgress(rowPct, 'Building rows... ' + ri.toLocaleString() + ' / ' + events.length.toLocaleString());
+                    await yieldUI();
+                }
+            }
+            events = null; // free event array
+
+            setProgress(83, 'Encoding MessagePack...');
+            await yieldUI();
+            log('Encoding MessagePack...');
+
+            var amoPayload = {
+                v: 1,
+                type: 'events',
+                ts: Math.floor(Date.now() / 1000),
+                cursor: maxId,
+                schema: { '_events': columns },
+                records: { '_events': rows },
+                meta: { tables: META_TABLES, fields: META_FIELDS }
+            };
+
+            var encoded = MessagePack.encode(amoPayload);
+
+            // Free the payload/rows — encoded buffer is our data now
+            amoPayload = null;
+            rows = null;
+
+            setProgress(88, 'Compressing (gzip)...');
+            await yieldUI();
+            log('Compressing with gzip (' + formatBytes(encoded.length) + ' uncompressed)...');
+
+            var compressed = pako.gzip(encoded);
+            encoded = null; // free uncompressed
+
+            // Prepend 8-byte AMO1 header
+            var header = new Uint8Array([0x41, 0x4D, 0x4F, 0x31, 0x01, 0x00, 0x00, 0x00]);
+            var out = new Uint8Array(8 + compressed.length);
+            out.set(header);
+            out.set(compressed, 8);
+            compressed = null;
+
+            log('AMO file: ' + formatBytes(out.length), 'log-ok');
+
+            generatedBlob = new Blob([out], { type: 'application/x-amino-snapshot' });
+            out = null;
+
+            generatedFilename = (file.name || 'export').replace(/\.[^.]+$/, '') + '.amo';
+
+            setProgress(100, 'Done — ready to download');
+            phaseLabel.textContent = 'Complete';
+            downloadBtn.classList.add('visible');
+
+            updateElapsed();
+            updateMemory();
+            log('Conversion complete in ' + formatDuration(Date.now() - startTime) + '. Click Download to save.', 'log-ok');
+
+        } catch (err) {
+            showError('Failed:\n' + err.message);
+            setProgress(0, 'Error');
+            phaseLabel.textContent = 'Error';
+            log('ERROR: ' + err.message, 'log-warn');
+            if (err.stack) log(err.stack, 'log-warn');
+        } finally {
+            clearInterval(memTimer);
+            updateElapsed();
+            updateMemory();
         }
-
-        var schema = { '_events': columns };
-        var records = { '_events': rows };
-
-        var payload = {
-            v: 1,
-            type: 'events',
-            ts: Math.floor(Date.now() / 1000),
-            cursor: maxId,
-            schema: schema,
-            records: records
-        };
-        if (meta) payload.meta = meta;
-
-        // Encode with MessagePack
-        var encoded = MessagePack.encode(payload);
-
-        // Compress with gzip
-        var compressed = pako.gzip(encoded);
-
-        // Prepend 8-byte header: "AMO1" + version(1) + flags(0) + reserved(0,0)
-        var header = new Uint8Array([0x41, 0x4D, 0x4F, 0x31, 0x01, 0x00, 0x00, 0x00]);
-        var out = new Uint8Array(8 + compressed.length);
-        out.set(header);
-        out.set(compressed, 8);
-        return out;
-    }
-
-    // ---- Helpers ----
-    function formatBytes(bytes) {
-        if (bytes < 1024) return bytes + ' B';
-        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-        return (bytes / 1048576).toFixed(1) + ' MB';
-    }
-
-    function escapeHtml(str) {
-        var div = document.createElement('div');
-        div.appendChild(document.createTextNode(str));
-        return div.innerHTML;
     }
 
 })();
