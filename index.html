@@ -6247,6 +6247,19 @@
             <div class="settings-section">
                 <h2>Local Data</h2>
                 <p class="settings-section-desc">Manage the local database stored on this device. Your data is encrypted at rest and synced from the server.</p>
+                <div class="settings-pref-row">
+                    <label class="settings-toggle-label" for="pref-online-only-mode">
+                        <span class="settings-toggle-text">
+                            <strong>Online-only mode</strong>
+                            <span class="settings-toggle-desc">Fetch all data from the server each session. No records are stored locally in IndexedDB. Useful on shared or public devices.</span>
+                        </span>
+                        <input type="checkbox" id="pref-online-only-mode" class="settings-toggle-checkbox" onchange="toggleOnlineOnlyMode(this.checked)">
+                        <span class="settings-toggle-switch"></span>
+                    </label>
+                </div>
+                <div id="online-only-active-banner" style="display: none; margin-bottom: 12px; padding: 8px 12px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 6px; font-size: 12px; color: var(--text-secondary);">
+                    Online-only mode is active. Records are held in memory only and will not persist after this session ends.
+                </div>
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <button class="settings-action-btn" id="refresh-db-btn" onclick="refreshLocalDB('box')">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
@@ -6565,6 +6578,12 @@ var PAGE_SIZE = 100;
 var N8N_WEBHOOK_BASE = 'https://n8n.intelechia.com/webhook';
 
 var db = null;
+
+// ============ Online-Only Mode ============
+// When enabled, data is kept in memory only — IndexedDB writes are skipped.
+function _isOnlineOnlyMode() {
+    return localStorage.getItem('amino_online_only_mode') === 'true';
+}
 
 // ============ Encryption Configuration ============
 var ENCRYPTION_CONFIG_KEY = 'amino_encryption_config';
@@ -9565,7 +9584,8 @@ function getRecordIdsForTable(tableId) {
         for (var i = 0; i < keys.length; i++) memIds[keys[i]] = true;
     }
 
-    if (typeof db === 'undefined' || !db) {
+    // Online-only mode: use memory only, skip IndexedDB
+    if (_isOnlineOnlyMode() || typeof db === 'undefined' || !db) {
         return Promise.resolve(Object.keys(memIds));
     }
 
@@ -9591,7 +9611,8 @@ function getRecordCountForTable(tableId) {
     var memCount = (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId])
         ? Object.keys(window.IN_MEMORY_DATA[tableId]).length : 0;
 
-    if (typeof db === 'undefined' || !db) {
+    // Online-only mode: use memory count only
+    if (_isOnlineOnlyMode() || typeof db === 'undefined' || !db) {
         return Promise.resolve(memCount);
     }
 
@@ -9605,13 +9626,40 @@ function getRecordCountForTable(tableId) {
 }
 
 async function getRecord(tableId, recordId) {
-    // Check in-memory data first (from CSV import)
+    // Check in-memory data first (from CSV import or online-only hydration)
     if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId] && window.IN_MEMORY_DATA[tableId][recordId]) {
         return {
             tableId: tableId,
             recordId: recordId,
             fields: window.IN_MEMORY_DATA[tableId][recordId]
         };
+    }
+
+    // Online-only mode: fetch single record from API when not in memory
+    if (_isOnlineOnlyMode()) {
+        try {
+            var data = await webhookFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
+            var records = data.records || [];
+            // Populate IN_MEMORY_DATA for all fetched records from this table
+            if (!window.IN_MEMORY_DATA) window.IN_MEMORY_DATA = {};
+            if (!window.IN_MEMORY_DATA[tableId]) window.IN_MEMORY_DATA[tableId] = {};
+            for (var ri = 0; ri < records.length; ri++) {
+                var rec = records[ri];
+                if (rec.id && rec.fields) {
+                    window.IN_MEMORY_DATA[tableId][rec.id] = rec.fields;
+                }
+            }
+            if (window.IN_MEMORY_DATA[tableId][recordId]) {
+                return {
+                    tableId: tableId,
+                    recordId: recordId,
+                    fields: window.IN_MEMORY_DATA[tableId][recordId]
+                };
+            }
+        } catch (e) {
+            console.warn('[getRecord] Online-only API fetch failed:', e.message || e);
+        }
+        return null;
     }
 
     var result = await new Promise((resolve, reject) => {
@@ -9766,6 +9814,15 @@ function saveView(view) {
 }
 
 async function saveDataRecord(record) {
+    // Online-only mode: keep data in memory only, skip IndexedDB write.
+    if (_isOnlineOnlyMode()) {
+        if (window.IN_MEMORY_DATA) {
+            if (!window.IN_MEMORY_DATA[record.tableId]) window.IN_MEMORY_DATA[record.tableId] = {};
+            window.IN_MEMORY_DATA[record.tableId][record.recordId] = record.fields;
+        }
+        return;
+    }
+
     // Encrypt record if needed
     var recordToStore = record;
     if (encryptionEnabled && encryptionKey) {
@@ -9781,6 +9838,40 @@ async function saveDataRecord(record) {
 }
 
 async function saveBatch(tables, fields, views, dataRecords) {
+    // Online-only mode: save metadata (tables, fields, views) to IDB
+    // but skip persisting data records — keep them in memory only.
+    if (_isOnlineOnlyMode()) {
+        // Still populate IN_MEMORY_DATA for the current session
+        for (var oi = 0; oi < dataRecords.length; oi++) {
+            var dr = dataRecords[oi];
+            if (window.IN_MEMORY_DATA) {
+                if (!window.IN_MEMORY_DATA[dr.tableId]) window.IN_MEMORY_DATA[dr.tableId] = {};
+                window.IN_MEMORY_DATA[dr.tableId][dr.recordId] = dr.fields;
+            }
+        }
+
+        // Still save metadata (tables/fields/views) — these are schema, not user data
+        var metaStores = [];
+        if (tables.length) metaStores.push('tables');
+        if (fields.length) metaStores.push('fields');
+        if (views.length) metaStores.push('views');
+        if (metaStores.length) {
+            return new Promise((resolve, reject) => {
+                var tx = db.transaction(metaStores, 'readwrite');
+                tables.forEach(t => tx.objectStore('tables').put(t));
+                fields.forEach(f => tx.objectStore('fields').put(f));
+                views.forEach(v => tx.objectStore('views').put(v));
+                tx.oncomplete = () => {
+                    if (fields.length) scheduleEdgeRebuild();
+                    resolve();
+                };
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+        if (fields.length) scheduleEdgeRebuild();
+        return;
+    }
+
     var stores = [];
     if (tables.length) stores.push('tables');
     if (fields.length) stores.push('fields');
@@ -17765,6 +17856,9 @@ async function init() {
     }
 
     hideAuthScreen();
+
+    // Initialize online-only mode UI state from localStorage
+    _initOnlineOnlyModeUI();
 
     // Check if records actually exist AND previous hydration completed fully.
     // After Box AMO hydration, records live in IN_MEMORY_DATA (IDB save is
@@ -31396,7 +31490,11 @@ function populateHomePage() {
     if (caseNotesCountEl) caseNotesCountEl.textContent = caseNotesCount.toLocaleString();
 
     if (syncStatusEl) {
-        syncStatusEl.textContent = MatrixClient.isLoggedIn() ? 'Live' : 'Local';
+        if (_isOnlineOnlyMode()) {
+            syncStatusEl.textContent = 'Online';
+        } else {
+            syncStatusEl.textContent = MatrixClient.isLoggedIn() ? 'Live' : 'Local';
+        }
     }
 
     // Async: fetch real display name from Matrix profile if not cached
@@ -31529,6 +31627,7 @@ function initPreferencesTab() {
     if (confirmInlineEditCb) {
         confirmInlineEditCb.checked = UserPreferences.get('confirmInlineCellEdit') !== false;
     }
+    _initOnlineOnlyModeUI();
     loadUserProfile();
 }
 
@@ -31722,6 +31821,54 @@ function toggleOfflineSyncToasts(enabled) {
 
 function toggleConfirmInlineCellEdit(enabled) {
     UserPreferences.set('confirmInlineCellEdit', enabled);
+}
+
+function toggleOnlineOnlyMode(enabled) {
+    // Persist via localStorage and update the AminoData layer
+    localStorage.setItem('amino_online_only_mode', enabled ? 'true' : 'false');
+    if (typeof AminoData !== 'undefined' && AminoData.setOnlineOnlyMode) {
+        AminoData.setOnlineOnlyMode(enabled);
+    }
+
+    // Update the UI banner
+    var banner = document.getElementById('online-only-active-banner');
+    if (banner) banner.style.display = enabled ? 'block' : 'none';
+
+    // Update the Data Source indicator on the home screen
+    _updateDataSourceIndicator();
+
+    if (enabled) {
+        showToast('info', 'Online-only mode enabled. Data will not be stored locally.');
+        // Clear existing IndexedDB data records so nothing lingers
+        if (db) {
+            try {
+                var tx = db.transaction('data', 'readwrite');
+                tx.objectStore('data').clear();
+                console.log('[Settings] Cleared IndexedDB data store (online-only mode)');
+            } catch (e) {
+                console.warn('[Settings] Could not clear IDB data store:', e);
+            }
+        }
+    } else {
+        showToast('info', 'Online-only mode disabled. Data will be stored locally for offline access.');
+    }
+}
+
+function _initOnlineOnlyModeUI() {
+    var checkbox = document.getElementById('pref-online-only-mode');
+    var banner = document.getElementById('online-only-active-banner');
+    var isEnabled = _isOnlineOnlyMode();
+    if (checkbox) checkbox.checked = isEnabled;
+    if (banner) banner.style.display = isEnabled ? 'block' : 'none';
+}
+
+function _updateDataSourceIndicator() {
+    var el = document.getElementById('home-sync-status');
+    if (!el) return;
+    if (_isOnlineOnlyMode()) {
+        el.textContent = 'Online';
+        el.title = 'Online-only mode: data fetched from server, not stored locally';
+    }
 }
 
 // ============ Settings: Table Relationships ============
