@@ -2168,20 +2168,47 @@ var AminoData = (function() {
 
         try {
             console.log('[AminoData] Triggering Airtable sync via n8n webhook');
-            var response = await fetch(AIRTABLE_SYNC_WEBHOOK, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ access_token: _accessToken })
-            });
 
-            if (!response.ok) {
-                var errMsg = 'Airtable sync webhook returned ' + response.status;
-                console.warn('[AminoData] ' + errMsg);
-                return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN, error: errMsg };
+            // Retry up to 2 times on transient server errors (5xx)
+            var maxAttempts = 3;
+            var lastErr = null;
+            for (var attempt = 0; attempt < maxAttempts; attempt++) {
+                if (attempt > 0) {
+                    var backoff = attempt * 2000; // 2s, 4s
+                    console.log('[AminoData] Retrying Airtable sync in ' + (backoff / 1000) + 's (attempt ' + (attempt + 1) + '/' + maxAttempts + ')');
+                    await new Promise(function(r) { setTimeout(r, backoff); });
+                }
+
+                try {
+                    var response = await fetch(AIRTABLE_SYNC_WEBHOOK, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ access_token: _accessToken })
+                    });
+
+                    if (response.ok) {
+                        console.log('[AminoData] Airtable sync triggered successfully');
+                        return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN };
+                    }
+
+                    lastErr = 'Airtable sync webhook returned ' + response.status;
+
+                    // Only retry on 5xx server errors
+                    if (response.status < 500 || response.status >= 600) {
+                        console.warn('[AminoData] ' + lastErr);
+                        return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN, error: lastErr };
+                    }
+
+                    console.warn('[AminoData] ' + lastErr + ' (will retry)');
+                } catch (fetchErr) {
+                    lastErr = fetchErr.message;
+                    console.warn('[AminoData] Airtable sync fetch error: ' + lastErr + ' (will retry)');
+                }
             }
 
-            console.log('[AminoData] Airtable sync triggered successfully');
-            return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN };
+            // All retries exhausted
+            console.error('[AminoData] Airtable sync failed after ' + maxAttempts + ' attempts: ' + lastErr);
+            return { triggered: true, cooldownRemaining: AIRTABLE_SYNC_COOLDOWN, error: lastErr };
         } catch (err) {
             console.error('[AminoData] Airtable sync webhook failed:', err);
             // Still count as a trigger attempt for cooldown purposes
