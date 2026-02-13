@@ -6622,7 +6622,7 @@ function openTableInTab(tableId, tableName, icon) {
         if (_urlStateBootstrapped) persistUrlState();
         return;
     }
-    var tab = { id: generateTabId(), tableId: tableId, tableName: tableName || tableId, icon: icon || '' };
+    var tab = { id: generateTabId(), tableId: tableId, tableName: tableName || resolveTableName(tableId), icon: icon || '' };
     openTabs.push(tab);
     activeTabId = tab.id;
     renderTabBar();
@@ -6693,7 +6693,7 @@ function renderTabBar() {
 
         var titleEl = document.createElement('span');
         titleEl.className = 'tab-title';
-        titleEl.textContent = tab.tableName;
+        titleEl.textContent = resolveTableName(tab.tableId);
         el.appendChild(titleEl);
 
         if (openTabs.length > 1) {
@@ -7492,6 +7492,70 @@ var META_TABLES = {};
 var META_FIELDS = {};
 var META_VIEWS = {};
 
+// ============ Table Name Resolution ============
+// Centralizes display name lookup so tables never show raw Airtable IDs
+// (e.g. "tblJh06tcQ1X...") in the UI. Checks META_TABLES first, then
+// falls back to SynapseSync room data (populated from the API and room
+// state events), and only uses the raw ID as a last resort.
+
+function _looksLikeTableId(name) {
+    if (!name) return true;
+    // Airtable table IDs: "tblXXXXXXXXXX" (optionally prefixed with "airtable:")
+    return /^(airtable:)?tbl[A-Za-z0-9]{10,}/.test(name);
+}
+
+function resolveTableName(tableId) {
+    // 1. META_TABLES — authoritative in-memory metadata
+    var meta = META_TABLES[tableId];
+    if (meta && meta.tableName && !_looksLikeTableId(meta.tableName)) {
+        return meta.tableName;
+    }
+
+    // 2. SynapseSync room mappings (names from API / room state events)
+    if (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms) {
+        for (var i = 0; i < SynapseSync.tableRooms.length; i++) {
+            var tr = SynapseSync.tableRooms[i];
+            if (tr.tableId === tableId && tr.name && !_looksLikeTableId(tr.name)) {
+                // Backfill into META_TABLES so future lookups are instant
+                if (meta) {
+                    meta.tableName = tr.name;
+                    if (meta._placeholder) delete meta._placeholder;
+                }
+                return tr.name;
+            }
+        }
+    }
+
+    // 3. Last resort — use whatever name we have (may be a raw ID)
+    return (meta && meta.tableName) || tableId;
+}
+
+// Propagate display names from SynapseSync.tableRooms into META_TABLES
+// and persist to IndexedDB. Called after room mappings are populated.
+async function _backfillTableNamesFromRooms() {
+    if (typeof SynapseSync === 'undefined' || !SynapseSync.tableRooms || !SynapseSync.tableRooms.length) return;
+    var updated = 0;
+    for (var i = 0; i < SynapseSync.tableRooms.length; i++) {
+        var tr = SynapseSync.tableRooms[i];
+        if (!tr.name || _looksLikeTableId(tr.name)) continue;
+
+        var meta = META_TABLES[tr.tableId];
+        if (!meta) continue;
+
+        if (!meta.tableName || _looksLikeTableId(meta.tableName) || meta._placeholder) {
+            meta.tableName = tr.name;
+            if (meta._placeholder) delete meta._placeholder;
+            updated++;
+            try { await saveTable({ tableId: tr.tableId, tableName: tr.name }); } catch (e) {}
+        }
+    }
+    if (updated > 0) {
+        console.log('[BackfillNames] Updated ' + updated + ' table display names from room data');
+        if (typeof _sidebarCache !== 'undefined') _sidebarCache.timestamp = 0;
+        renderSidebar(true);
+    }
+}
+
 // Human-readable names for entity/event types
 var ENTITY_TYPE_NAMES = {
     'data': 'Data',
@@ -7863,7 +7927,7 @@ function _getCommandPaletteRecords() {
     for (var i = 0; i < tableIds.length; i++) {
         var tableId = tableIds[i];
         var table = META_TABLES[tableId] || {};
-        var tableName = String(table.tableName || table.table_name || tableId);
+        var tableName = resolveTableName(tableId);
         var lowered = tableName.toLowerCase();
         var category = '';
         if (lowered.indexOf('client') !== -1) category = 'client';
@@ -14106,7 +14170,7 @@ async function renderSidebar(forceRefresh) {
     var filteredTables = tables;
     if (searchQuery) {
         filteredTables = tables.filter(t => {
-            var name = (t.tableName || t.tableId || '').toLowerCase();
+            var name = resolveTableName(t.tableId).toLowerCase();
             return name.includes(searchQuery);
         });
     }
@@ -14121,7 +14185,7 @@ async function renderSidebar(forceRefresh) {
     };
 
     filteredTables.forEach(table => {
-        var tableName = table.tableName || table.tableId;
+        var tableName = resolveTableName(table.tableId);
         var type = getTableType(tableName);
         // Map 'events' type to operational
         if (type === 'events') type = 'operational';
@@ -14137,19 +14201,19 @@ async function renderSidebar(forceRefresh) {
     Object.keys(groupedTables).forEach(type => {
         if (type === 'primary') {
             groupedTables[type].sort((a, b) => {
-                var aIdx = primaryOrder.indexOf((a.tableName || a.tableId).toLowerCase());
-                var bIdx = primaryOrder.indexOf((b.tableName || b.tableId).toLowerCase());
+                var aIdx = primaryOrder.indexOf(resolveTableName(a.tableId).toLowerCase());
+                var bIdx = primaryOrder.indexOf(resolveTableName(b.tableId).toLowerCase());
                 return aIdx - bIdx;
             });
         } else {
-            groupedTables[type].sort((a, b) => (a.tableName || a.tableId).localeCompare(b.tableName || b.tableId));
+            groupedTables[type].sort((a, b) => resolveTableName(a.tableId).localeCompare(resolveTableName(b.tableId)));
         }
     });
 
     // Helper to render a table item
     function renderTableItem(table, showExpandArrow = true) {
         var tableId = table.tableId;
-        var tableName = table.tableName || tableId;
+        var tableName = resolveTableName(tableId);
         var type = getTableType(tableName);
         var config = TABLE_TYPE_CONFIG[type] || TABLE_TYPE_CONFIG.operational;
         var count = tableCounts[tableId] || 0;
@@ -15510,7 +15574,7 @@ async function selectTableView(tableId, viewId) {
 
         var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
         if (navVersion !== myNav) return;
-        var tableName = table.tableName || tableId;
+        var tableName = resolveTableName(tableId);
         document.getElementById('title').textContent = tableName;
 
         // Show loading state immediately
@@ -15796,7 +15860,7 @@ async function showTable(tableId) {
 
     var table = META_TABLES[tableId] || (await getAllTables()).find(t => t.tableId === tableId) || {};
     if (navVersion !== myNav) return;
-    var tableName = table.tableName || tableId;
+    var tableName = resolveTableName(tableId);
 
     document.getElementById('title').textContent = tableName;
 
@@ -15816,7 +15880,7 @@ async function showTable(tableId) {
         if (tableItem) {
             tableItem.classList.add('active', 'expanded');
             // Set the type color for the active indicator
-            var tableName_temp = (META_TABLES[tableId]?.tableName || tableId);
+            var tableName_temp = resolveTableName(tableId);
             var type_temp = getTableType(tableName_temp);
             var config_temp = TABLE_TYPE_CONFIG[type_temp] || TABLE_TYPE_CONFIG.operational;
             tableItem.style.setProperty('--type-color', config_temp.color);
@@ -16952,6 +17016,10 @@ var SynapseSync = {
             }
 
             console.log('[SynapseSync] Discovered ' + this.tableRooms.length + ' table rooms');
+
+            // Backfill display names from discovered rooms into META_TABLES
+            _backfillTableNamesFromRooms();
+
             return this.tableRooms;
         } catch (err) {
             console.error('[SynapseSync] Room discovery failed:', err);
@@ -17676,6 +17744,9 @@ async function hydrateFromWebhooks() {
                 SynapseSync.roomToTable[roomTables[rm].matrix_room_id] = roomTables[rm].table_id;
             }
             console.log('[WebhookHydration] Populated ' + SynapseSync.tableRooms.length + ' table↔room mappings');
+
+            // Backfill display names into META_TABLES from API-provided room names
+            _backfillTableNamesFromRooms();
         }
 
         var totalRecords = 0;
@@ -17980,6 +18051,9 @@ async function ensureRoomMembership() {
         }
         _roomMembershipPopulated = true;
         console.log('[RoomMembership] Populated ' + SynapseSync.tableRooms.length + ' table↔room mappings from API');
+
+        // Backfill display names into META_TABLES from the API-provided room names
+        await _backfillTableNamesFromRooms();
     } catch (err) {
         console.warn('[RoomMembership] ensureRoomMembership failed:', err);
     }
@@ -18465,7 +18539,7 @@ async function openHistoryModal(tableId, recordId) {
     currentHistoryRecordId = recordId;
 
     // Set modal title
-    var tableName = META_TABLES[tableId]?.tableName || tableId;
+    var tableName = resolveTableName(tableId);
     document.getElementById('history-modal-title').textContent = 'Field History - ' + tableName;
 
     // Show modal with loading state
@@ -18841,7 +18915,7 @@ async function refreshRoomAccessSnapshot(opts) {
             var state = MatrixClient.getRoomStateFromCache(roomId) || {};
             var stateValues = Object.values(state);
             var tableId = roomTableMap[roomId] || null;
-            var tableName = tableId && META_TABLES[tableId] ? (META_TABLES[tableId].tableName || tableId) : null;
+            var tableName = tableId ? resolveTableName(tableId) : null;
 
             var latestEvents = [];
             try {
@@ -18929,7 +19003,7 @@ function renderRoomAccessSnapshot(preserveSelection) {
         html += '</div></div>';
 
         html += '<div class="room-access-summary">';
-        html += '<div class="label">Table</div><div class="value">' + esc(room.tableName || room.tableId || '—') + '</div>';
+        html += '<div class="label">Table</div><div class="value">' + esc(room.tableId ? resolveTableName(room.tableId) : (room.tableName || '—')) + '</div>';
         html += '<div class="label">State events</div><div class="value">' + room.stateCount.toLocaleString() + '</div>';
         html += '</div>';
 
@@ -19004,7 +19078,7 @@ async function renderEventsContent() {
         html += '<select onchange="setEventsSetFilter(this.value)">';
         html += '<option value="">All Tables</option>';
         for (var tid in META_TABLES) {
-            var tableName = META_TABLES[tid].tableName || tid;
+            var tableName = resolveTableName(tid);
             var setVal = 'airtable:' + tid;
             html += '<option value="' + esc(setVal) + '"' + (eventsSetFilter === setVal ? ' selected' : '') + '>' + esc(tableName) + '</option>';
         }
@@ -19348,7 +19422,7 @@ function renderEventRow(event, isNew) {
     html += '<td><span class="event-timestamp">' + esc(timestamp) + '</span></td>';
     html += '<td><span class="event-type-badge ' + eventType + '">' + esc(ENTITY_TYPE_NAMES[eventType] || eventType) + '</span></td>';
     var setTableId = (event.set || '').replace('airtable:', '');
-    var setDisplayName = (META_TABLES[setTableId] && META_TABLES[setTableId].tableName) || event.set || '';
+    var setDisplayName = setTableId ? resolveTableName(setTableId) : (event.set || '');
     html += '<td><span class="event-set" title="' + esc(event.set || '') + '">' + esc(setDisplayName) + '</span></td>';
     // Details column - highlight operator
     html += '<td class="event-details">';
@@ -19777,7 +19851,7 @@ async function renderChangelogContent() {
         html += '<select onchange="setChangelogTableFilter(this.value)">';
         html += '<option value="">All Tables</option>';
         for (var tid in META_TABLES) {
-            var tableName = META_TABLES[tid].tableName || tid;
+            var tableName = resolveTableName(tid);
             html += '<option value="' + esc(tid) + '"' + (changelogTableFilter === tid ? ' selected' : '') + '>' + esc(tableName) + '</option>';
         }
         html += '</select>';
@@ -19827,7 +19901,7 @@ async function renderChangelogContent() {
 function renderChangelogEntry(entry, isLast) {
     var op = entry.op || 'ALT';
     var opLabel = ENTITY_TYPE_NAMES[op] || op;
-    var tableName = (META_TABLES[entry.tableId] && META_TABLES[entry.tableId].tableName) || entry.tableId || 'Unknown';
+    var tableName = entry.tableId ? resolveTableName(entry.tableId) : 'Unknown';
     var timeStr = entry.timestamp ? formatTimestamp(entry.timestamp) : 'Unknown';
     var fieldsMeta = META_FIELDS[entry.tableId] || {};
 
@@ -20979,7 +21053,7 @@ async function viewRecordAtPointInTime(eventId, recordId, set) {
         }
 
         // Update modal header
-        var tableName = META_TABLES[tableId]?.tableName || tableId || 'Unknown Table';
+        var tableName = resolveTableName(tableId);
         document.getElementById('pit-modal-title').textContent = tableName;
         document.getElementById('pit-modal-event-badge').textContent = 'Event #' + eventId;
         document.getElementById('pit-modal-timestamp').textContent = lastTimestamp ? formatTimestamp(new Date(lastTimestamp).getTime()) : '';
@@ -21158,7 +21232,7 @@ async function openRecordProfile(tableId, recordId, viewId) {
     overlay.classList.add('open');
 
     // Update header - use display name field value if set, otherwise table name
-    var tableName = META_TABLES[tableId]?.tableName || tableId;
+    var tableName = resolveTableName(tableId);
     var profileDisplayTitle = tableName;
     var dnFieldId = getDisplayNameFieldId(tableId);
     if (dnFieldId) {
@@ -22224,35 +22298,35 @@ var CaseNotesAPI = (function() {
         var pn = _normalizeTableName(pattern);
         var fbn = _normalizeTableName(fallback);
         for (var i = 0; i < tables.length; i++) {
-            var name = (META_TABLES[tables[i]].tableName || '').toLowerCase();
+            var name = resolveTableName(tables[i]).toLowerCase();
             if (name === p) return tables[i];
         }
         // Normalized exact match to handle punctuation/plurals (e.g., Case_Notes)
         if (pn) {
             for (var i2 = 0; i2 < tables.length; i2++) {
-                var nExact = _normalizeTableName(META_TABLES[tables[i2]].tableName || '');
+                var nExact = _normalizeTableName(resolveTableName(tables[i2]));
                 if (nExact === pn) return tables[i2];
             }
         }
         for (var j = 0; j < tables.length; j++) {
-            var n = (META_TABLES[tables[j]].tableName || '').toLowerCase();
+            var n = resolveTableName(tables[j]).toLowerCase();
             if (n.includes(p)) return tables[j];
         }
         if (pn) {
             for (var j2 = 0; j2 < tables.length; j2++) {
-                var nContains = _normalizeTableName(META_TABLES[tables[j2]].tableName || '');
+                var nContains = _normalizeTableName(resolveTableName(tables[j2]));
                 if (nContains.includes(pn)) return tables[j2];
             }
         }
         if (fb) {
             for (var k = 0; k < tables.length; k++) {
-                var fn = (META_TABLES[tables[k]].tableName || '').toLowerCase();
+                var fn = resolveTableName(tables[k]).toLowerCase();
                 if (fn.includes(fb)) return tables[k];
             }
         }
         if (fbn) {
             for (var k2 = 0; k2 < tables.length; k2++) {
-                var fnNorm = _normalizeTableName(META_TABLES[tables[k2]].tableName || '');
+                var fnNorm = _normalizeTableName(resolveTableName(tables[k2]));
                 if (fnNorm.includes(fbn)) return tables[k2];
             }
         }
@@ -25735,8 +25809,8 @@ function isDefaultView() {
 // Generate default view name: "{Table Name} {DateTime}"
 function generateDefaultViewName() {
     var tableName = 'View';
-    if (currentTable && META_TABLES[currentTable]) {
-        tableName = META_TABLES[currentTable].tableName || currentTable;
+    if (currentTable) {
+        tableName = resolveTableName(currentTable);
     }
     var now = new Date();
     var dateStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -26438,7 +26512,7 @@ function renderWizardClientTable(container) {
     tableIds.forEach(function(tid) {
         var t = wizardData.legacyTables[tid];
         var selected = wizardData.clientTable === tid ? ' selected' : '';
-        tableOptions += '<option value="' + esc(tid) + '"' + selected + '>' + esc(t.tableName || tid) + '</option>';
+        tableOptions += '<option value="' + esc(tid) + '"' + selected + '>' + esc(resolveTableName(tid)) + '</option>';
     });
 
     // Field selector (populated when table changes)
@@ -26504,7 +26578,7 @@ function renderWizardClientTable(container) {
 
         linkedHtml +=
             '<div class="linked-record-row">' +
-                '<span class="table-name">' + esc(t.tableName || tid) + statusHtml + '</span>' +
+                '<span class="table-name">' + esc(resolveTableName(tid)) + statusHtml + '</span>' +
                 '<select onchange="wizardSetLinkedField(\'' + esc(tid) + '\', this.value)">' + linkFieldOptions + '</select>' +
             '</div>';
     });
@@ -26570,7 +26644,7 @@ function renderWizardVisibility(container) {
             '<label class="checkbox-item">' +
                 '<input type="checkbox" value="' + esc(tid) + '"' + checked +
                     ' onchange="wizardToggleClientVisibleTable(\'' + esc(tid) + '\', this.checked)">' +
-                '<span>' + esc(t.tableName || tid) + '</span>' +
+                '<span>' + esc(resolveTableName(tid)) + '</span>' +
             '</label>';
     });
 
@@ -26584,7 +26658,7 @@ function renderWizardVisibility(container) {
             '<label class="checkbox-item">' +
                 '<input type="checkbox" value="' + esc(tid) + '"' + checked +
                     ' onchange="wizardToggleClientVisibleLinkedTable(\'' + esc(tid) + '\', this.checked)">' +
-                '<span>' + esc(t.tableName || tid) + '</span>' +
+                '<span>' + esc(resolveTableName(tid)) + '</span>' +
             '</label>';
     });
 
@@ -27225,13 +27299,13 @@ function showRoomPublishModal() {
             '<label class="room-table-item" for="pub-tbl-' + esc(tid) + '">' +
                 '<input type="checkbox" id="pub-tbl-' + esc(tid) + '" value="' + esc(tid) + '" checked>' +
                 '<div class="table-info">' +
-                    '<div class="table-name">' + esc(t.tableName || tid) + '</div>' +
+                    '<div class="table-name">' + esc(resolveTableName(tid)) + '</div>' +
                     '<div class="table-meta">' + fieldCount + ' fields, ' + recordCount + ' records</div>' +
                 '</div>' +
                 '<span class="pub-status local">Local</span>' +
             '</label>';
 
-        clientOpts += '<option value="' + esc(tid) + '">' + esc(t.tableName || tid) + '</option>';
+        clientOpts += '<option value="' + esc(tid) + '">' + esc(resolveTableName(tid)) + '</option>';
     });
 
     listEl.innerHTML = html;
@@ -27321,12 +27395,13 @@ async function executeRoomPublish() {
             for (var i = 0; i < selectedTables.length; i++) {
                 var tid = selectedTables[i];
                 var tMeta = META_TABLES[tid] || { tableName: tid };
+                var resolvedName = resolveTableName(tid);
                 var pct = 15 + Math.round((i / selectedTables.length) * 80);
-                updatePub(pct, 'Publishing ' + (tMeta.tableName || tid) + '...');
+                updatePub(pct, 'Publishing ' + resolvedName + '...');
 
                 // Create a room for this table
                 var roomId = await MatrixClient.createRoom({
-                    name: tMeta.tableName || tid,
+                    name: resolvedName,
                     preset: 'private_chat',
                     initialState: [{
                         type: 'm.room.history_visibility',
@@ -27338,8 +27413,8 @@ async function executeRoomPublish() {
                 await MatrixClient.addChildToSpace(orgSpaceId, roomId);
                 await MatrixClient.setRoomParentSpace(roomId, orgSpaceId);
 
-                // Write table schema
-                await MatrixClient.writeTableSchema(roomId, tid, tMeta.tableName, tMeta.icon, true);
+                // Write table schema — use resolved name to ensure display name is stored in room state
+                await MatrixClient.writeTableSchema(roomId, tid, resolvedName, tMeta.icon, true);
 
                 // Write field schemas
                 var fields = META_FIELDS[tid] || {};
@@ -28020,38 +28095,38 @@ var InterfaceApp = (function() {
 
         // Exact match first
         for (var i = 0; i < tables.length; i++) {
-            var name = (META_TABLES[tables[i]].tableName || '').toLowerCase();
+            var name = resolveTableName(tables[i]).toLowerCase();
             if (name === pattern) return tables[i];
         }
         // Normalized exact match for punctuation/plural variants
         if (patternNorm) {
             for (var i2 = 0; i2 < tables.length; i2++) {
-                var nameNorm = _normalizeTableName(META_TABLES[tables[i2]].tableName || '');
+                var nameNorm = _normalizeTableName(resolveTableName(tables[i2]));
                 if (nameNorm === patternNorm) return tables[i2];
             }
         }
         // Contains match
         for (var j = 0; j < tables.length; j++) {
-            var n = (META_TABLES[tables[j]].tableName || '').toLowerCase();
+            var n = resolveTableName(tables[j]).toLowerCase();
             if (n.includes(pattern)) return tables[j];
         }
         // Normalized contains match
         if (patternNorm) {
             for (var j2 = 0; j2 < tables.length; j2++) {
-                var nNorm = _normalizeTableName(META_TABLES[tables[j2]].tableName || '');
+                var nNorm = _normalizeTableName(resolveTableName(tables[j2]));
                 if (nNorm.includes(patternNorm)) return tables[j2];
             }
         }
         // Fallback pattern
         if (fallback) {
             for (var k = 0; k < tables.length; k++) {
-                var fn = (META_TABLES[tables[k]].tableName || '').toLowerCase();
+                var fn = resolveTableName(tables[k]).toLowerCase();
                 if (fn.includes(fallback)) return tables[k];
             }
         }
         if (fallbackNorm) {
             for (var k2 = 0; k2 < tables.length; k2++) {
-                var fnNorm = _normalizeTableName(META_TABLES[tables[k2]].tableName || '');
+                var fnNorm = _normalizeTableName(resolveTableName(tables[k2]));
                 if (fnNorm.includes(fallbackNorm)) return tables[k2];
             }
         }
@@ -28242,7 +28317,7 @@ var InterfaceApp = (function() {
         try {
             var tables = Object.keys(typeof META_TABLES !== 'undefined' ? META_TABLES : {});
             for (var i = 0; i < tables.length; i++) {
-                var name = ((META_TABLES[tables[i]] || {}).tableName || '').toLowerCase();
+                var name = resolveTableName(tables[i]).toLowerCase();
                 if (name.includes('client info') || name.includes('client')) {
                     await _getTableRecords(tables[i]);
                     return;
@@ -31263,10 +31338,9 @@ var InterfaceApp = (function() {
         var data = {};
         var tableIdToName = {};
         var tableIds = Object.keys(META_TABLES || {}).filter(function(tableId) {
-            var table = META_TABLES[tableId] || {};
-            var tableName = String(table.tableName || table.table_name || '').trim().toLowerCase();
+            var tableName = resolveTableName(tableId).trim().toLowerCase();
             if (REQUIRED_TABLES[tableName]) {
-                tableIdToName[tableId] = table.tableName || table.table_name || tableId;
+                tableIdToName[tableId] = resolveTableName(tableId);
                 return true;
             }
             return false;
