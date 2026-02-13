@@ -8148,56 +8148,18 @@ function _looksLikeTableId(name) {
 }
 
 function resolveTableName(tableId) {
-    // 1. META_TABLES — authoritative in-memory metadata
+    // META_TABLES — authoritative in-memory metadata
     var meta = META_TABLES[tableId];
     if (meta && meta.tableName && !_looksLikeTableId(meta.tableName)) {
         return meta.tableName;
     }
 
-    // 2. SynapseSync room mappings (names from API / room state events)
-    if (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms) {
-        for (var i = 0; i < SynapseSync.tableRooms.length; i++) {
-            var tr = SynapseSync.tableRooms[i];
-            if (tr.tableId === tableId && tr.name && !_looksLikeTableId(tr.name)) {
-                // Backfill into META_TABLES so future lookups are instant
-                if (meta) {
-                    meta.tableName = tr.name;
-                    if (meta._placeholder) delete meta._placeholder;
-                }
-                return tr.name;
-            }
-        }
-    }
-
-    // 3. Last resort — use whatever name we have (may be a raw ID)
+    // Last resort — use whatever name we have (may be a raw ID)
     return (meta && meta.tableName) || tableId;
 }
 
-// Propagate display names from SynapseSync.tableRooms into META_TABLES
-// and persist to IndexedDB. Called after room mappings are populated.
-async function _backfillTableNamesFromRooms() {
-    if (typeof SynapseSync === 'undefined' || !SynapseSync.tableRooms || !SynapseSync.tableRooms.length) return;
-    var updated = 0;
-    for (var i = 0; i < SynapseSync.tableRooms.length; i++) {
-        var tr = SynapseSync.tableRooms[i];
-        if (!tr.name || _looksLikeTableId(tr.name)) continue;
-
-        var meta = META_TABLES[tr.tableId];
-        if (!meta) continue;
-
-        if (!meta.tableName || _looksLikeTableId(meta.tableName) || meta._placeholder) {
-            meta.tableName = tr.name;
-            if (meta._placeholder) delete meta._placeholder;
-            updated++;
-            try { await saveTable({ tableId: tr.tableId, tableName: tr.name }); } catch (e) {}
-        }
-    }
-    if (updated > 0) {
-        console.log('[BackfillNames] Updated ' + updated + ' table display names from room data');
-        if (typeof _sidebarCache !== 'undefined') _sidebarCache.timestamp = 0;
-        renderSidebar(true);
-    }
-}
+// Stub — room-based name backfill removed (table names come from Postgres API)
+async function _backfillTableNamesFromRooms() { }
 
 // Human-readable names for entity/event types
 var ENTITY_TYPE_NAMES = {
@@ -17707,425 +17669,46 @@ function formatSyncTimestamp(ts) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time;
 }
 
-// ============ Synapse Sync ============
-// ============ Synapse Sync ============
+// ============ Synapse Sync (removed) ============
+// Room-as-table sync has been removed. Record data is now hydrated
+// exclusively from the Postgres server via /amino-records and /amino-records-since.
+// Matrix is still used for auth, views, messaging, and org config.
 
-// SynapseSync: real-time sync from Matrix room timelines via /sync long-poll
-// Each Airtable table has its own room. Events are law.firm.schema.object + law.firm.record.mutate.
+// Stub SynapseSync for any remaining references
 var SynapseSync = {
     running: false,
     since: null,
-    tableRooms: [],       // [{ tableId, roomId, name }]
-    roomToTable: {},      // roomId → tableId
+    tableRooms: [],
+    roomToTable: {},
     _backoffMs: 1000,
-    _lastEventTime: 0,    // timestamp of last real-time event received
-
-    async discoverTableRooms() {
-        // Discover table rooms via a single /sync call with a state filter.
-        // We filter for law.firm.schema.table and law.firm.vault.metadata state
-        // events so we find them regardless of what state_key was used.
-        try {
-            var session = _loadSynapseSession();
-            if (!session || !session.accessToken) return [];
-
-            var filter = JSON.stringify({
-                room: {
-                    state: {
-                        types: ['law.firm.schema.table', 'law.firm.vault.metadata']
-                    },
-                    timeline: { limit: 0 },
-                    ephemeral: { types: [] },
-                    account_data: { types: [] }
-                },
-                account_data: { types: [] },
-                presence: { types: [] }
-            });
-
-            var syncRes = await fetch(
-                SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=0&filter=' + encodeURIComponent(filter),
-                { headers: { 'Authorization': 'Bearer ' + session.accessToken } }
-            );
-            if (!syncRes.ok) {
-                console.error('[SynapseSync] Discovery sync failed:', syncRes.status);
-                return [];
-            }
-            var syncData = await safeResponseJson(syncRes, 'Room discovery');
-
-            var tableRooms = [];
-            var joinRooms = (syncData.rooms && syncData.rooms.join) || {};
-
-            for (var roomId in joinRooms) {
-                var roomData = joinRooms[roomId];
-                var stateEvents = (roomData.state && roomData.state.events) || [];
-
-                // A single room can host multiple tables (e.g. matter rooms),
-                // so collect every table-identifying state event we find.
-                for (var i = 0; i < stateEvents.length; i++) {
-                    var evt = stateEvents[i];
-                    if (!evt.content) continue;
-
-                    if (evt.type === 'law.firm.vault.metadata') {
-                        var tid = evt.content.tableId || evt.content.table_id;
-                        if (tid) {
-                            tableRooms.push({
-                                tableId: tid,
-                                roomId: roomId,
-                                name: evt.content.tableName || evt.content.table_name || evt.content.name || tid
-                            });
-                        }
-                    } else if (evt.type === 'law.firm.schema.table') {
-                        var tid2 = evt.content.tableId || evt.content.table_id || evt.content.id;
-                        if (tid2) {
-                            tableRooms.push({
-                                tableId: tid2,
-                                roomId: roomId,
-                                name: evt.content.name || evt.content.tableName || evt.content.table_name || tid2
-                            });
-                        }
-                    }
-                }
-            }
-
-            if (tableRooms.length > 0) {
-                // State-event discovery found rooms — use them
-                this.tableRooms = tableRooms;
-                this.roomToTable = {};
-                for (var tr of tableRooms) {
-                    this.roomToTable[tr.roomId] = tr.tableId;
-                }
-            } else if (this.tableRooms.length > 0) {
-                // No rooms found via state events, but API-populated mappings exist —
-                // keep them (bot-created rooms may lack state events)
-                console.log('[SynapseSync] No rooms found via state events, keeping ' + this.tableRooms.length + ' API-populated mappings');
-            } else {
-                // Fallback: state events didn't identify any table rooms.
-                // Probe all joined rooms for law.firm.schema.object / law.firm.record.mutate
-                // timeline events — rooms containing these are table rooms even without
-                // explicit state events.
-                console.log('[SynapseSync] No table rooms from state events — probing joined rooms for timeline events');
-                var fallbackFilter = JSON.stringify({
-                    room: {
-                        state: { types: [] },
-                        timeline: {
-                            types: ['law.firm.schema.object', 'law.firm.record.mutate'],
-                            limit: 5
-                        },
-                        ephemeral: { types: [] },
-                        account_data: { types: [] }
-                    },
-                    account_data: { types: [] },
-                    presence: { types: [] }
-                });
-                try {
-                    var fallbackRes = await fetch(
-                        SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=0&filter=' + encodeURIComponent(fallbackFilter),
-                        { headers: { 'Authorization': 'Bearer ' + session.accessToken } }
-                    );
-                    if (fallbackRes.ok) {
-                        var fallbackData = await safeResponseJson(fallbackRes, 'Room discovery fallback');
-                        var fallbackJoinRooms = (fallbackData.rooms && fallbackData.rooms.join) || {};
-                        for (var fbRoomId in fallbackJoinRooms) {
-                            var fbRoom = fallbackJoinRooms[fbRoomId];
-                            var fbTimeline = (fbRoom.timeline && fbRoom.timeline.events) || [];
-                            // Extract unique tableIds from timeline events in this room
-                            var seenTableIds = {};
-                            for (var fi = 0; fi < fbTimeline.length; fi++) {
-                                var fbEvt = fbTimeline[fi];
-                                if (!fbEvt.content) continue;
-                                var fbTableId = fbEvt.content.set ? String(fbEvt.content.set).replace('airtable:', '') : null;
-                                if (!fbTableId && fbEvt.content.tableId) fbTableId = fbEvt.content.tableId;
-                                if (!fbTableId && fbEvt.content.table_id) fbTableId = fbEvt.content.table_id;
-                                if (fbTableId && !seenTableIds[fbTableId]) {
-                                    seenTableIds[fbTableId] = true;
-                                    tableRooms.push({
-                                        tableId: fbTableId,
-                                        roomId: fbRoomId,
-                                        name: fbEvt.content.tableName || fbEvt.content.table_name || fbTableId
-                                    });
-                                }
-                            }
-                        }
-                        if (tableRooms.length > 0) {
-                            console.log('[SynapseSync] Fallback discovery found ' + tableRooms.length + ' table rooms from timeline events');
-                            this.tableRooms = tableRooms;
-                            this.roomToTable = {};
-                            for (var ftr of tableRooms) {
-                                this.roomToTable[ftr.roomId] = ftr.tableId;
-                            }
-                        }
-                    }
-                } catch (fallbackErr) {
-                    console.warn('[SynapseSync] Fallback room discovery failed:', fallbackErr);
-                }
-            }
-
-            console.log('[SynapseSync] Discovered ' + this.tableRooms.length + ' table rooms');
-
-            // Backfill display names from discovered rooms into META_TABLES
-            _backfillTableNamesFromRooms();
-
-            return this.tableRooms;
-        } catch (err) {
-            console.error('[SynapseSync] Room discovery failed:', err);
-            return this.tableRooms || [];
-        }
-    },
-
-    async start() {
-        if (this.running) return;
-        this.running = true;
-        this._backoffMs = 1000;
-
-        // Load saved sync token
-        try {
-            this.since = await getSyncMeta('synapseSyncToken');
-        } catch (e) {
-            this.since = null;
-        }
-
-        // Discover table rooms if not already done
-        if (this.tableRooms.length === 0) {
-            await this.discoverTableRooms();
-            // Re-render sidebar so Rooms section appears
-            if (this.tableRooms.length > 0) {
-                invalidateSidebarCache();
-                renderSidebar(true);
-            }
-        }
-
-        if (this.tableRooms.length === 0) {
-            console.log('[SynapseSync] No table rooms found — sync idle');
-            this.running = false;
-            return;
-        }
-
-        console.log('[SynapseSync] Starting sync loop with ' + this.tableRooms.length + ' rooms');
-        this._loop();
-    },
-
-    stop() {
-        this.running = false;
-        console.log('[SynapseSync] Stopped');
-    },
-
-    async _loop() {
-        while (this.running) {
-            try {
-                var session = _loadSynapseSession();
-                if (!session || !session.accessToken) {
-                    console.warn('[SynapseSync] No session — stopping');
-                    this.running = false;
-                    return;
-                }
-
-                var roomIds = this.tableRooms.map(function(r) { return r.roomId; });
-
-                // Build sync filter: listen for law.firm.schema.object AND law.firm.record.mutate
-                // timeline events, plus schema state events (table/field metadata + vault metadata)
-                var filter = JSON.stringify({
-                    room: {
-                        rooms: roomIds,
-                        timeline: {
-                            types: ['law.firm.schema.object', 'law.firm.record.mutate'],
-                            limit: 100
-                        },
-                        state: {
-                            types: ['law.firm.schema.table', 'law.firm.schema.field', 'law.firm.vault.metadata']
-                        }
-                    }
-                });
-
-                var url = SYNAPSE_HOMESERVER_URL + '/_matrix/client/v3/sync?timeout=30000&filter=' + encodeURIComponent(filter);
-                if (this.since) {
-                    url += '&since=' + encodeURIComponent(this.since);
-                }
-
-                var res = await fetch(url, {
-                    headers: { 'Authorization': 'Bearer ' + session.accessToken }
-                });
-
-                if (!res.ok) {
-                    throw new Error('Sync failed: ' + res.status);
-                }
-
-                var syncData = await safeResponseJson(res, 'Sync');
-                await this._processSync(syncData);
-
-                this.since = syncData.next_batch;
-                await setSyncMeta('synapseSyncToken', this.since);
-
-                // Reset backoff on success
-                this._backoffMs = 1000;
-            } catch (err) {
-                console.error('[SynapseSync] Error:', err);
-                // Exponential backoff
-                await new Promise(function(resolve) { setTimeout(resolve, SynapseSync._backoffMs); });
-                this._backoffMs = Math.min(this._backoffMs * 2, 300000); // max 5 min
-            }
-        }
-    },
-
-    // Convert a law.firm.schema.object or law.firm.record.mutate Matrix event
-    // to the synthetic format processEvents expects.
-    _convertSchemaObjectEvent: function(tevt, fallbackTableId) {
-        var c = tevt.content;
-        if (!c || !c.recordId) return null;
-
-        var evtTableId = fallbackTableId;
-        // Extract table ID from the 'set' field (e.g. "airtable:tblXXX")
-        if (c.set) {
-            evtTableId = c.set.replace('airtable:', '');
-        }
-        // law.firm.record.mutate events may carry tableId directly
-        if (!evtTableId && c.tableId) {
-            evtTableId = c.tableId;
-        }
-
-        var syntheticEvent = {
-            id: tevt.event_id,
-            set: 'airtable:' + evtTableId,
-            recordId: c.recordId,
-            operator: c.op,
-            // sourceTimestamp might be seconds (migration) or milliseconds (n8n/client).
-            // Heuristic: anything below 10 billion is seconds (covers dates through 2286).
-            created_at: (function() {
-                var ts = c.sourceTimestamp;
-                if (ts) {
-                    if (ts < 10000000000) ts = ts * 1000; // seconds → milliseconds
-                    return ts;
-                }
-                return tevt.origin_server_ts;
-            })(),
-            payload: c.payload || { fields: {} }
-        };
-
-        // If payload doesn't have fields with EO operators, construct from op + fields
-        if (syntheticEvent.payload && !syntheticEvent.payload.fields) {
-            syntheticEvent.payload.fields = {};
-        }
-
-        // Handle case where event has flat fields + op but no EO-structured payload
-        // (covers both law.firm.schema.object and law.firm.record.mutate flat formats).
-        // Also covers the case where c.payload exists but is empty/has no INS/ALT/NUL data.
-        var payloadFields = syntheticEvent.payload && syntheticEvent.payload.fields;
-        var payloadHasOps = payloadFields && (payloadFields.INS || payloadFields.ALT || payloadFields.NUL || payloadFields.SYN);
-        if (c.op && c.fields && !payloadHasOps) {
-            if (!syntheticEvent.payload) syntheticEvent.payload = { fields: {} };
-            if (!syntheticEvent.payload.fields) syntheticEvent.payload.fields = {};
-            if (c.op === 'INS') {
-                syntheticEvent.payload.fields.INS = c.fields;
-            } else if (c.op === 'ALT') {
-                syntheticEvent.payload.fields.ALT = c.fields;
-            } else if (c.op === 'NUL') {
-                syntheticEvent.payload.fields.NUL = Array.isArray(c.fields) ? c.fields : Object.keys(c.fields);
-            }
-        }
-
-        // Handle law.firm.record.mutate structured payload format
-        // where fields are at content.payload.fields.ALT / .INS / .NUL
-        // (already handled above via c.payload passthrough)
-
-        return syntheticEvent;
-    },
-
-    async _processSync(syncData) {
-        var joinedRooms = syncData.rooms && syncData.rooms.join ? syncData.rooms.join : {};
-        var newEvents = 0;
-
-        for (var roomId in joinedRooms) {
-            var tableId = this.roomToTable[roomId];
-            if (!tableId) continue;
-
-            var roomData = joinedRooms[roomId];
-
-            // Process state events (schema changes)
-            var stateEvents = roomData.state && roomData.state.events ? roomData.state.events : [];
-            for (var i = 0; i < stateEvents.length; i++) {
-                var evt = stateEvents[i];
-                if (evt.type === 'law.firm.schema.table' && evt.content) {
-                    await saveTable({ tableId: evt.content.tableId || evt.content.table_id || tableId, tableName: evt.content.name || evt.content.tableName || tableId });
-                    if (META_TABLES) META_TABLES[tableId] = { tableId: tableId, tableName: evt.content.name || evt.content.tableName || tableId };
-                } else if (evt.type === 'law.firm.schema.field' && evt.content) {
-                    var fieldData = { tableId: tableId, fieldId: evt.content.fieldId || evt.content.field_id || evt.state_key, fieldName: evt.content.name, fieldType: evt.content.type, options: evt.content.options };
-                    if (evt.content.readOnly != null) fieldData.readOnly = evt.content.readOnly;
-                    await saveField(fieldData);
-                    if (META_FIELDS && META_FIELDS[tableId]) META_FIELDS[tableId][fieldData.fieldId] = fieldData;
-                } else if (evt.type === 'law.firm.vault.metadata' && evt.content) {
-                    // Update table metadata from vault metadata
-                    var vaultTableId = evt.content.tableId || evt.content.table_id || tableId;
-                    var vaultTableName = evt.content.tableName || evt.content.table_name || evt.content.name || tableId;
-                    await saveTable({ tableId: vaultTableId, tableName: vaultTableName });
-                    if (META_TABLES) META_TABLES[vaultTableId] = { tableId: vaultTableId, tableName: vaultTableName };
-                }
-            }
-
-            // Process timeline events (law.firm.schema.object + law.firm.record.mutate)
-            // Batch all events per room to reduce IDB transactions and edge rebuilds
-            var timelineEvents = roomData.timeline && roomData.timeline.events ? roomData.timeline.events : [];
-            var batchedSynthetic = [];
-            for (var j = 0; j < timelineEvents.length; j++) {
-                var tevt = timelineEvents[j];
-                if ((tevt.type === 'law.firm.schema.object' || tevt.type === 'law.firm.record.mutate') && tevt.content) {
-                    var syntheticEvent = this._convertSchemaObjectEvent(tevt, tableId);
-                    if (syntheticEvent) batchedSynthetic.push(syntheticEvent);
-                }
-            }
-            if (batchedSynthetic.length > 0) {
-                try {
-                    await processEvents(batchedSynthetic);
-                    newEvents += batchedSynthetic.length;
-                } catch (procErr) {
-                    console.error('[SynapseSync] Error processing event batch:', procErr);
-                }
-            }
-        }
-
-        if (newEvents > 0) {
-            this._lastEventTime = Date.now();
-            console.log('[SynapseSync] Processed ' + newEvents + ' new events');
-            // Re-render current table if visible
-            if (currentTable) {
-                await showTable(currentTable, true);
-            }
-            await renderSidebar(false);
-        }
-    }
+    _lastEventTime: 0,
+    async discoverTableRooms() { return []; },
+    async start() { console.log('[SynapseSync] Room-as-table sync removed — using Postgres hydration'); },
+    stop() { this.running = false; }
 };
 
-// Look up the Matrix room ID for a table, using SynapseSync room map first,
-// then AminoData as fallback (if initialized). Returns null if not found.
-function _getRoomForTable(tableId) {
-    // Try SynapseSync room map first (always available after discovery)
-    if (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms && SynapseSync.tableRooms.length > 0) {
-        for (var i = 0; i < SynapseSync.tableRooms.length; i++) {
-            if (SynapseSync.tableRooms[i].tableId === tableId) {
-                return SynapseSync.tableRooms[i].roomId;
-            }
-        }
-    }
-    // Fall back to AminoData if initialized
-    if (typeof AminoData !== 'undefined' && AminoData.isInitialized && AminoData.isInitialized()) {
-        return AminoData.getRoomForTable(tableId);
-    }
-    return null;
-}
+// Stubs for removed room-table lookup functions
+function _getRoomForTable(tableId) { return null; }
+function _getRoomTableMap() { return {}; }
 
-// Build a reverse map of roomId -> tableId from SynapseSync, for use in
-// changelog and other functions that iterate over rooms.
-function _getRoomTableMap() {
-    var map = {};
-    if (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms) {
-        for (var i = 0; i < SynapseSync.tableRooms.length; i++) {
-            var tr = SynapseSync.tableRooms[i];
-            map[tr.roomId] = tr.tableId;
-        }
-    }
-    return map;
-}
-
-// hydrateFromSynapse: full initial hydration from Synapse table rooms
-// Replays all law.firm.schema.object + law.firm.record.mutate events to build local state
+// hydrateFromSynapse: removed — hydration now uses Postgres via /amino-records
 async function hydrateFromSynapse() {
+    console.log('[Hydration] Room-based hydration removed — use Postgres hydration instead');
+    return false;
+}
+
+// backfillHistoryFromMatrix: removed — history now comes from Postgres
+async function backfillHistoryFromMatrix() {
+    console.log('[HistoryBackfill] Room-based history backfill removed');
+    return false;
+}
+
+// (Original hydrateFromSynapse and backfillHistoryFromMatrix implementations removed)
+// Records are now hydrated from Postgres via webhook API.
+async function _hydrateFromSynapse_removed() { return false; }
+async function _backfillHistoryFromMatrix_removed() { return false; }
+
+/* --- START REMOVED ROOM SYNC CODE ---
     try {
         var session = _loadSynapseSession();
         if (!session || !session.accessToken) {
@@ -18404,7 +17987,7 @@ async function backfillHistoryFromMatrix() {
         SyncStatusFeed.error('History backfill failed: ' + err.message);
         return false;
     }
-}
+--- END REMOVED ROOM SYNC CODE --- */
 
 // ============ Webhook Hydration ============
 
@@ -18576,21 +18159,16 @@ async function hydrateFromWebhooks() {
         console.log('[WebhookHydration] Found ' + webhookTables.length + ' tables');
         SyncStatusFeed.info('Found ' + webhookTables.length + ' tables via webhook API');
 
-        // Populate SynapseSync room mappings immediately so _getRoomForTable()
-        // works as soon as hydration finishes (before ensureRoomMembership runs).
-        var roomTables = webhookTables.filter(function(t) { return !!t.matrix_room_id; });
-        if (roomTables.length > 0) {
-            SynapseSync.tableRooms = roomTables.map(function(t) {
-                return { tableId: t.table_id, roomId: t.matrix_room_id, name: t.table_name || t.table_id };
-            });
-            SynapseSync.roomToTable = {};
-            for (var rm = 0; rm < roomTables.length; rm++) {
-                SynapseSync.roomToTable[roomTables[rm].matrix_room_id] = roomTables[rm].table_id;
+        // Backfill table display names from API response into META_TABLES
+        for (var tn = 0; tn < webhookTables.length; tn++) {
+            var wt = webhookTables[tn];
+            if (wt.table_name && wt.table_id && META_TABLES[wt.table_id]) {
+                var meta = META_TABLES[wt.table_id];
+                if (!meta.tableName || _looksLikeTableId(meta.tableName) || meta._placeholder) {
+                    meta.tableName = wt.table_name;
+                    if (meta._placeholder) delete meta._placeholder;
+                }
             }
-            console.log('[WebhookHydration] Populated ' + SynapseSync.tableRooms.length + ' table↔room mappings');
-
-            // Backfill display names into META_TABLES from API-provided room names
-            _backfillTableNamesFromRooms();
         }
 
         var totalRecords = 0;
@@ -18874,33 +18452,10 @@ async function webhookIncrementalSync() {
 // Populate SynapseSync table↔room mappings from the webhook API.
 // The webhook API is the canonical source for table↔room associations
 // (discoverTableRooms() relies on state events that may not exist in
-// bot-created rooms).
+// Room membership population removed — no longer needed since room-based sync is removed.
 var _roomMembershipPopulated = false;
 async function ensureRoomMembership() {
-    if (_roomMembershipPopulated) return;
-    var session = _loadSynapseSession();
-    if (!session || !session.accessToken || !session.userId) return;
-
-    try {
-        var tablesData = await webhookFetch('/amino-tables');
-        var tables = (tablesData.tables || []).filter(function(t) { return !!t.matrix_room_id; });
-        if (tables.length === 0) return;
-
-        SynapseSync.tableRooms = tables.map(function(t) {
-            return { tableId: t.table_id, roomId: t.matrix_room_id, name: t.table_name || t.table_id };
-        });
-        SynapseSync.roomToTable = {};
-        for (var k = 0; k < tables.length; k++) {
-            SynapseSync.roomToTable[tables[k].matrix_room_id] = tables[k].table_id;
-        }
-        _roomMembershipPopulated = true;
-        console.log('[RoomMembership] Populated ' + SynapseSync.tableRooms.length + ' table↔room mappings from API');
-
-        // Backfill display names into META_TABLES from the API-provided room names
-        await _backfillTableNamesFromRooms();
-    } catch (err) {
-        console.warn('[RoomMembership] ensureRoomMembership failed:', err);
-    }
+    _roomMembershipPopulated = true;
 }
 
 // ============ Deferred Network Init ============
@@ -30701,12 +30256,7 @@ var InterfaceApp = (function() {
 
     function _renderStatsRow() {
         var tableCount = Object.keys(typeof META_TABLES !== 'undefined' ? META_TABLES : {}).length;
-        var roomCount = '--';
-        try {
-            if (typeof SynapseSync !== 'undefined' && SynapseSync.tableRooms && SynapseSync.tableRooms.length > 0) {
-                roomCount = SynapseSync.tableRooms.length;
-            }
-        } catch (e) {}
+        var roomCount = 'N/A';
         var userCount = '--';
         try {
             if (typeof _settingsMembers !== 'undefined' && _settingsMembers && _settingsMembers.length > 0) {
