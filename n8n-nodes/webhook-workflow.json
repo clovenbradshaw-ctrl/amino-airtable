@@ -562,7 +562,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/since').first().json.query.tableId, since: $('GET /records/since').first().json.query.since, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at, matrixRoomId: i.json.matrix_room_id })) }) }}",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/since').first().json.query.tableId, since: $('GET /records/since').first().json.query.since, count: $input.all().filter(i => i.json.record_id).length, next_since: $input.all().filter(i => i.json.last_synced_at).reduce((max, i) => i.json.last_synced_at > max ? i.json.last_synced_at : max, ''), records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at, last_synced: i.json.last_synced_at, matrixRoomId: i.json.matrix_room_id })) }) }}",
         "options": {
           "responseHeaders": {
             "entries": [

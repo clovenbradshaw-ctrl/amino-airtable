@@ -50,6 +50,10 @@ var AminoData = (function() {
     var _keyDerivationCache = { fingerprint: null, key: null };
     var _deferEncryption = false;        // when true, IndexedDB stores plaintext JSON (encrypt on logout)
 
+    // ============ Sync Health Tracking ============
+    var _consecutiveDecryptFailures = 0;
+    var DECRYPT_FAILURE_THRESHOLD = 5;   // Emit warning after this many consecutive failures
+
     // ============ Sync Deduplication ============
     // Tracks Matrix event_ids already applied to IndexedDB so duplicate
     // deliveries (own echo via /sync, HTTP polling overlap) are skipped.
@@ -423,6 +427,26 @@ var AminoData = (function() {
         };
     }
 
+    // B-1 fix: Loose comparison that handles type coercion from server normalization
+    // (e.g. "123" vs 123, "true" vs true).
+    function _looseFieldEqual(a, b) {
+        // Identical values or both nullish
+        if (a === b) return true;
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+
+        // Handle type coercion: compare as strings for scalar types
+        var typeA = typeof a;
+        var typeB = typeof b;
+        if (typeA !== typeB && (typeA === 'string' || typeA === 'number' || typeA === 'boolean') &&
+            (typeB === 'string' || typeB === 'number' || typeB === 'boolean')) {
+            return String(a) === String(b);
+        }
+
+        // Objects/arrays: fall back to JSON comparison
+        return JSON.stringify(a) === JSON.stringify(b);
+    }
+
     // Check if an incoming mutation is a redundant echo of a recent
     // optimistic write. Returns true if the event can be safely skipped
     // (same fields already applied locally).
@@ -443,8 +467,7 @@ var AminoData = (function() {
         var altKeys = Object.keys(alt);
         for (var i = 0; i < altKeys.length; i++) {
             var key = altKeys[i];
-            // Stringify comparison handles objects/arrays
-            if (JSON.stringify(alt[key]) !== JSON.stringify(optimistic[key])) {
+            if (!_looseFieldEqual(alt[key], optimistic[key])) {
                 return false;
             }
         }
@@ -1170,8 +1193,20 @@ var AminoData = (function() {
             console.log('[AminoData] Box hydrated', records.length, 'records for table', tid);
         }
 
-        console.log('[AminoData] Box download hydration complete:', totalHydrated, 'total records across', tableIds.length, 'tables');
-        return totalHydrated;
+        // CB-4 fix: Return structured result so caller can detect partial success
+        var hydratedTableIds = tableIds.filter(function(tid) { return (byTable[tid] || []).length > 0; });
+        var emptyTableIds = tableIds.filter(function(tid) { return (byTable[tid] || []).length === 0; });
+
+        console.log('[AminoData] Box download hydration complete:', totalHydrated, 'total records across', tableIds.length, 'tables' +
+            (emptyTableIds.length > 0 ? ' (' + emptyTableIds.length + ' tables had 0 records)' : ''));
+        return {
+            success: true,
+            totalRecords: totalHydrated,
+            totalTables: tableIds.length,
+            succeededTables: hydratedTableIds.length,
+            failedTables: emptyTableIds.length,
+            emptyTableIds: emptyTableIds
+        };
     }
 
     async function hydrateTable(tableId) {
@@ -1274,10 +1309,29 @@ var AminoData = (function() {
             }
         }
 
+        // CB-2 fix: Use server-provided cursor (next_since) when available,
+        // or compute max(last_synced) from returned records to avoid clock-skew.
+        // Falls back to client time only when no server cursor is available.
+        var newCursor;
+        if (data.next_since) {
+            newCursor = data.next_since;
+        } else if (records.length > 0) {
+            // Derive cursor from max last_synced in response records
+            newCursor = records.reduce(function(max, r) {
+                var ts = r.last_synced || r.lastSynced || '';
+                return ts > max ? ts : max;
+            }, '');
+            if (!newCursor) {
+                newCursor = new Date().toISOString();
+            }
+        } else {
+            newCursor = new Date().toISOString();
+        }
+
         var updateTx = _db.transaction('sync', 'readwrite');
         await idbPut(updateTx.objectStore('sync'), {
             tableId: tableId,
-            lastSynced: new Date().toISOString()
+            lastSynced: newCursor
         });
         await idbTxDone(updateTx);
 
@@ -1410,8 +1464,31 @@ var AminoData = (function() {
                     op: content.op || 'ALT',
                     fields: decryptedFields
                 };
+                _consecutiveDecryptFailures = 0;
             } catch (err) {
-                console.warn('[AminoData] Could not decrypt event payload (may be encrypted for another user):', err.message);
+                _consecutiveDecryptFailures++;
+                console.warn('[AminoData] Could not decrypt event payload (' + _consecutiveDecryptFailures + ' consecutive failures):', err.message);
+
+                // CB-3 fix: Emit sync-error event so the UI can show a warning
+                window.dispatchEvent(new CustomEvent('amino:sync-error', {
+                    detail: {
+                        type: 'decrypt-failure',
+                        eventId: eventId,
+                        consecutiveFailures: _consecutiveDecryptFailures,
+                        error: err.message
+                    }
+                }));
+
+                // After threshold consecutive failures, emit a critical warning
+                if (_consecutiveDecryptFailures >= DECRYPT_FAILURE_THRESHOLD) {
+                    window.dispatchEvent(new CustomEvent('amino:sync-error', {
+                        detail: {
+                            type: 'decrypt-failure-critical',
+                            consecutiveFailures: _consecutiveDecryptFailures,
+                            message: 'Sync is failing — you may need to re-login to restore data sync.'
+                        }
+                    }));
+                }
                 return;
             }
         }
@@ -1553,8 +1630,70 @@ var AminoData = (function() {
         }));
     }
 
-    // Process timeline events from a Matrix /sync response
-    function processMatrixSyncResponse(syncData) {
+    // G-3 fix: Apply a law.firm.record.delete event — remove the record from
+    // IndexedDB and all in-memory caches so deleted records don't persist locally.
+    async function applyDeleteEvent(event, roomId) {
+        var content = event.content;
+        if (!content) return;
+
+        var eventId = event.event_id;
+        if (_markEventProcessed(eventId)) {
+            return; // Already applied
+        }
+
+        var recordId = content.recordId;
+        if (!recordId) return;
+
+        var tableId = _roomTableMap[roomId];
+        if (!tableId && content.tableId) {
+            tableId = content.tableId;
+        }
+        if (!tableId && content.set) {
+            tableId = content.set.replace(/^airtable:/, '');
+        }
+        if (!tableId) {
+            console.warn('[AminoData] Cannot determine tableId for delete event in room', roomId);
+            return;
+        }
+
+        // Remove from IndexedDB
+        try {
+            var tx = _db.transaction('records', 'readwrite');
+            tx.objectStore('records').delete(recordId);
+            await idbTxDone(tx);
+        } catch (err) {
+            console.warn('[AminoData] Failed to delete record', recordId, 'from IndexedDB:', err.message);
+        }
+
+        // Remove from in-memory caches
+        delete _recordCacheById[recordId];
+        if (_tableRecordIdIndex[tableId]) {
+            delete _tableRecordIdIndex[tableId][recordId];
+        }
+        delete _searchIndex[recordId];
+        _searchIndexVersion++;
+
+        // Emit events so UI can react
+        window.dispatchEvent(new CustomEvent('amino:record-update', {
+            detail: { recordId: recordId, tableId: tableId, source: 'matrix', deleted: true }
+        }));
+        window.dispatchEvent(new CustomEvent('amino:record-delete', {
+            detail: {
+                recordId: recordId,
+                tableId: tableId,
+                eventId: eventId,
+                sender: event.sender || null,
+                timestamp: event.origin_server_ts || Date.now()
+            }
+        }));
+
+        console.log('[AminoData] Deleted record', recordId, 'from table', tableId);
+    }
+
+    // Process timeline events from a Matrix /sync response.
+    // Events are awaited sequentially to prevent interleaved IDB read-merge-write
+    // cycles on the same record (CB-1 fix).
+    async function processMatrixSyncResponse(syncData) {
         if (!syncData || !syncData.rooms || !syncData.rooms.join) return 0;
 
         var updated = 0;
@@ -1573,7 +1712,10 @@ var AminoData = (function() {
                 for (var e = 0; e < events.length; e++) {
                     var event = events[e];
                     if (event.type === 'law.firm.record.mutate' || event.type === 'law.firm.schema.object') {
-                        applyMutateEvent(event, roomId);
+                        await applyMutateEvent(event, roomId);
+                        updated++;
+                    } else if (event.type === 'law.firm.record.delete') {
+                        await applyDeleteEvent(event, roomId);
                         updated++;
                     }
                 }
@@ -1589,7 +1731,7 @@ var AminoData = (function() {
             room: {
                 rooms: roomIds,
                 timeline: {
-                    types: ['law.firm.record.mutate', 'law.firm.schema.object'],
+                    types: ['law.firm.record.mutate', 'law.firm.schema.object', 'law.firm.record.delete'],
                     limit: 100
                 },
                 state: { lazy_load_members: true, types: [] },
@@ -1613,6 +1755,10 @@ var AminoData = (function() {
             return false;
         }
 
+        // B-4 fix: Stop HTTP polling when Matrix sync starts to prevent race conditions
+        // on the same record from both channels writing concurrently.
+        stopPolling();
+
         _matrixSyncRunning = true;
         console.log('[AminoData] Starting Matrix realtime sync for', Object.keys(_tableRoomMap).length, 'tables');
 
@@ -1621,10 +1767,14 @@ var AminoData = (function() {
         return true;
     }
 
+    var MAX_CONSECUTIVE_SYNC_ERRORS = 10;
+
     async function _runSyncLoop() {
         var syncToken = null;
         var filter = JSON.stringify(buildSyncFilter());
         var homeserverUrl = MatrixClient.getHomeserverUrl();
+        var consecutiveErrors = 0;
+        var intentionalStop = false;
 
         while (_matrixSyncRunning) {
             try {
@@ -1662,8 +1812,9 @@ var AminoData = (function() {
 
                 var data = await response.json();
                 syncToken = data.next_batch;
+                consecutiveErrors = 0; // Reset on success
 
-                var updatedCount = processMatrixSyncResponse(data);
+                var updatedCount = await processMatrixSyncResponse(data);
                 if (updatedCount > 0) {
                     window.dispatchEvent(new CustomEvent('amino:sync', {
                         detail: { source: 'matrix', updatedCount: updatedCount }
@@ -1671,14 +1822,26 @@ var AminoData = (function() {
                 }
             } catch (err) {
                 if (err.name === 'AbortError') {
-                    // Intentionally stopped
+                    intentionalStop = true;
                     break;
                 }
-                console.error('[AminoData] Matrix sync error:', err);
-                // Back off on errors
-                await new Promise(function(r) { setTimeout(r, 5000); });
+                consecutiveErrors++;
+                console.error('[AminoData] Matrix sync error (' + consecutiveErrors + '/' + MAX_CONSECUTIVE_SYNC_ERRORS + '):', err);
+
+                // B-4 fix: After too many consecutive errors, break out and fall back to polling
+                if (consecutiveErrors >= MAX_CONSECUTIVE_SYNC_ERRORS) {
+                    console.error('[AminoData] Matrix sync exceeded max consecutive errors, stopping');
+                    _matrixSyncRunning = false;
+                    break;
+                }
+
+                // Back off on errors with exponential backoff (capped at 30s)
+                var backoffMs = Math.min(5000 * Math.pow(1.5, consecutiveErrors - 1), 30000);
+                await new Promise(function(r) { setTimeout(r, backoffMs); });
             }
         }
+
+        _onMatrixSyncStopped(intentionalStop);
     }
 
     function stopMatrixSync() {
@@ -1686,6 +1849,16 @@ var AminoData = (function() {
         if (_matrixSyncAbort) {
             _matrixSyncAbort.abort();
             _matrixSyncAbort = null;
+        }
+    }
+
+    // B-4 fix: Fallback to polling when Matrix sync loop exits unexpectedly.
+    // Called at the end of _runSyncLoop when the loop breaks due to errors
+    // (not from an intentional stopMatrixSync call).
+    function _onMatrixSyncStopped(intentional) {
+        if (!intentional && _initialized && !_offlineMode) {
+            console.warn('[AminoData] Matrix sync stopped unexpectedly, falling back to HTTP polling');
+            startPolling();
         }
     }
 
@@ -2018,6 +2191,8 @@ var AminoData = (function() {
 
     var _pollIntervalMs = DEFAULT_POLL_INTERVAL;
     var _pollVisibilityHandler = null;
+    var _perTableFailures = {};          // B-5 fix: per-table failure tracking
+    var MAX_TABLE_POLL_FAILURES = 5;     // Skip table after this many consecutive failures
 
     function startPolling(intervalMs) {
         _pollIntervalMs = intervalMs || DEFAULT_POLL_INTERVAL;
@@ -2032,20 +2207,30 @@ var AminoData = (function() {
 
             for (var i = 0; i < _tableIds.length; i++) {
                 var tableId = _tableIds[i];
+
+                // B-5 fix: Skip tables that have individually failed too many times
+                // (they'll be retried after a successful poll cycle or re-init)
+                if (_perTableFailures[tableId] >= MAX_TABLE_POLL_FAILURES) {
+                    continue;
+                }
+
                 try {
                     var count = await syncTable(tableId);
+                    _perTableFailures[tableId] = 0; // Reset on success
                     if (count > 0) {
                         window.dispatchEvent(new CustomEvent('amino:sync', {
                             detail: { tableId: tableId, updatedCount: count }
                         }));
                     }
                 } catch (err) {
-                    console.error('[AminoData] Sync failed for ' + tableId + ':', err);
+                    _perTableFailures[tableId] = (_perTableFailures[tableId] || 0) + 1;
+                    console.error('[AminoData] Sync failed for ' + tableId + ' (' + _perTableFailures[tableId] + '/' + MAX_TABLE_POLL_FAILURES + '):', err);
                     if (err.status === 401) {
                         stopPolling();
                         window.dispatchEvent(new CustomEvent('amino:auth-expired'));
                         return;
                     }
+                    // B-5 fix: Continue to next table instead of aborting
                 }
             }
         };
@@ -2294,6 +2479,9 @@ var AminoData = (function() {
         // on the next clean logout.
         _deferEncryption = true;
 
+        // G-9 fix: Re-register global event listeners (may have been removed by previous logout)
+        _reregisterGlobalListeners();
+
         _initialized = true;
         console.log('[AminoData] Initialized with', _tables.length, 'tables (Synapse-derived encryption, encrypt-on-logout)');
 
@@ -2339,7 +2527,7 @@ var AminoData = (function() {
         try {
             var pgTotal = await hydrateAllFromPostgres(onProgress);
             console.log('[AminoData] Postgres hydration succeeded:', pgTotal, 'records');
-            return pgTotal;
+            return typeof pgTotal === 'object' ? pgTotal.totalRecords : pgTotal;
         } catch (pgErr) {
             console.warn('[AminoData] Postgres hydration failed:', pgErr.message || pgErr);
             return 0;
@@ -2425,7 +2613,7 @@ var AminoData = (function() {
         stopPolling();
         stopMatrixSync();
         stopViewDeletionSync();
-        stopConnectivityMonitor();
+        _removeGlobalListeners(); // G-9 fix: clean up all event listeners
         clearKeyFromStorage();
 
         // Encrypt all plaintext records before clearing state.
@@ -2450,6 +2638,8 @@ var AminoData = (function() {
         _keyDerivationCache = { fingerprint: null, key: null };
         _processedEventIds = {};
         _optimisticWrites = {};
+        _consecutiveDecryptFailures = 0;
+        _perTableFailures = {};
         clearRecordCache();
 
         if (clearData && _db) {
@@ -2927,6 +3117,8 @@ var AminoData = (function() {
 
     // ============ Connectivity Monitor ============
 
+    var _onBrowserOnlineHandler = null; // G-9 fix: store reference for cleanup
+
     function startConnectivityMonitor() {
         if (_connectivityCheckTimer) return;
 
@@ -2941,14 +3133,17 @@ var AminoData = (function() {
             }
         }, CONNECTIVITY_CHECK_INTERVAL);
 
-        // Also listen for browser online event
-        window.addEventListener('online', function onBrowserOnline() {
-            checkConnectivity().then(function(reachable) {
-                if (reachable) {
-                    window.dispatchEvent(new CustomEvent('amino:connectivity-restored'));
-                }
-            });
-        });
+        // G-9 fix: Store reference so we can remove it on cleanup
+        if (!_onBrowserOnlineHandler) {
+            _onBrowserOnlineHandler = function() {
+                checkConnectivity().then(function(reachable) {
+                    if (reachable) {
+                        window.dispatchEvent(new CustomEvent('amino:connectivity-restored'));
+                    }
+                });
+            };
+            window.addEventListener('online', _onBrowserOnlineHandler);
+        }
 
         console.log('[AminoData] Connectivity monitor started (checking every', CONNECTIVITY_CHECK_INTERVAL / 1000 + 's)');
     }
@@ -2957,6 +3152,11 @@ var AminoData = (function() {
         if (_connectivityCheckTimer) {
             clearInterval(_connectivityCheckTimer);
             _connectivityCheckTimer = null;
+        }
+        // G-9 fix: Remove browser online listener
+        if (_onBrowserOnlineHandler) {
+            window.removeEventListener('online', _onBrowserOnlineHandler);
+            _onBrowserOnlineHandler = null;
         }
     }
 
@@ -3161,21 +3361,26 @@ var AminoData = (function() {
         }));
     }
 
+    var MAX_MUTATION_RETRIES = 3;  // G-7 fix: discard after this many permanent failures
+
     // Flush all pending mutations to the server (oldest first).
-    // Returns { flushed, failed }.
+    // G-7 fix: Classifies errors as transient (5xx, network) vs permanent (4xx).
+    // Permanent failures are discarded after MAX_MUTATION_RETRIES attempts.
+    // Returns { flushed, failed, discarded }.
     async function flushPendingMutations() {
-        if (!_db) return { flushed: 0, failed: 0 };
+        if (!_db) return { flushed: 0, failed: 0, discarded: 0 };
 
         var tx = _db.transaction('pending_mutations', 'readonly');
         var pending = await idbGetAll(tx.objectStore('pending_mutations'));
 
-        if (pending.length === 0) return { flushed: 0, failed: 0 };
+        if (pending.length === 0) return { flushed: 0, failed: 0, discarded: 0 };
 
         // Sort by timestamp (oldest first) to preserve operation order
         pending.sort(function(a, b) { return a.timestamp - b.timestamp; });
 
         var flushed = 0;
         var failed = 0;
+        var discarded = 0;
 
         for (var i = 0; i < pending.length; i++) {
             var mutation = pending[i];
@@ -3194,20 +3399,50 @@ var AminoData = (function() {
 
                 flushed++;
             } catch (err) {
-                console.error('[AminoData] Failed to flush mutation:', mutation.id, err.message || err);
-                failed++;
-                // Don't remove — will retry on next flush
+                var isPermanent = err.status >= 400 && err.status < 500;
+                var retryCount = (mutation.retryCount || 0) + 1;
+
+                if (isPermanent || retryCount >= MAX_MUTATION_RETRIES) {
+                    // G-7 fix: Discard permanently failed mutations
+                    console.warn('[AminoData] Discarding permanently failed mutation:', mutation.id,
+                        '(status:', err.status || 'unknown', ', retries:', retryCount + ')');
+                    var discardTx = _db.transaction('pending_mutations', 'readwrite');
+                    discardTx.objectStore('pending_mutations').delete(mutation.id);
+                    await idbTxDone(discardTx);
+                    discarded++;
+
+                    window.dispatchEvent(new CustomEvent('amino:mutation-discarded', {
+                        detail: {
+                            mutationId: mutation.id,
+                            recordId: mutation.recordId,
+                            tableId: mutation.tableId,
+                            error: err.message,
+                            retryCount: retryCount,
+                            permanent: isPermanent
+                        }
+                    }));
+                } else {
+                    // Transient failure — update retry count and leave in queue
+                    console.error('[AminoData] Transient failure flushing mutation:', mutation.id,
+                        '(retry', retryCount + '/' + MAX_MUTATION_RETRIES + '):', err.message || err);
+                    var updateTx = _db.transaction('pending_mutations', 'readwrite');
+                    mutation.retryCount = retryCount;
+                    mutation.status = 'failed';
+                    await idbPut(updateTx.objectStore('pending_mutations'), mutation);
+                    await idbTxDone(updateTx);
+                    failed++;
+                }
             }
         }
 
-        if (flushed > 0 || failed > 0) {
+        if (flushed > 0 || failed > 0 || discarded > 0) {
             window.dispatchEvent(new CustomEvent('amino:offline-mutations-flushed', {
-                detail: { flushed: flushed, failed: failed, remaining: failed }
+                detail: { flushed: flushed, failed: failed, discarded: discarded, remaining: failed }
             }));
         }
 
-        console.log('[AminoData] Flushed', flushed, 'pending mutations (' + failed + ' failed)');
-        return { flushed: flushed, failed: failed };
+        console.log('[AminoData] Flushed', flushed, 'pending mutations (' + failed + ' failed, ' + discarded + ' discarded)');
+        return { flushed: flushed, failed: failed, discarded: discarded };
     }
 
     // Get count of pending offline mutations
@@ -3288,15 +3523,35 @@ var AminoData = (function() {
             });
     }
 
-    document.addEventListener('visibilitychange', function() {
+    // G-9 fix: Store handler references so they can be removed on logout/re-init
+    var _visibilityChangeHandler = function() {
         if (document.visibilityState === 'hidden' && _deferEncryption) {
             _tryEncryptOnUnload();
         }
-    });
-
-    window.addEventListener('beforeunload', function() {
+    };
+    var _beforeUnloadHandler = function() {
         _tryEncryptOnUnload();
-    });
+    };
+
+    document.addEventListener('visibilitychange', _visibilityChangeHandler);
+    window.addEventListener('beforeunload', _beforeUnloadHandler);
+
+    // G-9 fix: Remove all module-level event listeners. Called by logout().
+    function _removeGlobalListeners() {
+        document.removeEventListener('visibilitychange', _visibilityChangeHandler);
+        window.removeEventListener('beforeunload', _beforeUnloadHandler);
+        stopConnectivityMonitor(); // also removes 'online' listener
+    }
+
+    // G-9 fix: Re-register global listeners after logout → re-init cycle.
+    function _reregisterGlobalListeners() {
+        // Remove first to prevent duplicates
+        document.removeEventListener('visibilitychange', _visibilityChangeHandler);
+        window.removeEventListener('beforeunload', _beforeUnloadHandler);
+        // Re-add
+        document.addEventListener('visibilitychange', _visibilityChangeHandler);
+        window.addEventListener('beforeunload', _beforeUnloadHandler);
+    }
 
     // ============ Public API ============
 
