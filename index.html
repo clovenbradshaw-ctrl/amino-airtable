@@ -17018,9 +17018,14 @@ async function backfillHistoryFromMatrix() {
 // access_token so the n8n webhook can authenticate against the homeserver
 // on behalf of the user.  Falls back to Authorization header if the
 // primary request fails or returns 401.
-async function webhookFetch(path) {
+// options.method: HTTP method override (default: 'GET')
+// options.body:   JSON body for POST/PATCH requests
+async function webhookFetch(path, options) {
     var session = _loadSynapseSession();
     if (!session || !session.accessToken) throw new Error('No Synapse session');
+
+    options = options || {};
+    var method = (options.method || 'GET').toUpperCase();
 
     // Prefer the live Matrix access token (may have been refreshed since
     // the session was persisted to localStorage).
@@ -17039,29 +17044,35 @@ async function webhookFetch(path) {
             await new Promise(function(r) { setTimeout(r, delay); });
         }
 
-        // Auth: POST with access_token in query-param + JSON body
+        // Auth: access_token in query-param (+ JSON body for non-GET)
         var separator = path.indexOf('?') === -1 ? '?' : '&';
         var url = N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(matrixToken);
 
+        var fetchOpts = {
+            method: method,
+            headers: {}
+        };
+        if (method !== 'GET' && method !== 'HEAD') {
+            fetchOpts.headers['Content-Type'] = 'application/json';
+            fetchOpts.body = JSON.stringify(options.body || { access_token: matrixToken });
+        }
+
         var response;
         try {
-            response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ access_token: matrixToken })
-            });
+            response = await fetch(url, fetchOpts);
         } catch (fetchErr) {
             // Network / CORS failure — try header auth as last resort
-            console.warn('[webhookFetch] POST fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
+            console.warn('[webhookFetch] ' + method + ' fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
             try {
-                response = await fetch(N8N_WEBHOOK_BASE + path, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': 'Bearer ' + matrixToken,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ access_token: matrixToken })
-                });
+                var retryOpts = {
+                    method: method,
+                    headers: { 'Authorization': 'Bearer ' + matrixToken }
+                };
+                if (method !== 'GET' && method !== 'HEAD') {
+                    retryOpts.headers['Content-Type'] = 'application/json';
+                    retryOpts.body = JSON.stringify(options.body || { access_token: matrixToken });
+                }
+                response = await fetch(N8N_WEBHOOK_BASE + path, retryOpts);
             } catch (headerErr) {
                 lastErr = new Error('Webhook unreachable (CORS/network): ' + headerErr.message);
                 continue;
@@ -17072,14 +17083,15 @@ async function webhookFetch(path) {
             // Token may not have been picked up — retry with header auth
             console.warn('[webhookFetch] 401, retrying with header auth for ' + path);
             try {
-                response = await fetch(N8N_WEBHOOK_BASE + path, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': 'Bearer ' + matrixToken,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ access_token: matrixToken })
-                });
+                var authRetryOpts = {
+                    method: method,
+                    headers: { 'Authorization': 'Bearer ' + matrixToken }
+                };
+                if (method !== 'GET' && method !== 'HEAD') {
+                    authRetryOpts.headers['Content-Type'] = 'application/json';
+                    authRetryOpts.body = JSON.stringify(options.body || { access_token: matrixToken });
+                }
+                response = await fetch(N8N_WEBHOOK_BASE + path, authRetryOpts);
             } catch (headerErr) {
                 throw new Error('Webhook auth retry failed (CORS/network): ' + headerErr.message);
             }
