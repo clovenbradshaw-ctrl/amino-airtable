@@ -13369,7 +13369,7 @@ async function manualAirtableSync() {
 
         // Start cooldown countdown after a short feedback delay
         setTimeout(function() {
-            _startSyncCooldownUI(result.cooldownRemaining || 60000);
+            _startSyncCooldownUI(result.cooldownRemaining || 180000);
         }, 1500);
 
     } catch (err) {
