@@ -12079,10 +12079,18 @@ function computeSmartFieldOrder(tableId) {
     if (scored.length > 0 && !computeSmartFieldOrder._logged) computeSmartFieldOrder._logged = {};
     if (scored.length > 0 && !computeSmartFieldOrder._logged[tableId]) {
         computeSmartFieldOrder._logged[tableId] = true;
+        // Track seen names to append field ID for disambiguation
+        var _seenNames = {};
+        var _top8 = scored.slice(0, 8);
+        for (var _si = 0; _si < _top8.length; _si++) {
+            var _n = fields[_top8[_si].fieldId] && fields[_top8[_si].fieldId].fieldName || _top8[_si].fieldId;
+            _seenNames[_n] = (_seenNames[_n] || 0) + 1;
+        }
         console.log('Smart column order for table ' + tableId + ':',
-            scored.slice(0, 8).map(function(s) {
-                return (fields[s.fieldId] && fields[s.fieldId].fieldName || s.fieldId) +
-                    ' [' + s.role + ', score=' + s.score + ']';
+            _top8.map(function(s) {
+                var name = fields[s.fieldId] && fields[s.fieldId].fieldName || s.fieldId;
+                var suffix = _seenNames[name] > 1 ? ' (' + s.fieldId + ')' : '';
+                return name + suffix + ' [' + s.role + ', score=' + s.score + ']';
             }).join(' | ')
         );
     }
@@ -17952,7 +17960,9 @@ async function webhookIncrementalSync() {
 // The webhook API is the canonical source for table↔room associations
 // (discoverTableRooms() relies on state events that may not exist in
 // bot-created rooms).
+var _roomMembershipPopulated = false;
 async function ensureRoomMembership() {
+    if (_roomMembershipPopulated) return;
     var session = _loadSynapseSession();
     if (!session || !session.accessToken || !session.userId) return;
 
@@ -17968,6 +17978,7 @@ async function ensureRoomMembership() {
         for (var k = 0; k < tables.length; k++) {
             SynapseSync.roomToTable[tables[k].matrix_room_id] = tables[k].table_id;
         }
+        _roomMembershipPopulated = true;
         console.log('[RoomMembership] Populated ' + SynapseSync.tableRooms.length + ' table↔room mappings from API');
     } catch (err) {
         console.warn('[RoomMembership] ensureRoomMembership failed:', err);
