@@ -17014,13 +17014,19 @@ async function backfillHistoryFromMatrix() {
 // ============ Webhook Hydration ============
 
 // Fetch from n8n webhook API using the Synapse access token.
-// Uses GET with query-parameter auth by default to avoid CORS preflight
-// (the Authorization header triggers an OPTIONS preflight that n8n may not
-// handle).  Falls back to Authorization header only if query-param auth
-// returns 401 (meaning the server didn't recognise the token in the URL).
+// Uses POST with query-parameter + JSON body auth.  Includes the Matrix
+// access_token so the n8n webhook can authenticate against the homeserver
+// on behalf of the user.  Falls back to Authorization header if the
+// primary request fails or returns 401.
 async function webhookFetch(path) {
     var session = _loadSynapseSession();
     if (!session || !session.accessToken) throw new Error('No Synapse session');
+
+    // Prefer the live Matrix access token (may have been refreshed since
+    // the session was persisted to localStorage).
+    var matrixToken = (typeof MatrixClient !== 'undefined' && MatrixClient.getAccessToken && MatrixClient.getAccessToken())
+        ? MatrixClient.getAccessToken()
+        : session.accessToken;
 
     var MAX_RETRIES = 2;
     var lastErr = null;
@@ -17033,25 +17039,28 @@ async function webhookFetch(path) {
             await new Promise(function(r) { setTimeout(r, delay); });
         }
 
-        // Auth: GET with access_token as query-param (avoids CORS preflight)
+        // Auth: POST with access_token in query-param + JSON body
         var separator = path.indexOf('?') === -1 ? '?' : '&';
-        var url = N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(session.accessToken);
+        var url = N8N_WEBHOOK_BASE + path + separator + 'access_token=' + encodeURIComponent(matrixToken);
 
         var response;
         try {
             response = await fetch(url, {
-                method: 'GET'
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ access_token: matrixToken })
             });
         } catch (fetchErr) {
-            // Network / CORS failure on the simple request — try header auth
-            // as a last resort (will trigger OPTIONS preflight).
-            console.warn('[webhookFetch] GET fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
+            // Network / CORS failure — try header auth as last resort
+            console.warn('[webhookFetch] POST fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
             try {
                 response = await fetch(N8N_WEBHOOK_BASE + path, {
-                    method: 'GET',
+                    method: 'POST',
                     headers: {
-                        'Authorization': 'Bearer ' + session.accessToken
-                    }
+                        'Authorization': 'Bearer ' + matrixToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ access_token: matrixToken })
                 });
             } catch (headerErr) {
                 lastErr = new Error('Webhook unreachable (CORS/network): ' + headerErr.message);
@@ -17064,16 +17073,18 @@ async function webhookFetch(path) {
             console.warn('[webhookFetch] 401, retrying with header auth for ' + path);
             try {
                 response = await fetch(N8N_WEBHOOK_BASE + path, {
-                    method: 'GET',
+                    method: 'POST',
                     headers: {
-                        'Authorization': 'Bearer ' + session.accessToken
-                    }
+                        'Authorization': 'Bearer ' + matrixToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ access_token: matrixToken })
                 });
             } catch (headerErr) {
                 throw new Error('Webhook auth retry failed (CORS/network): ' + headerErr.message);
             }
             if (response.status === 401) {
-                throw new Error('Webhook auth failed (Synapse token rejected)');
+                throw new Error('Webhook auth failed (Matrix token rejected)');
             }
         }
 
@@ -17523,44 +17534,22 @@ function _startBackgroundHydration() {
     _backgroundHydrationInFlight = (async function() {
         var hydrated = false;
 
-        // Primary source: Box AMO hydration (complete binary snapshot).
+        // Force hydration from Postgres current_state via webhook API.
+        // Box AMO hydration is bypassed — Postgres is authoritative.
+        SyncStatusFeed.info('Hydrating from Postgres current_state webhook API...');
+        updateLoadingOverlay('Loading from database...', 'Fetching from current_state webhooks...', 0, 0, 0, 0, null);
+        console.log('[BackgroundHydration] Forcing Postgres webhook hydration from current_state');
         try {
-            updateLoadingOverlay('Loading snapshot...', 'Downloading from Box...', 0, 0, 0, 0, null);
-            var boxResult = await hydrateFromBoxAmoFile();
-            if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
+            var webhookResult = await hydrateFromWebhooks();
+            if (webhookResult && webhookResult.success) {
                 hydrated = true;
-                SyncStatusFeed.success('Hydrated from Box snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
-                console.log('[BackgroundHydration] Box AMO hydration succeeded:', boxResult.importedEvents, 'events');
-                await setSyncMeta('lastWebhookSync', new Date().toISOString());
+                SyncStatusFeed.success('Hydrated from Postgres current_state (' + (webhookResult.totalRecords || 0).toLocaleString() + ' records)');
+                console.log('[BackgroundHydration] Postgres webhook hydration succeeded:', webhookResult.totalRecords, 'records');
+                await setSyncMeta('lastWebhookSync', webhookResult.nextCursor || new Date().toISOString());
                 try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
             }
-        } catch (boxErr) {
-            console.warn('[BackgroundHydration] Box AMO hydration failed:', boxErr.message || boxErr);
-        }
-
-        // Fallback: hydrate from current_state via Postgres webhook API.
-        if (!hydrated) {
-            SyncStatusFeed.info('Box snapshot unavailable — falling back to current_state webhook API...');
-            updateLoadingOverlay('Loading from database...', 'Fetching from current_state webhooks...', 0, 0, 0, 0, null);
-            console.log('[BackgroundHydration] Box failed, attempting Postgres webhook hydration from current_state');
-            try {
-                var pgTotal = await AminoData.hydrateAllFromPostgres(function(progress) {
-                    updateLoadingOverlay(
-                        'Loading from database...',
-                        'Table ' + (progress.tableIndex + 1) + '/' + progress.tableCount + ': ' + (progress.tableName || progress.tableId),
-                        progress.tableIndex + 1, progress.tableCount, progress.recordCount, progress.totalRecords, null
-                    );
-                });
-                if (pgTotal > 0) {
-                    hydrated = true;
-                    SyncStatusFeed.success('Hydrated from current_state webhooks (' + pgTotal.toLocaleString() + ' records)');
-                    console.log('[BackgroundHydration] Postgres webhook hydration succeeded:', pgTotal, 'records');
-                    await setSyncMeta('lastWebhookSync', new Date().toISOString());
-                    try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
-                }
-            } catch (pgErr) {
-                console.warn('[BackgroundHydration] Postgres webhook hydration also failed:', pgErr.message || pgErr);
-            }
+        } catch (pgErr) {
+            console.warn('[BackgroundHydration] Postgres webhook hydration failed:', pgErr.message || pgErr);
         }
 
         if (!hydrated) {
@@ -17662,29 +17651,10 @@ async function init() {
 
     updateStatus('Loading local data...', false, null, null);
 
-    // Always attempt hydration from Box-hosted .amo binary snapshot first.
-    // The Box snapshot is the most complete and up-to-date data source (~70k records).
-    // When successful, processEventsMemoryOnly replays all events into META_TABLES,
-    // META_FIELDS, META_VIEWS, and IN_MEMORY_DATA so the UI can render immediately.
-    // The 12-second timeout on the download keeps startup resilient if Box is unreachable.
+    // Box AMO hydration is bypassed — Postgres current_state is the
+    // authoritative hydration source.  Box-related flag kept as false so
+    // downstream merge logic uses the non-Box (replace) path.
     var _boxHydrationSucceeded = false;
-    try {
-        updateStatus('Loading hydration snapshot...', false, null, 'Downloading .amo');
-        var boxResult = await hydrateFromBoxAmoFile();
-        if (boxResult && boxResult.importedEvents > 0) {
-            _boxHydrationSucceeded = Object.keys(META_TABLES).length > 0;
-            if (_boxHydrationSucceeded) {
-                SyncStatusFeed.success('Hydrated from Box .amo snapshot (' + boxResult.importedEvents.toLocaleString() + ' events)');
-                await setSyncMeta('lastWebhookSync', new Date().toISOString());
-                // Also persist to localStorage (synchronous, survives page navigation
-                // before IDB transactions complete) to prevent re-hydration on next load.
-                try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
-            }
-        }
-    } catch (boxErr) {
-        console.warn('[init] Box .amo hydration unavailable, continuing with local cache:', boxErr.message || boxErr);
-        SyncStatusFeed.warn('Box .amo hydration unavailable — will fall back to current_state webhooks if needed.');
-    }
 
     // Load all metadata + max event ID in parallel — single IDB round-trip
     var metaResults = await Promise.all([
