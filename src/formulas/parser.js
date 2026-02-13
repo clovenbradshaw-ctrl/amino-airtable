@@ -114,7 +114,10 @@ export function tokenize(formula) {
       continue;
     }
 
-    throw new Error(`Unexpected character '${formula[i]}' at position ${i}`);
+    // Skip unrecognized characters (e.g. stray backslashes from Airtable formulas)
+    // rather than throwing — allows partial formula evaluation
+    i++;
+    continue;
   }
 
   tokens.push({ type: 'EOF' });
