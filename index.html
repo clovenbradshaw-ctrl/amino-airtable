@@ -12054,13 +12054,21 @@ async function verifySynapseSession() {
 }
 
 async function trySynapseLogin() {
-    var username = document.getElementById('synapse-username').value.trim();
-    var password = document.getElementById('synapse-password').value.trim();
+    var rawUsername = document.getElementById('synapse-username').value.trim();
+    var password = document.getElementById('synapse-password').value;
 
-    if (!username || !password) {
+    if (!rawUsername || !password) {
         showSynapseError('Please enter your username and password.');
         return;
     }
+
+    // Normalize Matrix username: extract localpart from @user:server or @user formats
+    var username = rawUsername;
+    if (username.charAt(0) === '@') {
+        var colonIdx = username.indexOf(':');
+        username = colonIdx > 0 ? username.substring(1, colonIdx) : username.substring(1);
+    }
+    username = username.toLowerCase();
 
     var btn = document.getElementById('synapse-login-btn');
     btn.textContent = 'Signing in...';
@@ -12084,7 +12092,18 @@ async function trySynapseLogin() {
         var data = await safeResponseJson(response, 'Login');
 
         if (!response.ok) {
-            throw new Error(data.error || 'Login failed');
+            var errcode = data.errcode || '';
+            if (response.status === 429 || errcode === 'M_LIMIT_EXCEEDED') {
+                var retryAfterMs = data.retry_after_ms || 30000;
+                throw new Error('Too many login attempts. Please wait ' + Math.ceil(retryAfterMs / 1000) + ' seconds and try again.');
+            }
+            if (errcode === 'M_USER_DEACTIVATED') {
+                throw new Error('This account has been deactivated. Please contact your administrator.');
+            }
+            if (errcode === 'M_FORBIDDEN' || response.status === 403) {
+                throw new Error('Invalid username or password. Please check your credentials and try again.');
+            }
+            throw new Error(data.error || 'Login failed (HTTP ' + response.status + ')');
         }
 
         _saveSynapseSession({
