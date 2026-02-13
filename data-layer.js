@@ -2,10 +2,9 @@
 // Amino Client Data Layer
 // Treats IndexedDB as the primary read source, and uses n8n webhook APIs
 // only to backfill/sync local state so the on-device mirror stays current.
-// Stores data in IndexedDB encrypted at rest (AES-GCM), and keeps data in sync via Matrix
-// realtime sync or HTTP polling fallback. Builds a tableId <-> matrixRoomId
-// lookup map from /api/tables, joins Matrix rooms, and applies incoming
-// law.firm.record.mutate and law.firm.schema.object events (ALT/INS/NUL) to IndexedDB records.
+// Stores data in IndexedDB encrypted at rest (AES-GCM), keeps data in sync
+// via HTTP polling against Postgres. Matrix is used for auth, views, messaging,
+// and org config — not for record data sync.
 // ============================================================================
 
 var AminoData = (function() {
@@ -37,8 +36,6 @@ var AminoData = (function() {
     var _tables = [];
     var _tableRoomMap = {}; // tableId -> matrixRoomId
     var _roomTableMap = {}; // matrixRoomId -> tableId (reverse lookup)
-    var _matrixSyncRunning = false;
-    var _matrixSyncAbort = null;
     var _initialized = false;
     var _lastAirtableSyncTrigger = 0;
     var _airtableSyncInFlight = false;
@@ -50,10 +47,6 @@ var AminoData = (function() {
     var _tableCacheHydrated = {};    // tableId -> true when full table is cached
     var _keyDerivationCache = { fingerprint: null, key: null };
     var _deferEncryption = false;        // when true, IndexedDB stores plaintext JSON (encrypt on logout)
-
-    // ============ Sync Health Tracking ============
-    var _consecutiveDecryptFailures = 0;
-    var DECRYPT_FAILURE_THRESHOLD = 5;   // Emit warning after this many consecutive failures
 
     // ============ Sync Deduplication ============
     // Delegated to AminoHydration module. See hydration.js for implementation.
@@ -191,21 +184,7 @@ var AminoData = (function() {
         return bytes.buffer;
     }
 
-    // ============ Matrix Event Payload Encryption ============
-
-    // Encrypt record fields for inclusion in Matrix events.
-    // Returns a JSON-safe object with the ciphertext as base64.
-    async function encryptEventPayload(fields) {
-        if (!_cryptoKey) throw new Error('Encryption key not initialized');
-        var plaintext = JSON.stringify(fields);
-        var encryptedBuffer = await encrypt(_cryptoKey, plaintext);
-        return {
-            _encrypted: true,
-            _algorithm: ENCRYPTION_ALGORITHM,
-            _userId: _userId,
-            _ciphertext: arrayBufferToBase64(encryptedBuffer)
-        };
-    }
+    // ============ Event Payload Encryption (for reading historical room data) ============
 
     // Decrypt an encrypted event payload back to a fields object.
     async function decryptEventPayload(encryptedContent) {
@@ -382,16 +361,8 @@ var AminoData = (function() {
     // ============ Sync Dedup Helpers ============
     // Delegated to AminoHydration module — thin wrappers for internal use.
 
-    function _markEventProcessed(eventId) {
-        return AminoHydration.markEventProcessed(eventId);
-    }
-
     function _trackOptimisticWrite(recordId, changedFields) {
         AminoHydration.trackOptimisticWrite(recordId, changedFields);
-    }
-
-    function _isOptimisticEcho(recordId, incomingFieldOps) {
-        return AminoHydration.isOptimisticEcho(recordId, incomingFieldOps);
     }
 
     // ============ API Client ============
@@ -821,7 +792,6 @@ var AminoData = (function() {
             roomTableMap: _roomTableMap,
             onlineOnlyMode: _onlineOnlyMode,
             deferEncryption: _deferEncryption,
-            MatrixClient: (typeof MatrixClient !== 'undefined') ? MatrixClient : null,
             BOX_DOWNLOAD_WEBHOOK: BOX_DOWNLOAD_WEBHOOK,
 
             getAuthToken: function() {
@@ -841,593 +811,25 @@ var AminoData = (function() {
 
             encrypt: function(plaintext) { return encrypt(_cryptoKey, plaintext); },
             decrypt: function(ciphertext) { return decrypt(_cryptoKey, ciphertext); },
-            isEncryptedPayload: isEncryptedPayload,
-            decryptEventPayload: decryptEventPayload,
 
             apiFetch: apiFetch,
 
             emitEvent: function(name, detail) {
                 window.dispatchEvent(new CustomEvent(name, { detail: detail }));
-            },
-
-            onDecryptFailure: function(eventId, err) {
-                _consecutiveDecryptFailures++;
-                console.warn('[AminoData] Decrypt failure:', err.message);
-                window.dispatchEvent(new CustomEvent('amino:sync-error', {
-                    detail: {
-                        type: 'decrypt-failure',
-                        eventId: eventId,
-                        consecutiveFailures: _consecutiveDecryptFailures,
-                        error: err.message
-                    }
-                }));
-                if (_consecutiveDecryptFailures >= DECRYPT_FAILURE_THRESHOLD) {
-                    window.dispatchEvent(new CustomEvent('amino:sync-error', {
-                        detail: {
-                            type: 'decrypt-failure-critical',
-                            consecutiveFailures: _consecutiveDecryptFailures,
-                            message: 'Sync is failing — you may need to re-login to restore data sync.'
-                        }
-                    }));
-                }
             }
         };
     }
 
-    async function rebuildTableFromRoom(tableId) {
-        return AminoHydration.tierMatrixRoom(_buildHydrationCtx(), tableId);
-    }
-
     async function hydrateTable(tableId) {
         var ctx = _buildHydrationCtx();
-        try {
-            var result = await AminoHydration.hydrateTableFromPostgres(ctx, tableId);
-            return result.count;
-        } catch (apiErr) {
-            console.warn('[AminoData] API hydrate failed for table ' + tableId + ':', apiErr.message || apiErr);
-            // Last resort: rebuild from Matrix room timeline
-            if (_tableRoomMap[tableId] && typeof MatrixClient !== 'undefined' && MatrixClient.isLoggedIn()) {
-                try {
-                    var roomCount = await rebuildTableFromRoom(tableId);
-                    console.log('[AminoData] Hydrated', roomCount, 'records from room for table', tableId);
-                    return roomCount;
-                } catch (roomErr) {
-                    console.warn('[AminoData] Room-based hydration also failed for table ' + tableId + ':', roomErr.message || roomErr);
-                }
-            }
-            throw apiErr;
-        }
+        var result = await AminoHydration.hydrateTableFromPostgres(ctx, tableId);
+        return result.count;
     }
 
     async function syncTable(tableId) {
         var ctx = _buildHydrationCtx();
         var result = await AminoHydration.syncTableFromPostgres(ctx, tableId);
         return result.count;
-    }
-
-    // ============ Matrix Realtime Sync ============
-
-    // Join all Matrix rooms that correspond to tables in the table-room map.
-    // Uses a lightweight /sync to detect which rooms the user has already joined,
-    // requests bot invites for unjoined rooms via /webhook/amino-invite, then
-    // calls /join on each. The optional onProgress callback receives
-    // { phase, joined, total, current } updates for UI feedback.
-    async function joinTableRooms(onProgress) {
-        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
-            console.warn('[AminoData] MatrixClient not available or not logged in, skipping room join');
-            return [];
-        }
-
-        var roomIds = Object.values(_tableRoomMap);
-        if (roomIds.length === 0) return [];
-
-        // Step 1: Lightweight /sync to discover already-joined rooms
-        var homeserverUrl = MatrixClient.getHomeserverUrl();
-        var accessToken = MatrixClient.getAccessToken();
-        var userId = MatrixClient.getUserId();
-        var joinedRoomIds = new Set();
-        try {
-            var syncFilter = JSON.stringify({
-                room: { timeline: { limit: 0 }, state: { types: [] }, ephemeral: { types: [] }, account_data: { types: [] } },
-                presence: { types: [] },
-                account_data: { types: [] }
-            });
-            var syncRes = await fetch(
-                homeserverUrl + '/_matrix/client/v3/sync?filter=' + encodeURIComponent(syncFilter) + '&timeout=0',
-                { headers: { 'Authorization': 'Bearer ' + accessToken } }
-            );
-            if (syncRes.ok) {
-                var syncData = await syncRes.json();
-                var joinRooms = (syncData.rooms && syncData.rooms.join) || {};
-                for (var rid in joinRooms) {
-                    joinedRoomIds.add(rid);
-                }
-            }
-        } catch (syncErr) {
-            console.warn('[AminoData] Membership sync check failed, will attempt all joins:', syncErr.message);
-        }
-
-        // Step 2: Identify rooms the user hasn't joined
-        var unjoinedRoomIds = roomIds.filter(function(id) { return !joinedRoomIds.has(id); });
-        console.log('[AminoData] Room membership: ' + joinedRoomIds.size + ' already joined, ' + unjoinedRoomIds.length + ' to join');
-
-        if (unjoinedRoomIds.length === 0) {
-            console.log('[AminoData] Already a member of all ' + roomIds.length + ' table rooms');
-            return roomIds;
-        }
-
-        if (onProgress) onProgress({ phase: 'inviting', joined: 0, total: unjoinedRoomIds.length, current: null });
-
-        // Step 3: Ask the bot to invite us into all rooms
-        try {
-            var inviteRes = await fetch(WEBHOOK_BASE_URL + '/amino-invite', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: userId, access_token: _accessToken })
-            });
-            var inviteData = await inviteRes.json();
-            console.log('[AminoData] Invite response:', inviteData.message || ('invited to ' + (inviteData.roomsInvited || 0) + ' rooms'));
-        } catch (inviteErr) {
-            console.warn('[AminoData] Invite request failed:', inviteErr.message);
-            // Continue anyway — some rooms may be public / already invited
-        }
-
-        // Small delay for invites to propagate through Synapse
-        await new Promise(function(r) { setTimeout(r, 1000); });
-
-        // Step 4: Join each unjoined room
-        if (onProgress) onProgress({ phase: 'joining', joined: 0, total: unjoinedRoomIds.length, current: null });
-
-        var joined = [];
-        var failed = [];
-        for (var i = 0; i < unjoinedRoomIds.length; i++) {
-            var roomId = unjoinedRoomIds[i];
-            // Reverse-lookup table name for logging
-            var tableId = _roomTableMap[roomId];
-            try {
-                await MatrixClient.joinRoom(roomId);
-                joined.push(roomId);
-            } catch (err) {
-                console.warn('[AminoData] Failed to join room', roomId, '(table ' + tableId + '):', err.message || err.errcode);
-                failed.push(roomId);
-            }
-            if (onProgress) onProgress({ phase: 'joining', joined: joined.length, total: unjoinedRoomIds.length, current: tableId });
-        }
-
-        // Include previously-joined rooms in the result
-        var allJoined = roomIds.filter(function(id) {
-            return joinedRoomIds.has(id) || joined.indexOf(id) !== -1;
-        });
-
-        console.log('[AminoData] Room membership complete: ' + joined.length + ' newly joined, ' + failed.length + ' failed, ' + allJoined.length + ' total');
-        return allJoined;
-    }
-
-    // Apply a law.firm.record.mutate or law.firm.schema.object event to a record in IndexedDB
-    async function applyMutateEvent(event, roomId) {
-        var content = event.content;
-        if (!content) return;
-
-        // ── Dedup: skip events already processed via another sync channel ──
-        var eventId = event.event_id;
-        if (_markEventProcessed(eventId)) {
-            return; // Already applied
-        }
-
-        // Skip metadata records (table/field/view definitions) — only process data records
-        var payloadSet = content.payload && content.payload._set;
-        if (payloadSet === 'table' || payloadSet === 'field' || payloadSet === 'view' || payloadSet === 'viewConfig' || payloadSet === 'tableSettings') {
-            return;
-        }
-
-        // Handle encrypted event payloads — decrypt before processing
-        if (isEncryptedPayload(content)) {
-            try {
-                var decryptedFields = await decryptEventPayload(content);
-                // Reconstruct content with decrypted fields
-                content = {
-                    recordId: content.recordId,
-                    tableId: content.tableId,
-                    op: content.op || 'ALT',
-                    fields: decryptedFields
-                };
-                _consecutiveDecryptFailures = 0;
-            } catch (err) {
-                _consecutiveDecryptFailures++;
-                console.warn('[AminoData] Could not decrypt event payload (' + _consecutiveDecryptFailures + ' consecutive failures):', err.message);
-
-                // CB-3 fix: Emit sync-error event so the UI can show a warning
-                window.dispatchEvent(new CustomEvent('amino:sync-error', {
-                    detail: {
-                        type: 'decrypt-failure',
-                        eventId: eventId,
-                        consecutiveFailures: _consecutiveDecryptFailures,
-                        error: err.message
-                    }
-                }));
-
-                // After threshold consecutive failures, emit a critical warning
-                if (_consecutiveDecryptFailures >= DECRYPT_FAILURE_THRESHOLD) {
-                    window.dispatchEvent(new CustomEvent('amino:sync-error', {
-                        detail: {
-                            type: 'decrypt-failure-critical',
-                            consecutiveFailures: _consecutiveDecryptFailures,
-                            message: 'Sync is failing — you may need to re-login to restore data sync.'
-                        }
-                    }));
-                }
-                return;
-            }
-        }
-
-        if (!content.recordId) return;
-
-        var recordId = content.recordId;
-        var tableId = _roomTableMap[roomId];
-
-        // Fallback: derive tableId from the set field (strip airtable: prefix)
-        if (!tableId && content.set) {
-            tableId = content.set.replace(/^airtable:/, '');
-        }
-        if (!tableId) {
-            console.warn('[AminoData] Cannot determine tableId for mutate event in room', roomId);
-            return;
-        }
-
-        // Read existing record from IndexedDB
-        var tx = _db.transaction('records', 'readonly');
-        var existing = await idbGet(tx.objectStore('records'), recordId);
-
-        var fields;
-        if (existing) {
-            if (typeof existing.fields === 'string') {
-                fields = JSON.parse(existing.fields);
-            } else {
-                fields = JSON.parse(await decrypt(_cryptoKey, existing.fields));
-            }
-        } else {
-            fields = {};
-        }
-
-        // Apply field-level operations from the payload
-        var payload = content.payload || content;
-        var rawFieldOps = payload.fields || {};
-        var hadFlatOps = !rawFieldOps.ALT && !rawFieldOps.INS && !rawFieldOps.NUL && content.op && content.fields;
-        var fieldOps = normalizeFieldOps(content);
-
-        // ── Echo suppression: skip if this is the /sync echo of a recent
-        // optimistic write — the local state already has these values.
-        if (_isOptimisticEcho(recordId, fieldOps)) {
-            console.log('[AminoData] Skipping echo for optimistic write:', recordId);
-            // Still emit the mutation event so field history records the event_id,
-            // but skip the redundant decrypt→merge→encrypt→write cycle.
-            window.dispatchEvent(new CustomEvent('amino:record-mutate', {
-                detail: {
-                    recordId: recordId,
-                    tableId: tableId,
-                    eventId: eventId,
-                    sender: event.sender || null,
-                    timestamp: event.origin_server_ts || Date.now(),
-                    fieldOps: fieldOps,
-                    source: content.source || null,
-                    sourceTimestamp: content.sourceTimestamp || null,
-                    actor: (payload && payload._a) || null,
-                    device: (payload && payload._d) || content.device || null,
-                    echoSuppressed: true
-                }
-            }));
-            return;
-        }
-
-        // Apply field operations via AminoHydration
-        AminoHydration.applyFieldOps(fields, fieldOps);
-
-        // Use server timestamp for lastSynced, not client clock
-        var eventLastSynced = AminoHydration.Timestamps.fromMatrixEvent(event);
-
-        // Write back — plaintext when deferred, encrypted otherwise
-        var storedFields;
-        if (_deferEncryption) {
-            storedFields = JSON.stringify(fields);
-        } else {
-            storedFields = await encrypt(_cryptoKey, JSON.stringify(fields));
-        }
-        var writeTx = _db.transaction('records', 'readwrite');
-        await idbPut(writeTx.objectStore('records'), {
-            id: recordId,
-            tableId: tableId,
-            tableName: (existing && existing.tableName) || tableId,
-            fields: storedFields,
-            lastSynced: eventLastSynced
-        });
-        await idbTxDone(writeTx);
-
-        cacheRecord({
-            id: recordId,
-            tableId: tableId,
-            tableName: (existing && existing.tableName) || tableId,
-            fields: fields,
-            lastSynced: eventLastSynced
-        });
-
-        // Queue for incremental room state mirror
-        _queueIncrementalMirror(tableId, recordId);
-
-        // Emit sync event so UI can react
-        window.dispatchEvent(new CustomEvent('amino:record-update', {
-            detail: { recordId: recordId, tableId: tableId, source: 'matrix' }
-        }));
-
-        // Emit detailed mutation event for field history tracking
-        var mutationDetail = {
-            recordId: recordId,
-            tableId: tableId,
-            eventId: event.event_id || null,
-            sender: event.sender || null,
-            timestamp: event.origin_server_ts || Date.now(),
-            fieldOps: fieldOps,
-            // Metadata from event payload
-            source: content.source || null,
-            sourceTimestamp: content.sourceTimestamp || null,
-            actor: (payload && payload._a) || null,
-            device: (payload && payload._d) || content.device || null
-        };
-        // Include flat ops if that was the format used
-        if (hadFlatOps) {
-            mutationDetail.flatOp = content.op;
-            mutationDetail.flatFields = content.fields;
-        }
-        window.dispatchEvent(new CustomEvent('amino:record-mutate', {
-            detail: mutationDetail
-        }));
-    }
-
-    // G-3 fix: Apply a law.firm.record.delete event as a soft-delete (tombstone).
-    // NULs all fields on the record and sets _deleted: true so the record
-    // remains in IDB (preventing re-hydration) but is excluded from queries.
-    async function applyDeleteEvent(event, roomId) {
-        var content = event.content;
-        if (!content) return;
-
-        var eventId = event.event_id;
-        if (_markEventProcessed(eventId)) {
-            return; // Already applied
-        }
-
-        var recordId = content.recordId;
-        if (!recordId) return;
-
-        var tableId = _roomTableMap[roomId];
-        if (!tableId && content.tableId) {
-            tableId = content.tableId;
-        }
-        if (!tableId && content.set) {
-            tableId = content.set.replace(/^airtable:/, '');
-        }
-        if (!tableId) {
-            console.warn('[AminoData] Cannot determine tableId for delete event in room', roomId);
-            return;
-        }
-
-        // Read existing record to get tableName
-        var readTx = _db.transaction('records', 'readonly');
-        var existing = await idbGet(readTx.objectStore('records'), recordId);
-        var tableName = (existing && existing.tableName) || tableId;
-
-        // Write tombstone: empty fields + _deleted marker
-        var tombstoneFields = { _deleted: true, _deletedAt: new Date().toISOString() };
-        var storedFields;
-        if (_deferEncryption) {
-            storedFields = JSON.stringify(tombstoneFields);
-        } else {
-            storedFields = await encrypt(_cryptoKey, JSON.stringify(tombstoneFields));
-        }
-
-        var writeTx = _db.transaction('records', 'readwrite');
-        await idbPut(writeTx.objectStore('records'), {
-            id: recordId,
-            tableId: tableId,
-            tableName: tableName,
-            fields: storedFields,
-            lastSynced: new Date().toISOString()
-        });
-        await idbTxDone(writeTx);
-
-        // Remove from in-memory caches (tombstoned records are not queryable)
-        delete _recordCacheById[recordId];
-        if (_tableRecordIdIndex[tableId]) {
-            delete _tableRecordIdIndex[tableId][recordId];
-        }
-        delete _searchIndex[recordId];
-        _searchIndexVersion++;
-
-        // Emit events so UI can react
-        window.dispatchEvent(new CustomEvent('amino:record-update', {
-            detail: { recordId: recordId, tableId: tableId, source: 'matrix', deleted: true }
-        }));
-        window.dispatchEvent(new CustomEvent('amino:record-delete', {
-            detail: {
-                recordId: recordId,
-                tableId: tableId,
-                eventId: eventId,
-                sender: event.sender || null,
-                timestamp: event.origin_server_ts || Date.now()
-            }
-        }));
-
-        console.log('[AminoData] Tombstoned record', recordId, 'in table', tableId);
-    }
-
-    // Process timeline events from a Matrix /sync response.
-    // Events are awaited sequentially to prevent interleaved IDB read-merge-write
-    // cycles on the same record (CB-1 fix).
-    async function processMatrixSyncResponse(syncData) {
-        if (!syncData || !syncData.rooms || !syncData.rooms.join) return 0;
-
-        var updated = 0;
-        var joinedRooms = syncData.rooms.join;
-        var roomIds = Object.keys(joinedRooms);
-
-        for (var i = 0; i < roomIds.length; i++) {
-            var roomId = roomIds[i];
-            var room = joinedRooms[roomId];
-
-            // Only process rooms we care about (rooms in our table-room map)
-            if (!_roomTableMap[roomId]) continue;
-
-            if (room.timeline && room.timeline.events) {
-                var events = room.timeline.events;
-                for (var e = 0; e < events.length; e++) {
-                    var event = events[e];
-                    if (event.type === 'law.firm.record.mutate' || event.type === 'law.firm.schema.object') {
-                        await applyMutateEvent(event, roomId);
-                        updated++;
-                    } else if (event.type === 'law.firm.record.delete') {
-                        await applyDeleteEvent(event, roomId);
-                        updated++;
-                    }
-                }
-            }
-        }
-        return updated;
-    }
-
-    // Build a sync filter scoped to only the rooms we care about
-    function buildSyncFilter() {
-        var roomIds = Object.values(_tableRoomMap);
-        return {
-            room: {
-                rooms: roomIds,
-                timeline: {
-                    types: ['law.firm.record.mutate', 'law.firm.schema.object', 'law.firm.record.delete'],
-                    limit: 100
-                },
-                state: { lazy_load_members: true, types: [] },
-                ephemeral: { types: [] },
-                account_data: { types: [] }
-            },
-            presence: { types: [] },
-            account_data: { types: [] }
-        };
-    }
-
-    // Start long-poll Matrix sync loop
-    async function startMatrixSync() {
-        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
-            console.warn('[AminoData] MatrixClient not available, falling back to HTTP polling');
-            return false;
-        }
-
-        if (Object.keys(_tableRoomMap).length === 0) {
-            console.warn('[AminoData] No table-room mappings, falling back to HTTP polling');
-            return false;
-        }
-
-        // B-4 fix: Stop HTTP polling when Matrix sync starts to prevent race conditions
-        // on the same record from both channels writing concurrently.
-        stopPolling();
-
-        _matrixSyncRunning = true;
-        console.log('[AminoData] Starting Matrix realtime sync for', Object.keys(_tableRoomMap).length, 'tables');
-
-        // Run sync loop in the background
-        _runSyncLoop();
-        return true;
-    }
-
-    var MAX_CONSECUTIVE_SYNC_ERRORS = 10;
-
-    async function _runSyncLoop() {
-        var syncToken = null;
-        var filter = JSON.stringify(buildSyncFilter());
-        var homeserverUrl = MatrixClient.getHomeserverUrl();
-        var consecutiveErrors = 0;
-        var intentionalStop = false;
-
-        while (_matrixSyncRunning) {
-            try {
-                var params = {
-                    filter: filter,
-                    timeout: '30000' // 30-second long poll
-                };
-                if (syncToken) {
-                    params.since = syncToken;
-                }
-
-                // Build URL manually to use the data layer's own fetch
-                // (MatrixClient._request is private, so we call the CS API directly)
-                var url = homeserverUrl + '/_matrix/client/v3/sync?' + new URLSearchParams(params).toString();
-
-                var controller = new AbortController();
-                _matrixSyncAbort = controller;
-
-                var response = await fetch(url, {
-                    headers: { 'Authorization': 'Bearer ' + MatrixClient.getAccessToken() },
-                    signal: controller.signal
-                });
-
-                if (!response.ok) {
-                    if (response.status === 429) {
-                        // Rate limited — back off
-                        var retryData = await response.json().catch(function() { return {}; });
-                        var delay = (retryData.retry_after_ms || 5000);
-                        console.warn('[AminoData] Matrix sync rate-limited, waiting', delay, 'ms');
-                        await new Promise(function(r) { setTimeout(r, delay); });
-                        continue;
-                    }
-                    throw new Error('Sync failed: ' + response.status);
-                }
-
-                var data = await response.json();
-                syncToken = data.next_batch;
-                consecutiveErrors = 0; // Reset on success
-
-                var updatedCount = await processMatrixSyncResponse(data);
-                if (updatedCount > 0) {
-                    window.dispatchEvent(new CustomEvent('amino:sync', {
-                        detail: { source: 'matrix', updatedCount: updatedCount }
-                    }));
-                }
-            } catch (err) {
-                if (err.name === 'AbortError') {
-                    intentionalStop = true;
-                    break;
-                }
-                consecutiveErrors++;
-                console.error('[AminoData] Matrix sync error (' + consecutiveErrors + '/' + MAX_CONSECUTIVE_SYNC_ERRORS + '):', err);
-
-                // B-4 fix: After too many consecutive errors, break out and fall back to polling
-                if (consecutiveErrors >= MAX_CONSECUTIVE_SYNC_ERRORS) {
-                    console.error('[AminoData] Matrix sync exceeded max consecutive errors, stopping');
-                    _matrixSyncRunning = false;
-                    break;
-                }
-
-                // Back off on errors with exponential backoff (capped at 30s)
-                var backoffMs = Math.min(5000 * Math.pow(1.5, consecutiveErrors - 1), 30000);
-                await new Promise(function(r) { setTimeout(r, backoffMs); });
-            }
-        }
-
-        _onMatrixSyncStopped(intentionalStop);
-    }
-
-    function stopMatrixSync() {
-        _matrixSyncRunning = false;
-        if (_matrixSyncAbort) {
-            _matrixSyncAbort.abort();
-            _matrixSyncAbort = null;
-        }
-    }
-
-    // B-4 fix: Fallback to polling when Matrix sync loop exits unexpectedly.
-    // Called at the end of _runSyncLoop when the loop breaks due to errors
-    // (not from an intentional stopMatrixSync call).
-    function _onMatrixSyncStopped(intentional) {
-        if (!intentional && _initialized && !_offlineMode) {
-            console.warn('[AminoData] Matrix sync stopped unexpectedly, falling back to HTTP polling');
-            startPolling();
-        }
     }
 
     // ============ View Deletion Tracking & Propagation ============
@@ -1660,37 +1062,6 @@ var AminoData = (function() {
     async function getViewDeletionHistory(options) {
         if (!_orgSpaceId) throw new Error('Org space not configured');
         return MatrixClient.getViewDeletionHistory(_orgSpaceId, options);
-    }
-
-    // ============ Encrypted Record Writing ============
-
-    // Send an encrypted law.firm.record.mutate event to a Matrix room.
-    // The fields are encrypted with the current user's Synapse-derived key
-    // so they appear as ciphertext in the Synapse database.
-    async function sendEncryptedRecord(roomId, recordId, fields, op) {
-        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
-            throw new Error('MatrixClient not available or not logged in');
-        }
-        if (!_cryptoKey) {
-            throw new Error('Encryption key not initialized');
-        }
-
-        var encPayload = await encryptEventPayload(fields);
-        encPayload.recordId = recordId;
-        encPayload.op = op || 'ALT';
-        encPayload.actor = _userId;
-        encPayload.device = MatrixClient.getDeviceId() || null;
-
-        return MatrixClient.sendEvent(roomId, 'law.firm.record.mutate', encPayload);
-    }
-
-    // Send an encrypted record to a specific table room (lookup room from tableId).
-    async function sendEncryptedTableRecord(tableId, recordId, fields, op) {
-        var roomId = _tableRoomMap[tableId];
-        if (!roomId) {
-            throw new Error('No Matrix room mapped for table: ' + tableId);
-        }
-        return sendEncryptedRecord(roomId, recordId, fields, op);
     }
 
     // ============ Airtable Manual Sync Trigger ============
@@ -2144,7 +1515,6 @@ var AminoData = (function() {
         options = options || {};
         var pollInterval = options.pollInterval || DEFAULT_POLL_INTERVAL;
         var onProgress = options.onProgress || null;
-        var useMatrixSync = options.useMatrixSync !== false; // default true
 
         // Apply online-only mode from options or persisted localStorage setting
         if (options.onlineOnly !== undefined) {
@@ -2156,38 +1526,16 @@ var AminoData = (function() {
         var tables = await init(accessToken, userId, password);
         var totalRecords = await hydrateAll(onProgress);
 
-        // Prefer Matrix realtime sync; fall back to HTTP polling
-        var matrixSyncStarted = false;
-        if (useMatrixSync) {
-            try {
-                matrixSyncStarted = await startMatrixSync();
-            } catch (err) {
-                console.warn('[AminoData] Matrix sync failed to start:', err);
-            }
-        }
-
-        if (!matrixSyncStarted) {
-            console.log('[AminoData] Using HTTP polling for updates');
-            startPolling(pollInterval);
-        }
-
-        // Start gentle background room state mirror after a delay.
-        // This writes record snapshots as state events to table rooms so
-        // the database can be reconstructed from room data alone.
-        // Skip in online-only mode (no local data to mirror).
-        if (!_onlineOnlyMode) {
-            scheduleMirrorStart();
-        }
+        // Use HTTP polling for record updates
+        console.log('[AminoData] Using HTTP polling for updates');
+        startPolling(pollInterval);
 
         return {
             tables: tables,
             totalRecords: totalRecords,
             tableRoomMap: getTableRoomMap(),
-            usingMatrixSync: matrixSyncStarted,
             onlineOnlyMode: _onlineOnlyMode,
-            stopPolling: stopPolling,
-            stopMatrixSync: stopMatrixSync,
-            stopRoomMirror: stopRoomMirror
+            stopPolling: stopPolling
         };
     }
 
@@ -2216,8 +1564,7 @@ var AminoData = (function() {
                     console.warn('[AminoData] Could not clear IndexedDB on online-only switch:', e);
                 }
             }
-            // Stop room mirror (no point mirroring when we don't store locally)
-            stopRoomMirror();
+            // (no local data in online-only mode)
         }
 
         window.dispatchEvent(new CustomEvent('amino:online-only-mode-changed', {
@@ -2242,9 +1589,7 @@ var AminoData = (function() {
 
     async function logout(clearData) {
         stopPolling();
-        stopMatrixSync();
         stopViewDeletionSync();
-        stopRoomMirror();
         _removeGlobalListeners(); // G-9 fix: clean up all event listeners
         clearKeyFromStorage();
 
@@ -2272,7 +1617,6 @@ var AminoData = (function() {
         _initialized = false;
         _keyDerivationCache = { fingerprint: null, key: null };
         AminoHydration.reset();
-        _consecutiveDecryptFailures = 0;
         _perTableFailures = {};
         clearRecordCache();
 
@@ -2302,254 +1646,6 @@ var AminoData = (function() {
         });
     }
 
-    // ============ Record Mutation History ============
-
-    // Fetch the full mutation history for a single record from its table's
-    // Matrix room. Paginates forward (oldest-first) through all
-    // Fetch a changelog of all mutations across all rooms (tables).
-    // Paginates through law.firm.record.mutate events in each room
-    // backwards (newest first), merges across rooms, and returns
-    // a unified list sorted by timestamp descending.
-    //
-    // Options:
-    //   limit           — max entries to return (default 50)
-    //   paginationTokens — object { roomId: token } from previous call for continuation
-    //   tableFilter     — optional tableId to filter to a single table
-    //
-    // Returns: { entries: [...], paginationTokens: { roomId: token }, hasMore: boolean }
-    async function getRoomChangelog(options) {
-        options = options || {};
-        var limit = options.limit || 50;
-        var prevTokens = options.paginationTokens || {};
-        var tableFilter = options.tableFilter || null;
-
-        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
-            throw new Error('MatrixClient not available or not logged in');
-        }
-
-        var roomIds = Object.keys(_roomTableMap);
-        if (tableFilter) {
-            var filterRoom = _tableRoomMap[tableFilter];
-            if (!filterRoom) throw new Error('No Matrix room for table: ' + tableFilter);
-            roomIds = [filterRoom];
-        }
-
-        // Fetch a page from each room (backwards — newest first)
-        var perRoomEntries = [];
-        var nextTokens = {};
-        var anyHasMore = false;
-
-        for (var r = 0; r < roomIds.length; r++) {
-            var roomId = roomIds[r];
-            var tableId = _roomTableMap[roomId];
-            var fromToken = prevTokens[roomId] || undefined;
-
-            // If this room's token is 'exhausted', skip it
-            if (fromToken === 'exhausted') {
-                nextTokens[roomId] = 'exhausted';
-                continue;
-            }
-
-            try {
-                var msgOpts = {
-                    dir: 'b', // backwards — newest first
-                    limit: limit,
-                    filter: { types: ['law.firm.record.mutate'] }
-                };
-                if (fromToken) msgOpts.from = fromToken;
-
-                var response = await MatrixClient.getRoomMessages(roomId, msgOpts);
-                if (!response || !response.chunk) {
-                    nextTokens[roomId] = 'exhausted';
-                    continue;
-                }
-
-                var chunk = response.chunk;
-                for (var i = 0; i < chunk.length; i++) {
-                    var evt = chunk[i];
-                    if (!evt.content) continue;
-
-                    var content = evt.content;
-
-                    // Decrypt if needed
-                    if (isEncryptedPayload(content)) {
-                        try {
-                            var decryptedFields = await decryptEventPayload(content);
-                            content = {
-                                recordId: content.recordId,
-                                tableId: content.tableId,
-                                op: content.op || 'ALT',
-                                payload: content.payload,
-                                set: content.set,
-                                source: content.source,
-                                sourceTimestamp: content.sourceTimestamp,
-                                fields: decryptedFields
-                            };
-                        } catch (decErr) {
-                            continue; // skip entries we can't decrypt
-                        }
-                    }
-
-                    var payload = content.payload || {};
-                    var fieldOps = normalizeFieldOps(content);
-
-                    perRoomEntries.push({
-                        eventId: evt.event_id || null,
-                        sender: evt.sender || null,
-                        timestamp: evt.origin_server_ts || null,
-                        tableId: tableId,
-                        recordId: content.recordId || null,
-                        op: content.op || 'ALT',
-                        source: content.source || null,
-                        sourceTimestamp: content.sourceTimestamp || null,
-                        actor: payload._a || null,
-                        device: payload._d || content.device || null,
-                        fieldOps: fieldOps
-                    });
-                }
-
-                // Update pagination token
-                if (response.end && chunk.length >= limit) {
-                    nextTokens[roomId] = response.end;
-                    anyHasMore = true;
-                } else {
-                    nextTokens[roomId] = 'exhausted';
-                }
-            } catch (err) {
-                console.warn('[AminoData] Error fetching changelog for room', roomId, err.message);
-                nextTokens[roomId] = prevTokens[roomId] || 'exhausted';
-            }
-        }
-
-        // Sort all entries by timestamp descending (newest first)
-        perRoomEntries.sort(function(a, b) {
-            return (b.timestamp || 0) - (a.timestamp || 0);
-        });
-
-        // Cap to requested limit
-        var entries = perRoomEntries.slice(0, limit);
-        if (perRoomEntries.length > limit) anyHasMore = true;
-
-        return {
-            entries: entries,
-            paginationTokens: nextTokens,
-            hasMore: anyHasMore
-        };
-    }
-
-    // law.firm.record.mutate events, filters by recordId client-side,
-    // decrypts encrypted payloads, and returns an array of mutation objects
-    // in chronological order. Each mutation includes extracted metadata
-    // (source, sourceTimestamp, actor) from the event payload.
-    //
-    // Options:
-    //   maxPages  — safety cap on pagination rounds (default 50)
-    //   pageSize  — events per /messages request (default 100)
-    //   rebuildState — if true, also return reconstructed field state (default false)
-    //
-    // Returns: { mutations: [...], state?: {...} }
-    async function getRecordMutationHistory(tableId, recordId, options) {
-        options = options || {};
-        var maxPages = options.maxPages || 50;
-        var pageSize = options.pageSize || 100;
-        var rebuildState = options.rebuildState || false;
-
-        var roomId = _tableRoomMap[tableId];
-        if (!roomId) {
-            throw new Error('No Matrix room mapped for table: ' + tableId);
-        }
-        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
-            throw new Error('MatrixClient not available or not logged in');
-        }
-
-        var mutations = [];
-        var paginationToken = null;
-
-        for (var page = 0; page < maxPages; page++) {
-            var opts = {
-                dir: 'f', // forward — oldest first (chronological)
-                limit: pageSize,
-                filter: { types: ['law.firm.record.mutate'] }
-            };
-            if (paginationToken) opts.from = paginationToken;
-
-            var response = await MatrixClient.getRoomMessages(roomId, opts);
-            if (!response || !response.chunk) break;
-
-            var chunk = response.chunk;
-            for (var i = 0; i < chunk.length; i++) {
-                var evt = chunk[i];
-                if (!evt.content) continue;
-
-                var content = evt.content;
-
-                // Match by recordId
-                if (content.recordId !== recordId) continue;
-
-                // Decrypt encrypted payloads
-                if (isEncryptedPayload(content)) {
-                    try {
-                        var decryptedFields = await decryptEventPayload(content);
-                        content = {
-                            recordId: content.recordId,
-                            tableId: content.tableId,
-                            op: content.op || 'ALT',
-                            payload: content.payload,
-                            set: content.set,
-                            source: content.source,
-                            sourceTimestamp: content.sourceTimestamp,
-                            fields: decryptedFields
-                        };
-                    } catch (decErr) {
-                        console.warn('[AminoData] Could not decrypt history event:', decErr.message);
-                        continue;
-                    }
-                }
-
-                // Extract metadata from payload and top-level fields
-                var payload = content.payload || {};
-                var mutation = {
-                    eventId: evt.event_id || null,
-                    sender: evt.sender || null,
-                    timestamp: evt.origin_server_ts || null,
-                    recordId: recordId,
-                    op: content.op || 'ALT',
-                    source: content.source || null,
-                    sourceTimestamp: content.sourceTimestamp || null,
-                    actor: payload._a || null,
-                    device: payload._d || content.device || null,
-                    formatVersion: payload._f || null,
-                    set: content.set || (payload._set ? payload._set : null),
-                    fieldOps: normalizeFieldOps(content)
-                };
-
-                mutations.push(mutation);
-            }
-
-            // Check if there are more pages
-            if (!response.end || chunk.length < pageSize) break;
-            paginationToken = response.end;
-        }
-
-        var result = { mutations: mutations };
-
-        // Optionally reconstruct the current state by replaying mutations
-        // in chronological order (oldest first) before we re-sort for display
-        if (rebuildState) {
-            var state = {};
-            for (var m = 0; m < mutations.length; m++) {
-                AminoHydration.applyFieldOps(state, mutations[m].fieldOps);
-            }
-            result.state = state;
-        }
-
-        // Sort mutations by timestamp descending (most recent first)
-        mutations.sort(function(a, b) {
-            return (b.timestamp || 0) - (a.timestamp || 0);
-        });
-
-        return result;
-    }
 
     // ============ Offline Session Manager ============
 
@@ -2831,16 +1927,8 @@ var AminoData = (function() {
             }
         }
 
-        // Start real-time sync
-        var matrixSyncStarted = false;
-        try {
-            matrixSyncStarted = await startMatrixSync();
-        } catch (err) {
-            console.warn('[AminoData] Matrix sync failed to start after online transition:', err);
-        }
-        if (!matrixSyncStarted) {
-            startPolling();
-        }
+        // Resume HTTP polling for record updates
+        startPolling();
 
         console.log('[AminoData] Transitioned to online mode.',
             'Flushed:', flushResult.flushed, 'mutations.',
@@ -2850,8 +1938,7 @@ var AminoData = (function() {
             detail: {
                 flushed: flushResult.flushed,
                 flushFailed: flushResult.failed,
-                syncedRecords: syncedRecords,
-                usingMatrixSync: matrixSyncStarted
+                syncedRecords: syncedRecords
             }
         }));
 
@@ -2980,12 +2067,23 @@ var AminoData = (function() {
         for (var i = 0; i < pending.length; i++) {
             var mutation = pending[i];
             try {
-                await sendEncryptedTableRecord(
-                    mutation.tableId,
-                    mutation.recordId,
-                    mutation.fields,
-                    mutation.op
+                // Flush via HTTP write webhook (same path as editRecord)
+                var writeUrl = WEBHOOK_BASE_URL + '/amino-write';
+                var writeBody = JSON.stringify({
+                    tableId: mutation.tableId,
+                    recordId: mutation.recordId,
+                    fields: mutation.fields,
+                    access_token: _accessToken
+                });
+                var writeRes = await fetch(
+                    writeUrl + '?access_token=' + encodeURIComponent(_accessToken),
+                    { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: writeBody }
                 );
+                if (!writeRes.ok) {
+                    var writeErr = new Error('Server returned ' + writeRes.status);
+                    writeErr.status = writeRes.status;
+                    throw writeErr;
+                }
 
                 // Remove from queue on success
                 var delTx = _db.transaction('pending_mutations', 'readwrite');
@@ -3095,366 +2193,6 @@ var AminoData = (function() {
         return _roomTableMap[roomId] || null;
     }
 
-    function isMatrixSyncActive() {
-        return _matrixSyncRunning;
-    }
-
-    // ============ Room State Mirror ============
-    // Gentle background process that writes full record snapshots as Matrix
-    // state events (law.firm.record) to table rooms. This creates a complete
-    // mirror of the database state so that, in theory, the database could be
-    // reconstructed from room data alone — with the benefit of having the
-    // full mutation history in the timeline.
-    //
-    // Design:
-    //   - Uses law.firm.record state events (type + state_key idempotent),
-    //     NOT EO events (law.firm.schema.object). State events are keyed by
-    //     tableId|recordId so multiple clients writing the same record just
-    //     overwrite in-place — no duplication.
-    //   - Coordination via a law.firm.mirror.status state event prevents
-    //     multiple clients from mirroring simultaneously.
-    //   - Skips records whose state events already match local data.
-    //   - Respects rate limits, pauses when the tab is hidden, and uses
-    //     small batches with delays between them.
-    //
-    // Lifecycle:
-    //   - Auto-starts 30s after initAndHydrate completes.
-    //   - Full mirror runs at most once per hour (MIRROR_COOLDOWN).
-    //   - Changed records are also mirrored incrementally (debounced).
-
-    var _mirrorRunning = false;
-    var _mirrorAbort = false;
-    var _mirrorStartupTimer = null;
-    var _mirrorIncrementalQueue = {};        // recordId -> { tableId, roomId }
-    var _mirrorIncrementalTimer = null;
-
-    var MIRROR_BATCH_SIZE = 5;               // records per batch
-    var MIRROR_BATCH_DELAY = 2000;           // ms between batches (gentle)
-    var MIRROR_COOLDOWN = 3600000;           // 1 hour between full mirrors
-    var MIRROR_LOCK_TIMEOUT = 300000;        // 5 min — treat lock as stale
-    var MIRROR_STARTUP_DELAY = 30000;        // 30s delay before first mirror
-    var MIRROR_INCREMENTAL_DEBOUNCE = 10000; // 10s debounce for incremental
-    var MIRROR_INCREMENTAL_MAX_QUEUE = 100;  // cap incremental queue size
-    var MIRROR_STATE_TYPE = 'law.firm.mirror.status';
-
-    // Get the coordination room (org space preferred, else first table room)
-    function _getMirrorCoordRoom() {
-        if (_orgSpaceId) return _orgSpaceId;
-        var rooms = Object.values(_tableRoomMap);
-        return rooms.length > 0 ? rooms[0] : null;
-    }
-
-    // Check if another client is mirroring or if a mirror was done recently
-    async function _checkMirrorLock() {
-        var coordRoom = _getMirrorCoordRoom();
-        if (!coordRoom) return { skip: false };
-
-        try {
-            var status = await MatrixClient.getStateEvent(coordRoom, MIRROR_STATE_TYPE, '');
-            if (!status) return { skip: false };
-
-            var now = Date.now();
-
-            // Another client is actively mirroring and lock is not stale
-            if (status.status === 'running' && status.lockedBy !== _userId) {
-                if (now - status.lockedAt < MIRROR_LOCK_TIMEOUT) {
-                    return { skip: true, reason: 'another client is mirroring (' + status.lockedBy + ')' };
-                }
-            }
-
-            // Mirror was completed recently by anyone
-            if (status.status === 'complete' && status.completedAt) {
-                if (now - status.completedAt < MIRROR_COOLDOWN) {
-                    return {
-                        skip: true,
-                        reason: 'completed ' + Math.round((now - status.completedAt) / 60000) + 'min ago by ' + (status.completedBy || 'unknown')
-                    };
-                }
-            }
-        } catch (e) {
-            // State event doesn't exist or not accessible — proceed
-        }
-
-        return { skip: false };
-    }
-
-    async function _claimMirrorLock() {
-        var coordRoom = _getMirrorCoordRoom();
-        if (!coordRoom) return;
-
-        try {
-            await MatrixClient.sendStateEvent(coordRoom, MIRROR_STATE_TYPE, '', {
-                status: 'running',
-                lockedBy: _userId,
-                lockedAt: Date.now(),
-                version: 1
-            });
-        } catch (e) {
-            console.warn('[AminoData] Could not claim mirror lock:', e.message);
-        }
-    }
-
-    async function _releaseMirrorLock(stats) {
-        var coordRoom = _getMirrorCoordRoom();
-        if (!coordRoom) return;
-
-        try {
-            await MatrixClient.sendStateEvent(coordRoom, MIRROR_STATE_TYPE, '', {
-                status: 'complete',
-                completedBy: _userId,
-                completedAt: Date.now(),
-                stats: stats,
-                version: 1
-            });
-        } catch (e) {
-            console.warn('[AminoData] Could not release mirror lock:', e.message);
-        }
-    }
-
-    // Quick deep-equal for record data (JSON comparison)
-    function _recordDataMatches(existingData, localFields) {
-        try {
-            return JSON.stringify(existingData) === JSON.stringify(localFields);
-        } catch (e) {
-            return false;
-        }
-    }
-
-    // Wait until the browser tab is visible (pause mirroring when hidden)
-    function _waitForVisible() {
-        return new Promise(function(resolve) {
-            if (typeof document === 'undefined' || !document.hidden) {
-                resolve();
-                return;
-            }
-            var handler = function() {
-                if (!document.hidden) {
-                    document.removeEventListener('visibilitychange', handler);
-                    resolve();
-                }
-            };
-            document.addEventListener('visibilitychange', handler);
-        });
-    }
-
-    // Main mirror loop: iterates all tables and writes missing/stale state events
-    async function _runMirrorLoop() {
-        await _claimMirrorLock();
-
-        var totalMirrored = 0;
-        var totalSkipped = 0;
-        var totalErrors = 0;
-        var tableIds = Object.keys(_tableRoomMap);
-
-        for (var t = 0; t < tableIds.length; t++) {
-            if (_mirrorAbort) break;
-
-            var tableId = tableIds[t];
-            var roomId = _tableRoomMap[tableId];
-
-            // Get cached records for this table
-            var records = getTableRecordsCached(tableId);
-            if (!records || records.length === 0) continue;
-
-            // Fetch existing record state events from the room to diff
-            var existingRecords = {};
-            try {
-                var stateEvents = await MatrixClient.getRoomState(roomId);
-                for (var s = 0; s < stateEvents.length; s++) {
-                    var evt = stateEvents[s];
-                    if (evt.type === 'law.firm.record' && evt.state_key) {
-                        existingRecords[evt.state_key] = evt.content;
-                    }
-                }
-            } catch (e) {
-                console.warn('[AminoData] Mirror: could not fetch room state for', tableId, ':', e.message);
-            }
-
-            console.log('[AminoData] Mirror: table', tableId, '—',
-                records.length, 'local records,',
-                Object.keys(existingRecords).length, 'existing state events');
-
-            // Process records in small batches
-            var batchCount = 0;
-            for (var r = 0; r < records.length; r++) {
-                if (_mirrorAbort) break;
-
-                var record = records[r];
-                if (!record || !record.id || !record.fields) continue;
-
-                var stateKey = tableId + '|' + record.id;
-                var existing = existingRecords[stateKey];
-
-                // Skip if state event already has matching data
-                if (existing && existing.data && _recordDataMatches(existing.data, record.fields)) {
-                    totalSkipped++;
-                    continue;
-                }
-
-                // Write state event for this record
-                try {
-                    await MatrixClient.writeRecord(roomId, tableId, record.id, record.fields);
-                    totalMirrored++;
-                } catch (err) {
-                    totalErrors++;
-                    if (err.httpStatus === 429) {
-                        // Rate limited — wait and retry once
-                        var wait = err.retryAfterMs || 5000;
-                        console.warn('[AminoData] Mirror: rate-limited, waiting', wait, 'ms');
-                        await new Promise(function(resolve) { setTimeout(resolve, wait); });
-                        try {
-                            await MatrixClient.writeRecord(roomId, tableId, record.id, record.fields);
-                            totalMirrored++;
-                            totalErrors--;
-                        } catch (retryErr) {
-                            console.warn('[AminoData] Mirror: write failed after retry:', record.id);
-                        }
-                    } else {
-                        console.warn('[AminoData] Mirror: write failed:', record.id, err.message);
-                    }
-                }
-
-                batchCount++;
-                if (batchCount >= MIRROR_BATCH_SIZE) {
-                    batchCount = 0;
-
-                    // Pause when tab is hidden
-                    if (typeof document !== 'undefined' && document.hidden) {
-                        await _waitForVisible();
-                    }
-
-                    // Gentle delay between batches
-                    await new Promise(function(resolve) { setTimeout(resolve, MIRROR_BATCH_DELAY); });
-                }
-            }
-        }
-
-        var stats = {
-            tables: tableIds.length,
-            mirrored: totalMirrored,
-            skipped: totalSkipped,
-            errors: totalErrors,
-            aborted: _mirrorAbort
-        };
-
-        await _releaseMirrorLock(stats);
-        return stats;
-    }
-
-    // Start the full background mirror. Checks coordination lock first.
-    async function startRoomMirror() {
-        if (_mirrorRunning) {
-            console.log('[AminoData] Mirror already running');
-            return false;
-        }
-        if (_offlineMode || !_initialized) return false;
-        if (!MatrixClient || !MatrixClient.isLoggedIn()) return false;
-        if (Object.keys(_tableRoomMap).length === 0) return false;
-
-        // Check coordination lock
-        try {
-            var lock = await _checkMirrorLock();
-            if (lock.skip) {
-                console.log('[AminoData] Mirror skipped:', lock.reason);
-                return false;
-            }
-        } catch (e) {
-            console.warn('[AminoData] Mirror lock check failed, proceeding:', e.message);
-        }
-
-        _mirrorRunning = true;
-        _mirrorAbort = false;
-        console.log('[AminoData] Starting background room state mirror');
-
-        _runMirrorLoop().then(function(stats) {
-            _mirrorRunning = false;
-            console.log('[AminoData] Mirror complete:', JSON.stringify(stats));
-            window.dispatchEvent(new CustomEvent('amino:mirror-complete', { detail: stats }));
-        }).catch(function(err) {
-            _mirrorRunning = false;
-            console.error('[AminoData] Mirror failed:', err);
-        });
-
-        return true;
-    }
-
-    function stopRoomMirror() {
-        _mirrorAbort = true;
-        if (_mirrorStartupTimer) {
-            clearTimeout(_mirrorStartupTimer);
-            _mirrorStartupTimer = null;
-        }
-        if (_mirrorIncrementalTimer) {
-            clearTimeout(_mirrorIncrementalTimer);
-            _mirrorIncrementalTimer = null;
-        }
-    }
-
-    // Schedule mirror start after a delay (called after init/hydration)
-    function scheduleMirrorStart() {
-        if (_mirrorStartupTimer) clearTimeout(_mirrorStartupTimer);
-        _mirrorStartupTimer = setTimeout(function() {
-            _mirrorStartupTimer = null;
-            startRoomMirror();
-        }, MIRROR_STARTUP_DELAY);
-    }
-
-    // ── Incremental Mirroring ──
-    // Queue a record for incremental mirror when it changes locally.
-    // Debounced so rapid successive changes to the same record produce
-    // only one state event write.
-    function _queueIncrementalMirror(tableId, recordId) {
-        if (_offlineMode || !_initialized || _mirrorRunning) return;
-        if (!MatrixClient || !MatrixClient.isLoggedIn()) return;
-
-        var roomId = _tableRoomMap[tableId];
-        if (!roomId) return;
-
-        // Cap queue size — full mirror will catch overflow
-        if (Object.keys(_mirrorIncrementalQueue).length >= MIRROR_INCREMENTAL_MAX_QUEUE) return;
-
-        _mirrorIncrementalQueue[recordId] = { tableId: tableId, roomId: roomId };
-
-        // Debounce
-        if (_mirrorIncrementalTimer) clearTimeout(_mirrorIncrementalTimer);
-        _mirrorIncrementalTimer = setTimeout(function() {
-            _mirrorIncrementalTimer = null;
-            _flushIncrementalMirror();
-        }, MIRROR_INCREMENTAL_DEBOUNCE);
-    }
-
-    async function _flushIncrementalMirror() {
-        var queue = _mirrorIncrementalQueue;
-        _mirrorIncrementalQueue = {};
-
-        var recordIds = Object.keys(queue);
-        if (recordIds.length === 0) return;
-
-        console.log('[AminoData] Incremental mirror: flushing', recordIds.length, 'records');
-
-        for (var i = 0; i < recordIds.length; i++) {
-            var recordId = recordIds[i];
-            var info = queue[recordId];
-            var record = getRecordCached(recordId);
-            if (!record || !record.fields) continue;
-
-            try {
-                await MatrixClient.writeRecord(info.roomId, info.tableId, recordId, record.fields);
-            } catch (err) {
-                console.warn('[AminoData] Incremental mirror failed for', recordId, ':', err.message);
-            }
-
-            // Small delay between writes
-            if (i < recordIds.length - 1) {
-                await new Promise(function(resolve) { setTimeout(resolve, 500); });
-            }
-        }
-    }
-
-    function isMirrorRunning() {
-        return _mirrorRunning;
-    }
-
     // ============ Encrypt-on-Logout: Safety Handlers ============
     // Best-effort encryption when the page is being discarded without a
     // clean logout. visibilitychange → hidden fires before beforeunload
@@ -3525,17 +2263,17 @@ var AminoData = (function() {
         getTableRecordsCached: getTableRecordsCached,
         getRecordCached: getRecordCached,
         getTables: getTables,
-        getRecordMutationHistory: getRecordMutationHistory,
-        getRoomChangelog: getRoomChangelog,
 
         // Sync
         syncTable: syncTable,
         startPolling: startPolling,
         stopPolling: stopPolling,
-        startMatrixSync: startMatrixSync,
-        stopMatrixSync: stopMatrixSync,
         triggerAirtableSync: triggerAirtableSync,
         getAirtableSyncStatus: getAirtableSyncStatus,
+
+        // Event payload decryption (for reading historical room data in UI)
+        decryptEventPayload: decryptEventPayload,
+        isEncryptedPayload: isEncryptedPayload,
 
         // View deletion tracking (EO NUL/INS operators via Matrix)
         startViewDeletionSync: startViewDeletionSync,
@@ -3543,21 +2281,6 @@ var AminoData = (function() {
         deleteView: deleteView,
         restoreView: restoreView,
         getViewDeletionHistory: getViewDeletionHistory,
-
-        // Room state mirror (background database → room sync)
-        startRoomMirror: startRoomMirror,
-        stopRoomMirror: stopRoomMirror,
-        scheduleMirrorStart: scheduleMirrorStart,
-        isMirrorRunning: isMirrorRunning,
-
-        // Encrypted record writing (fields encrypted in Matrix events)
-        sendEncryptedRecord: sendEncryptedRecord,
-        sendEncryptedTableRecord: sendEncryptedTableRecord,
-
-        // Event payload encryption utilities
-        encryptEventPayload: encryptEventPayload,
-        decryptEventPayload: decryptEventPayload,
-        isEncryptedPayload: isEncryptedPayload,
 
         // Session lifecycle
         setAccessToken: setAccessToken,
@@ -3590,7 +2313,6 @@ var AminoData = (function() {
         getTableRoomMap: getTableRoomMap,
         getRoomForTable: getRoomForTable,
         getTableForRoom: getTableForRoom,
-        isMatrixSyncActive: isMatrixSyncActive,
 
         // Sync deduplication (called by editRecord in index.html)
         trackOptimisticWrite: _trackOptimisticWrite,
