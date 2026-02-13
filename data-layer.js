@@ -522,28 +522,21 @@ var AminoData = (function() {
                 await new Promise(function(r) { setTimeout(r, delay); });
             }
 
-            // Auth: POST with Matrix access_token in JSON body + query-param.
+            // Auth: GET with access_token in query-param (n8n webhooks default to GET).
             var separator = path.indexOf('?') === -1 ? '?' : '&';
             var url = WEBHOOK_BASE_URL + path + separator + 'access_token=' + encodeURIComponent(matrixToken);
 
             var response;
             try {
-                response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ access_token: matrixToken })
-                });
+                response = await fetch(url);
             } catch (fetchErr) {
                 // Network / CORS failure — try header auth as last resort
-                console.warn('[AminoData] POST fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
+                console.warn('[AminoData] GET fetch failed (' + fetchErr.message + '), retrying with header auth for ' + path);
                 try {
                     response = await fetch(WEBHOOK_BASE_URL + path, {
-                        method: 'POST',
                         headers: {
-                            'Authorization': 'Bearer ' + matrixToken,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ access_token: matrixToken })
+                            'Authorization': 'Bearer ' + matrixToken
+                        }
                     });
                 } catch (headerErr) {
                     lastErr = new Error('API unreachable (CORS/network): ' + headerErr.message);
@@ -556,12 +549,9 @@ var AminoData = (function() {
                 console.warn('[AminoData] 401, retrying with header auth for ' + path);
                 try {
                     response = await fetch(WEBHOOK_BASE_URL + path, {
-                        method: 'POST',
                         headers: {
-                            'Authorization': 'Bearer ' + matrixToken,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ access_token: matrixToken })
+                            'Authorization': 'Bearer ' + matrixToken
+                        }
                     });
                 } catch (headerErr) {
                     var err = new Error('Authentication expired (CORS/network)');
