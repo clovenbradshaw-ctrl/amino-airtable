@@ -17546,22 +17546,40 @@ function _startBackgroundHydration() {
     _backgroundHydrationInFlight = (async function() {
         var hydrated = false;
 
-        // Force hydration from Postgres current_state via webhook API.
-        // Box AMO hydration is bypassed — Postgres is authoritative.
-        SyncStatusFeed.info('Hydrating from Postgres current_state webhook API...');
-        updateLoadingOverlay('Loading from database...', 'Fetching from current_state webhooks...', 0, 0, 0, 0, null);
-        console.log('[BackgroundHydration] Forcing Postgres webhook hydration from current_state');
+        // Tier 1: Box AMO snapshot — fastest bulk hydration path.
+        SyncStatusFeed.info('Attempting Box snapshot hydration...');
+        updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
+        console.log('[BackgroundHydration] Attempting Tier 1 hydration via Box AMO snapshot');
         try {
-            var webhookResult = await hydrateFromWebhooks();
-            if (webhookResult && webhookResult.success) {
+            var boxResult = await hydrateFromBoxAmoFile();
+            if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
                 hydrated = true;
-                SyncStatusFeed.success('Hydrated from Postgres current_state (' + (webhookResult.totalRecords || 0).toLocaleString() + ' records)');
-                console.log('[BackgroundHydration] Postgres webhook hydration succeeded:', webhookResult.totalRecords, 'records');
-                await setSyncMeta('lastWebhookSync', webhookResult.nextCursor || new Date().toISOString());
+                SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
+                console.log('[BackgroundHydration] Box AMO hydration succeeded:', boxResult.importedEvents, 'events');
+                await setSyncMeta('lastWebhookSync', new Date().toISOString());
                 try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
             }
-        } catch (pgErr) {
-            console.warn('[BackgroundHydration] Postgres webhook hydration failed:', pgErr.message || pgErr);
+        } catch (boxErr) {
+            console.warn('[BackgroundHydration] Box AMO hydration failed:', boxErr.message || boxErr);
+        }
+
+        // Tier 2: Postgres current_state via webhook API (fallback if Box unavailable).
+        if (!hydrated) {
+            SyncStatusFeed.info('Falling back to Postgres current_state webhook API...');
+            updateLoadingOverlay('Loading from database...', 'Fetching from current_state webhooks...', 0, 0, 0, 0, null);
+            console.log('[BackgroundHydration] Falling back to Postgres webhook hydration from current_state');
+            try {
+                var webhookResult = await hydrateFromWebhooks();
+                if (webhookResult && webhookResult.success) {
+                    hydrated = true;
+                    SyncStatusFeed.success('Hydrated from Postgres current_state (' + (webhookResult.totalRecords || 0).toLocaleString() + ' records)');
+                    console.log('[BackgroundHydration] Postgres webhook hydration succeeded:', webhookResult.totalRecords, 'records');
+                    await setSyncMeta('lastWebhookSync', webhookResult.nextCursor || new Date().toISOString());
+                    try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+                }
+            } catch (pgErr) {
+                console.warn('[BackgroundHydration] Postgres webhook hydration failed:', pgErr.message || pgErr);
+            }
         }
 
         if (!hydrated) {
@@ -17663,10 +17681,25 @@ async function init() {
 
     updateStatus('Loading local data...', false, null, null);
 
-    // Box AMO hydration is bypassed — Postgres current_state is the
-    // authoritative hydration source.  Box-related flag kept as false so
-    // downstream merge logic uses the non-Box (replace) path.
+    // Attempt Box AMO hydration first (Tier 1 — fastest bulk path).
+    // If it succeeds, _boxHydrationSucceeded = true and downstream merge
+    // uses additive (||) logic to preserve the fresh snapshot data.
     var _boxHydrationSucceeded = false;
+    try {
+        console.log('[init] Attempting Tier 1 hydration via Box AMO snapshot');
+        SyncStatusFeed.info('Attempting Box snapshot hydration...');
+        updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
+        var boxResult = await hydrateFromBoxAmoFile();
+        if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
+            _boxHydrationSucceeded = true;
+            console.log('[init] Box AMO hydration succeeded:', boxResult.importedEvents, 'events across', Object.keys(META_TABLES).length, 'tables');
+            SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
+            try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+        }
+    } catch (boxErr) {
+        console.warn('[init] Box AMO hydration failed (will fall back to Postgres):', boxErr.message || boxErr);
+        SyncStatusFeed.warn('Box snapshot unavailable — falling back to Postgres...');
+    }
 
     // Load all metadata + max event ID in parallel — single IDB round-trip
     var metaResults = await Promise.all([
