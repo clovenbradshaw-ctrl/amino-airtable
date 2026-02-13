@@ -4962,7 +4962,7 @@
     <div id="toast-container"></div>
 
 
-    <div id="app-dialog-overlay" class="app-dialog-overlay" aria-hidden="true">
+    <div id="app-dialog-overlay" class="app-dialog-overlay" aria-hidden="true" inert>
         <div class="app-dialog" role="dialog" aria-modal="true" aria-labelledby="app-dialog-title" aria-describedby="app-dialog-message">
             <div class="app-dialog-header">
                 <h2 id="app-dialog-title"></h2>
@@ -4993,6 +4993,7 @@
             </div>
 
             <form onsubmit="return false;">
+            <input type="text" name="username" autocomplete="username" style="display:none" aria-hidden="true" tabindex="-1">
             <div class="setup-section">
                 <label for="setup-password">Create a password</label>
                 <input type="password" id="setup-password" placeholder="Enter a strong password" autocomplete="new-password" oninput="updatePasswordStrength()">
@@ -5034,6 +5035,7 @@
             </div>
 
             <form onsubmit="return false;">
+            <input type="text" name="username" autocomplete="username" style="display:none" aria-hidden="true" tabindex="-1">
             <input type="password" id="unlock-password" placeholder="Enter your password" autocomplete="current-password">
             <button id="unlock-password-btn" onclick="unlockWithPassword()">Unlock</button>
             </form>
@@ -5062,6 +5064,7 @@
             </form>
             <!-- Password Reset Form -->
             <form id="synapse-reset-form" onsubmit="return false;">
+                <input type="text" name="username" autocomplete="username" style="display:none" aria-hidden="true" tabindex="-1">
                 <h2>Reset Password</h2>
                 <div id="synapse-reset-error" class="synapse-error"></div>
                 <div id="synapse-reset-success" class="synapse-success"></div>
@@ -5107,6 +5110,7 @@
             <p>Connect to your Amino event stream</p>
             <div id="auth-error" class="auth-error"></div>
             <form onsubmit="return false;">
+            <input type="text" name="username" autocomplete="username" style="display:none" aria-hidden="true" tabindex="-1">
             <input type="password" id="api-key-input" placeholder="API Key" autocomplete="off">
             <input type="text" id="set-filter-input" placeholder="Filter by set (optional)" autocomplete="off">
             <button id="auth-submit">Connect</button>
@@ -5185,6 +5189,7 @@
             <p style="font-size: 13px; color: #666; margin-bottom: 16px;">Add your API key to enable syncing with the server.</p>
             <div id="connect-api-error" style="color: #dc3545; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: #f8d7da; border-radius: 4px; display: none;"></div>
             <form onsubmit="return false;">
+            <input type="text" name="username" autocomplete="username" style="display:none" aria-hidden="true" tabindex="-1">
             <input type="password" id="connect-api-key-input" placeholder="API Key" autocomplete="off" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; box-sizing: border-box;">
             <input type="text" id="connect-api-set-filter" placeholder="Filter by set (optional)" autocomplete="off" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; box-sizing: border-box;">
             <button id="connect-api-submit" onclick="submitConnectApi()" style="width: 100%; padding: 10px; background: #2d6cdf; border: none; border-radius: 6px; color: #fff; font-size: 14px; cursor: pointer; margin-bottom: 8px; font-weight: 500;">Connect</button>
@@ -9847,15 +9852,35 @@ function saveFieldHistory(historyEntries) {
 var _edgesCache = null; // in-memory cache, invalidated on rebuild
 var _edgesRebuildPending = false;
 var _edgesRebuildTimer = null;
+var _edgesRebuildSuppressed = false; // suppress during bulk ops (backfill, hydration)
+var _edgesRebuildNeeded = false;    // track if rebuild was requested while suppressed
+
+// Suppress edge rebuilds during bulk operations to avoid redundant work.
+// Call unsuppressEdgeRebuilds() when done — triggers one rebuild if needed.
+function suppressEdgeRebuilds() {
+    _edgesRebuildSuppressed = true;
+    _edgesRebuildNeeded = false;
+}
+function unsuppressEdgeRebuilds() {
+    _edgesRebuildSuppressed = false;
+    if (_edgesRebuildNeeded) {
+        _edgesRebuildNeeded = false;
+        scheduleEdgeRebuild();
+    }
+}
 
 // Schedule an edge rebuild with debounce (coalesces rapid field updates)
 function scheduleEdgeRebuild() {
     _edgesCache = null; // invalidate cache immediately
+    if (_edgesRebuildSuppressed) {
+        _edgesRebuildNeeded = true;
+        return;
+    }
     if (_edgesRebuildTimer) clearTimeout(_edgesRebuildTimer);
     _edgesRebuildTimer = setTimeout(function() {
         _edgesRebuildTimer = null;
         rebuildEdges();
-    }, 500);
+    }, 1500);
 }
 
 function buildEdgesFromFields(metaFields) {
@@ -11626,8 +11651,10 @@ function computeSmartFieldOrder(tableId) {
         return nameA.localeCompare(nameB);
     });
 
-    // Log the smart ordering decision for debugging
-    if (scored.length > 0) {
+    // Log the smart ordering decision for debugging (only once per table)
+    if (scored.length > 0 && !computeSmartFieldOrder._logged) computeSmartFieldOrder._logged = {};
+    if (scored.length > 0 && !computeSmartFieldOrder._logged[tableId]) {
+        computeSmartFieldOrder._logged[tableId] = true;
         console.log('Smart column order for table ' + tableId + ':',
             scored.slice(0, 8).map(function(s) {
                 return (fields[s.fieldId] && fields[s.fieldId].fieldName || s.fieldId) +
@@ -12620,8 +12647,8 @@ async function refreshLocalDB(sourceOverride) {
                 });
             }
 
-            // Rebuild edges after refresh
-            rebuildEdges();
+            // Schedule edge rebuild after refresh (debounced to coalesce with other updates)
+            scheduleEdgeRebuild();
 
             // Re-render UI
             await renderSidebar(true);
@@ -13877,15 +13904,14 @@ async function renderSidebar(forceRefresh) {
     if (activeTid && _viewLoadQueue.includes(activeTid)) {
         loadTableViewsAsync(activeTid);
     }
+    // Stagger view loading with setTimeout to avoid long requestIdleCallback handlers.
+    // Each table gets a small delay offset so the main thread stays responsive.
+    var _staggerDelay = 0;
     for (var _qi = 0; _qi < _viewLoadQueue.length; _qi++) {
         var _tid = _viewLoadQueue[_qi];
         if (_tid === activeTid) continue;
-        // Use requestIdleCallback if available, otherwise setTimeout(0)
-        if (typeof requestIdleCallback === 'function') {
-            requestIdleCallback(loadTableViewsAsync.bind(null, _tid));
-        } else {
-            setTimeout(loadTableViewsAsync.bind(null, _tid), 0);
-        }
+        _staggerDelay += 50;
+        setTimeout(loadTableViewsAsync.bind(null, _tid), _staggerDelay);
     }
 
     // Active indicator color is set via --type-color CSS variable on renderTableItem above.
@@ -16678,19 +16704,22 @@ var SynapseSync = {
             }
 
             // Process timeline events (law.firm.schema.object + law.firm.record.mutate)
+            // Batch all events per room to reduce IDB transactions and edge rebuilds
             var timelineEvents = roomData.timeline && roomData.timeline.events ? roomData.timeline.events : [];
+            var batchedSynthetic = [];
             for (var j = 0; j < timelineEvents.length; j++) {
                 var tevt = timelineEvents[j];
                 if ((tevt.type === 'law.firm.schema.object' || tevt.type === 'law.firm.record.mutate') && tevt.content) {
                     var syntheticEvent = this._convertSchemaObjectEvent(tevt, tableId);
-                    if (!syntheticEvent) continue;
-
-                    try {
-                        await processEvents([syntheticEvent]);
-                        newEvents++;
-                    } catch (procErr) {
-                        console.error('[SynapseSync] Error processing event:', procErr);
-                    }
+                    if (syntheticEvent) batchedSynthetic.push(syntheticEvent);
+                }
+            }
+            if (batchedSynthetic.length > 0) {
+                try {
+                    await processEvents(batchedSynthetic);
+                    newEvents += batchedSynthetic.length;
+                } catch (procErr) {
+                    console.error('[SynapseSync] Error processing event batch:', procErr);
                 }
             }
         }
@@ -16768,6 +16797,9 @@ async function hydrateFromSynapse() {
 
         updateLoadingOverlay('Downloading data...', 'Found ' + tableRooms.length + ' tables', 0, tableRooms.length, 0, 0, null);
 
+        // Suppress edge rebuilds during bulk hydration — one rebuild at the end
+        suppressEdgeRebuilds();
+
         for (var idx = 0; idx < tableRooms.length; idx++) {
             var tr = tableRooms[idx];
             var progressPct = Math.round((idx / tableRooms.length) * 100);
@@ -16818,26 +16850,23 @@ async function hydrateFromSynapse() {
                     var chunk = msgData.chunk || [];
                     if (chunk.length === 0) break;
 
-                    // Process each event using the shared converter (handles both event types)
+                    // Batch all events in this page for a single processEvents call
+                    var batchedChunkEvents = [];
                     for (var j = 0; j < chunk.length; j++) {
                         var mevt = chunk[j];
                         if ((mevt.type === 'law.firm.schema.object' || mevt.type === 'law.firm.record.mutate') && mevt.content) {
                             var synEvent = SynapseSync._convertSchemaObjectEvent(mevt, tr.tableId);
-                            if (!synEvent) continue;
-
-                            try {
-                                await processEvents([synEvent]);
-                                roomEvents++;
-                                totalProcessed++;
-                                totalRecordsFound++;
-
-                                // Update every 10 records for responsive feedback
-                                if (roomEvents % 10 === 0) {
-                                    updateLoadingOverlay('Downloading ' + tr.name + '...', 'Table ' + (idx + 1) + ' of ' + tableRooms.length, progressPct, tableRooms.length, totalFieldsFound, totalRecordsFound, roomEvents.toLocaleString() + ' records in this table...');
-                                }
-                            } catch (procErr) {
-                                console.warn('[Hydration] Event processing error:', procErr);
-                            }
+                            if (synEvent) batchedChunkEvents.push(synEvent);
+                        }
+                    }
+                    if (batchedChunkEvents.length > 0) {
+                        try {
+                            await processEvents(batchedChunkEvents);
+                            roomEvents += batchedChunkEvents.length;
+                            totalProcessed += batchedChunkEvents.length;
+                            totalRecordsFound += batchedChunkEvents.length;
+                        } catch (procErr) {
+                            console.warn('[Hydration] Event processing error:', procErr);
                         }
                     }
 
@@ -16871,10 +16900,14 @@ async function hydrateFromSynapse() {
             console.warn('[Hydration] Could not save sync token:', tokenErr);
         }
 
+        // Unsuppress edge rebuilds — triggers one rebuild if any were requested
+        unsuppressEdgeRebuilds();
+
         updateLoadingOverlay('Sync complete', totalProcessed.toLocaleString() + ' records downloaded and encrypted', 100, tableRooms.length, totalFieldsFound, totalRecordsFound, '');
         updateStatus('Hydration complete: ' + totalProcessed + ' events', true, 100, null);
         return totalProcessed > 0;
     } catch (err) {
+        unsuppressEdgeRebuilds(); // ensure unsuppress even on error
         console.error('[Hydration] Failed:', err);
         return false;
     }
@@ -16908,6 +16941,8 @@ async function backfillHistoryFromMatrix() {
         SyncStatusFeed.log('Backfilling field history from Matrix...');
         updateLoadingOverlay('Backfilling history...', 'Reading ' + tableRooms.length + ' rooms', 0, tableRooms.length, 0, 0, null);
 
+        // Suppress edge rebuilds during the entire backfill — one rebuild at the end
+        suppressEdgeRebuilds();
         var totalEvents = 0;
 
         for (var idx = 0; idx < tableRooms.length; idx++) {
@@ -17001,10 +17036,14 @@ async function backfillHistoryFromMatrix() {
             allRoomEvents = null; // release memory for this room
         }
 
+        // Unsuppress edge rebuilds — triggers one rebuild if any were requested
+        unsuppressEdgeRebuilds();
+
         SyncStatusFeed.success('History backfill complete: ' + totalEvents + ' events from ' + tableRooms.length + ' rooms');
         console.log('[HistoryBackfill] Complete: ' + totalEvents + ' total events (history only — record data preserved from webhook)');
         return totalEvents > 0;
     } catch (err) {
+        unsuppressEdgeRebuilds(); // ensure unsuppress even on error
         console.error('[HistoryBackfill] Failed:', err);
         SyncStatusFeed.error('History backfill failed: ' + err.message);
         return false;
@@ -17507,9 +17546,10 @@ function _deferNetworkInit() {
     if (_deferredNetworkInitDone) return;
     _deferredNetworkInitDone = true;
 
-    // Use requestIdleCallback if available, else setTimeout(0)
-    var schedule = window.requestIdleCallback || function(cb) { setTimeout(cb, 0); };
-    schedule(function() {
+    // Use setTimeout to avoid blocking the main thread during idle callbacks.
+    // Previously used requestIdleCallback which caused 95ms+ violations because
+    // async network calls (ensureRoomMembership, SharedViews) exceeded the idle deadline.
+    setTimeout(function() {
         (async function() {
             // 1. Populate room mappings (ensureRoomMembership)
             try {
@@ -17536,7 +17576,7 @@ function _deferNetworkInit() {
                 console.warn('[DeferredInit] Failed to load shared views:', e);
             }
         })();
-    });
+    }, 100);
 }
 
 var _backgroundHydrationInFlight = null;
@@ -17617,8 +17657,8 @@ function _startBackgroundHydration() {
                 META_VIEWS[v.tableId][v.viewId] = META_VIEWS[v.tableId][v.viewId] || v;
             });
 
-            // Rebuild edges after hydration
-            rebuildEdges();
+            // Schedule edge rebuild after hydration (debounced)
+            scheduleEdgeRebuild();
 
             // Refresh sidebar/table once hydration completes.
             await renderSidebar(true);
@@ -17741,8 +17781,8 @@ async function init() {
         });
     }
 
-    // Build edges from field metadata on startup
-    rebuildEdges();
+    // Build edges from field metadata on startup (debounced — may coalesce with hydration)
+    scheduleEdgeRebuild();
 
     // Use in-memory META_TABLES as the authoritative table list. After Box
     // AMO hydration, processEventsMemoryOnly populates META_TABLES before
@@ -21342,6 +21382,7 @@ function _closeAppDialog(result) {
     if (overlay) {
         overlay.classList.remove('open');
         overlay.setAttribute('aria-hidden', 'true');
+        overlay.inert = true;
     }
     document.removeEventListener('keydown', _onAppDialogKeydown);
     if (_appDialogResolver) {
@@ -21419,6 +21460,7 @@ function showAppDialog(options) {
 
     overlay.classList.add('open');
     overlay.setAttribute('aria-hidden', 'false');
+    overlay.inert = false;
 
     setTimeout(function() {
         if (options.input) inputEl.focus();
@@ -22656,6 +22698,7 @@ function computedFieldLabel(fieldType) {
 
 var _compiledFormulaCache = {};   // tableId -> { fieldId -> { fn, deps, fieldName } }
 var _compiledFormulaCacheKeys = {}; // tableId -> invalidation key
+var _formulaCompileWarned = {};   // fieldId -> true (suppress repeated warnings)
 var _disableFormulaEvaluation = false;
 
 // Formula result memoization — caches computed values keyed by
@@ -22752,7 +22795,12 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
                 cached[f.fieldId] = entry;
                 compiledList.push(entry);
             } catch (e) {
-                console.warn('Formula compile error for ' + (f.fieldName || f.fieldId) + ':', e.message);
+                // Log formula compile errors once per field to avoid console spam
+                if (!_formulaCompileWarned) _formulaCompileWarned = {};
+                if (!_formulaCompileWarned[f.fieldId]) {
+                    _formulaCompileWarned[f.fieldId] = true;
+                    console.warn('Formula compile error for ' + (f.fieldName || f.fieldId) + ':', e.message);
+                }
                 // Still register a no-op entry so dependent formulas can resolve
                 // their dependency chain (they'll just see null for this field).
                 var fallbackEntry = { fieldId: f.fieldId, fieldName: f.fieldName, fn: function() { return null; }, deps: [] };
