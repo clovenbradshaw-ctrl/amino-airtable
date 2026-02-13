@@ -1314,8 +1314,6 @@ var AminoHydration = (function() {
 //       db: _db,
 //       tableIds: _tableIds,
 //       tables: _tables,
-//       tableRoomMap: _tableRoomMap,
-//       roomTableMap: _roomTableMap,
 //       onlineOnlyMode: _onlineOnlyMode,
 //       deferEncryption: _deferEncryption,
 //       BOX_DOWNLOAD_WEBHOOK: BOX_DOWNLOAD_WEBHOOK,
