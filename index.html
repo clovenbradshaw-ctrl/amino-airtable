@@ -8174,8 +8174,9 @@ var AmoFormat = {
     // Produce a .amo binary from the full event stream
     // events: array of raw aminoStream events (id, set, recordId, operator, created_at, payload, uuid, ...)
     // meta: optional { tables: META_TABLES, fields: META_FIELDS } to preserve table/field names
+    // history: optional array of Matrix room mutation history entries (from getRoomChangelog)
     // Returns: Uint8Array
-    produceEvents: function(events, meta) {
+    produceEvents: function(events, meta, history) {
         // Collect all unique keys across all events for the columnar schema
         var colSet = {};
         for (var i = 0; i < events.length; i++) {
@@ -8218,6 +8219,23 @@ var AmoFormat = {
         var schema = { '_events': columns };
         var records = { '_events': rows };
 
+        // Serialize mutation history (from Matrix rooms) if provided
+        if (history && history.length > 0) {
+            var histCols = ['eventId', 'sender', 'timestamp', 'tableId', 'recordId', 'op', 'source', 'sourceTimestamp', 'actor', 'device', 'fieldOps'];
+            var histRows = [];
+            for (var hi = 0; hi < history.length; hi++) {
+                var hentry = history[hi];
+                var hrow = [];
+                for (var hc = 0; hc < histCols.length; hc++) {
+                    var hval = hentry[histCols[hc]];
+                    hrow.push(hval !== undefined ? hval : null);
+                }
+                histRows.push(hrow);
+            }
+            schema['_history'] = histCols;
+            records['_history'] = histRows;
+        }
+
         // Encode payload with MessagePack
         var payload = { v: 1, type: 'events', ts: Math.floor(Date.now() / 1000), cursor: maxId, schema: schema, records: records };
         if (meta) payload.meta = meta;
@@ -8236,7 +8254,7 @@ var AmoFormat = {
 
     // Read a .amo binary file
     // arrayBuffer: ArrayBuffer or Uint8Array of the .amo file
-    // Returns: { type: 'events'|'snapshot', events?: [...], tables?: {...}, cursor, ts, meta? }
+    // Returns: { type: 'events'|'snapshot', events?: [...], history?: [...], tables?: {...}, cursor, ts, meta? }
     read: function(arrayBuffer) {
         var bytes = new Uint8Array(arrayBuffer);
 
@@ -8274,6 +8292,22 @@ var AmoFormat = {
             }
             var result = { type: 'events', events: events, cursor: payload.cursor, ts: payload.ts };
             if (payload.meta) result.meta = payload.meta;
+
+            // Parse mutation history section if present
+            if (payload.schema['_history']) {
+                var histCols = payload.schema['_history'];
+                var histRows = payload.records['_history'] || [];
+                var history = [];
+                for (var hj = 0; hj < histRows.length; hj++) {
+                    var hobj = {};
+                    for (var hk = 0; hk < histCols.length; hk++) {
+                        hobj[histCols[hk]] = (hk < histRows[hj].length) ? (histRows[hj][hk] !== undefined ? histRows[hj][hk] : null) : null;
+                    }
+                    history.push(hobj);
+                }
+                result.history = history;
+            }
+
             return result;
         }
 
@@ -8321,6 +8355,133 @@ var AmoFormat = {
         throw new Error('Unknown format');
     }
 };
+
+// ============ Fetch All Matrix Room Mutation History ============
+// Paginates through AminoData.getRoomChangelog() to collect the complete
+// mutation history from all Matrix rooms. Returns an array of changelog
+// entries (each entry = one record-level mutation with full metadata).
+// Used by AMO export to embed history so the .amo file is a complete backup.
+
+async function fetchAllRoomHistory(onProgress) {
+    if (typeof AminoData === 'undefined' || !AminoData.getRoomChangelog) return [];
+
+    var allEntries = [];
+    var paginationTokens = {};
+    var hasMore = true;
+    var batchLimit = 500;
+    var maxIterations = 2000; // safety cap: 2000 × 500 = up to 1M events
+
+    for (var i = 0; i < maxIterations && hasMore; i++) {
+        try {
+            var result = await AminoData.getRoomChangelog({
+                limit: batchLimit,
+                paginationTokens: paginationTokens
+            });
+
+            for (var j = 0; j < result.entries.length; j++) {
+                allEntries.push(result.entries[j]);
+            }
+
+            paginationTokens = result.paginationTokens;
+            hasMore = result.hasMore;
+
+            if (onProgress) {
+                onProgress(allEntries.length, hasMore);
+            }
+
+            // Yield to UI every 5 pages
+            if (i % 5 === 4) {
+                await new Promise(function(r) { setTimeout(r, 0); });
+            }
+        } catch (err) {
+            console.warn('[AmoExport] Error fetching room history page ' + i + ':', err.message);
+            break;
+        }
+    }
+
+    return allEntries;
+}
+
+// ============ Replay History Into Matrix Rooms ============
+// Sends mutation history entries back to Matrix rooms as law.firm.record.mutate
+// timeline events. Used during AMO hydration to restore room history.
+// Runs in the background with throttling to avoid overwhelming the homeserver.
+
+async function replayHistoryToMatrixRooms(history) {
+    if (!history || history.length === 0) return 0;
+    if (typeof AminoData === 'undefined') return 0;
+
+    // Need table→room mapping to know where to send events
+    var tableRoomMap = AminoData.getTableRoomMap ? AminoData.getTableRoomMap() : null;
+    if (!tableRoomMap || Object.keys(tableRoomMap).length === 0) {
+        console.warn('[AmoHydrate] No table-room mapping available, deferring history replay');
+        return 0;
+    }
+
+    // Sort chronologically (oldest first) so room timeline is in order
+    var sorted = history.slice().sort(function(a, b) {
+        return (a.timestamp || 0) - (b.timestamp || 0);
+    });
+
+    var replayed = 0;
+    var skipped = 0;
+
+    for (var i = 0; i < sorted.length; i++) {
+        var entry = sorted[i];
+        var roomId = tableRoomMap[entry.tableId];
+        if (!roomId) {
+            skipped++;
+            continue;
+        }
+
+        // Reconstruct the event content in law.firm.record.mutate format
+        var content = {
+            recordId: entry.recordId,
+            tableId: entry.tableId,
+            op: entry.op || 'ALT',
+            source: entry.source || 'amo_restore',
+            sourceTimestamp: entry.sourceTimestamp || entry.timestamp,
+            payload: {
+                _a: entry.actor || null,
+                _d: entry.device || null
+            }
+        };
+
+        // Reconstruct field operations from fieldOps
+        if (entry.fieldOps) {
+            content.payload.fields = entry.fieldOps;
+            // Also set flat format for compatibility
+            if (entry.fieldOps.ALT) {
+                content.fields = entry.fieldOps.ALT;
+            } else if (entry.fieldOps.INS) {
+                content.fields = entry.fieldOps.INS;
+            }
+        }
+
+        try {
+            // Send as encrypted if encryption is available, otherwise plain
+            if (AminoData.sendEncryptedRecord && content.fields) {
+                await AminoData.sendEncryptedRecord(roomId, entry.recordId, content.fields, entry.op || 'ALT');
+            } else if (typeof MatrixClient !== 'undefined' && MatrixClient.sendEvent) {
+                await MatrixClient.sendEvent(roomId, 'law.firm.record.mutate', content);
+            }
+            replayed++;
+        } catch (err) {
+            console.warn('[AmoHydrate] Failed to replay history event:', err.message);
+            skipped++;
+        }
+
+        // Throttle: yield every 10 events, pause every 50
+        if (i % 50 === 49) {
+            await new Promise(function(r) { setTimeout(r, 200); });
+        } else if (i % 10 === 9) {
+            await new Promise(function(r) { setTimeout(r, 0); });
+        }
+    }
+
+    console.log('[AmoHydrate] History replay complete: ' + replayed + ' replayed, ' + skipped + ' skipped');
+    return replayed;
+}
 
 // ============ Box .amo Hydration Snapshot Sync ============
 var BOX_AMO_UPLOAD_URL = 'https://n8n.intelechia.com/webhook/box-upload';
@@ -8533,7 +8694,126 @@ async function hydrateFromBoxAmoFile() {
         console.warn('[BoxAmo] Background IndexedDB save failed:', err);
     });
 
-    return { importedEvents: amoData.events.length, cursor: amoData.cursor || 0 };
+    // Restore mutation history from the AMO file if present.
+    // This converts record-level history entries into field-level history
+    // for the fieldHistory IndexedDB store, and schedules a background
+    // replay to Matrix rooms so they mirror the full audit trail.
+    var historyCount = 0;
+    if (amoData.history && Array.isArray(amoData.history) && amoData.history.length > 0) {
+        historyCount = amoData.history.length;
+        console.log('[BoxAmo] Restoring ' + historyCount + ' mutation history entries from AMO file');
+
+        // Convert record-level history to field-level history entries for IndexedDB.
+        // Each history entry has fieldOps: { ALT: {fld: val}, INS: {fld: val}, NUL: [...] }
+        // We expand these into individual field-level entries.
+        var fieldHistoryFromAmo = [];
+        var histState = {}; // tableId|recordId -> { fieldId -> lastValue }
+
+        // Sort oldest first for proper oldValue tracking
+        var sortedHistory = amoData.history.slice().sort(function(a, b) {
+            return (a.timestamp || 0) - (b.timestamp || 0);
+        });
+
+        for (var hi = 0; hi < sortedHistory.length; hi++) {
+            var hentry = sortedHistory[hi];
+            if (!hentry.tableId || !hentry.recordId || !hentry.fieldOps) continue;
+
+            var stateKey = hentry.tableId + '|' + hentry.recordId;
+            if (!histState[stateKey]) histState[stateKey] = {};
+            var recState = histState[stateKey];
+
+            var ops = hentry.fieldOps;
+
+            // INS operations
+            if (ops.INS) {
+                var insKeys = Object.keys(ops.INS);
+                for (var ik = 0; ik < insKeys.length; ik++) {
+                    fieldHistoryFromAmo.push({
+                        tableId: hentry.tableId,
+                        recordId: hentry.recordId,
+                        fieldId: insKeys[ik],
+                        eventId: hentry.eventId || null,
+                        timestamp: hentry.timestamp || 0,
+                        changeType: 'created',
+                        oldValue: null,
+                        newValue: ops.INS[insKeys[ik]]
+                    });
+                    recState[insKeys[ik]] = ops.INS[insKeys[ik]];
+                }
+            }
+
+            // ALT operations
+            if (ops.ALT) {
+                var altKeys = Object.keys(ops.ALT);
+                for (var ak = 0; ak < altKeys.length; ak++) {
+                    fieldHistoryFromAmo.push({
+                        tableId: hentry.tableId,
+                        recordId: hentry.recordId,
+                        fieldId: altKeys[ak],
+                        eventId: hentry.eventId || null,
+                        timestamp: hentry.timestamp || 0,
+                        changeType: 'updated',
+                        oldValue: recState[altKeys[ak]] !== undefined ? recState[altKeys[ak]] : null,
+                        newValue: ops.ALT[altKeys[ak]]
+                    });
+                    recState[altKeys[ak]] = ops.ALT[altKeys[ak]];
+                }
+            }
+
+            // NUL operations
+            if (ops.NUL) {
+                var nulFields = Array.isArray(ops.NUL) ? ops.NUL : Object.keys(ops.NUL);
+                for (var nk = 0; nk < nulFields.length; nk++) {
+                    fieldHistoryFromAmo.push({
+                        tableId: hentry.tableId,
+                        recordId: hentry.recordId,
+                        fieldId: nulFields[nk],
+                        eventId: hentry.eventId || null,
+                        timestamp: hentry.timestamp || 0,
+                        changeType: 'deleted',
+                        oldValue: recState[nulFields[nk]] !== undefined ? recState[nulFields[nk]] : null,
+                        newValue: null
+                    });
+                    delete recState[nulFields[nk]];
+                }
+            }
+        }
+
+        // Save field-level history to IndexedDB in batches
+        if (fieldHistoryFromAmo.length > 0) {
+            console.log('[BoxAmo] Saving ' + fieldHistoryFromAmo.length + ' field history entries to IndexedDB');
+            var histBatchSize = 500;
+            (async function saveHistoryInBackground() {
+                try {
+                    for (var hbi = 0; hbi < fieldHistoryFromAmo.length; hbi += histBatchSize) {
+                        var hbatch = fieldHistoryFromAmo.slice(hbi, hbi + histBatchSize);
+                        await saveFieldHistory(hbatch);
+                        if (hbi % 2000 === 0) {
+                            await new Promise(function(r) { setTimeout(r, 0); });
+                        }
+                    }
+                    console.log('[BoxAmo] Field history save complete');
+                } catch (err) {
+                    console.warn('[BoxAmo] Field history save failed:', err.message);
+                }
+            })();
+        }
+
+        // Schedule background replay of history to Matrix rooms (after rooms are available).
+        // Delay to give Matrix sync time to discover/create rooms.
+        var capturedHistory = amoData.history;
+        setTimeout(function() {
+            replayHistoryToMatrixRooms(capturedHistory).catch(function(err) {
+                console.warn('[BoxAmo] Matrix room history replay failed:', err.message);
+            });
+        }, 60000); // 60s delay — rooms need time to be set up
+    }
+
+    return {
+        importedEvents: amoData.events.length,
+        importedHistory: historyCount,
+        cursor: amoData.cursor || 0
+    };
 }
 
 
@@ -8559,7 +8839,15 @@ async function uploadAmoSnapshotToBox(reason) {
             allEvents = await Promise.all(allEvents.map(function(e) { return decryptEventFromStorage(e); }));
         }
 
-        var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS });
+        // Fetch mutation history from Matrix rooms for a complete backup
+        var history = [];
+        try {
+            history = await fetchAllRoomHistory();
+        } catch (histErr) {
+            console.warn('[BoxAmo] Could not fetch Matrix room history for upload:', histErr.message);
+        }
+
+        var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS }, history);
         var apiKey = getBoxAmoApiKey();
         var url = BOX_AMO_UPLOAD_URL + '?api_key=' + encodeURIComponent(apiKey);
         var formData = new FormData();
@@ -20527,13 +20815,25 @@ async function exportEventsToAmo() {
         // Decrypt any remaining encrypted events (getRawEventsPaginated already decrypts,
         // but this handles edge cases where the key became available after retrieval)
         if (encryptionKey) {
-            showImportStatus('Exporting...', 'Decrypting events...', 'progress', 55);
+            showImportStatus('Exporting...', 'Decrypting events...', 'progress', 52);
             allEvents = await Promise.all(allEvents.map(function(e) { return decryptEventFromStorage(e); }));
         }
 
-        showImportStatus('Exporting...', 'Building .amo file...', 'progress', 70);
+        // Fetch complete mutation history from Matrix rooms so the .amo file
+        // contains the full audit trail (sender, actor, timestamps, field ops).
+        var history = [];
+        showImportStatus('Exporting...', 'Fetching mutation history from Matrix rooms...', 'progress', 57);
+        try {
+            history = await fetchAllRoomHistory(function(count, hasMore) {
+                showImportStatus('Exporting...', 'Fetched ' + count.toLocaleString() + ' history entries' + (hasMore ? '...' : ''), 'progress', 60);
+            });
+        } catch (histErr) {
+            console.warn('[AmoExport] Could not fetch Matrix room history (continuing without):', histErr.message);
+        }
 
-        var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS });
+        showImportStatus('Exporting...', 'Building .amo file (' + allEvents.length.toLocaleString() + ' events + ' + history.length.toLocaleString() + ' history entries)...', 'progress', 70);
+
+        var binary = AmoFormat.produceEvents(allEvents, { tables: META_TABLES, fields: META_FIELDS }, history);
 
         showImportStatus('Exporting...', 'Creating download...', 'progress', 95);
 
@@ -20553,7 +20853,8 @@ async function exportEventsToAmo() {
                 ? (binary.length / 1024).toFixed(1) + ' KB'
                 : (binary.length / 1048576).toFixed(1) + ' MB';
 
-        showImportStatus('Export Complete', 'Exported ' + allEvents.length.toLocaleString() + ' events (' + sizeStr + ') to .amo file.', 'success');
+        var historyNote = history.length > 0 ? ' + ' + history.length.toLocaleString() + ' history entries' : '';
+        showImportStatus('Export Complete', 'Exported ' + allEvents.length.toLocaleString() + ' events' + historyNote + ' (' + sizeStr + ') to .amo file.', 'success');
 
     } catch (err) {
         console.error('Error exporting .amo:', err);
