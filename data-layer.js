@@ -20,7 +20,7 @@ var AminoData = (function() {
     var ENCRYPTION_ALGORITHM = 'aes-gcm-256';
     var AIRTABLE_SYNC_WEBHOOK = 'https://n8n.intelechia.com/webhook/c875f674-9228-45ae-b6ec-10870df8a403';
     var BOX_DOWNLOAD_WEBHOOK = 'https://n8n.intelechia.com/webhook/box-download';
-    var AIRTABLE_SYNC_COOLDOWN = 60000; // 60 seconds minimum between triggers
+    var AIRTABLE_SYNC_COOLDOWN = 180000; // 180 seconds (3 min) minimum between triggers
     var CONNECTIVITY_CHECK_INTERVAL = 30000; // 30 seconds
     var DEFAULT_OFFLINE_ACCESS_MAX_DAYS = 30; // configurable per org
 
@@ -2195,9 +2195,7 @@ var AminoData = (function() {
         try {
             console.log('[AminoData] Triggering Airtable sync via n8n webhook');
             var response = await fetch(AIRTABLE_SYNC_WEBHOOK, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ access_token: _accessToken })
+                method: 'GET'
             });
 
             if (!response.ok) {
