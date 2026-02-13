@@ -483,6 +483,12 @@ var AminoData = (function() {
             throw new Error('apiFetch requires a sync intent (metadataSync/fullBackfill/incrementalBackfill)');
         }
 
+        // Prefer the live Matrix access token when available so the n8n
+        // webhook can authenticate against the homeserver on behalf of the user.
+        var matrixToken = (typeof MatrixClient !== 'undefined' && MatrixClient.getAccessToken && MatrixClient.getAccessToken())
+            ? MatrixClient.getAccessToken()
+            : _accessToken;
+
         var MAX_RETRIES = 2;
         var lastErr = null;
 
@@ -493,16 +499,16 @@ var AminoData = (function() {
                 await new Promise(function(r) { setTimeout(r, delay); });
             }
 
-            // Auth: POST with access_token in JSON body + query-param fallback.
+            // Auth: POST with Matrix access_token in JSON body + query-param.
             var separator = path.indexOf('?') === -1 ? '?' : '&';
-            var url = WEBHOOK_BASE_URL + path + separator + 'access_token=' + encodeURIComponent(_accessToken);
+            var url = WEBHOOK_BASE_URL + path + separator + 'access_token=' + encodeURIComponent(matrixToken);
 
             var response;
             try {
                 response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ access_token: _accessToken })
+                    body: JSON.stringify({ access_token: matrixToken })
                 });
             } catch (fetchErr) {
                 // Network / CORS failure — try header auth as last resort
@@ -511,10 +517,10 @@ var AminoData = (function() {
                     response = await fetch(WEBHOOK_BASE_URL + path, {
                         method: 'POST',
                         headers: {
-                            'Authorization': 'Bearer ' + _accessToken,
+                            'Authorization': 'Bearer ' + matrixToken,
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ access_token: _accessToken })
+                        body: JSON.stringify({ access_token: matrixToken })
                     });
                 } catch (headerErr) {
                     lastErr = new Error('API unreachable (CORS/network): ' + headerErr.message);
@@ -529,10 +535,10 @@ var AminoData = (function() {
                     response = await fetch(WEBHOOK_BASE_URL + path, {
                         method: 'POST',
                         headers: {
-                            'Authorization': 'Bearer ' + _accessToken,
+                            'Authorization': 'Bearer ' + matrixToken,
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ access_token: _accessToken })
+                        body: JSON.stringify({ access_token: matrixToken })
                     });
                 } catch (headerErr) {
                     var err = new Error('Authentication expired (CORS/network)');
@@ -1039,8 +1045,13 @@ var AminoData = (function() {
     async function hydrateFromBoxDownload(onProgress) {
         if (!_accessToken) throw new Error('Not authenticated');
 
+        // Use the live Matrix access token when available
+        var matrixToken = (typeof MatrixClient !== 'undefined' && MatrixClient.getAccessToken && MatrixClient.getAccessToken())
+            ? MatrixClient.getAccessToken()
+            : _accessToken;
+
         console.log('[AminoData] Attempting primary hydration via box-download webhook');
-        var url = BOX_DOWNLOAD_WEBHOOK + '?access_token=' + encodeURIComponent(_accessToken);
+        var url = BOX_DOWNLOAD_WEBHOOK + '?access_token=' + encodeURIComponent(matrixToken);
 
         var response;
         try {
@@ -1048,9 +1059,9 @@ var AminoData = (function() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + _accessToken
+                    'Authorization': 'Bearer ' + matrixToken
                 },
-                body: JSON.stringify({ access_token: _accessToken })
+                body: JSON.stringify({ access_token: matrixToken })
             });
         } catch (fetchErr) {
             throw new Error('Box download unreachable: ' + fetchErr.message);
@@ -2323,22 +2334,14 @@ var AminoData = (function() {
     async function hydrateAll(onProgress) {
         if (!_initialized) throw new Error('Call init() first');
 
-        // Primary source: bulk hydration from Box download webhook (~70k records).
-        try {
-            var boxTotal = await hydrateFromBoxDownload(onProgress);
-            console.log('[AminoData] Primary hydration (box-download) succeeded:', boxTotal, 'records');
-            return boxTotal;
-        } catch (boxErr) {
-            console.warn('[AminoData] Primary hydration (box-download) failed, falling back to Postgres webhook API:', boxErr.message || boxErr);
-        }
-
-        // Fallback: per-table hydration from current_state via Postgres webhook API.
+        // Force hydration from Postgres current_state via webhook API.
+        // Box download is bypassed — Postgres is the authoritative source.
         try {
             var pgTotal = await hydrateAllFromPostgres(onProgress);
-            console.log('[AminoData] Fallback hydration (Postgres webhook) succeeded:', pgTotal, 'records');
+            console.log('[AminoData] Postgres hydration succeeded:', pgTotal, 'records');
             return pgTotal;
         } catch (pgErr) {
-            console.warn('[AminoData] Fallback hydration (Postgres webhook) also failed:', pgErr.message || pgErr);
+            console.warn('[AminoData] Postgres hydration failed:', pgErr.message || pgErr);
             return 0;
         }
     }
