@@ -56,17 +56,8 @@ var AminoData = (function() {
     var DECRYPT_FAILURE_THRESHOLD = 5;   // Emit warning after this many consecutive failures
 
     // ============ Sync Deduplication ============
-    // Tracks Matrix event_ids already applied to IndexedDB so duplicate
-    // deliveries (own echo via /sync, HTTP polling overlap) are skipped.
-    var _processedEventIds = {};         // event_id -> timestamp (ms)
-    var PROCESSED_EVENT_TTL = 300000;    // 5 minutes
-    var MAX_PROCESSED_EVENTS = 5000;
-
-    // Records recently written optimistically by editRecord() so that
-    // the /sync echo of the same mutation can skip the redundant
-    // decrypt → merge → encrypt → write cycle.
-    var _optimisticWrites = {};          // recordId -> { fields, ts }
-    var OPTIMISTIC_WRITE_TTL = 30000;    // 30 seconds
+    // Delegated to AminoHydration module. See hydration.js for implementation.
+    // These thin wrappers maintain the internal API surface.
 
     // ============ Search Index (Pre-built for fast local search) ============
     // Maps recordId -> lowercased concatenated searchable text.
@@ -389,104 +380,18 @@ var AminoData = (function() {
     }
 
     // ============ Sync Dedup Helpers ============
+    // Delegated to AminoHydration module — thin wrappers for internal use.
 
-    // Returns true if this event_id was already processed; marks it as seen.
     function _markEventProcessed(eventId) {
-        if (!eventId) return false;
-        if (_processedEventIds[eventId]) return true; // already seen
-        _processedEventIds[eventId] = Date.now();
-        _pruneProcessedEvents();
-        return false;
+        return AminoHydration.markEventProcessed(eventId);
     }
 
-    // Evict stale entries so the map doesn't grow unbounded.
-    function _pruneProcessedEvents() {
-        var ids = Object.keys(_processedEventIds);
-        if (ids.length <= MAX_PROCESSED_EVENTS) return;
-        var now = Date.now();
-        for (var i = 0; i < ids.length; i++) {
-            if (now - _processedEventIds[ids[i]] > PROCESSED_EVENT_TTL) {
-                delete _processedEventIds[ids[i]];
-            }
-        }
-        // If still over limit after TTL prune, drop oldest half
-        ids = Object.keys(_processedEventIds);
-        if (ids.length > MAX_PROCESSED_EVENTS) {
-            ids.sort(function(a, b) { return _processedEventIds[a] - _processedEventIds[b]; });
-            var dropCount = Math.floor(ids.length / 2);
-            for (var j = 0; j < dropCount; j++) {
-                delete _processedEventIds[ids[j]];
-            }
-        }
-    }
-
-    // Record an optimistic write so the /sync echo can be detected.
     function _trackOptimisticWrite(recordId, changedFields) {
-        _optimisticWrites[recordId] = {
-            fields: changedFields,
-            ts: Date.now()
-        };
+        AminoHydration.trackOptimisticWrite(recordId, changedFields);
     }
 
-    // B-1 fix: Loose comparison that handles type coercion from server normalization
-    // (e.g. "123" vs 123, "true" vs true).
-    function _looseFieldEqual(a, b) {
-        // Identical values or both nullish
-        if (a === b) return true;
-        if (a == null && b == null) return true;
-        if (a == null || b == null) return false;
-
-        // Handle type coercion: compare as strings for scalar types
-        var typeA = typeof a;
-        var typeB = typeof b;
-        if (typeA !== typeB && (typeA === 'string' || typeA === 'number' || typeA === 'boolean') &&
-            (typeB === 'string' || typeB === 'number' || typeB === 'boolean')) {
-            return String(a) === String(b);
-        }
-
-        // Objects/arrays: fall back to JSON comparison
-        return JSON.stringify(a) === JSON.stringify(b);
-    }
-
-    // Check if an incoming mutation is a redundant echo of a recent
-    // optimistic write. Returns true if the event can be safely skipped
-    // (same fields already applied locally).
     function _isOptimisticEcho(recordId, incomingFieldOps) {
-        var entry = _optimisticWrites[recordId];
-        if (!entry) return false;
-        if (Date.now() - entry.ts > OPTIMISTIC_WRITE_TTL) {
-            delete _optimisticWrites[recordId];
-            return false;
-        }
-
-        // Compare ALT fields — if every field in the incoming ALT matches
-        // what we wrote optimistically, it's an echo.
-        var alt = incomingFieldOps.ALT;
-        if (!alt) return false;
-
-        var optimistic = entry.fields;
-        var altKeys = Object.keys(alt);
-        for (var i = 0; i < altKeys.length; i++) {
-            var key = altKeys[i];
-            if (!_looseFieldEqual(alt[key], optimistic[key])) {
-                return false;
-            }
-        }
-
-        // Match — clear the entry and signal skip
-        delete _optimisticWrites[recordId];
-        return true;
-    }
-
-    // Prune expired optimistic writes (called periodically).
-    function _pruneOptimisticWrites() {
-        var now = Date.now();
-        var ids = Object.keys(_optimisticWrites);
-        for (var i = 0; i < ids.length; i++) {
-            if (now - _optimisticWrites[ids[i]].ts > OPTIMISTIC_WRITE_TTL) {
-                delete _optimisticWrites[ids[i]];
-            }
-        }
+        return AminoHydration.isOptimisticEcho(recordId, incomingFieldOps);
     }
 
     // ============ API Client ============
@@ -875,20 +780,7 @@ var AminoData = (function() {
     }
 
     function normalizeFieldOps(content) {
-        var payload = content.payload || content;
-        var fieldOps = payload.fields || {};
-
-        // Support flat format: { recordId, op, fields: { key: val } }
-        if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
-            fieldOps = {};
-            if (content.op === 'INS' || content.op === 'ALT') {
-                fieldOps[content.op] = content.fields;
-            } else if (content.op === 'NUL') {
-                fieldOps.NUL = content.fields;
-            }
-        }
-
-        return fieldOps;
+        return AminoHydration.normalizeFieldOps(content);
     }
 
     async function deleteTableRecords(tableId) {
@@ -916,315 +808,85 @@ var AminoData = (function() {
         clearTableCache(tableId);
     }
 
-    async function rebuildTableFromRoom(tableId) {
-        var roomId = _tableRoomMap[tableId];
-        if (!roomId) throw new Error('No Matrix room mapped for table: ' + tableId);
-        if (!MatrixClient || !MatrixClient.isLoggedIn()) {
-            throw new Error('Matrix client unavailable for room-based rebuild');
-        }
-
-        console.warn('[AminoData] Rebuilding table from room history:', tableId, roomId);
-
-        var recordStates = {}; // recordId -> { fields, resolved }
-        var pageSize = 200;
-        var maxPages = 1000;
-        var paginationToken = null;
-
-        for (var page = 0; page < maxPages; page++) {
-            var options = {
-                dir: 'b', // newest first
-                limit: pageSize,
-                filter: { types: ['law.firm.record.mutate'] }
-            };
-            if (paginationToken) options.from = paginationToken;
-
-            var response = await MatrixClient.getRoomMessages(roomId, options);
-            if (!response || !response.chunk || response.chunk.length === 0) break;
-
-            var chunk = response.chunk;
-            for (var i = 0; i < chunk.length; i++) {
-                var evt = chunk[i];
-                if (!evt.content || !evt.content.recordId) continue;
-
-                var content = evt.content;
-                var payloadSet = content.payload && content.payload._set;
-                if (payloadSet === 'table' || payloadSet === 'field' || payloadSet === 'view' || payloadSet === 'viewConfig' || payloadSet === 'tableSettings') {
-                    continue;
-                }
-
-                if (isEncryptedPayload(content)) {
-                    try {
-                        var decryptedFields = await decryptEventPayload(content);
-                        content = {
-                            recordId: content.recordId,
-                            tableId: content.tableId,
-                            op: content.op || 'ALT',
-                            payload: content.payload,
-                            set: content.set,
-                            fields: decryptedFields
-                        };
-                    } catch (decErr) {
-                        continue;
-                    }
-                }
-
-                var recordId = content.recordId;
-                var state = recordStates[recordId];
-                if (!state) {
-                    state = { fields: {}, resolved: {} };
-                    recordStates[recordId] = state;
-                }
-
-                var fieldOps = normalizeFieldOps(content);
-
-                if (fieldOps.NUL) {
-                    var nulFields = Array.isArray(fieldOps.NUL) ? fieldOps.NUL : Object.keys(fieldOps.NUL);
-                    for (var n = 0; n < nulFields.length; n++) {
-                        if (!state.resolved[nulFields[n]]) state.resolved[nulFields[n]] = true;
-                    }
-                }
-
-                var assignOps = ['ALT', 'INS'];
-                for (var a = 0; a < assignOps.length; a++) {
-                    var opName = assignOps[a];
-                    var opFields = fieldOps[opName];
-                    if (!opFields) continue;
-                    var keys = Object.keys(opFields);
-                    for (var k = 0; k < keys.length; k++) {
-                        var key = keys[k];
-                        if (!state.resolved[key]) {
-                            state.fields[key] = opFields[key];
-                            state.resolved[key] = true;
-                        }
-                    }
-                }
-            }
-
-            if (!response.end || chunk.length < pageSize) break;
-            paginationToken = response.end;
-        }
-
-        await deleteTableRecords(tableId);
-
-        var recordIds = Object.keys(recordStates);
-        var tableName = tableId;
-        for (var t = 0; t < _tables.length; t++) {
-            if (_tables[t].table_id === tableId) {
-                tableName = _tables[t].table_name || tableId;
-                break;
-            }
-        }
-
-        var BATCH_SIZE = 200;
-        for (var b = 0; b < recordIds.length; b += BATCH_SIZE) {
-            var batchIds = recordIds.slice(b, b + BATCH_SIZE);
-            var writeTx = _db.transaction('records', 'readwrite');
-            var writeStore = writeTx.objectStore('records');
-
-            for (var r = 0; r < batchIds.length; r++) {
-                var recId = batchIds[r];
-                var fields = recordStates[recId].fields;
-                var storedFields;
-                if (_deferEncryption) {
-                    storedFields = JSON.stringify(fields);
-                } else {
-                    storedFields = await encrypt(_cryptoKey, JSON.stringify(fields));
-                }
-                await idbPut(writeStore, {
-                    id: recId,
-                    tableId: tableId,
-                    tableName: tableName,
-                    fields: storedFields,
-                    lastSynced: new Date().toISOString()
-                });
-            }
-            await idbTxDone(writeTx);
-        }
-
-        var syncTx = _db.transaction('sync', 'readwrite');
-        await idbPut(syncTx.objectStore('sync'), {
-            tableId: tableId,
-            lastSynced: new Date().toISOString()
-        });
-        await idbTxDone(syncTx);
-
-        var rebuildTx = _db.transaction('records', 'readonly');
-        var rebuildIndex = rebuildTx.objectStore('records').index('byTable');
-        var rebuildEntries = await idbGetAll(rebuildIndex, tableId);
-        var rebuiltRecords = await Promise.all(rebuildEntries.map(function(entry) {
-            return decryptRecord(entry);
-        }));
-        cacheFullTable(tableId, rebuiltRecords);
-
-        console.warn('[AminoData] Rebuilt', recordIds.length, 'records for table', tableId, 'from Matrix room history');
-        return recordIds.length;
-    }
-
     // ============ Hydration & Sync ============
+    // Core hydration logic is delegated to the AminoHydration module.
+    // These functions build a HydrationContext and call through.
 
-    // Primary hydration: bulk download all records from Box via n8n webhook.
-    // Returns total record count on success, or throws so caller can fall back.
-    async function hydrateFromBoxDownload(onProgress) {
-        if (!_accessToken) throw new Error('Not authenticated');
-
-        // Use the live Matrix access token when available
-        var matrixToken = (typeof MatrixClient !== 'undefined' && MatrixClient.getAccessToken && MatrixClient.getAccessToken())
-            ? MatrixClient.getAccessToken()
-            : _accessToken;
-
-        console.log('[AminoData] Attempting primary hydration via box-download webhook');
-        var url = BOX_DOWNLOAD_WEBHOOK + '?access_token=' + encodeURIComponent(matrixToken);
-
-        var response;
-        try {
-            response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + matrixToken
-                },
-                body: JSON.stringify({ access_token: matrixToken })
-            });
-        } catch (fetchErr) {
-            throw new Error('Box download unreachable: ' + fetchErr.message);
-        }
-
-        if (!response.ok) {
-            throw new Error('Box download failed: HTTP ' + response.status);
-        }
-
-        var data = await response.json();
-
-        // Expect either:
-        //   { records: [ { id, table_id|tableId, fields, ... }, ... ] }
-        //   { tables: { tableId: [ records ] } }
-        //   or a flat array of records
-        var allRecords = [];
-        if (Array.isArray(data)) {
-            allRecords = data;
-        } else if (data && Array.isArray(data.records)) {
-            allRecords = data.records;
-        } else if (data && typeof data.tables === 'object' && !Array.isArray(data.tables)) {
-            // Records grouped by table
-            var tableKeys = Object.keys(data.tables);
-            for (var t = 0; t < tableKeys.length; t++) {
-                var tRecords = data.tables[tableKeys[t]];
-                if (Array.isArray(tRecords)) {
-                    for (var r = 0; r < tRecords.length; r++) {
-                        tRecords[r].tableId = tRecords[r].tableId || tRecords[r].table_id || tableKeys[t];
-                        allRecords.push(tRecords[r]);
-                    }
-                }
-            }
-        }
-
-        if (!allRecords.length) {
-            throw new Error('Box download returned no records');
-        }
-
-        console.log('[AminoData] Box download received', allRecords.length, 'records, grouping by table');
-
-        // Group records by tableId
-        var byTable = {};
-        for (var i = 0; i < allRecords.length; i++) {
-            var rec = allRecords[i];
-            var tableId = rec.tableId || rec.table_id;
-            if (!tableId) continue;
-            if (!byTable[tableId]) byTable[tableId] = [];
-            byTable[tableId].push(rec);
-        }
-
-        var tableIds = Object.keys(byTable);
-        var totalHydrated = 0;
-
-        for (var j = 0; j < tableIds.length; j++) {
-            var tid = tableIds[j];
-            var records = byTable[tid];
-
-            // Clear existing rows for this table so stale records don't linger
-            await deleteTableRecords(tid);
-
-            // Write in batches
-            var BATCH_SIZE = 200;
-            for (var b = 0; b < records.length; b += BATCH_SIZE) {
-                var batch = records.slice(b, b + BATCH_SIZE);
-                var encryptedBatch = await prepareEncryptedRecords(batch, tid);
-                var tx = _db.transaction('records', 'readwrite');
-                var store = tx.objectStore('records');
-                for (var k = 0; k < encryptedBatch.length; k++) {
-                    await idbPut(store, encryptedBatch[k].entry);
-                    cacheRecord(encryptedBatch[k].normalizedRecord);
-                }
-                await idbTxDone(tx);
-            }
-
-            // Update sync cursor
-            var syncTx = _db.transaction('sync', 'readwrite');
-            await idbPut(syncTx.objectStore('sync'), {
-                tableId: tid,
-                lastSynced: new Date().toISOString()
-            });
-            await idbTxDone(syncTx);
-
-            cacheFullTable(tid, records.map(function(record) {
-                return {
-                    id: record.id,
-                    tableId: tid,
-                    tableName: record.tableName || record.table_name || tid,
-                    fields: record.fields || {},
-                    lastSynced: record.lastSynced || new Date().toISOString()
-                };
-            }));
-
-            totalHydrated += records.length;
-
-            if (onProgress) {
-                onProgress({
-                    tableId: tid,
-                    tableName: (byTable[tid][0] || {}).tableName || (byTable[tid][0] || {}).table_name || tid,
-                    tableIndex: j,
-                    tableCount: tableIds.length,
-                    recordCount: records.length,
-                    totalRecords: totalHydrated
-                });
-            }
-
-            console.log('[AminoData] Box hydrated', records.length, 'records for table', tid);
-        }
-
-        // CB-4 fix: Return structured result so caller can detect partial success
-        var hydratedTableIds = tableIds.filter(function(tid) { return (byTable[tid] || []).length > 0; });
-        var emptyTableIds = tableIds.filter(function(tid) { return (byTable[tid] || []).length === 0; });
-
-        console.log('[AminoData] Box download hydration complete:', totalHydrated, 'total records across', tableIds.length, 'tables' +
-            (emptyTableIds.length > 0 ? ' (' + emptyTableIds.length + ' tables had 0 records)' : ''));
+    function _buildHydrationCtx() {
         return {
-            success: true,
-            totalRecords: totalHydrated,
-            totalTables: tableIds.length,
-            succeededTables: hydratedTableIds.length,
-            failedTables: emptyTableIds.length,
-            emptyTableIds: emptyTableIds
+            db: _db,
+            tableIds: _tableIds,
+            tables: _tables,
+            tableRoomMap: _tableRoomMap,
+            roomTableMap: _roomTableMap,
+            onlineOnlyMode: _onlineOnlyMode,
+            deferEncryption: _deferEncryption,
+            MatrixClient: (typeof MatrixClient !== 'undefined') ? MatrixClient : null,
+            BOX_DOWNLOAD_WEBHOOK: BOX_DOWNLOAD_WEBHOOK,
+
+            getAuthToken: function() {
+                return (typeof MatrixClient !== 'undefined' && MatrixClient.getAccessToken && MatrixClient.getAccessToken())
+                    ? MatrixClient.getAccessToken() : _accessToken;
+            },
+
+            idbPut: idbPut,
+            idbGet: idbGet,
+            idbGetAll: idbGetAll,
+            idbTxDone: idbTxDone,
+
+            prepareEncryptedRecords: prepareEncryptedRecords,
+            cacheRecord: cacheRecord,
+            cacheFullTable: cacheFullTable,
+            deleteTableRecords: deleteTableRecords,
+
+            encrypt: function(plaintext) { return encrypt(_cryptoKey, plaintext); },
+            decrypt: function(ciphertext) { return decrypt(_cryptoKey, ciphertext); },
+            isEncryptedPayload: isEncryptedPayload,
+            decryptEventPayload: decryptEventPayload,
+
+            apiFetch: apiFetch,
+
+            emitEvent: function(name, detail) {
+                window.dispatchEvent(new CustomEvent(name, { detail: detail }));
+            },
+
+            onDecryptFailure: function(eventId, err) {
+                _consecutiveDecryptFailures++;
+                console.warn('[AminoData] Decrypt failure:', err.message);
+                window.dispatchEvent(new CustomEvent('amino:sync-error', {
+                    detail: {
+                        type: 'decrypt-failure',
+                        eventId: eventId,
+                        consecutiveFailures: _consecutiveDecryptFailures,
+                        error: err.message
+                    }
+                }));
+                if (_consecutiveDecryptFailures >= DECRYPT_FAILURE_THRESHOLD) {
+                    window.dispatchEvent(new CustomEvent('amino:sync-error', {
+                        detail: {
+                            type: 'decrypt-failure-critical',
+                            consecutiveFailures: _consecutiveDecryptFailures,
+                            message: 'Sync is failing — you may need to re-login to restore data sync.'
+                        }
+                    }));
+                }
+            }
         };
     }
 
-    async function hydrateTable(tableId) {
-        console.log('[AminoData] Hydrating table:', tableId);
+    async function rebuildTableFromRoom(tableId) {
+        return AminoHydration.tierMatrixRoom(_buildHydrationCtx(), tableId);
+    }
 
-        // ── Prefer API hydration from amino.current_state via n8n.
-        // The box-download webhook is the primary bulk path (see hydrateAll);
-        // when falling back to per-table hydration, use the Postgres-backed
-        // /amino-records endpoint which is fast and consistent.
-        var records = [];
+    async function hydrateTable(tableId) {
+        var ctx = _buildHydrationCtx();
         try {
-            var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId), 'fullBackfill');
-            records = data.records || [];
+            var result = await AminoHydration.hydrateTableFromPostgres(ctx, tableId);
+            return result.count;
         } catch (apiErr) {
             console.warn('[AminoData] API hydrate failed for table ' + tableId + ':', apiErr.message || apiErr);
-
-            // ── Last resort: rebuild from Matrix room timeline (Given-Log).
-            // Only used when the API is unreachable or errored.
-            if (_tableRoomMap[tableId] && MatrixClient && MatrixClient.isLoggedIn()) {
+            // Last resort: rebuild from Matrix room timeline
+            if (_tableRoomMap[tableId] && typeof MatrixClient !== 'undefined' && MatrixClient.isLoggedIn()) {
                 try {
                     var roomCount = await rebuildTableFromRoom(tableId);
                     console.log('[AminoData] Hydrated', roomCount, 'records from room for table', tableId);
@@ -1235,130 +897,12 @@ var AminoData = (function() {
             }
             throw apiErr;
         }
-
-        // Online-only mode: populate in-memory cache only, skip all IndexedDB writes.
-        if (_onlineOnlyMode) {
-            var normalized = records.map(function(rec) {
-                var nr = {
-                    id: rec.id,
-                    tableId: tableId,
-                    tableName: rec.tableName || tableId,
-                    fields: rec.fields || {},
-                    lastSynced: rec.lastSynced || new Date().toISOString()
-                };
-                cacheRecord(nr);
-                return nr;
-            });
-            cacheFullTable(tableId, normalized);
-            console.log('[AminoData] Hydrated', records.length, 'records from API for table', tableId, '(online-only, no IDB)');
-            return records.length;
-        }
-
-        // Full hydration should mirror current server state.
-        // Clear existing table rows first so deleted upstream records
-        // do not linger as stale local entries.
-        await deleteTableRecords(tableId);
-
-        // Write records in batches to avoid holding a single long transaction
-        var BATCH_SIZE = 200;
-        for (var b = 0; b < records.length; b += BATCH_SIZE) {
-            var batch = records.slice(b, b + BATCH_SIZE);
-            var encryptedBatch = await prepareEncryptedRecords(batch, tableId);
-            var tx = _db.transaction('records', 'readwrite');
-            var store = tx.objectStore('records');
-            for (var i = 0; i < encryptedBatch.length; i++) {
-                await idbPut(store, encryptedBatch[i].entry);
-                cacheRecord(encryptedBatch[i].normalizedRecord);
-            }
-            await idbTxDone(tx);
-        }
-
-        // Update sync cursor
-        var syncTx = _db.transaction('sync', 'readwrite');
-        await idbPut(syncTx.objectStore('sync'), {
-            tableId: tableId,
-            lastSynced: new Date().toISOString()
-        });
-        await idbTxDone(syncTx);
-
-        cacheFullTable(tableId, records.map(function(record) {
-            return {
-                id: record.id,
-                tableId: tableId,
-                tableName: record.tableName || tableId,
-                fields: record.fields || {},
-                lastSynced: record.lastSynced || new Date().toISOString()
-            };
-        }));
-
-        console.log('[AminoData] Hydrated', records.length, 'records from API for table', tableId);
-        return records.length;
     }
 
     async function syncTable(tableId) {
-        // Online-only mode: always do a full hydration from the API
-        // (no sync cursors stored in IndexedDB).
-        if (_onlineOnlyMode) {
-            return hydrateTable(tableId);
-        }
-
-        var syncTx = _db.transaction('sync', 'readonly');
-        var syncRecord = await idbGet(syncTx.objectStore('sync'), tableId);
-        var since = syncRecord ? syncRecord.lastSynced : null;
-
-        if (!since) {
-            return hydrateTable(tableId);
-        }
-
-        var data = await apiFetch(
-            '/amino-records-since?tableId=' + encodeURIComponent(tableId) +
-            '&since=' + encodeURIComponent(since),
-            'incrementalBackfill'
-        );
-        var records = data.records || [];
-
-        if (records.length > 0) {
-            var BATCH_SIZE = 200;
-            for (var b = 0; b < records.length; b += BATCH_SIZE) {
-                var batch = records.slice(b, b + BATCH_SIZE);
-                var encryptedBatch = await prepareEncryptedRecords(batch, tableId);
-                var tx = _db.transaction('records', 'readwrite');
-                var store = tx.objectStore('records');
-                for (var i = 0; i < encryptedBatch.length; i++) {
-                    await idbPut(store, encryptedBatch[i].entry);
-                    cacheRecord(encryptedBatch[i].normalizedRecord);
-                }
-                await idbTxDone(tx);
-            }
-        }
-
-        // CB-2 fix: Use server-provided cursor (next_since) when available,
-        // or compute max(last_synced) from returned records to avoid clock-skew.
-        // Falls back to client time only when no server cursor is available.
-        var newCursor;
-        if (data.next_since) {
-            newCursor = data.next_since;
-        } else if (records.length > 0) {
-            // Derive cursor from max last_synced in response records
-            newCursor = records.reduce(function(max, r) {
-                var ts = r.last_synced || r.lastSynced || '';
-                return ts > max ? ts : max;
-            }, '');
-            if (!newCursor) {
-                newCursor = new Date().toISOString();
-            }
-        } else {
-            newCursor = new Date().toISOString();
-        }
-
-        var updateTx = _db.transaction('sync', 'readwrite');
-        await idbPut(updateTx.objectStore('sync'), {
-            tableId: tableId,
-            lastSynced: newCursor
-        });
-        await idbTxDone(updateTx);
-
-        return records.length;
+        var ctx = _buildHydrationCtx();
+        var result = await AminoHydration.syncTableFromPostgres(ctx, tableId);
+        return result.count;
     }
 
     // ============ Matrix Realtime Sync ============
@@ -1575,29 +1119,11 @@ var AminoData = (function() {
             return;
         }
 
-        // ALT — merge altered fields over existing values
-        if (fieldOps.ALT) {
-            var altKeys = Object.keys(fieldOps.ALT);
-            for (var a = 0; a < altKeys.length; a++) {
-                fields[altKeys[a]] = fieldOps.ALT[altKeys[a]];
-            }
-        }
+        // Apply field operations via AminoHydration
+        AminoHydration.applyFieldOps(fields, fieldOps);
 
-        // INS — insert new fields
-        if (fieldOps.INS) {
-            var insKeys = Object.keys(fieldOps.INS);
-            for (var n = 0; n < insKeys.length; n++) {
-                fields[insKeys[n]] = fieldOps.INS[insKeys[n]];
-            }
-        }
-
-        // NUL — remove (nullify) fields
-        if (fieldOps.NUL) {
-            var nulFields = Array.isArray(fieldOps.NUL) ? fieldOps.NUL : Object.keys(fieldOps.NUL);
-            for (var d = 0; d < nulFields.length; d++) {
-                delete fields[nulFields[d]];
-            }
-        }
+        // Use server timestamp for lastSynced, not client clock
+        var eventLastSynced = AminoHydration.Timestamps.fromMatrixEvent(event);
 
         // Write back — plaintext when deferred, encrypted otherwise
         var storedFields;
@@ -1612,7 +1138,7 @@ var AminoData = (function() {
             tableId: tableId,
             tableName: (existing && existing.tableName) || tableId,
             fields: storedFields,
-            lastSynced: new Date().toISOString()
+            lastSynced: eventLastSynced
         });
         await idbTxDone(writeTx);
 
@@ -1621,7 +1147,7 @@ var AminoData = (function() {
             tableId: tableId,
             tableName: (existing && existing.tableName) || tableId,
             fields: fields,
-            lastSynced: new Date().toISOString()
+            lastSynced: eventLastSynced
         });
 
         // Queue for incremental room state mirror
@@ -2598,46 +2124,20 @@ var AminoData = (function() {
     async function hydrateAll(onProgress) {
         if (!_initialized) throw new Error('Call init() first');
 
-        // Force hydration from Postgres current_state via webhook API.
-        // Box download is bypassed — Postgres is the authoritative source.
-        try {
-            var pgTotal = await hydrateAllFromPostgres(onProgress);
-            console.log('[AminoData] Postgres hydration succeeded:', pgTotal, 'records');
-            return typeof pgTotal === 'object' ? pgTotal.totalRecords : pgTotal;
-        } catch (pgErr) {
-            console.warn('[AminoData] Postgres hydration failed:', pgErr.message || pgErr);
-            return 0;
-        }
+        var ctx = _buildHydrationCtx();
+        var result = await AminoHydration.run(ctx, { onProgress: onProgress });
+        console.log('[AminoData] Hydration complete via AminoHydration:', result.totalRecords,
+            'records (tier:', result.tier || 'none', ')');
+        return result.totalRecords || 0;
     }
 
-    // Per-table hydration from current_state via Postgres /amino-records webhook.
-    // Used as automatic fallback when Box download is unavailable, and can also
-    // be triggered manually via Settings → Refresh Database.
+    // Convenience wrapper — can still be called directly from Settings → Refresh.
     async function hydrateAllFromPostgres(onProgress) {
         if (!_initialized) throw new Error('Call init() first');
 
-        var totalHydrated = 0;
-        for (var i = 0; i < _tableIds.length; i++) {
-            var tableId = _tableIds[i];
-            try {
-                var count = await syncTable(tableId);
-                totalHydrated += count;
-                if (onProgress) {
-                    onProgress({
-                        tableId: tableId,
-                        tableName: (_tables[i] || {}).table_name || tableId,
-                        tableIndex: i,
-                        tableCount: _tableIds.length,
-                        recordCount: count,
-                        totalRecords: totalHydrated
-                    });
-                }
-            } catch (err) {
-                console.error('[AminoData] Failed to hydrate table ' + tableId + ':', err);
-                if (err.status === 401) throw err; // Propagate auth errors
-            }
-        }
-        return totalHydrated;
+        var ctx = _buildHydrationCtx();
+        var result = await AminoHydration.tierPostgres(ctx, { onProgress: onProgress });
+        return result.totalRecords || 0;
     }
 
     async function initAndHydrate(accessToken, userId, password, options) {
@@ -2771,8 +2271,7 @@ var AminoData = (function() {
         // so the preference survives across sessions.
         _initialized = false;
         _keyDerivationCache = { fingerprint: null, key: null };
-        _processedEventIds = {};
-        _optimisticWrites = {};
+        AminoHydration.reset();
         _consecutiveDecryptFailures = 0;
         _perTableFailures = {};
         clearRecordCache();
@@ -2892,17 +2391,7 @@ var AminoData = (function() {
                     }
 
                     var payload = content.payload || {};
-                    var fieldOps = payload.fields || {};
-
-                    // Handle flat format
-                    if (!fieldOps.ALT && !fieldOps.INS && !fieldOps.NUL && content.op && content.fields) {
-                        fieldOps = {};
-                        if (content.op === 'INS' || content.op === 'ALT') {
-                            fieldOps[content.op] = content.fields;
-                        } else if (content.op === 'NUL') {
-                            fieldOps.NUL = content.fields;
-                        }
-                    }
+                    var fieldOps = normalizeFieldOps(content);
 
                     perRoomEntries.push({
                         eventId: evt.event_id || null,
@@ -3031,19 +2520,8 @@ var AminoData = (function() {
                     device: payload._d || content.device || null,
                     formatVersion: payload._f || null,
                     set: content.set || (payload._set ? payload._set : null),
-                    fieldOps: payload.fields || {}
+                    fieldOps: normalizeFieldOps(content)
                 };
-
-                // Handle flat format: { recordId, op, fields: { key: val } }
-                if (!mutation.fieldOps.ALT && !mutation.fieldOps.INS && !mutation.fieldOps.NUL && content.op && content.fields) {
-                    var flatOp = content.op;
-                    if (flatOp === 'INS' || flatOp === 'ALT') {
-                        mutation.fieldOps = {};
-                        mutation.fieldOps[flatOp] = content.fields;
-                    } else if (flatOp === 'NUL') {
-                        mutation.fieldOps = { NUL: content.fields };
-                    }
-                }
 
                 mutations.push(mutation);
             }
@@ -3060,25 +2538,7 @@ var AminoData = (function() {
         if (rebuildState) {
             var state = {};
             for (var m = 0; m < mutations.length; m++) {
-                var ops = mutations[m].fieldOps;
-                if (ops.INS) {
-                    var insKeys = Object.keys(ops.INS);
-                    for (var a = 0; a < insKeys.length; a++) {
-                        state[insKeys[a]] = ops.INS[insKeys[a]];
-                    }
-                }
-                if (ops.ALT) {
-                    var altKeys = Object.keys(ops.ALT);
-                    for (var b = 0; b < altKeys.length; b++) {
-                        state[altKeys[b]] = ops.ALT[altKeys[b]];
-                    }
-                }
-                if (ops.NUL) {
-                    var nulFields = Array.isArray(ops.NUL) ? ops.NUL : Object.keys(ops.NUL);
-                    for (var c = 0; c < nulFields.length; c++) {
-                        delete state[nulFields[c]];
-                    }
-                }
+                AminoHydration.applyFieldOps(state, mutations[m].fieldOps);
             }
             result.state = state;
         }
