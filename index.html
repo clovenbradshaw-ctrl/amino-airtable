@@ -1622,6 +1622,370 @@
             overflow: hidden;
         }
 
+        /* ===== Forms Sub-App ===== */
+        #forms-app {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+            background: var(--bg-primary);
+            font-family: var(--font-sans);
+        }
+        #forms-app.visible { display: flex; flex-direction: column; }
+
+        .forms-topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 24px 32px 0;
+            flex-shrink: 0;
+        }
+        .forms-topbar-left h1 {
+            font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 0;
+        }
+        .forms-topbar-left p {
+            font-size: 13px; color: var(--text-muted); margin: 4px 0 0;
+        }
+        .forms-new-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 16px;
+            background: var(--primary-500); color: #fff;
+            border: none; border-radius: var(--radius-md);
+            font-size: 13px; font-weight: 600; cursor: pointer;
+            transition: background var(--transition-fast);
+        }
+        .forms-new-btn:hover { background: var(--primary-600); }
+        .forms-new-btn svg { width: 14px; height: 14px; }
+
+        .forms-toolbar {
+            display: flex; align-items: center; gap: 10px;
+            padding: 16px 32px;
+            flex-shrink: 0;
+        }
+        .forms-search {
+            flex: 1; max-width: 320px;
+            padding: 7px 12px 7px 32px;
+            background: var(--bg-secondary); color: var(--text-primary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-md);
+            font-size: 13px; font-family: var(--font-sans);
+            outline: none; transition: border-color var(--transition-fast);
+        }
+        .forms-search:focus { border-color: var(--primary-500); }
+        .forms-search-wrap {
+            position: relative; flex: 1; max-width: 320px;
+        }
+        .forms-search-wrap svg {
+            position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+            width: 14px; height: 14px; color: var(--text-muted); pointer-events: none;
+        }
+        .forms-filter-select {
+            padding: 7px 10px; background: var(--bg-secondary); color: var(--text-primary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-md);
+            font-size: 13px; font-family: var(--font-sans);
+            cursor: pointer; outline: none;
+        }
+        .forms-filter-select:focus { border-color: var(--primary-500); }
+
+        .forms-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            padding: 0 32px 32px;
+            flex: 1; overflow-y: auto;
+            align-content: start;
+        }
+
+        .forms-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            cursor: pointer;
+            transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+            display: flex; flex-direction: column; gap: 12px;
+        }
+        .forms-card:hover {
+            border-color: var(--primary-500);
+            box-shadow: 0 0 0 1px var(--primary-500), var(--shadow-md);
+        }
+        .forms-card-header {
+            display: flex; align-items: flex-start; justify-content: space-between;
+        }
+        .forms-card-title {
+            font-size: 15px; font-weight: 600; color: var(--text-primary);
+            line-height: 1.3;
+        }
+        .forms-card-status {
+            display: inline-flex; align-items: center;
+            padding: 2px 8px; border-radius: 10px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+            flex-shrink: 0;
+        }
+        .forms-card-status.draft { background: rgba(245, 158, 11, 0.15); color: var(--warning-500); }
+        .forms-card-status.published { background: rgba(34, 197, 94, 0.15); color: var(--success-500); }
+
+        .forms-card-table {
+            display: inline-flex; align-items: center; gap: 5px;
+            font-size: 12px; color: var(--text-muted);
+        }
+        .forms-card-table svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+        .forms-card-meta {
+            display: flex; align-items: center; gap: 12px;
+            font-size: 12px; color: var(--text-muted);
+            margin-top: auto;
+        }
+        .forms-card-meta-item {
+            display: inline-flex; align-items: center; gap: 4px;
+        }
+        .forms-card-meta-item svg { width: 12px; height: 12px; }
+
+        .forms-card-actions {
+            display: flex; gap: 4px; opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+        .forms-card:hover .forms-card-actions { opacity: 1; }
+        .forms-card-action-btn {
+            padding: 4px; border: none; background: transparent;
+            color: var(--text-muted); cursor: pointer; border-radius: var(--radius-sm);
+            transition: color var(--transition-fast), background var(--transition-fast);
+        }
+        .forms-card-action-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+        .forms-card-action-btn svg { width: 14px; height: 14px; }
+
+        .forms-empty {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 80px 32px; text-align: center;
+            flex: 1;
+        }
+        .forms-empty-icon {
+            width: 64px; height: 64px;
+            background: var(--bg-secondary); border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: 16px;
+        }
+        .forms-empty-icon svg { width: 32px; height: 32px; color: var(--text-muted); }
+        .forms-empty h2 {
+            font-size: 18px; font-weight: 600; color: var(--text-primary); margin: 0 0 8px;
+        }
+        .forms-empty p {
+            font-size: 14px; color: var(--text-muted); margin: 0 0 24px;
+            max-width: 400px; line-height: 1.5;
+        }
+
+        /* Create Form Modal */
+        .forms-create-modal {
+            display: none; position: fixed; inset: 0; z-index: 1002;
+            background: rgba(0,0,0,0.6);
+            align-items: center; justify-content: center;
+        }
+        .forms-create-modal.open { display: flex; }
+        .forms-create-modal-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-xl);
+            width: 480px; max-width: 90vw;
+            box-shadow: var(--shadow-xl);
+            animation: formModalIn 0.2s ease;
+        }
+        @keyframes formModalIn {
+            from { transform: translateY(12px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .forms-create-modal-header {
+            padding: 20px 24px 0;
+        }
+        .forms-create-modal-header h2 {
+            font-size: 17px; font-weight: 700; color: var(--text-primary); margin: 0;
+        }
+        .forms-create-modal-header p {
+            font-size: 13px; color: var(--text-muted); margin: 4px 0 0;
+        }
+        .forms-create-modal-body {
+            padding: 20px 24px;
+            display: flex; flex-direction: column; gap: 16px;
+        }
+        .forms-create-field label {
+            display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        .forms-create-field input,
+        .forms-create-field select,
+        .forms-create-field textarea {
+            width: 100%; padding: 8px 12px;
+            background: var(--bg-primary); color: var(--text-primary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-md);
+            font-size: 13px; font-family: var(--font-sans);
+            outline: none; transition: border-color var(--transition-fast);
+        }
+        .forms-create-field input:focus,
+        .forms-create-field select:focus,
+        .forms-create-field textarea:focus { border-color: var(--primary-500); }
+        .forms-create-field textarea { resize: vertical; min-height: 60px; }
+        .forms-create-modal-footer {
+            padding: 16px 24px;
+            display: flex; justify-content: flex-end; gap: 8px;
+            border-top: 1px solid var(--border-primary);
+        }
+        .forms-create-modal-footer .btn-cancel {
+            padding: 8px 16px; background: transparent; color: var(--text-secondary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-md);
+            font-size: 13px; cursor: pointer;
+        }
+        .forms-create-modal-footer .btn-cancel:hover { background: var(--bg-hover); }
+        .forms-create-modal-footer .btn-create {
+            padding: 8px 20px; background: var(--primary-500); color: #fff;
+            border: none; border-radius: var(--radius-md);
+            font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .forms-create-modal-footer .btn-create:hover { background: var(--primary-600); }
+        .forms-create-modal-footer .btn-create:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Form builder canvas placeholder */
+        .forms-builder {
+            display: none; flex: 1; flex-direction: column; overflow: hidden;
+        }
+        .forms-builder.visible { display: flex; }
+        .forms-builder-topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border-primary);
+            background: var(--bg-secondary);
+            flex-shrink: 0;
+        }
+        .forms-builder-topbar-left {
+            display: flex; align-items: center; gap: 12px;
+        }
+        .forms-builder-back {
+            padding: 6px; border: none; background: transparent;
+            color: var(--text-muted); cursor: pointer; border-radius: var(--radius-sm);
+        }
+        .forms-builder-back:hover { color: var(--text-primary); background: var(--bg-hover); }
+        .forms-builder-back svg { width: 18px; height: 18px; }
+        .forms-builder-title {
+            font-size: 15px; font-weight: 600; color: var(--text-primary);
+        }
+        .forms-builder-subtitle {
+            font-size: 12px; color: var(--text-muted); margin-left: 8px;
+        }
+        .forms-builder-topbar-right { display: flex; gap: 8px; }
+        .forms-builder-btn {
+            padding: 6px 14px; border-radius: var(--radius-md);
+            font-size: 13px; font-weight: 500; cursor: pointer;
+            border: 1px solid var(--border-primary); background: transparent;
+            color: var(--text-secondary); transition: all var(--transition-fast);
+        }
+        .forms-builder-btn:hover { background: var(--bg-hover); }
+        .forms-builder-btn.primary {
+            background: var(--primary-500); color: #fff; border-color: var(--primary-500);
+        }
+        .forms-builder-btn.primary:hover { background: var(--primary-600); }
+
+        .forms-builder-layout {
+            display: flex; flex: 1; overflow: hidden;
+        }
+        .forms-builder-sidebar {
+            width: 260px; border-right: 1px solid var(--border-primary);
+            background: var(--bg-secondary); overflow-y: auto; flex-shrink: 0;
+            padding: 16px;
+        }
+        .forms-builder-sidebar-title {
+            font-size: 11px; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
+        }
+        .forms-builder-field-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px;
+            border-radius: var(--radius-md);
+            font-size: 13px; color: var(--text-secondary);
+            cursor: pointer; transition: background var(--transition-fast);
+        }
+        .forms-builder-field-item:hover { background: var(--bg-hover); }
+        .forms-builder-field-item.active { background: var(--bg-active); color: var(--text-primary); }
+        .forms-builder-field-item .field-icon {
+            width: 16px; height: 16px; color: var(--text-muted); flex-shrink: 0;
+        }
+        .forms-builder-field-item .field-added {
+            margin-left: auto; color: var(--success-500); font-size: 11px;
+        }
+
+        .forms-builder-canvas {
+            flex: 1; overflow-y: auto; padding: 32px;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .forms-builder-preview {
+            width: 100%; max-width: 640px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            padding: 32px;
+        }
+        .forms-builder-preview-title {
+            font-size: 20px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;
+        }
+        .forms-builder-preview-desc {
+            font-size: 14px; color: var(--text-muted); margin-bottom: 24px;
+        }
+        .forms-builder-preview-field {
+            margin-bottom: 20px;
+        }
+        .forms-builder-preview-field label {
+            display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        .forms-builder-preview-field label .required { color: var(--danger-500); }
+        .forms-builder-preview-field input,
+        .forms-builder-preview-field select,
+        .forms-builder-preview-field textarea {
+            width: 100%; padding: 9px 12px;
+            background: var(--bg-primary); color: var(--text-primary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-md);
+            font-size: 14px; font-family: var(--font-sans); outline: none;
+        }
+        .forms-builder-preview-field .field-help {
+            font-size: 12px; color: var(--text-muted); margin-top: 4px;
+        }
+        .forms-builder-preview-submit {
+            padding: 10px 24px;
+            background: var(--primary-500); color: #fff;
+            border: none; border-radius: var(--radius-md);
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            margin-top: 8px;
+        }
+        .forms-builder-preview-submit:hover { background: var(--primary-600); }
+
+        .forms-builder-config {
+            width: 280px; border-left: 1px solid var(--border-primary);
+            background: var(--bg-secondary); overflow-y: auto; flex-shrink: 0;
+            padding: 16px;
+        }
+        .forms-builder-config-title {
+            font-size: 11px; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
+        }
+        .forms-builder-config-field {
+            margin-bottom: 14px;
+        }
+        .forms-builder-config-field label {
+            display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .forms-builder-config-field input,
+        .forms-builder-config-field select,
+        .forms-builder-config-field textarea {
+            width: 100%; padding: 6px 10px;
+            background: var(--bg-primary); color: var(--text-primary);
+            border: 1px solid var(--border-primary); border-radius: var(--radius-sm);
+            font-size: 12px; font-family: var(--font-sans); outline: none;
+        }
+        .forms-builder-config-toggle {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 6px 0;
+        }
+        .forms-builder-config-toggle label {
+            font-size: 13px; color: var(--text-secondary); margin: 0;
+        }
+        .forms-builder-config-toggle input[type="checkbox"] {
+            width: auto;
+        }
+
         /* ===== Settings Sub-App ===== */
         #settings-app {
             display: none;
@@ -5481,6 +5845,12 @@
             </svg>
             Interface
         </button>
+        <button class="app-nav-btn" id="app-nav-forms" onclick="switchApp('forms')">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+            </svg>
+            Forms
+        </button>
         <button class="app-nav-btn" id="app-nav-settings" onclick="switchApp('settings')">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
@@ -5522,6 +5892,12 @@
                     <p>Open the first Interface page with live records, including case notes from PostgreSQL.</p>
                     <span>Open Interface →</span>
                 </button>
+                <button class="routes-card" onclick="switchApp('forms')">
+                    <div class="routes-card-icon">📋</div>
+                    <h3>Forms</h3>
+                    <p>Create and manage data entry forms. View forms shared with you across all tables.</p>
+                    <span>Open Forms →</span>
+                </button>
                 <button class="routes-card" onclick="switchApp('settings')">
                     <div class="routes-card-icon">⚙️</div>
                     <h3>Settings</h3>
@@ -5542,6 +5918,10 @@
                 <button class="routes-stat" onclick="openHomeStat('case-notes')" title="Open Case Notes table">
                     <div class="routes-stat-value" id="home-casenotes-count">0</div>
                     <div class="routes-stat-label">Case Notes</div>
+                </button>
+                <button class="routes-stat" onclick="switchApp('forms')" title="Open Forms">
+                    <div class="routes-stat-value" id="home-forms-count">0</div>
+                    <div class="routes-stat-label">Forms</div>
                 </button>
                 <button class="routes-stat" onclick="openHomeStat('data-source')" title="Matrix connection status">
                     <div class="routes-stat-value" id="home-sync-status">Local</div>
@@ -5943,6 +6323,7 @@
                     <select id="create-view-type">
                         <option value="grid">Grid View</option>
                         <option value="schema">Schema View (Cards)</option>
+                        <option value="form">Form View</option>
                     </select>
                 </div>
                 <div class="create-view-field">
@@ -6223,6 +6604,119 @@
         <div class="command-palette-panel" onclick="event.stopPropagation()">
             <input type="text" class="command-palette-input" id="command-palette-input" placeholder="Search clients, matters, tasks..." oninput="renderCommandPaletteResults(this.value)">
             <div class="command-palette-results" id="command-palette-results"></div>
+        </div>
+    </div>
+
+    <!-- Forms Sub-App -->
+    <div id="forms-app">
+        <!-- Form List View (default) -->
+        <div id="forms-list-view">
+            <div class="forms-topbar">
+                <div class="forms-topbar-left">
+                    <h1>Forms</h1>
+                    <p>Create and manage data entry forms across your tables.</p>
+                </div>
+                <button class="forms-new-btn" onclick="FormsApp.openCreateModal()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    New Form
+                </button>
+            </div>
+            <div class="forms-toolbar">
+                <div class="forms-search-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" class="forms-search" id="forms-search-input" placeholder="Search forms..." oninput="FormsApp.onSearch(this.value)">
+                </div>
+                <select class="forms-filter-select" id="forms-table-filter" onchange="FormsApp.onFilterChange()">
+                    <option value="">All Tables</option>
+                </select>
+                <select class="forms-filter-select" id="forms-status-filter" onchange="FormsApp.onFilterChange()">
+                    <option value="">All Status</option>
+                    <option value="draft">Draft</option>
+                    <option value="published">Published</option>
+                </select>
+                <select class="forms-filter-select" id="forms-owner-filter" onchange="FormsApp.onFilterChange()">
+                    <option value="">All Owners</option>
+                    <option value="mine">My Forms</option>
+                    <option value="shared">Shared with Me</option>
+                </select>
+            </div>
+            <div class="forms-grid" id="forms-grid">
+                <!-- Form cards rendered dynamically -->
+            </div>
+        </div>
+
+        <!-- Form Builder View (shown when editing a form) -->
+        <div class="forms-builder" id="forms-builder-view">
+            <div class="forms-builder-topbar">
+                <div class="forms-builder-topbar-left">
+                    <button class="forms-builder-back" onclick="FormsApp.closeBuilder()" title="Back to forms list">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <span class="forms-builder-title" id="forms-builder-title">Untitled Form</span>
+                    <span class="forms-builder-subtitle" id="forms-builder-subtitle"></span>
+                </div>
+                <div class="forms-builder-topbar-right">
+                    <button class="forms-builder-btn" onclick="FormsApp.togglePreview()">Preview</button>
+                    <button class="forms-builder-btn" onclick="FormsApp.shareForm()">Share</button>
+                    <button class="forms-builder-btn primary" onclick="FormsApp.publishForm()" id="forms-publish-btn">Publish</button>
+                </div>
+            </div>
+            <div class="forms-builder-layout">
+                <div class="forms-builder-sidebar" id="forms-builder-sidebar">
+                    <div class="forms-builder-sidebar-title">Available Fields</div>
+                    <div id="forms-builder-field-list">
+                        <!-- Field items rendered dynamically -->
+                    </div>
+                </div>
+                <div class="forms-builder-canvas" id="forms-builder-canvas">
+                    <div class="forms-builder-preview" id="forms-builder-preview">
+                        <!-- Live form preview rendered dynamically -->
+                    </div>
+                </div>
+                <div class="forms-builder-config" id="forms-builder-config">
+                    <div class="forms-builder-config-title">Field Settings</div>
+                    <div id="forms-builder-config-body">
+                        <p style="font-size:13px;color:var(--text-muted);">Select a field to configure it.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Form Modal -->
+    <div class="forms-create-modal" id="forms-create-modal" onclick="FormsApp.closeCreateModal(event)">
+        <div class="forms-create-modal-content" onclick="event.stopPropagation()">
+            <div class="forms-create-modal-header">
+                <h2>Create New Form</h2>
+                <p>Choose a table and configure your new form.</p>
+            </div>
+            <div class="forms-create-modal-body">
+                <div class="forms-create-field">
+                    <label for="forms-create-name">Form Name</label>
+                    <input type="text" id="forms-create-name" placeholder="e.g., Client Intake Form">
+                </div>
+                <div class="forms-create-field">
+                    <label for="forms-create-table">Source Table</label>
+                    <select id="forms-create-table" onchange="FormsApp.onCreateTableChange()">
+                        <option value="">Select a table...</option>
+                    </select>
+                </div>
+                <div class="forms-create-field">
+                    <label for="forms-create-desc">Description (optional)</label>
+                    <textarea id="forms-create-desc" placeholder="Describe what this form is for..."></textarea>
+                </div>
+                <div class="forms-create-field">
+                    <label for="forms-create-sharing">Visibility</label>
+                    <select id="forms-create-sharing">
+                        <option value="everyone">Shared with everyone</option>
+                        <option value="private">Private (only you)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="forms-create-modal-footer">
+                <button class="btn-cancel" onclick="FormsApp.closeCreateModal()">Cancel</button>
+                <button class="btn-create" id="forms-create-submit" onclick="FormsApp.submitCreate()">Create Form</button>
+            </div>
         </div>
     </div>
 
@@ -28231,6 +28725,747 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;');
 }
 
+// ============ Forms App Module ============
+// Renders the form builder sub-app. Lists all forms (views with viewType 'form')
+// the current user has access to, and provides a builder UI for creating/editing forms.
+
+var FormsApp = (function() {
+    'use strict';
+
+    var _initialized = false;
+    var _searchQuery = '';
+    var _tableFilter = '';
+    var _statusFilter = '';
+    var _ownerFilter = '';
+    var _allForms = [];
+    var _currentFormId = null;
+    var _currentFormTableId = null;
+    var _selectedFieldId = null;
+
+    // ── Helpers ──
+
+    function _esc(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function _timeAgo(ts) {
+        if (!ts) return '';
+        var diff = Date.now() - ts;
+        var mins = Math.floor(diff / 60000);
+        if (mins < 1) return 'just now';
+        if (mins < 60) return mins + 'm ago';
+        var hrs = Math.floor(mins / 60);
+        if (hrs < 24) return hrs + 'h ago';
+        var days = Math.floor(hrs / 24);
+        if (days < 30) return days + 'd ago';
+        return new Date(ts).toLocaleDateString();
+    }
+
+    function _getTableName(tableId) {
+        var t = META_TABLES[tableId];
+        return t ? (t.tableName || tableId) : tableId;
+    }
+
+    // ── Data collection ──
+
+    // Gather all form-type views across all tables that the current user can see
+    async function _collectForms() {
+        var forms = [];
+        var userId = (typeof MatrixClient !== 'undefined' && MatrixClient.getUserId)
+            ? MatrixClient.getUserId() : null;
+        var tableIds = Object.keys(META_VIEWS);
+
+        for (var i = 0; i < tableIds.length; i++) {
+            var tableId = tableIds[i];
+            var views = META_VIEWS[tableId] || {};
+            var viewIds = Object.keys(views);
+
+            for (var j = 0; j < viewIds.length; j++) {
+                var view = views[viewIds[j]];
+                if (!view || view.viewType !== 'form') continue;
+
+                // Check visibility
+                var sharing = view._sharing || {};
+                var ownerId = sharing.ownerId || view.ownerId || null;
+                var isOwner = userId && ownerId === userId;
+                var sharingLevel = sharing.sharing || view.sharing || 'everyone';
+
+                if (sharingLevel === 'private' && !isOwner) continue;
+                if (sharingLevel === 'specific' && !isOwner) {
+                    var sharedWith = sharing.sharedWith || view.sharedWith || [];
+                    if (sharedWith.indexOf(userId) === -1) continue;
+                }
+
+                forms.push({
+                    tableId: tableId,
+                    viewId: view.viewId || viewIds[j],
+                    viewName: view.viewName || 'Untitled Form',
+                    description: view.formConfig ? view.formConfig.description : '',
+                    status: (view.formConfig && view.formConfig.status) || 'draft',
+                    ownerId: ownerId,
+                    isOwner: isOwner,
+                    sharing: sharingLevel,
+                    createdAt: view.createdAt || 0,
+                    updatedAt: view.updatedAt || view.createdAt || 0,
+                    formConfig: view.formConfig || {},
+                    fieldConfig: view.fieldConfig || {},
+                    hiddenFieldIds: view.hiddenFieldIds || [],
+                    fieldOrder: view.fieldOrder || []
+                });
+            }
+        }
+
+        // Sort: most recently updated first
+        forms.sort(function(a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+        return forms;
+    }
+
+    // ── Rendering ──
+
+    function _applyFilters(forms) {
+        var result = forms;
+        if (_searchQuery) {
+            var q = _searchQuery.toLowerCase();
+            result = result.filter(function(f) {
+                return (f.viewName || '').toLowerCase().indexOf(q) !== -1 ||
+                       (f.description || '').toLowerCase().indexOf(q) !== -1 ||
+                       _getTableName(f.tableId).toLowerCase().indexOf(q) !== -1;
+            });
+        }
+        if (_tableFilter) {
+            result = result.filter(function(f) { return f.tableId === _tableFilter; });
+        }
+        if (_statusFilter) {
+            result = result.filter(function(f) { return f.status === _statusFilter; });
+        }
+        if (_ownerFilter === 'mine') {
+            result = result.filter(function(f) { return f.isOwner; });
+        } else if (_ownerFilter === 'shared') {
+            result = result.filter(function(f) { return !f.isOwner; });
+        }
+        return result;
+    }
+
+    function _renderFormCard(form) {
+        var statusClass = form.status === 'published' ? 'published' : 'draft';
+        var statusLabel = form.status === 'published' ? 'Published' : 'Draft';
+        var tableName = _getTableName(form.tableId);
+
+        var sharingIcon = '';
+        if (form.sharing === 'everyone') {
+            sharingIcon = '<span title="Shared with everyone">&#127760;</span>';
+        } else if (form.sharing === 'specific') {
+            sharingIcon = '<span title="Shared with specific people">&#128101;</span>';
+        } else {
+            sharingIcon = '<span title="Private">&#128274;</span>';
+        }
+
+        var fieldCount = 0;
+        if (form.formConfig && form.formConfig.fieldConfigs) {
+            fieldCount = form.formConfig.fieldConfigs.length;
+        } else {
+            var allFields = META_FIELDS[form.tableId] || {};
+            var hidden = form.hiddenFieldIds || [];
+            fieldCount = Object.keys(allFields).length - hidden.length;
+            if (fieldCount < 0) fieldCount = Object.keys(allFields).length;
+        }
+
+        return '<div class="forms-card" onclick="FormsApp.openBuilder(\'' + _esc(form.tableId) + '\', \'' + _esc(form.viewId) + '\')">' +
+            '<div class="forms-card-header">' +
+                '<div class="forms-card-title">' + _esc(form.viewName) + '</div>' +
+                '<div style="display:flex;align-items:center;gap:6px;">' +
+                    '<span class="forms-card-status ' + statusClass + '">' + statusLabel + '</span>' +
+                    '<div class="forms-card-actions">' +
+                        '<button class="forms-card-action-btn" onclick="event.stopPropagation();FormsApp.duplicateForm(\'' + _esc(form.tableId) + '\', \'' + _esc(form.viewId) + '\')" title="Duplicate">' +
+                            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>' +
+                        '</button>' +
+                        '<button class="forms-card-action-btn" onclick="event.stopPropagation();FormsApp.deleteForm(\'' + _esc(form.tableId) + '\', \'' + _esc(form.viewId) + '\')" title="Delete">' +
+                            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>' +
+                        '</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+            (form.description ? '<div style="font-size:13px;color:var(--text-muted);line-height:1.4;">' + _esc(form.description) + '</div>' : '') +
+            '<div class="forms-card-table">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>' +
+                _esc(tableName) +
+            '</div>' +
+            '<div class="forms-card-meta">' +
+                '<span class="forms-card-meta-item">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg>' +
+                    fieldCount + ' fields' +
+                '</span>' +
+                '<span class="forms-card-meta-item">' + sharingIcon + '</span>' +
+                '<span class="forms-card-meta-item" style="margin-left:auto;">' + _timeAgo(form.updatedAt) + '</span>' +
+            '</div>' +
+        '</div>';
+    }
+
+    function _renderEmptyState() {
+        return '<div class="forms-empty">' +
+            '<div class="forms-empty-icon">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
+                    '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>' +
+                    '<polyline points="14 2 14 8 20 8"/>' +
+                    '<line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' +
+                    '<polyline points="10 9 9 9 8 9"/>' +
+                '</svg>' +
+            '</div>' +
+            '<h2>No forms yet</h2>' +
+            '<p>Forms let you create structured data entry interfaces for your tables. Create your first form to get started.</p>' +
+            '<button class="forms-new-btn" onclick="FormsApp.openCreateModal()">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
+                'Create Your First Form' +
+            '</button>' +
+        '</div>';
+    }
+
+    function _renderNoResults() {
+        return '<div class="forms-empty">' +
+            '<div class="forms-empty-icon">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
+                    '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>' +
+                '</svg>' +
+            '</div>' +
+            '<h2>No matching forms</h2>' +
+            '<p>Try adjusting your search or filters.</p>' +
+        '</div>';
+    }
+
+    async function _render() {
+        _allForms = await _collectForms();
+        var filtered = _applyFilters(_allForms);
+
+        var grid = document.getElementById('forms-grid');
+        if (!grid) return;
+
+        if (_allForms.length === 0) {
+            grid.innerHTML = _renderEmptyState();
+            return;
+        }
+
+        if (filtered.length === 0) {
+            grid.innerHTML = _renderNoResults();
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < filtered.length; i++) {
+            html += _renderFormCard(filtered[i]);
+        }
+        grid.innerHTML = html;
+    }
+
+    function _populateTableFilter() {
+        var select = document.getElementById('forms-table-filter');
+        if (!select) return;
+        var html = '<option value="">All Tables</option>';
+        var tableIds = Object.keys(META_TABLES);
+        tableIds.sort(function(a, b) {
+            var na = (META_TABLES[a].tableName || a).toLowerCase();
+            var nb = (META_TABLES[b].tableName || b).toLowerCase();
+            return na < nb ? -1 : na > nb ? 1 : 0;
+        });
+        for (var i = 0; i < tableIds.length; i++) {
+            var t = META_TABLES[tableIds[i]];
+            html += '<option value="' + _esc(tableIds[i]) + '">' + _esc(t.tableName || tableIds[i]) + '</option>';
+        }
+        select.innerHTML = html;
+    }
+
+    function _populateCreateTableSelect() {
+        var select = document.getElementById('forms-create-table');
+        if (!select) return;
+        var html = '<option value="">Select a table...</option>';
+        var tableIds = Object.keys(META_TABLES);
+        tableIds.sort(function(a, b) {
+            var na = (META_TABLES[a].tableName || a).toLowerCase();
+            var nb = (META_TABLES[b].tableName || b).toLowerCase();
+            return na < nb ? -1 : na > nb ? 1 : 0;
+        });
+        for (var i = 0; i < tableIds.length; i++) {
+            var t = META_TABLES[tableIds[i]];
+            html += '<option value="' + _esc(tableIds[i]) + '">' + _esc(t.tableName || tableIds[i]) + '</option>';
+        }
+        select.innerHTML = html;
+    }
+
+    // ── Form Builder ──
+
+    function _getFieldTypeIcon(fieldType) {
+        switch ((fieldType || '').toLowerCase()) {
+            case 'singlelinetext': return 'Aa';
+            case 'multilinetext': case 'richtext': return '&#182;';
+            case 'email': return '@';
+            case 'phone': case 'phonenumber': return '&#9742;';
+            case 'number': case 'currency': case 'percent': return '#';
+            case 'date': case 'datetime': return '&#128197;';
+            case 'checkbox': return '&#9745;';
+            case 'singleselect': return '&#9660;';
+            case 'multipleselects': return '&#9660;&#9660;';
+            case 'url': return '&#128279;';
+            case 'attachment': return '&#128206;';
+            default: return '&#9638;';
+        }
+    }
+
+    function _renderBuilderSidebar(tableId, formView) {
+        var fields = META_FIELDS[tableId] || {};
+        var fieldIds = Object.keys(fields);
+        var hidden = formView.hiddenFieldIds || [];
+
+        // Sort by fieldOrder if available
+        var order = formView.fieldOrder || [];
+        fieldIds.sort(function(a, b) {
+            var ia = order.indexOf(a), ib = order.indexOf(b);
+            if (ia === -1) ia = 999;
+            if (ib === -1) ib = 999;
+            return ia - ib;
+        });
+
+        var html = '';
+        for (var i = 0; i < fieldIds.length; i++) {
+            var f = fields[fieldIds[i]];
+            if (!f) continue;
+            // Skip formula/rollup/lookup fields (not editable)
+            var ft = (f.fieldType || '').toLowerCase();
+            if (ft === 'formula' || ft === 'rollup' || ft === 'lookup' || ft === 'autonumber' || ft === 'createdtime' || ft === 'lastmodifiedtime') continue;
+
+            var isAdded = hidden.indexOf(fieldIds[i]) === -1;
+            var activeClass = _selectedFieldId === fieldIds[i] ? ' active' : '';
+
+            html += '<div class="forms-builder-field-item' + activeClass + '" onclick="FormsApp.toggleField(\'' + _esc(fieldIds[i]) + '\')" data-field-id="' + _esc(fieldIds[i]) + '">' +
+                '<span class="field-icon">' + _getFieldTypeIcon(f.fieldType) + '</span>' +
+                '<span>' + _esc(f.fieldName || fieldIds[i]) + '</span>' +
+                (isAdded ? '<span class="field-added">&#10003;</span>' : '') +
+            '</div>';
+        }
+
+        var sidebar = document.getElementById('forms-builder-field-list');
+        if (sidebar) sidebar.innerHTML = html || '<p style="font-size:13px;color:var(--text-muted);">No editable fields in this table.</p>';
+    }
+
+    function _renderBuilderPreview(tableId, formView) {
+        var fields = META_FIELDS[tableId] || {};
+        var hidden = formView.hiddenFieldIds || [];
+        var order = formView.fieldOrder || [];
+        var formConfig = formView.formConfig || {};
+        var fieldConfigs = formConfig.fieldConfigs || {};
+
+        // Get visible fields in order
+        var visibleFieldIds = [];
+        var allFieldIds = Object.keys(fields);
+
+        // Order: fields in fieldOrder first, then remaining
+        var ordered = [];
+        for (var k = 0; k < order.length; k++) {
+            if (fields[order[k]] && hidden.indexOf(order[k]) === -1) ordered.push(order[k]);
+        }
+        for (var k = 0; k < allFieldIds.length; k++) {
+            if (ordered.indexOf(allFieldIds[k]) === -1 && hidden.indexOf(allFieldIds[k]) === -1) ordered.push(allFieldIds[k]);
+        }
+
+        // Filter out non-editable fields
+        for (var k = 0; k < ordered.length; k++) {
+            var f = fields[ordered[k]];
+            if (!f) continue;
+            var ft = (f.fieldType || '').toLowerCase();
+            if (ft === 'formula' || ft === 'rollup' || ft === 'lookup' || ft === 'autonumber' || ft === 'createdtime' || ft === 'lastmodifiedtime') continue;
+            visibleFieldIds.push(ordered[k]);
+        }
+
+        var formTitle = formConfig.title || formView.viewName || 'Untitled Form';
+        var formDesc = formConfig.description || '';
+        var submitText = formConfig.submitButtonText || 'Submit';
+
+        var html = '<div class="forms-builder-preview-title">' + _esc(formTitle) + '</div>';
+        if (formDesc) html += '<div class="forms-builder-preview-desc">' + _esc(formDesc) + '</div>';
+
+        for (var i = 0; i < visibleFieldIds.length; i++) {
+            var fieldId = visibleFieldIds[i];
+            var field = fields[fieldId];
+            if (!field) continue;
+            var fc = fieldConfigs[fieldId] || {};
+            var label = fc.label || field.fieldName || fieldId;
+            var required = fc.required || false;
+            var helpText = fc.helpText || '';
+            var placeholder = fc.placeholder || '';
+            var selectedClass = _selectedFieldId === fieldId ? ' style="outline:2px solid var(--primary-500);outline-offset:4px;border-radius:var(--radius-md);"' : '';
+
+            html += '<div class="forms-builder-preview-field" onclick="event.stopPropagation();FormsApp.selectField(\'' + _esc(fieldId) + '\')"' + selectedClass + '>';
+            html += '<label>' + _esc(label) + (required ? ' <span class="required">*</span>' : '') + '</label>';
+
+            var ft = (field.fieldType || '').toLowerCase();
+            if (ft === 'multilinetext' || ft === 'richtext') {
+                html += '<textarea placeholder="' + _esc(placeholder) + '" disabled></textarea>';
+            } else if (ft === 'checkbox') {
+                html += '<input type="checkbox" disabled style="width:auto;">';
+            } else if (ft === 'singleselect') {
+                html += '<select disabled><option>' + _esc(placeholder || 'Select...') + '</option></select>';
+            } else if (ft === 'date' || ft === 'datetime') {
+                html += '<input type="date" disabled>';
+            } else {
+                html += '<input type="text" placeholder="' + _esc(placeholder) + '" disabled>';
+            }
+
+            if (helpText) html += '<div class="field-help">' + _esc(helpText) + '</div>';
+            html += '</div>';
+        }
+
+        html += '<button class="forms-builder-preview-submit" disabled>' + _esc(submitText) + '</button>';
+
+        var preview = document.getElementById('forms-builder-preview');
+        if (preview) preview.innerHTML = html;
+    }
+
+    function _renderFieldConfig(fieldId, tableId, formView) {
+        var field = (META_FIELDS[tableId] || {})[fieldId];
+        if (!field) return;
+        var formConfig = formView.formConfig || {};
+        var fieldConfigs = formConfig.fieldConfigs || {};
+        var fc = fieldConfigs[fieldId] || {};
+
+        var html = '<div class="forms-builder-config-field">' +
+            '<label>Display Label</label>' +
+            '<input type="text" value="' + _esc(fc.label || field.fieldName || '') + '" onchange="FormsApp.updateFieldConfig(\'' + _esc(fieldId) + '\', \'label\', this.value)">' +
+        '</div>' +
+        '<div class="forms-builder-config-toggle">' +
+            '<label>Required</label>' +
+            '<input type="checkbox"' + (fc.required ? ' checked' : '') + ' onchange="FormsApp.updateFieldConfig(\'' + _esc(fieldId) + '\', \'required\', this.checked)">' +
+        '</div>' +
+        '<div class="forms-builder-config-field">' +
+            '<label>Placeholder</label>' +
+            '<input type="text" value="' + _esc(fc.placeholder || '') + '" onchange="FormsApp.updateFieldConfig(\'' + _esc(fieldId) + '\', \'placeholder\', this.value)">' +
+        '</div>' +
+        '<div class="forms-builder-config-field">' +
+            '<label>Help Text</label>' +
+            '<textarea onchange="FormsApp.updateFieldConfig(\'' + _esc(fieldId) + '\', \'helpText\', this.value)">' + _esc(fc.helpText || '') + '</textarea>' +
+        '</div>';
+
+        var configBody = document.getElementById('forms-builder-config-body');
+        if (configBody) configBody.innerHTML = html;
+    }
+
+    // ── Public API ──
+
+    async function init() {
+        _populateTableFilter();
+        await _render();
+        _initialized = true;
+    }
+
+    function onSearch(value) {
+        _searchQuery = value;
+        _render();
+    }
+
+    function onFilterChange() {
+        _tableFilter = document.getElementById('forms-table-filter').value;
+        _statusFilter = document.getElementById('forms-status-filter').value;
+        _ownerFilter = document.getElementById('forms-owner-filter').value;
+        _render();
+    }
+
+    function openCreateModal() {
+        _populateCreateTableSelect();
+        document.getElementById('forms-create-name').value = '';
+        document.getElementById('forms-create-desc').value = '';
+        var tableSelect = document.getElementById('forms-create-table');
+        if (tableSelect) tableSelect.selectedIndex = 0;
+        var sharingSelect = document.getElementById('forms-create-sharing');
+        if (sharingSelect) sharingSelect.selectedIndex = 0;
+        document.getElementById('forms-create-modal').classList.add('open');
+        setTimeout(function() {
+            document.getElementById('forms-create-name').focus();
+        }, 100);
+    }
+
+    function closeCreateModal(event) {
+        if (event && event.target !== event.currentTarget) return;
+        document.getElementById('forms-create-modal').classList.remove('open');
+    }
+
+    function onCreateTableChange() {
+        // Future: could preview field count or table info
+    }
+
+    async function submitCreate() {
+        var nameInput = document.getElementById('forms-create-name');
+        var tableSelect = document.getElementById('forms-create-table');
+        var descInput = document.getElementById('forms-create-desc');
+        var sharingSelect = document.getElementById('forms-create-sharing');
+
+        var formName = nameInput.value.trim();
+        var tableId = tableSelect.value;
+        var description = descInput.value.trim();
+        var sharingLevel = sharingSelect.value;
+
+        if (!formName) {
+            nameInput.focus();
+            if (typeof showToast === 'function') showToast('warning', 'Please enter a form name');
+            return;
+        }
+        if (!tableId) {
+            tableSelect.focus();
+            if (typeof showToast === 'function') showToast('warning', 'Please select a source table');
+            return;
+        }
+
+        var submitBtn = document.getElementById('forms-create-submit');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creating...'; }
+
+        try {
+            var newViewId = 'viw_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            var newView = {
+                tableId: tableId,
+                viewId: newViewId,
+                viewName: formName,
+                viewType: 'form',
+                hiddenFieldIds: [],
+                fieldOrder: [],
+                filters: [],
+                sorts: [],
+                groupBy: null,
+                folderId: null,
+                formConfig: {
+                    title: formName,
+                    description: description,
+                    submitButtonText: 'Submit',
+                    successMessage: 'Thank you! Your response has been recorded.',
+                    status: 'draft',
+                    fieldConfigs: {}
+                },
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            };
+
+            if (!META_VIEWS[tableId]) META_VIEWS[tableId] = {};
+            META_VIEWS[tableId][newViewId] = newView;
+            if (typeof saveView === 'function') await saveView(newView);
+
+            var currentUserId = (typeof MatrixClient !== 'undefined' && MatrixClient.getUserId)
+                ? MatrixClient.getUserId() : null;
+            if (currentUserId && typeof SharedViews !== 'undefined') {
+                await SharedViews.setViewOwnership(tableId, newViewId, currentUserId);
+                if (sharingLevel !== 'private') {
+                    await SharedViews.shareView(tableId, newViewId, sharingLevel, []);
+                }
+            }
+
+            closeCreateModal();
+            if (typeof showToast === 'function') showToast('success', 'Form created');
+
+            // Open the builder for the new form
+            openBuilder(tableId, newViewId);
+
+        } catch (err) {
+            console.error('[FormsApp] Failed to create form:', err);
+            if (typeof showToast === 'function') showToast('error', 'Failed to create form: ' + (err.message || ''));
+        } finally {
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create Form'; }
+        }
+    }
+
+    function openBuilder(tableId, viewId) {
+        _currentFormTableId = tableId;
+        _currentFormId = viewId;
+        _selectedFieldId = null;
+
+        var view = (META_VIEWS[tableId] || {})[viewId];
+        if (!view) {
+            if (typeof showToast === 'function') showToast('error', 'Form not found');
+            return;
+        }
+
+        // Switch to builder view
+        var listView = document.getElementById('forms-list-view');
+        var builderView = document.getElementById('forms-builder-view');
+        if (listView) listView.style.display = 'none';
+        if (builderView) builderView.classList.add('visible');
+
+        // Update title
+        var titleEl = document.getElementById('forms-builder-title');
+        var subtitleEl = document.getElementById('forms-builder-subtitle');
+        if (titleEl) titleEl.textContent = view.viewName || 'Untitled Form';
+        if (subtitleEl) subtitleEl.textContent = _getTableName(tableId);
+
+        // Update publish button
+        var pubBtn = document.getElementById('forms-publish-btn');
+        var status = (view.formConfig && view.formConfig.status) || 'draft';
+        if (pubBtn) pubBtn.textContent = status === 'published' ? 'Unpublish' : 'Publish';
+
+        _renderBuilderSidebar(tableId, view);
+        _renderBuilderPreview(tableId, view);
+    }
+
+    function closeBuilder() {
+        _currentFormTableId = null;
+        _currentFormId = null;
+        _selectedFieldId = null;
+
+        var listView = document.getElementById('forms-list-view');
+        var builderView = document.getElementById('forms-builder-view');
+        if (listView) listView.style.display = '';
+        if (builderView) builderView.classList.remove('visible');
+
+        // Re-render list to pick up any changes
+        _render();
+    }
+
+    function toggleField(fieldId) {
+        if (!_currentFormTableId || !_currentFormId) return;
+        var view = (META_VIEWS[_currentFormTableId] || {})[_currentFormId];
+        if (!view) return;
+
+        var hidden = view.hiddenFieldIds || [];
+        var idx = hidden.indexOf(fieldId);
+        if (idx === -1) {
+            hidden.push(fieldId);
+        } else {
+            hidden.splice(idx, 1);
+        }
+        view.hiddenFieldIds = hidden;
+        view.updatedAt = Date.now();
+        if (typeof saveView === 'function') saveView(view);
+
+        _renderBuilderSidebar(_currentFormTableId, view);
+        _renderBuilderPreview(_currentFormTableId, view);
+    }
+
+    function selectField(fieldId) {
+        _selectedFieldId = fieldId;
+        if (!_currentFormTableId || !_currentFormId) return;
+        var view = (META_VIEWS[_currentFormTableId] || {})[_currentFormId];
+        if (!view) return;
+
+        _renderBuilderSidebar(_currentFormTableId, view);
+        _renderBuilderPreview(_currentFormTableId, view);
+        _renderFieldConfig(fieldId, _currentFormTableId, view);
+    }
+
+    function updateFieldConfig(fieldId, key, value) {
+        if (!_currentFormTableId || !_currentFormId) return;
+        var view = (META_VIEWS[_currentFormTableId] || {})[_currentFormId];
+        if (!view) return;
+
+        if (!view.formConfig) view.formConfig = {};
+        if (!view.formConfig.fieldConfigs) view.formConfig.fieldConfigs = {};
+        if (!view.formConfig.fieldConfigs[fieldId]) view.formConfig.fieldConfigs[fieldId] = {};
+        view.formConfig.fieldConfigs[fieldId][key] = value;
+        view.updatedAt = Date.now();
+        if (typeof saveView === 'function') saveView(view);
+
+        _renderBuilderPreview(_currentFormTableId, view);
+    }
+
+    async function publishForm() {
+        if (!_currentFormTableId || !_currentFormId) return;
+        var view = (META_VIEWS[_currentFormTableId] || {})[_currentFormId];
+        if (!view) return;
+
+        if (!view.formConfig) view.formConfig = {};
+        var newStatus = view.formConfig.status === 'published' ? 'draft' : 'published';
+        view.formConfig.status = newStatus;
+        view.updatedAt = Date.now();
+        if (typeof saveView === 'function') await saveView(view);
+
+        var pubBtn = document.getElementById('forms-publish-btn');
+        if (pubBtn) pubBtn.textContent = newStatus === 'published' ? 'Unpublish' : 'Publish';
+
+        if (typeof showToast === 'function') {
+            showToast('success', newStatus === 'published' ? 'Form published' : 'Form unpublished');
+        }
+    }
+
+    function shareForm() {
+        // Reuse existing share view modal
+        if (!_currentFormTableId || !_currentFormId) return;
+        if (typeof _shareViewTableId !== 'undefined') {
+            _shareViewTableId = _currentFormTableId;
+            _shareViewId = _currentFormId;
+        }
+        if (typeof openShareViewMenu === 'function') {
+            openShareViewMenu();
+        }
+    }
+
+    function togglePreview() {
+        // Toggle sidebar and config panels for a cleaner preview
+        var sidebar = document.getElementById('forms-builder-sidebar');
+        var config = document.getElementById('forms-builder-config');
+        if (sidebar && config) {
+            var hidden = sidebar.style.display === 'none';
+            sidebar.style.display = hidden ? '' : 'none';
+            config.style.display = hidden ? '' : 'none';
+        }
+    }
+
+    async function duplicateForm(tableId, viewId) {
+        var view = (META_VIEWS[tableId] || {})[viewId];
+        if (!view) return;
+
+        var newViewId = 'viw_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        var clone = JSON.parse(JSON.stringify(view));
+        clone.viewId = newViewId;
+        clone.viewName = (clone.viewName || 'Form') + ' (copy)';
+        clone.createdAt = Date.now();
+        clone.updatedAt = Date.now();
+        if (clone.formConfig) clone.formConfig.status = 'draft';
+
+        META_VIEWS[tableId][newViewId] = clone;
+        if (typeof saveView === 'function') await saveView(clone);
+
+        var currentUserId = (typeof MatrixClient !== 'undefined' && MatrixClient.getUserId)
+            ? MatrixClient.getUserId() : null;
+        if (currentUserId && typeof SharedViews !== 'undefined') {
+            await SharedViews.setViewOwnership(tableId, newViewId, currentUserId);
+        }
+
+        if (typeof showToast === 'function') showToast('success', 'Form duplicated');
+        _render();
+    }
+
+    async function deleteForm(tableId, viewId) {
+        if (!confirm('Delete this form? This cannot be undone.')) return;
+
+        var views = META_VIEWS[tableId];
+        if (views && views[viewId]) {
+            delete views[viewId];
+        }
+
+        if (typeof AminoData !== 'undefined' && AminoData.deleteView) {
+            try { await AminoData.deleteView(tableId, viewId); } catch (e) { /* best effort */ }
+        } else if (typeof deleteView === 'function') {
+            try { await deleteView(tableId, viewId); } catch (e) { /* best effort */ }
+        }
+
+        if (typeof showToast === 'function') showToast('success', 'Form deleted');
+        _render();
+    }
+
+    return {
+        init: init,
+        onSearch: onSearch,
+        onFilterChange: onFilterChange,
+        openCreateModal: openCreateModal,
+        closeCreateModal: closeCreateModal,
+        onCreateTableChange: onCreateTableChange,
+        submitCreate: submitCreate,
+        openBuilder: openBuilder,
+        closeBuilder: closeBuilder,
+        toggleField: toggleField,
+        selectField: selectField,
+        updateFieldConfig: updateFieldConfig,
+        publishForm: publishForm,
+        shareForm: shareForm,
+        togglePreview: togglePreview,
+        duplicateForm: duplicateForm,
+        deleteForm: deleteForm,
+        refresh: _render
+    };
+})();
+
 // ============ Interface App Module ============
 // Renders the Softr-style interface (Home, Clients, Events) using live data
 // Schema stored in Matrix room using law.firm.interface state events (EO format)
@@ -32528,11 +33763,13 @@ function switchApp(appName) {
     var homeApp = document.getElementById('home-app');
     var dbApp = document.getElementById('database-app');
     var ifApp = document.getElementById('interface-app');
+    var fmApp = document.getElementById('forms-app');
     var stApp = document.getElementById('settings-app');
 
     homeApp.classList.remove('visible');
     dbApp.style.display = 'none';
     ifApp.classList.remove('visible');
+    if (fmApp) fmApp.classList.remove('visible');
     stApp.classList.remove('visible');
 
     if (appName === 'home') {
@@ -32543,6 +33780,9 @@ function switchApp(appName) {
     } else if (appName === 'interface') {
         ifApp.classList.add('visible');
         InterfaceApp.init();
+    } else if (appName === 'forms') {
+        if (fmApp) fmApp.classList.add('visible');
+        FormsApp.init();
     } else if (appName === 'settings') {
         stApp.classList.add('visible');
         loadSettingsData();
@@ -32639,6 +33879,21 @@ function populateHomePage() {
         caseNotesCount = Object.keys(window.IN_MEMORY_DATA[caseNotesTableId]).length;
     }
     if (caseNotesCountEl) caseNotesCountEl.textContent = caseNotesCount.toLocaleString();
+
+    // Count form-type views across all tables
+    var formsCountEl = document.getElementById('home-forms-count');
+    if (formsCountEl) {
+        var formsCount = 0;
+        var allTableIds = Object.keys(META_VIEWS || {});
+        for (var fi = 0; fi < allTableIds.length; fi++) {
+            var views = META_VIEWS[allTableIds[fi]] || {};
+            var vids = Object.keys(views);
+            for (var fj = 0; fj < vids.length; fj++) {
+                if (views[vids[fj]] && views[vids[fj]].viewType === 'form') formsCount++;
+            }
+        }
+        formsCountEl.textContent = String(formsCount);
+    }
 
     if (syncStatusEl) {
         if (_isOnlineOnlyMode()) {
@@ -34557,6 +35812,8 @@ init = async function() {
         if (InterfaceApp.activePage) await InterfaceApp.renderPage(InterfaceApp.activePage);
     } else if (state.app === 'settings') {
         switchApp('settings');
+    } else if (state.app === 'forms') {
+        switchApp('forms');
     } else if (state.app === 'database') {
         switchApp('database');
     } else {
@@ -34597,6 +35854,12 @@ document.addEventListener('keydown', function(e) {
         var connectModal = document.getElementById('connect-api-modal');
         if (connectModal && connectModal.style.display !== 'none') {
             hideConnectApiModal();
+            return;
+        }
+        // Close forms create modal if open
+        var formsModal = document.getElementById('forms-create-modal');
+        if (formsModal && formsModal.classList.contains('open')) {
+            FormsApp.closeCreateModal();
             return;
         }
         // Close create view modal if open
