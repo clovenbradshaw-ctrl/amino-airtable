@@ -788,8 +788,15 @@ var AminoData = (function() {
         return encrypted;
     }
 
+    // Check if a record is a tombstone (soft-deleted)
+    function _isTombstone(record) {
+        return record && record.fields && record.fields._deleted === true;
+    }
+
     function cacheRecord(record) {
         if (!record || !record.id || !record.tableId) return;
+        // Skip tombstoned records — they should not appear in queries
+        if (_isTombstone(record)) return;
         _recordCacheById[record.id] = cloneRecord(record);
         if (!_tableRecordIdIndex[record.tableId]) {
             _tableRecordIdIndex[record.tableId] = {};
@@ -1630,8 +1637,9 @@ var AminoData = (function() {
         }));
     }
 
-    // G-3 fix: Apply a law.firm.record.delete event — remove the record from
-    // IndexedDB and all in-memory caches so deleted records don't persist locally.
+    // G-3 fix: Apply a law.firm.record.delete event as a soft-delete (tombstone).
+    // NULs all fields on the record and sets _deleted: true so the record
+    // remains in IDB (preventing re-hydration) but is excluded from queries.
     async function applyDeleteEvent(event, roomId) {
         var content = event.content;
         if (!content) return;
@@ -1656,16 +1664,31 @@ var AminoData = (function() {
             return;
         }
 
-        // Remove from IndexedDB
-        try {
-            var tx = _db.transaction('records', 'readwrite');
-            tx.objectStore('records').delete(recordId);
-            await idbTxDone(tx);
-        } catch (err) {
-            console.warn('[AminoData] Failed to delete record', recordId, 'from IndexedDB:', err.message);
+        // Read existing record to get tableName
+        var readTx = _db.transaction('records', 'readonly');
+        var existing = await idbGet(readTx.objectStore('records'), recordId);
+        var tableName = (existing && existing.tableName) || tableId;
+
+        // Write tombstone: empty fields + _deleted marker
+        var tombstoneFields = { _deleted: true, _deletedAt: new Date().toISOString() };
+        var storedFields;
+        if (_deferEncryption) {
+            storedFields = JSON.stringify(tombstoneFields);
+        } else {
+            storedFields = await encrypt(_cryptoKey, JSON.stringify(tombstoneFields));
         }
 
-        // Remove from in-memory caches
+        var writeTx = _db.transaction('records', 'readwrite');
+        await idbPut(writeTx.objectStore('records'), {
+            id: recordId,
+            tableId: tableId,
+            tableName: tableName,
+            fields: storedFields,
+            lastSynced: new Date().toISOString()
+        });
+        await idbTxDone(writeTx);
+
+        // Remove from in-memory caches (tombstoned records are not queryable)
         delete _recordCacheById[recordId];
         if (_tableRecordIdIndex[tableId]) {
             delete _tableRecordIdIndex[tableId][recordId];
@@ -1687,7 +1710,7 @@ var AminoData = (function() {
             }
         }));
 
-        console.log('[AminoData] Deleted record', recordId, 'from table', tableId);
+        console.log('[AminoData] Tombstoned record', recordId, 'in table', tableId);
     }
 
     // Process timeline events from a Matrix /sync response.
@@ -2287,6 +2310,8 @@ var AminoData = (function() {
         var results = await Promise.all(entries.map(function(entry) {
             return decryptRecord(entry);
         }));
+        // Filter out tombstoned records before caching and returning
+        results = results.filter(function(r) { return !_isTombstone(r); });
         cacheFullTable(tableId, results);
         return results.map(function(record) { return cloneRecord(record); });
     }
@@ -2302,6 +2327,8 @@ var AminoData = (function() {
         var entry = await idbGet(tx.objectStore('records'), recordId);
         if (!entry) return null;
         var record = await decryptRecord(entry);
+        // Tombstoned records appear as null to callers
+        if (_isTombstone(record)) return null;
         cacheRecord(record);
         return cloneRecord(record);
     }
