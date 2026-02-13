@@ -119,6 +119,7 @@
 
         html.light-theme .cell-array .tag { background: rgba(37, 99, 235, 0.10); color: #2563eb; }
         html.light-theme .cell-link { color: #2563eb; }
+        html.light-theme .cell-date { color: #475569; }
 
         /* History change type badges */
         html.light-theme .history-change-type.created { background: rgba(22, 163, 74, 0.12); color: #15803d; }
@@ -752,6 +753,7 @@
         html.light-theme .tag-c9 { background: rgba(8, 145, 178, 0.10) !important; color: #0891b2 !important; }
         .cell-link { color: var(--primary-400); text-decoration: none; }
         .cell-link:hover { text-decoration: underline; }
+        .cell-date { white-space: nowrap; color: var(--text-secondary); }
         .cell-number { font-family: var(--font-mono); }
         .cell-bool { padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 500; }
         .cell-bool.true { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
@@ -16539,6 +16541,18 @@ function formatCell(v, fieldType) {
         return '<span class="cell-empty">—</span>';
     }
 
+    // Date / dateTime / createdTime / lastModifiedTime — format nicely
+    if (fieldType === 'date' || fieldType === 'dateTime' || fieldType === 'createdTime' || fieldType === 'lastModifiedTime') {
+        var d = new Date(v);
+        if (!isNaN(d.getTime())) {
+            if (fieldType === 'date') {
+                return '<span class="cell-date">' + d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + '</span>';
+            }
+            return '<span class="cell-date">' + d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) + '</span>';
+        }
+        // Fall through if not a valid date
+    }
+
     // Airtable-style: single select renders as a colored pill
     if (fieldType === 'singleSelect' && typeof v === 'string') {
         return '<span class="cell-array"><span class="tag ' + _tagColorClass(v) + '">' + esc(v) + '</span></span>';
@@ -16600,6 +16614,18 @@ function formatCell(v, fieldType) {
     var str = String(v);
     if (str.startsWith('http://') || str.startsWith('https://')) {
         return '<a class="cell-link" href="' + esc(str) + '" target="_blank">' + esc(str.slice(0, 50)) + '</a>';
+    }
+
+    // Auto-detect ISO date strings (e.g. "2024-01-15" or "2024-01-15T10:30:00.000Z")
+    if (/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/.test(str) && str.length <= 30) {
+        var _ad = new Date(str);
+        if (!isNaN(_ad.getTime())) {
+            var hasTime = str.indexOf('T') !== -1;
+            if (hasTime) {
+                return '<span class="cell-date">' + _ad.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ' ' + _ad.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) + '</span>';
+            }
+            return '<span class="cell-date">' + _ad.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + '</span>';
+        }
     }
 
     return esc(str);
@@ -18903,7 +18929,8 @@ function renderHistoryModal() {
     for (var item of filteredData) {
         var fieldName = getHistoryFieldName(currentHistoryTableId, item.fieldId);
         var changeTypeClass = item.changeType || 'updated';
-        var timestamp = item.timestamp ? formatTimestamp(item.timestamp) : 'Unknown time';
+        var _histTs = item.timestamp || item.sourceTimestamp || null;
+        var timestamp = _histTs ? formatTimestamp(_histTs) : 'Unknown time';
         var histActor = item.actor || null;
         var histDevice = item.device || null;
         var histSource = item.source || null;
@@ -20194,7 +20221,8 @@ function renderChangelogEntry(entry, isLast) {
     var op = entry.op || 'ALT';
     var opLabel = ENTITY_TYPE_NAMES[op] || op;
     var tableName = entry.tableId ? resolveTableName(entry.tableId) : 'Unknown';
-    var timeStr = entry.timestamp ? formatTimestamp(entry.timestamp) : 'Unknown';
+    var _ts = entry.timestamp || entry.sourceTimestamp || null;
+    var timeStr = _ts ? formatTimestamp(_ts) : 'Unknown';
     var fieldsMeta = META_FIELDS[entry.tableId] || {};
 
     var html = '<div class="changelog-entry">';
@@ -23386,7 +23414,8 @@ async function renderProfileSyncHistory() {
         history.forEach(function(item) {
             var fieldName = getHistoryFieldName(profileCurrentTableId, item.fieldId);
             var changeType = item.changeType || 'updated';
-            var timestamp = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown';
+            var _itemTs = item.timestamp || item.sourceTimestamp || null;
+            var timestamp = _itemTs ? new Date(_itemTs).toLocaleString() : 'Unknown';
             var sender = item.sender || null;
             // Show short sender (strip @...:server part to just the localpart)
             var senderDisplay = sender ? sender.replace(/^@/, '').replace(/:.*$/, '') : null;
