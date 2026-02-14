@@ -26195,17 +26195,29 @@ async function getFilteredSortedRecords() {
         }
     }
 
-    // Phase 2: Sort — only load the sort field values, not full records
+    // Phase 2: Sort — pre-normalize values so comparisons avoid repeated
+    // valueToString/toLowerCase/parseFloat calls (O(n log n) savings).
     if (hasSorts && filteredIds.length > 1) {
         var sortCache = {};
+        var sortFieldIds = [];
+        for (var ssi = 0; ssi < currentSorts.length; ssi++) {
+            sortFieldIds.push(currentSorts[ssi].fieldId);
+        }
         for (var s = 0; s < filteredIds.length; s += BATCH_SIZE) {
             var sortBatchIds = filteredIds.slice(s, s + BATCH_SIZE);
             var sortBatchRecords = await getRecordsByIds(currentTable, sortBatchIds);
             for (var sr = 0; sr < sortBatchRecords.length; sr++) {
                 var rec = sortBatchRecords[sr];
                 var vals = {};
-                for (var ssi = 0; ssi < currentSorts.length; ssi++) {
-                    vals[currentSorts[ssi].fieldId] = getCellValue(rec, currentSorts[ssi].fieldId);
+                for (var ssi2 = 0; ssi2 < sortFieldIds.length; ssi2++) {
+                    var raw = getCellValue(rec, sortFieldIds[ssi2]);
+                    if (raw == null) {
+                        vals[sortFieldIds[ssi2]] = null;
+                    } else {
+                        var str = valueToString(raw).toLowerCase();
+                        var num = parseFloat(str);
+                        vals[sortFieldIds[ssi2]] = isNaN(num) ? str : num;
+                    }
                 }
                 sortCache[rec.recordId] = vals;
             }
@@ -26215,9 +26227,19 @@ async function getFilteredSortedRecords() {
             var valsA = sortCache[idA] || {};
             var valsB = sortCache[idB] || {};
             for (var i = 0; i < currentSorts.length; i++) {
-                var sort = currentSorts[i];
-                var cmp = compareValues(valsA[sort.fieldId], valsB[sort.fieldId], sort.direction);
-                if (cmp !== 0) return cmp;
+                var fid = currentSorts[i].fieldId;
+                var dir = currentSorts[i].direction;
+                var a = valsA[fid], b = valsB[fid];
+                if (a === b) continue;
+                if (a == null) return dir === 'asc' ? -1 : 1;
+                if (b == null) return dir === 'asc' ? 1 : -1;
+                var cmp;
+                if (typeof a === 'number' && typeof b === 'number') {
+                    cmp = a - b;
+                } else {
+                    cmp = ('' + a).localeCompare('' + b);
+                }
+                if (cmp !== 0) return dir === 'asc' ? cmp : -cmp;
             }
             return 0;
         });
@@ -26611,7 +26633,7 @@ function renderSortDropdown(filterText) {
     for (var i = 0; i < currentSorts.length; i++) {
         var sort = currentSorts[i];
         html += '<div class="sort-row">';
-        html += '<select onchange="updateSort(' + i + ', \'field\', this.value)">';
+        html += '<select onchange="updateSort(' + i + ', \'fieldId\', this.value)">';
 
         // Add sorted fields to dropdown, ensuring selected field is always included
         var selectedInList = false;
