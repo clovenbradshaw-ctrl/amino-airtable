@@ -1199,15 +1199,11 @@ var AminoData = (function() {
             // Fetch fresh from API
             var data = await apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId), 'onlineRead');
             var apiRecords = (data.records || []).map(function(rec) {
-                var recFields = rec.fields;
-                if (typeof recFields === 'string') {
-                    try { recFields = JSON.parse(recFields); } catch (e) { recFields = {}; }
-                }
                 return {
                     id: rec.id,
                     tableId: tableId,
                     tableName: rec.tableName || tableId,
-                    fields: recFields || {},
+                    fields: rec.fields || {},
                     lastSynced: rec.lastSynced || new Date().toISOString()
                 };
             }).filter(function(r) { return !_isTombstone(r); });
