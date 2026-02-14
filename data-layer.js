@@ -1663,7 +1663,10 @@ var AminoData = (function() {
         // Fall back to localStorage session
         if (!homeserverUrl) {
             try {
-                var session = JSON.parse(localStorage.getItem('matrix_session') || '{}');
+                var raw = localStorage.getItem('amino_synapse_session')
+                       || localStorage.getItem('matrix_session')
+                       || '{}';
+                var session = JSON.parse(raw);
                 homeserverUrl = session.homeserverUrl;
             } catch (e) { /* ignore */ }
         }
@@ -1715,9 +1718,13 @@ var AminoData = (function() {
     // Returns session info on success, throws on failure.
     async function offlineUnlock(password) {
         // 1. Get userId from localStorage session
+        //    Check both 'amino_synapse_session' (index.html) and 'matrix_session' (legacy)
         var session;
         try {
-            session = JSON.parse(localStorage.getItem('matrix_session') || '{}');
+            var raw = localStorage.getItem('amino_synapse_session')
+                   || localStorage.getItem('matrix_session')
+                   || '{}';
+            session = JSON.parse(raw);
         } catch (e) {
             throw new Error('No saved session found');
         }
@@ -1856,7 +1863,10 @@ var AminoData = (function() {
         // Check if the cached access token is still valid
         var session;
         try {
-            session = JSON.parse(localStorage.getItem('matrix_session') || '{}');
+            var raw = localStorage.getItem('amino_synapse_session')
+                   || localStorage.getItem('matrix_session')
+                   || '{}';
+            session = JSON.parse(raw);
         } catch (e) {
             throw new Error('No saved session');
         }
