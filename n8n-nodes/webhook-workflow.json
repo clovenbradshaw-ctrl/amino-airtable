@@ -13,10 +13,7 @@
       "name": "GET /tables",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [
-        0,
-        0
-      ],
+      "position": [-256, 0],
       "webhookId": "amino-tables"
     },
     {
@@ -43,10 +40,37 @@
       "name": "Auth /tables",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        0,
-        240
-      ]
+      "position": [-32, 0]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true }, "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209" }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "authenticated"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798", "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notExists", "singleValue": true } }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "unauthorized"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [192, 0],
+      "id": "c94ce817-c85d-4f2f-9a0c-62d63a9b2776",
+      "name": "Switch1"
     },
     {
       "parameters": {
@@ -58,10 +82,7 @@
       "name": "Query Tables",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [
-        448,
-        48
-      ],
+      "position": [416, 0],
       "credentials": {
         "postgres": {
           "id": "PKlgmlqQf0SbnPZT",
@@ -79,10 +100,7 @@
       "name": "Respond Tables",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        672,
-        48
-      ]
+      "position": [640, 0]
     },
     {
       "parameters": {
@@ -96,10 +114,7 @@
       "name": "401 /tables",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        448,
-        288
-      ]
+      "position": [416, 160]
     },
     {
       "parameters": {
@@ -113,10 +128,7 @@
       "name": "GET /records/:tableId",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [
-        0,
-        512
-      ],
+      "position": [-256, 320],
       "webhookId": "amino-records"
     },
     {
@@ -143,25 +155,49 @@
       "name": "Auth /records",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        0,
-        752
-      ]
+      "position": [-32, 320]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true }, "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209" }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "authenticated"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798", "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notExists", "singleValue": true } }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "unauthorized"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [192, 320],
+      "id": "694b36e4-22b0-446b-bdfc-6bd5f2bfd9bc",
+      "name": "Switch2"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $json.query.tableId }}' AND table_name != '' ORDER BY last_synced_at DESC;",
+        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/:tableId').first().json.query.tableId }}' AND table_name != '' ORDER BY last_synced_at DESC;",
         "options": {}
       },
       "id": "f3c59e25-dde4-40ef-8fef-c89918d54689",
       "name": "Query Records by Table",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [
-        448,
-        560
-      ],
+      "position": [416, 320],
       "credentials": {
         "postgres": {
           "id": "PKlgmlqQf0SbnPZT",
@@ -179,10 +215,7 @@
       "name": "Respond Records",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        672,
-        560
-      ]
+      "position": [640, 320]
     },
     {
       "parameters": {
@@ -196,10 +229,7 @@
       "name": "401 /records",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        448,
-        800
-      ]
+      "position": [416, 480]
     },
     {
       "parameters": {
@@ -213,10 +243,7 @@
       "name": "GET /record/:recordId",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [
-        0,
-        1024
-      ],
+      "position": [-256, 640],
       "webhookId": "amino-record"
     },
     {
@@ -243,25 +270,49 @@
       "name": "Auth /record",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        0,
-        1264
-      ]
+      "position": [-32, 640]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true }, "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209" }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "authenticated"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798", "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notExists", "singleValue": true } }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "unauthorized"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [192, 640],
+      "id": "676deba9-9a6e-4321-84cd-8ac749f601fb",
+      "name": "Switch3"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_id, table_name, fields, matrix_room_id, last_synced_at, event_count FROM amino.current_state WHERE record_id = '{{ $json.query.recordId }}';",
+        "query": "=SELECT record_id, table_id, table_name, fields, matrix_room_id, last_synced_at, event_count FROM amino.current_state WHERE record_id = '{{ $('GET /record/:recordId').first().json.query.recordId }}';",
         "options": {}
       },
       "id": "ae162a11-8ac8-4f4d-ac7b-c85b174ac75d",
       "name": "Query Single Record",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [
-        448,
-        1072
-      ],
+      "position": [416, 640],
       "credentials": {
         "postgres": {
           "id": "PKlgmlqQf0SbnPZT",
@@ -279,10 +330,7 @@
       "name": "Respond Single Record",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        672,
-        1072
-      ]
+      "position": [640, 640]
     },
     {
       "parameters": {
@@ -296,10 +344,7 @@
       "name": "401 /record",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        448,
-        1312
-      ]
+      "position": [416, 800]
     },
     {
       "parameters": {
@@ -313,10 +358,7 @@
       "name": "GET /records/since",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [
-        0,
-        1536
-      ],
+      "position": [-256, 960],
       "webhookId": "amino-records-since"
     },
     {
@@ -343,25 +385,49 @@
       "name": "Auth /since",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        0,
-        1776
-      ]
+      "position": [-32, 960]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true }, "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209" }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "authenticated"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798", "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notExists", "singleValue": true } }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "unauthorized"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [192, 960],
+      "id": "3ac2d84f-14fc-430c-8e64-d154ea769a16",
+      "name": "Switch4"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $json.query.tableId }}' AND table_name != '' AND last_synced_at > '{{ $json.query.since }}'::timestamptz ORDER BY last_synced_at DESC;",
+        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/since').first().json.query.tableId }}' AND table_name != '' AND last_synced_at > '{{ $('GET /records/since').first().json.query.since }}'::timestamptz ORDER BY last_synced_at DESC;",
         "options": {}
       },
       "id": "1bd52406-1f02-4e31-8f0c-ba40c2ba5bba",
       "name": "Query Records Since",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [
-        448,
-        1584
-      ],
+      "position": [416, 960],
       "credentials": {
         "postgres": {
           "id": "PKlgmlqQf0SbnPZT",
@@ -379,10 +445,7 @@
       "name": "Respond Records Since",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        672,
-        1584
-      ]
+      "position": [640, 960]
     },
     {
       "parameters": {
@@ -396,129 +459,26 @@
       "name": "401 /since",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        448,
-        1824
-      ]
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
-                "conditions": [{ "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true }, "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209" }],
-                "combinator": "and"
-              },
-              "renameOutput": true, "outputKey": "1"
-            },
-            {
-              "conditions": {
-                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
-                "conditions": [{ "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798", "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notExists", "singleValue": true } }],
-                "combinator": "and"
-              },
-              "renameOutput": true, "outputKey": "0"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.switch", "typeVersion": 3.4, "position": [224, 240], "id": "c94ce817-c85d-4f2f-9a0c-62d63a9b2776", "name": "Switch1"
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true }, "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209" }], "combinator": "and" },
-              "renameOutput": true, "outputKey": "1"
-            },
-            {
-              "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798", "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notExists", "singleValue": true } }], "combinator": "and" },
-              "renameOutput": true, "outputKey": "0"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.switch", "typeVersion": 3.4, "position": [224, 752], "id": "694b36e4-22b0-446b-bdfc-6bd5f2bfd9bc", "name": "Switch2"
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true }, "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209" }], "combinator": "and" },
-              "renameOutput": true, "outputKey": "1"
-            },
-            {
-              "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798", "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notExists", "singleValue": true } }], "combinator": "and" },
-              "renameOutput": true, "outputKey": "0"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.switch", "typeVersion": 3.4, "position": [224, 1264], "id": "676deba9-9a6e-4321-84cd-8ac749f601fb", "name": "Switch3"
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true }, "id": "4bc9c439-81be-487f-bbf7-74f3f0bbc209" }], "combinator": "and" },
-              "renameOutput": true, "outputKey": "1"
-            },
-            {
-              "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "id": "4dd75051-9c0c-4aa9-8e95-f8bdf1f79798", "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notExists", "singleValue": true } }], "combinator": "and" },
-              "renameOutput": true, "outputKey": "0"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.switch", "typeVersion": 3.4, "position": [224, 1776], "id": "3ac2d84f-14fc-430c-8e64-d154ea769a16", "name": "Switch4"
-    },
-    {
-      "parameters": { "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "id": "760a0cd1-348c-4ae5-9380-74446565035c", "leftValue": "={{$json.query.access_token}}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true } }], "combinator": "and" }, "options": {} },
-      "type": "n8n-nodes-base.filter", "typeVersion": 2.3, "position": [224, 512], "id": "d2adabff-e045-4064-99c0-cc912183c3ec", "name": "Filter2"
-    },
-    {
-      "parameters": { "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "id": "760a0cd1-348c-4ae5-9380-74446565035c", "leftValue": "={{$json.query.access_token}}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true } }], "combinator": "and" }, "options": {} },
-      "type": "n8n-nodes-base.filter", "typeVersion": 2.3, "position": [224, 1024], "id": "6869fe70-f080-44f6-a394-ef5d3464f036", "name": "Filter3"
-    },
-    {
-      "parameters": { "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "id": "760a0cd1-348c-4ae5-9380-74446565035c", "leftValue": "={{$json.query.access_token}}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true } }], "combinator": "and" }, "options": {} },
-      "type": "n8n-nodes-base.filter", "typeVersion": 2.3, "position": [224, 1536], "id": "256aad56-e3a6-4f3c-8db8-6cc4db4f1ccf", "name": "Filter4"
-    },
-    {
-      "parameters": { "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 }, "conditions": [{ "id": "760a0cd1-348c-4ae5-9380-74446565035c", "leftValue": "={{$json.query.access_token}}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true } }], "combinator": "and" }, "options": {} },
-      "type": "n8n-nodes-base.filter", "typeVersion": 2.3, "position": [224, 0], "id": "c763a2e5-96e7-4808-bf8b-b5fbb6a7d75f", "name": "Filter5"
+      "position": [416, 1120]
     }
   ],
   "connections": {
-    "GET /tables": { "main": [[{ "node": "Filter5", "type": "main", "index": 0 }]] },
+    "GET /tables": { "main": [[{ "node": "Auth /tables", "type": "main", "index": 0 }]] },
     "Auth /tables": { "main": [[{ "node": "Switch1", "type": "main", "index": 0 }]] },
-    "Query Tables": { "main": [[{ "node": "Respond Tables", "type": "main", "index": 0 }]] },
-    "GET /records/:tableId": { "main": [[{ "node": "Filter2", "type": "main", "index": 0 }]] },
-    "Auth /records": { "main": [[{ "node": "Switch2", "type": "main", "index": 0 }]] },
-    "Query Records by Table": { "main": [[{ "node": "Respond Records", "type": "main", "index": 0 }]] },
-    "GET /record/:recordId": { "main": [[{ "node": "Filter3", "type": "main", "index": 0 }]] },
-    "Auth /record": { "main": [[{ "node": "Switch3", "type": "main", "index": 0 }]] },
-    "Query Single Record": { "main": [[{ "node": "Respond Single Record", "type": "main", "index": 0 }]] },
-    "GET /records/since": { "main": [[{ "node": "Filter4", "type": "main", "index": 0 }]] },
-    "Auth /since": { "main": [[{ "node": "Switch4", "type": "main", "index": 0 }]] },
-    "Query Records Since": { "main": [[{ "node": "Respond Records Since", "type": "main", "index": 0 }]] },
     "Switch1": { "main": [[{ "node": "Query Tables", "type": "main", "index": 0 }], [{ "node": "401 /tables", "type": "main", "index": 0 }]] },
+    "Query Tables": { "main": [[{ "node": "Respond Tables", "type": "main", "index": 0 }]] },
+    "GET /records/:tableId": { "main": [[{ "node": "Auth /records", "type": "main", "index": 0 }]] },
+    "Auth /records": { "main": [[{ "node": "Switch2", "type": "main", "index": 0 }]] },
     "Switch2": { "main": [[{ "node": "Query Records by Table", "type": "main", "index": 0 }], [{ "node": "401 /records", "type": "main", "index": 0 }]] },
+    "Query Records by Table": { "main": [[{ "node": "Respond Records", "type": "main", "index": 0 }]] },
+    "GET /record/:recordId": { "main": [[{ "node": "Auth /record", "type": "main", "index": 0 }]] },
+    "Auth /record": { "main": [[{ "node": "Switch3", "type": "main", "index": 0 }]] },
     "Switch3": { "main": [[{ "node": "Query Single Record", "type": "main", "index": 0 }], [{ "node": "401 /record", "type": "main", "index": 0 }]] },
+    "Query Single Record": { "main": [[{ "node": "Respond Single Record", "type": "main", "index": 0 }]] },
+    "GET /records/since": { "main": [[{ "node": "Auth /since", "type": "main", "index": 0 }]] },
+    "Auth /since": { "main": [[{ "node": "Switch4", "type": "main", "index": 0 }]] },
     "Switch4": { "main": [[{ "node": "Query Records Since", "type": "main", "index": 0 }], [{ "node": "401 /since", "type": "main", "index": 0 }]] },
-    "Filter2": { "main": [[{ "node": "Query Records by Table", "type": "main", "index": 0 }]] },
-    "Filter3": { "main": [[{ "node": "Query Single Record", "type": "main", "index": 0 }]] },
-    "Filter4": { "main": [[{ "node": "Query Records Since", "type": "main", "index": 0 }]] },
-    "Filter5": { "main": [[{ "node": "Query Tables", "type": "main", "index": 0 }]] }
+    "Query Records Since": { "main": [[{ "node": "Respond Records Since", "type": "main", "index": 0 }]] }
   },
   "pinData": {},
   "meta": {
