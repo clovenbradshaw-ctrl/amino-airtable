@@ -36368,19 +36368,22 @@ window.addEventListener('beforeunload', function() {
                 }
             }
             // Session valid but no encryption key — need password to re-derive.
-            // If we're offline, offer offline unlock instead of the online login form.
-            if (!navigator.onLine || !hasSessionKey) {
+            // Only offer offline unlock when there is genuinely no internet connection;
+            // otherwise fall through to the online login form for normal re-authentication.
+            if (!navigator.onLine) {
                 var hasCachedForRekey = await _hasCachedDataForOffline();
                 if (hasCachedForRekey) {
-                    console.log('[Startup] Session exists but no encryption key — showing offline unlock for password re-derivation');
+                    console.log('[Startup] Session exists but no encryption key and offline — showing offline unlock for password re-derivation');
                     showOfflineUnlockScreen();
                     return;
                 }
             }
             // Fall through to show Synapse login
         } else {
-            // Session verification failed — check if we can offer offline access
-            if (session.userId) {
+            // Session verification failed — only offer offline access if it was a
+            // network error (server unreachable), not if the server actively rejected
+            // the session. If the user is online, they should re-authenticate normally.
+            if (networkError && session.userId) {
                 var hasCachedData = await _hasCachedDataForOffline();
                 if (hasCachedData) {
                     // We have cached encrypted data + verification token — offer offline login
@@ -36389,7 +36392,7 @@ window.addEventListener('beforeunload', function() {
                     return;
                 }
             }
-            // No cached data or no session — clear and show normal login
+            // Session was actively rejected or no cached data — clear and show normal login
             if (!networkError) {
                 _clearSynapseSession();
             }
