@@ -490,10 +490,20 @@ var AminoHydration = (function() {
     // Supports incremental sync via /amino-records-since when cursor exists.
     // ========================================================================
 
+    // Filter out schema metadata (fld*, viw*, tbl*) from Postgres responses.
+    // amino.current_state stores both record data (rec*) and schema metadata
+    // in the same table; only rec* entries are actual data records.
+    function filterDataRecords(records) {
+        return records.filter(function(rec) {
+            var id = rec.id || '';
+            return id.startsWith('rec');
+        });
+    }
+
     // Hydrate a single table — full fetch, clear-before-write.
     async function hydrateTableFromPostgres(ctx, tableId) {
         var data = await ctx.apiFetch('/amino-records?tableId=' + encodeURIComponent(tableId), 'fullBackfill');
-        var records = data.records || [];
+        var records = filterDataRecords(data.records || []);
 
         if (ctx.onlineOnlyMode) {
             // Online-only: cache in memory, skip IDB
@@ -545,7 +555,7 @@ var AminoHydration = (function() {
             '&since=' + encodeURIComponent(since),
             'incrementalBackfill'
         );
-        var records = data.records || [];
+        var records = filterDataRecords(data.records || []);
 
         if (records.length > 0) {
             await writeRecordsBatched(ctx, records, tableId);
