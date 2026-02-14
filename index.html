@@ -10630,8 +10630,10 @@ function getRecordIdsForTable(tableId) {
         var index = tx.objectStore('data').index('by_table');
         var req = index.getAllKeys(tableId);
         req.onsuccess = () => {
-            // Keys are [tableId, recordId], extract recordIds
-            var idbIds = (req.result || []).map(k => k[1]);
+            // Keys are [tableId, recordId], extract recordIds.
+            // Filter to rec* only — IDB may contain stale fld*/viw* entries
+            // from before the hydration filter was added.
+            var idbIds = (req.result || []).map(k => k[1]).filter(id => id.startsWith('rec'));
             // Merge IDB record IDs with in-memory IDs
             for (var j = 0; j < idbIds.length; j++) {
                 memIds[idbIds[j]] = true;
@@ -18021,6 +18023,34 @@ async function hydrateFromWebhooks() {
 
                         for (var r = 0; r < batch.length; r++) {
                             var rec = batch[r];
+                            var recId = rec.id || '';
+
+                            // Postgres amino.current_state stores both actual record data (rec*)
+                            // and schema metadata (fld*, viw*, etc.) in the same table.
+                            // Only rec* entries are data records — fld* are field definitions.
+                            if (recId.startsWith('fld')) {
+                                // Extract field metadata for proper column headers
+                                var fMeta = rec.fields;
+                                if (typeof fMeta === 'string') {
+                                    try { fMeta = JSON.parse(fMeta); } catch (e) { fMeta = null; }
+                                }
+                                if (fMeta && typeof fMeta === 'object' && !Array.isArray(fMeta) && fMeta.fieldName) {
+                                    if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+                                    var existing = META_FIELDS[tableId][recId];
+                                    var fieldMeta = {
+                                        tableId: tableId,
+                                        fieldId: recId,
+                                        fieldName: fMeta.fieldName || recId,
+                                        fieldType: fMeta.fieldType || 'singleLineText'
+                                    };
+                                    META_FIELDS[tableId][recId] = fieldMeta;
+                                    fieldsToSave.push(fieldMeta);
+                                    if (!existing) totalFields++;
+                                }
+                                continue;
+                            }
+                            if (!recId.startsWith('rec')) continue;  // Skip viw*, etc.
+
                             var fields = rec.fields;
                             if (!fields) continue;
 
@@ -18211,11 +18241,16 @@ async function webhookIncrementalSync() {
                 var dataRecords = [];
                 for (var r = 0; r < records.length; r++) {
                     var rec = records[r];
+                    // Only sync actual records (rec*), skip schema metadata (fld*, viw*)
+                    var recId = rec.id || '';
+                    if (!recId.startsWith('rec')) continue;
+
                     var fields = rec.fields;
-                    if (!fields || typeof fields !== 'object') continue;
+                    if (!fields) continue;
                     if (typeof fields === 'string') {
                         try { fields = JSON.parse(fields); } catch (e) { continue; }
                     }
+                    if (typeof fields !== 'object' || Array.isArray(fields)) continue;
                     var cursorTs = _extractWebhookCursorTimestamp(rec);
                     if (cursorTs && cursorTs > maxCursorTimestamp) {
                         maxCursorTimestamp = cursorTs;
