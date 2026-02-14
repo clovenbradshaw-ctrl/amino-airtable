@@ -1040,6 +1040,37 @@
         .synapse-login-box .synapse-error { color: #f87171; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); display: none; }
         .synapse-login-box label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
 
+        /* Offline Unlock Screen */
+        #offline-unlock-screen { position: fixed; inset: 0; background: var(--bg-primary); display: none; align-items: center; justify-content: center; z-index: 106; }
+        #offline-unlock-screen.visible { display: flex; }
+        #offline-unlock-screen.fading-out { opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
+        .offline-unlock-box { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); padding: 32px; width: 360px; box-shadow: var(--shadow-xl); }
+        .offline-unlock-box h2 { font-size: 20px; margin-bottom: 8px; color: var(--text-primary); }
+        .offline-unlock-box p { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+        .offline-unlock-box .offline-user-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+        .offline-unlock-box .offline-user-badge svg { width: 14px; height: 14px; color: var(--text-muted); }
+        .offline-unlock-box input { width: 100%; padding: 10px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; margin-bottom: 12px; }
+        .offline-unlock-box input:focus { outline: none; border-color: var(--primary-500); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+        .offline-unlock-box button { width: 100%; padding: 10px; border: none; border-radius: var(--radius-md); font-size: 14px; cursor: pointer; font-weight: 500; transition: background var(--transition-fast); }
+        .offline-unlock-box button.primary { background: var(--primary-500); color: #fff; }
+        .offline-unlock-box button.primary:hover { background: var(--primary-600); }
+        .offline-unlock-box button.primary:disabled { background: var(--gray-600); cursor: not-allowed; }
+        .offline-unlock-box button.secondary { background: transparent; color: var(--text-muted); margin-top: 8px; border: 1px solid var(--border-primary); }
+        .offline-unlock-box button.secondary:hover { background: var(--bg-hover); color: var(--text-secondary); }
+        .offline-unlock-box .unlock-error { color: #f87171; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); display: none; }
+        .offline-unlock-box .offline-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-sm); font-size: 12px; color: #f59e0b; margin-bottom: 16px; font-weight: 500; }
+        .offline-unlock-box .offline-badge svg { width: 12px; height: 12px; }
+        .offline-unlock-box .offline-last-synced { font-size: 11px; color: var(--text-muted); margin-top: 12px; text-align: center; }
+
+        /* Offline Mode Banner */
+        #offline-mode-banner { display: none; align-items: center; justify-content: center; gap: 8px; padding: 6px 16px; background: rgba(245, 158, 11, 0.12); border-bottom: 1px solid rgba(245, 158, 11, 0.25); font-size: 12px; color: #f59e0b; font-weight: 500; flex-shrink: 0; }
+        #offline-mode-banner.visible { display: flex; }
+        #offline-mode-banner svg { width: 14px; height: 14px; }
+        #offline-mode-banner .offline-reconnect-btn { padding: 3px 10px; background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-sm); color: #f59e0b; font-size: 11px; cursor: pointer; font-weight: 500; transition: background var(--transition-fast); }
+        #offline-mode-banner .offline-reconnect-btn:hover { background: rgba(245, 158, 11, 0.3); }
+        html.light-theme #offline-mode-banner { background: rgba(217, 119, 6, 0.08); border-bottom-color: rgba(217, 119, 6, 0.2); color: #b45309; }
+        html.light-theme #offline-mode-banner .offline-reconnect-btn { background: rgba(217, 119, 6, 0.1); border-color: rgba(217, 119, 6, 0.25); color: #b45309; }
+
         /* ===== Home Screen ===== */
         #home-app {
             display: none;
@@ -5350,7 +5381,7 @@
             .settings-table th, .settings-table td { padding: 8px; }
 
             /* Auth/Login screens */
-            .auth-box, .synapse-login-box { width: 90vw; max-width: 360px; padding: 24px 20px; }
+            .auth-box, .synapse-login-box, .offline-unlock-box { width: 90vw; max-width: 360px; padding: 24px 20px; }
             #unlock-screen .unlock-box { width: 90vw; max-width: 400px; padding: 24px 20px; }
 
             /* Wizard container */
@@ -5680,6 +5711,30 @@
         </div>
     </div>
 
+    <!-- Offline Unlock Screen -->
+    <div id="offline-unlock-screen">
+        <div class="offline-unlock-box">
+            <div class="offline-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.56 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+                Offline Mode
+            </div>
+            <h2>Welcome Back</h2>
+            <p>You're offline. Enter your password to access your cached data.</p>
+            <div id="offline-unlock-user" class="offline-user-badge" style="display: none;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                <span id="offline-unlock-username"></span>
+            </div>
+            <div id="offline-unlock-error" class="unlock-error"></div>
+            <form id="offline-unlock-form" onsubmit="return false;">
+                <label for="offline-unlock-password">Password</label>
+                <input type="password" id="offline-unlock-password" placeholder="Enter your password" autocomplete="current-password">
+                <button id="offline-unlock-btn" class="primary" type="button">Unlock</button>
+                <button id="offline-unlock-online-btn" class="secondary" type="button">Sign in online instead</button>
+            </form>
+            <div id="offline-unlock-last-synced" class="offline-last-synced"></div>
+        </div>
+    </div>
+
     <div id="view-selection-screen" class="hidden" style="position: fixed; inset: 0; background: var(--bg-primary); display: flex; align-items: center; justify-content: center; z-index: 104;">
         <div style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); padding: 32px; width: 400px; box-shadow: var(--shadow-xl);">
             <h2 style="font-size: 20px; margin-bottom: 8px; color: var(--text-primary);">Amino Viewer</h2>
@@ -5898,6 +5953,13 @@
             <button class="app-nav-logout" onclick="appNavLogout()">Sign Out</button>
         </div>
     </nav>
+
+    <!-- Offline Mode Banner -->
+    <div id="offline-mode-banner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.56 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+        <span>Offline Mode — Read Only (cached data)</span>
+        <button class="offline-reconnect-btn" onclick="tryReconnect()">Reconnect</button>
+    </div>
 
     <!-- App Content Wrapper -->
     <div class="app-content-wrapper" id="app-content-wrapper">
@@ -13095,6 +13157,7 @@ async function trySynapseLogin() {
         }
 
         _saveSynapseSession({
+            homeserverUrl: SYNAPSE_HOMESERVER_URL,
             accessToken: data.access_token,
             userId: data.user_id,
             deviceId: data.device_id
@@ -13436,7 +13499,18 @@ function synapseLogout() {
             }
         }).catch(function() {});
     }
-    _clearSynapseSession();
+    // Keep a minimal session stub (userId + homeserverUrl) for offline re-login.
+    // The access token is cleared since the server invalidated it.
+    if (session && session.userId) {
+        _saveSynapseSession({
+            homeserverUrl: (session.homeserverUrl || SYNAPSE_HOMESERVER_URL),
+            userId: session.userId,
+            accessToken: null,
+            deviceId: null
+        });
+    } else {
+        _clearSynapseSession();
+    }
     // Clear the stored AminoData encryption key used by sub-pages
     localStorage.removeItem('amino_data_layer_key');
 }
@@ -13454,6 +13528,214 @@ document.getElementById('synapse-reset-confirm-password').onkeydown = function(e
 // Wire up view selection UI
 document.getElementById('view-as-database-btn').onclick = selectDatabaseView;
 document.getElementById('view-as-interface-btn').onclick = selectInterfaceView;
+
+// ============ Offline Unlock ============
+
+var _isOfflineSession = false;
+
+function showOfflineUnlockScreen() {
+    var session = _loadSynapseSession();
+    var screen = document.getElementById('offline-unlock-screen');
+    screen.classList.add('visible');
+
+    // Show cached username
+    if (session && session.userId) {
+        var userBadge = document.getElementById('offline-unlock-user');
+        var usernameSpan = document.getElementById('offline-unlock-username');
+        var localpart = session.userId.split(':')[0].replace(/^@/, '');
+        usernameSpan.textContent = localpart;
+        userBadge.style.display = 'inline-flex';
+    }
+
+    // Hide the synapse login screen while offline unlock is visible
+    document.getElementById('synapse-login-screen').classList.add('hidden');
+
+    // Focus the password input
+    setTimeout(function() {
+        document.getElementById('offline-unlock-password').focus();
+    }, 100);
+}
+
+function hideOfflineUnlockScreen() {
+    var screen = document.getElementById('offline-unlock-screen');
+    screen.classList.add('fading-out');
+    screen.addEventListener('transitionend', function handler() {
+        screen.removeEventListener('transitionend', handler);
+        screen.classList.remove('visible', 'fading-out');
+    }, { once: true });
+    setTimeout(function() { screen.classList.remove('visible', 'fading-out'); }, 400);
+}
+
+function showOfflineUnlockError(msg) {
+    var el = document.getElementById('offline-unlock-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+
+function hideOfflineUnlockError() {
+    document.getElementById('offline-unlock-error').style.display = 'none';
+}
+
+function showOfflineModeBanner() {
+    document.getElementById('offline-mode-banner').classList.add('visible');
+}
+
+function hideOfflineModeBanner() {
+    document.getElementById('offline-mode-banner').classList.remove('visible');
+}
+
+async function tryOfflineUnlock() {
+    var password = document.getElementById('offline-unlock-password').value;
+    if (!password) {
+        showOfflineUnlockError('Please enter your password.');
+        return;
+    }
+
+    var btn = document.getElementById('offline-unlock-btn');
+    btn.textContent = 'Unlocking...';
+    btn.disabled = true;
+    hideOfflineUnlockError();
+
+    try {
+        var session = _loadSynapseSession();
+        if (!session || !session.userId) {
+            throw new Error('No cached session found.');
+        }
+
+        // 1. Derive the UI-level encryption key (same as trySynapseLogin)
+        var salt = new TextEncoder().encode('amino-local-encrypt:' + session.userId);
+        var derivedKey = await deriveKeyFromPassword(password, salt);
+
+        // 2. Verify against stored encryption config
+        var config = getEncryptionConfig();
+        if (config && config.verificationToken && config.type === 'synapse') {
+            try {
+                await decryptData(config.verificationToken, derivedKey);
+            } catch (e) {
+                throw new Error('Incorrect password.');
+            }
+        } else {
+            throw new Error('No encryption data found. Please sign in online first.');
+        }
+
+        // 3. Set UI encryption state
+        encryptionKey = derivedKey;
+        encryptionEnabled = true;
+        _deferEncryptionUI = true;
+        await saveSessionKey(encryptionKey);
+
+        // 4. Prepare AminoData key for sub-pages
+        await AminoData.prepareKey(password, session.userId);
+
+        // 5. Use AminoData.offlineUnlock for the data layer
+        var unlockResult = await AminoData.offlineUnlock(password);
+
+        // 6. Show last synced time
+        if (unlockResult.lastSynced) {
+            var lastSyncedEl = document.getElementById('offline-unlock-last-synced');
+            var syncDate = new Date(unlockResult.lastSynced);
+            lastSyncedEl.textContent = 'Last synced: ' + syncDate.toLocaleString();
+        }
+
+        // 7. Mark offline session state
+        _isOfflineSession = true;
+
+        // 8. Clear password from memory
+        password = null;
+        document.getElementById('offline-unlock-password').value = '';
+
+        // 9. Hide offline unlock, show app with offline banner
+        hideOfflineUnlockScreen();
+        showOfflineModeBanner();
+
+        // 10. Initialize the app UI with cached data
+        try {
+            await init();
+        } catch (initErr) {
+            console.error('[OfflineUnlock] Init failed:', initErr);
+            showOfflineUnlockScreen();
+            showOfflineUnlockError('Failed to load cached data: ' + initErr.message);
+            return;
+        }
+
+        console.log('[OfflineUnlock] Offline session started for', session.userId,
+            '(' + (unlockResult.tables ? unlockResult.tables.length : 0) + ' tables)');
+
+    } catch (err) {
+        console.error('[OfflineUnlock] Failed:', err);
+        showOfflineUnlockError(err.message || 'Unlock failed.');
+    } finally {
+        btn.textContent = 'Unlock';
+        btn.disabled = false;
+    }
+}
+
+function offlineUnlockGoOnline() {
+    // User wants to try online login instead
+    hideOfflineUnlockScreen();
+    showSynapseLoginScreen();
+}
+
+async function tryReconnect() {
+    var btn = document.querySelector('#offline-mode-banner .offline-reconnect-btn');
+    if (btn) {
+        btn.textContent = 'Checking...';
+        btn.disabled = true;
+    }
+
+    try {
+        var online = await AminoData.checkConnectivity();
+        if (online) {
+            // Attempt transition to online mode
+            var password = null; // password not available — will re-auth if token expired
+            var result = await AminoData.transitionToOnline(password);
+
+            _isOfflineSession = false;
+            hideOfflineModeBanner();
+
+            // Resume normal polling
+            console.log('[Reconnect] Back online. Synced:', result.syncedRecords, 'records.',
+                'Flushed:', result.flushed, 'mutations.');
+
+            // Restore Matrix session
+            var session = _loadSynapseSession();
+            if (session && session.accessToken) {
+                MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
+            }
+        } else {
+            if (btn) btn.textContent = 'Still offline';
+            setTimeout(function() { if (btn) btn.textContent = 'Reconnect'; }, 2000);
+        }
+    } catch (err) {
+        console.warn('[Reconnect] Failed:', err.message);
+        if (err.message && err.message.indexOf('Session expired') !== -1) {
+            // Need full re-login
+            if (btn) btn.textContent = 'Session expired';
+            setTimeout(function() {
+                if (confirm('Your session has expired. Sign in again?')) {
+                    logout();
+                }
+            }, 500);
+        } else {
+            if (btn) btn.textContent = 'Failed';
+            setTimeout(function() { if (btn) btn.textContent = 'Reconnect'; }, 2000);
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// Listen for connectivity restored events from AminoData
+window.addEventListener('amino:connectivity-restored', function() {
+    if (_isOfflineSession) {
+        tryReconnect();
+    }
+});
+
+// Wire up offline unlock UI
+document.getElementById('offline-unlock-btn').onclick = tryOfflineUnlock;
+document.getElementById('offline-unlock-online-btn').onclick = offlineUnlockGoOnline;
+document.getElementById('offline-unlock-password').onkeydown = function(e) { if (e.key === 'Enter') tryOfflineUnlock(); };
 
 // ============ Auth ============
 
@@ -13896,6 +14178,8 @@ async function logout() {
     // Clear encryption state
     encryptionKey = null;
     encryptionEnabled = false;
+    _isOfflineSession = false;
+    hideOfflineModeBanner();
     // Log out of Synapse and show login screen
     synapseLogout();
     showSynapseLoginScreen();
@@ -33894,6 +34178,7 @@ async function appNavLogout() {
     // Encrypt plaintext records before clearing the key — the encrypted
     // IndexedDB data is retained on device (AES-GCM-256, unreadable without
     // the user's password) so the next login can skip re-hydration.
+    await AminoData.logout(false); // Encrypts data-layer records, keeps data for offline access
     if (_deferEncryptionUI && encryptionKey && db) {
         try { await encryptAllUIRecords(); } catch (e) { console.error('[appNavLogout] encrypt failed:', e); }
     }
@@ -33901,6 +34186,8 @@ async function appNavLogout() {
     clearSessionKey();
     encryptionKey = null;
     encryptionEnabled = false;
+    _isOfflineSession = false;
+    hideOfflineModeBanner();
     synapseLogout();
     location.reload();
 }
@@ -35825,6 +36112,32 @@ window.addEventListener('beforeunload', function() {
         return null;
     });
 
+    // Helper: Check if cached encrypted data exists in IndexedDB for offline access
+    async function _hasCachedDataForOffline() {
+        try {
+            var config = getEncryptionConfig();
+            if (!config || !config.verificationToken || config.type !== 'synapse') return false;
+            var hasHydration = !!localStorage.getItem('amino_hydration_complete');
+            if (!hasHydration) return false;
+            // Verify IndexedDB has actual data
+            var testDb = window._earlyDbPromise ? await window._earlyDbPromise : null;
+            if (!testDb) {
+                testDb = await openDB().catch(function() { return null; });
+            }
+            if (!testDb) return false;
+            // Quick check: does the tables store have entries?
+            var tx = testDb.transaction('tables', 'readonly');
+            var count = await new Promise(function(resolve) {
+                var req = tx.objectStore('tables').count();
+                req.onsuccess = function() { resolve(req.result); };
+                req.onerror = function() { resolve(0); };
+            });
+            return count > 0;
+        } catch (e) {
+            return false;
+        }
+    }
+
     // Check for existing valid Synapse session
     var session = _loadSynapseSession();
     if (session && session.accessToken) {
@@ -35834,6 +36147,7 @@ window.addEventListener('beforeunload', function() {
         // of network latency from the critical startup path.
         var hasSessionKey = !!sessionStorage.getItem('amino_session_key');
         var valid;
+        var networkError = false;
         if (hasSessionKey) {
             // Optimistically assume valid — verify in background after init
             valid = true;
@@ -35853,7 +36167,13 @@ window.addEventListener('beforeunload', function() {
             });
         } else {
             // No session key (first login or key cleared) — must verify synchronously
-            valid = await verifySynapseSession();
+            try {
+                valid = await verifySynapseSession();
+            } catch (verifyErr) {
+                // Network error during verification — check for offline access
+                valid = false;
+                networkError = true;
+            }
             if (valid) {
                 MatrixClient.setSession(SYNAPSE_HOMESERVER_URL, session.accessToken, session.userId, session.deviceId);
             }
@@ -35885,11 +36205,43 @@ window.addEventListener('beforeunload', function() {
                     clearSessionKey();
                 }
             }
-            // Session valid but no encryption key — need password to re-derive
+            // Session valid but no encryption key — need password to re-derive.
+            // If we're offline, offer offline unlock instead of the online login form.
+            if (!navigator.onLine || !hasSessionKey) {
+                var hasCachedForRekey = await _hasCachedDataForOffline();
+                if (hasCachedForRekey) {
+                    console.log('[Startup] Session exists but no encryption key — showing offline unlock for password re-derivation');
+                    showOfflineUnlockScreen();
+                    return;
+                }
+            }
             // Fall through to show Synapse login
         } else {
-            // Session invalid/expired, clear it
-            _clearSynapseSession();
+            // Session verification failed — check if we can offer offline access
+            if (session.userId) {
+                var hasCachedData = await _hasCachedDataForOffline();
+                if (hasCachedData) {
+                    // We have cached encrypted data + verification token — offer offline login
+                    console.log('[Startup] Network unavailable but cached data exists — showing offline unlock');
+                    showOfflineUnlockScreen();
+                    return;
+                }
+            }
+            // No cached data or no session — clear and show normal login
+            if (!networkError) {
+                _clearSynapseSession();
+            }
+        }
+    } else if (!session || !session.accessToken) {
+        // No session token at all, but check if we have a userId and cached data
+        // (happens after logout that kept encrypted data for offline re-login)
+        if (session && session.userId) {
+            var hasCachedData = await _hasCachedDataForOffline();
+            if (hasCachedData && !navigator.onLine) {
+                console.log('[Startup] No access token but cached data available offline — showing offline unlock');
+                showOfflineUnlockScreen();
+                return;
+            }
         }
     }
 
