@@ -224,6 +224,10 @@
         html.light-theme .profile-sync-history-source { background: rgba(100, 116, 139, 0.12); color: #64748b; }
         html.light-theme .profile-sync-history-value.old { background: rgba(220, 38, 38, 0.06); color: #991b1b; }
         html.light-theme .profile-sync-history-value.new { background: rgba(22, 163, 74, 0.06); color: #166534; }
+        html.light-theme .record-history-event-operator.INS { background: rgba(22, 163, 74, 0.12); color: #15803d; }
+        html.light-theme .record-history-event-operator.ALT { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+        html.light-theme .record-history-event-operator.NUL { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+        html.light-theme .record-history-event-operator.SYN { background: rgba(147, 51, 234, 0.12); color: #7c3aed; }
 
         /* Context menu danger */
         html.light-theme .view-context-menu-item.danger { color: #dc2626; }
@@ -4818,6 +4822,36 @@
         .profile-sync-history-value.new { background: rgba(34, 197, 94, 0.1); color: #86efac; }
         .profile-sync-history-value-label { font-size: 10px; font-weight: 500; text-transform: uppercase; margin-bottom: 2px; opacity: 0.7; }
 
+        /* Record History (raw event stream) */
+        .record-history-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; text-align: center; color: var(--text-muted); flex: 1; }
+        .record-history-empty svg { width: 48px; height: 48px; color: var(--text-disabled); margin-bottom: 16px; }
+        .record-history-empty h3 { font-size: 16px; font-weight: 500; color: var(--text-primary); margin: 0 0 8px 0; }
+        .record-history-empty p { font-size: 13px; color: var(--text-muted); margin: 0; }
+        .record-history-header { padding: 12px 20px; border-bottom: 1px solid var(--border-primary); display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); }
+        .record-history-header .record-history-count { font-size: 12px; color: var(--text-muted); }
+        .record-history-header .record-history-refresh-btn { padding: 4px 10px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-sm); cursor: pointer; font-size: 11px; color: var(--text-muted); margin-left: auto; }
+        .record-history-header .record-history-refresh-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .record-history-list { padding: 12px 20px; overflow-y: auto; flex: 1; }
+        .record-history-event { padding: 12px; border: 1px solid var(--border-primary); border-radius: var(--radius-md); margin-bottom: 8px; background: var(--bg-primary); transition: border-color 0.15s; }
+        .record-history-event:hover { border-color: var(--border-secondary); }
+        .record-history-event:last-child { margin-bottom: 0; }
+        .record-history-event-header { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+        .record-history-event-id { font-size: 11px; font-weight: 600; color: var(--text-muted); font-family: var(--font-mono, monospace); }
+        .record-history-event-operator { font-size: 11px; padding: 2px 6px; border-radius: 3px; font-weight: 500; }
+        .record-history-event-operator.INS { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+        .record-history-event-operator.ALT { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+        .record-history-event-operator.NUL { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .record-history-event-operator.SYN { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+        .record-history-event-set { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: rgba(100, 116, 139, 0.15); color: #94a3b8; font-weight: 500; }
+        .record-history-event-uuid { font-size: 10px; color: var(--text-disabled); font-family: var(--font-mono, monospace); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .record-history-event-time { margin-left: auto; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+        .record-history-event-payload { font-size: 12px; background: var(--bg-secondary); border-radius: var(--radius-sm); padding: 8px 10px; max-height: 120px; overflow-y: auto; word-break: break-word; font-family: var(--font-mono, monospace); line-height: 1.5; cursor: pointer; transition: max-height 0.2s; }
+        .record-history-event-payload.expanded { max-height: none; }
+        .record-history-event-actions { display: flex; gap: 6px; margin-top: 8px; }
+        .record-history-event-actions button { padding: 3px 8px; font-size: 11px; border-radius: var(--radius-sm); border: 1px solid var(--border-primary); background: var(--bg-tertiary); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .record-history-event-actions button:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .record-history-event-actions button svg { width: 12px; height: 12px; }
+
         /* Profile Toolbar */
         .profile-toolbar { padding: 10px 20px; border-bottom: 1px solid var(--border-primary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--bg-secondary); }
         .profile-toolbar-label { font-size: 12px; color: var(--text-muted); }
@@ -6529,6 +6563,7 @@
             <div class="profile-tabs">
                 <div class="profile-tab active" data-tab="details" onclick="switchProfileTab('details')">Case Details</div>
                 <div class="profile-tab" data-tab="sync-history" onclick="switchProfileTab('sync-history')">Sync History</div>
+                <div class="profile-tab" data-tab="record-history" onclick="switchProfileTab('record-history')">Record History</div>
             </div>
             <div class="profile-tab-content active" id="profile-tab-details">
                 <div class="profile-toolbar" id="profile-toolbar">
@@ -6545,6 +6580,9 @@
             </div>
             <div class="profile-tab-content" id="profile-tab-sync-history">
                 <!-- Sync history content will be rendered here -->
+            </div>
+            <div class="profile-tab-content" id="profile-tab-record-history">
+                <!-- Record history (raw event stream) content will be rendered here -->
             </div>
             <div class="profile-nav">
                 <button class="profile-nav-btn" id="profile-prev-btn" onclick="navigateProfile(-1)">
@@ -21941,6 +21979,7 @@ async function openRecordProfile(tableId, recordId, viewId) {
     });
     document.getElementById('profile-tab-details').classList.add('active');
     document.getElementById('profile-tab-sync-history').classList.remove('active');
+    document.getElementById('profile-tab-record-history').classList.remove('active');
 
     // Render profile content
     await renderRecordProfile();
@@ -23559,9 +23598,11 @@ async function navigateProfile(direction) {
         await renderRecordProfile();
         updateProfileNavigation();
 
-        // Refresh sync history if that tab is active
+        // Refresh sync history or record history if those tabs are active
         if (profileCurrentTab === 'sync-history') {
             renderProfileSyncHistory();
+        } else if (profileCurrentTab === 'record-history') {
+            renderProfileRecordHistory();
         }
     }
 }
@@ -23599,6 +23640,9 @@ function switchProfileTab(tabName) {
     } else if (tabName === 'sync-history') {
         document.getElementById('profile-tab-sync-history').classList.add('active');
         renderProfileSyncHistory();
+    } else if (tabName === 'record-history') {
+        document.getElementById('profile-tab-record-history').classList.add('active');
+        renderProfileRecordHistory();
     }
 }
 
@@ -23818,6 +23862,164 @@ function formatSyncHistoryValue(value) {
         return esc(JSON.stringify(value));
     }
     return esc(String(value));
+}
+
+// ============ Record History Tab (raw event stream from Postgres) ============
+
+// Render the raw event stream for the current record in the profile panel
+async function renderProfileRecordHistory() {
+    var container = document.getElementById('profile-tab-record-history');
+    if (!profileCurrentTableId || !profileCurrentRecordId) {
+        container.innerHTML = '<div class="record-history-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><h3>No record selected</h3><p>Select a record to view its event history</p></div>';
+        return;
+    }
+
+    container.innerHTML = '<div class="record-history-empty"><div class="loading-spinner"></div><h3>Loading event history...</h3></div>';
+
+    try {
+        var result = await AminoData.fetchEventsForRecord(profileCurrentRecordId);
+        var events = (result && result.events) ? result.events : [];
+
+        if (events.length === 0) {
+            container.innerHTML = '<div class="record-history-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><h3>No events found</h3><p>No event history available for this record in the event log</p></div>';
+            return;
+        }
+
+        // Sort events by id descending (most recent first)
+        events.sort(function(a, b) { return (b.id || 0) - (a.id || 0); });
+
+        var html = '';
+
+        // Header with count and refresh
+        html += '<div class="record-history-header">';
+        html += '<span class="record-history-count">' + events.length + ' event' + (events.length !== 1 ? 's' : '') + '</span>';
+        html += '<button class="record-history-refresh-btn" onclick="renderProfileRecordHistory()" title="Refresh events">Refresh</button>';
+        html += '</div>';
+
+        html += '<div class="record-history-list">';
+
+        for (var i = 0; i < events.length; i++) {
+            var evt = events[i];
+            var payload = parsePayload(evt.payload);
+            var operator = evt.operator || '';
+            if (!operator && payload && payload.fields) {
+                if (payload.fields.INS) operator = 'INS';
+                else if (payload.fields.ALT) operator = 'ALT';
+                else if (payload.fields.NUL) operator = 'NUL';
+                else if (payload.fields.SYN) operator = 'SYN';
+            }
+            var timestamp = evt.created_at ? formatTimestamp(new Date(evt.created_at).getTime()) : 'Unknown';
+            var fullTimestamp = evt.created_at ? new Date(evt.created_at).toLocaleString() : '';
+            var setTableId = (evt.set || '').replace('airtable:', '');
+            var setDisplay = setTableId ? resolveTableName(setTableId) : (evt.set || '');
+
+            html += '<div class="record-history-event">';
+
+            // Event header
+            html += '<div class="record-history-event-header">';
+            html += '<span class="record-history-event-id">#' + (evt.id || '?') + '</span>';
+            if (operator) {
+                html += '<span class="record-history-event-operator ' + esc(operator) + '">' + esc(operator) + '</span>';
+            }
+            if (evt.set) {
+                html += '<span class="record-history-event-set" title="' + esc(evt.set) + '">' + esc(setDisplay) + '</span>';
+            }
+            if (evt.uuid) {
+                html += '<span class="record-history-event-uuid" title="' + esc(evt.uuid) + '">' + esc(evt.uuid) + '</span>';
+            }
+            html += '<span class="record-history-event-time" title="' + esc(fullTimestamp) + '">' + esc(timestamp) + '</span>';
+            html += '</div>';
+
+            // Payload
+            html += '<div class="record-history-event-payload" onclick="this.classList.toggle(\'expanded\')">';
+            if (payload) {
+                html += formatRecordHistoryPayload(payload);
+            } else {
+                html += '<span style="color: var(--text-disabled); font-style: italic;">No payload</span>';
+            }
+            html += '</div>';
+
+            // Actions
+            html += '<div class="record-history-event-actions">';
+            if (evt.id && evt.recordId) {
+                html += '<button onclick="viewRecordAtPointInTime(\'' + esc(String(evt.id)) + '\', \'' + esc(evt.recordId) + '\', \'' + esc(evt.set || '') + '\')" title="View record state at this event">';
+                html += '<svg viewBox="0 0 16 16" fill="none"><path d="M8 3v5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/></svg>';
+                html += 'View State';
+                html += '</button>';
+            }
+            html += '</div>';
+
+            html += '</div>';
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+
+    } catch (err) {
+        console.error('Error loading record history:', err);
+        container.innerHTML = '<div class="record-history-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><h3>Error loading event history</h3><p>' + esc(err.message) + '</p></div>';
+    }
+}
+
+// Format a raw event payload for display in the record history tab
+function formatRecordHistoryPayload(payload) {
+    if (!payload) return '';
+
+    var fields = payload.fields;
+    if (!fields) {
+        // Non-field payload, show as JSON
+        try {
+            return esc(JSON.stringify(payload, null, 2));
+        } catch (e) {
+            return esc(String(payload));
+        }
+    }
+
+    var html = '';
+    var ops = ['INS', 'ALT', 'SYN', 'NUL'];
+    for (var i = 0; i < ops.length; i++) {
+        var op = ops[i];
+        var data = fields[op];
+        if (!data) continue;
+
+        if (op === 'NUL' && Array.isArray(data) && data.length > 0) {
+            html += '<div style="margin-bottom: 4px;">';
+            html += '<span class="record-history-event-operator ' + op + '" style="font-size:10px;">' + op + '</span> ';
+            for (var n = 0; n < data.length; n++) {
+                var nulFieldName = resolveFieldNameByTable(profileCurrentTableId, data[n]);
+                html += '<span style="color: var(--text-muted);">' + esc(nulFieldName) + '</span>';
+                if (n < data.length - 1) html += ', ';
+            }
+            html += '</div>';
+        } else if (typeof data === 'object' && !Array.isArray(data)) {
+            var keys = Object.keys(data);
+            for (var k = 0; k < keys.length; k++) {
+                var fieldId = keys[k];
+                var fieldName = resolveFieldNameByTable(profileCurrentTableId, fieldId);
+                var value = data[fieldId];
+                var displayValue = (value === null || value === undefined) ? 'null' : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+                // Truncate long values
+                if (displayValue.length > 200) displayValue = displayValue.slice(0, 200) + '...';
+                html += '<div style="margin-bottom: 2px;">';
+                html += '<span class="record-history-event-operator ' + op + '" style="font-size:10px;">' + op + '</span> ';
+                html += '<span style="color: var(--text-primary); font-weight: 500;">' + esc(fieldName) + '</span>';
+                html += ' <span style="color: var(--text-muted);">=</span> ';
+                html += '<span style="color: var(--text-secondary);">' + esc(displayValue) + '</span>';
+                html += '</div>';
+            }
+        }
+    }
+
+    return html || esc(JSON.stringify(payload, null, 2));
+}
+
+// Resolve field ID to human-readable field name (by table ID)
+function resolveFieldNameByTable(tableId, fieldId) {
+    if (!tableId || !fieldId) return fieldId || '';
+    var fields = META_FIELDS[tableId];
+    if (!fields) return fieldId;
+    var field = fields[fieldId];
+    return field ? (field.fieldName || fieldId) : fieldId;
 }
 
 // Handle row click to open profile
