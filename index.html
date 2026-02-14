@@ -23310,6 +23310,11 @@ window.addEventListener('amino:record-updated', function(e) {
     var detail = e.detail;
     if (!detail || !detail.tableId || !detail.recordId) return;
 
+    // Evict this record from the shared LRU cache so the next read
+    // (by Database View or Interface) re-fetches from IDB/IN_MEMORY_DATA.
+    var cacheKey = _rcKey(detail.tableId, detail.recordId);
+    _recordCache.delete(cacheKey);
+
     // Only invalidate filter cache when the update is for the current table.
     // Updates to other tables don't affect the currently displayed filter results.
     if (detail.tableId === currentTable) {
@@ -29775,52 +29780,23 @@ var InterfaceApp = (function() {
             return cached.records;
         }
         var records = [];
-        var recordIdSet = {};
         try {
-            // Read from in-memory data first (populated by Box AMO hydration)
-            if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[tableId]) {
-                var memData = window.IN_MEMORY_DATA[tableId];
-                Object.keys(memData).forEach(function(rid) {
-                    records.push({ recordId: rid, fields: memData[rid] });
-                    recordIdSet[rid] = true;
-                });
-            }
-
-            // Also read from IndexedDB and merge any records not already in memory.
-            // This ensures the Interface shows the full dataset even when
-            // IN_MEMORY_DATA (from Box AMO) has fewer records than IDB
-            // (from Postgres webhook hydration or previous sessions).
-            if (typeof db !== 'undefined' && db) {
-                var tx = db.transaction('data', 'readonly');
-                var store = tx.objectStore('data');
-                var index = null;
-                try {
-                    index = store.index('by_table');
-                } catch (e) {
-                    try { index = store.index('byTable'); } catch (e2) { index = null; }
-                }
-                if (index) {
-                    var results = await new Promise(function(resolve, reject) {
-                        var req = index.getAll(tableId);
-                        req.onsuccess = function() { resolve(req.result || []); };
-                        req.onerror = function() { reject(req.error); };
-                    });
-                    for (var i = 0; i < results.length; i++) {
-                        var rec = results[i];
-                        var rid = rec.recordId || rec.id;
-                        if (recordIdSet[rid]) continue; // Already have this record from memory
-                        if (encryptionEnabled && encryptionKey && (rec._encryptedFields || rec.encrypted || rec._encrypted)) {
-                            try {
-                                rec = await decryptRecordFromStorage(rec);
-                            } catch (e) { continue; }
-                        }
-                        var idbFields = rec.fields || rec;
-                        // Handle fields stored as JSON string (from Postgres webhook)
-                        if (typeof idbFields === 'string') {
-                            try { idbFields = JSON.parse(idbFields); } catch (e) { continue; }
-                        }
-                        records.push({ recordId: rid, fields: idbFields });
-                        recordIdSet[rid] = true;
+            // Use the same data pipeline as the Database View:
+            // getRecordIdsForTable merges IN_MEMORY_DATA + IndexedDB,
+            // getRecordsByIds serves from LRU cache / IN_MEMORY_DATA / IDB
+            // with proper decryption handling for all storage modes.
+            var recordIds = await getRecordIdsForTable(tableId);
+            if (recordIds.length > 0) {
+                var rawRecords = await getRecordsByIds(tableId, recordIds);
+                for (var i = 0; i < rawRecords.length; i++) {
+                    var rec = rawRecords[i];
+                    var rid = rec.recordId || rec.id;
+                    var recFields = rec.fields;
+                    if (typeof recFields === 'string') {
+                        try { recFields = JSON.parse(recFields); } catch (e) { continue; }
+                    }
+                    if (recFields && typeof recFields === 'object') {
+                        records.push({ recordId: rid, fields: recFields });
                     }
                 }
             }
@@ -33286,10 +33262,13 @@ var InterfaceApp = (function() {
         }
         console.log('[Interface] First render in', Math.round(performance.now() - t0), 'ms');
 
-        // Listen for data updates
+        // Listen for data updates — clear both Interface table-data cache
+        // and the shared record LRU cache so re-renders fetch fresh data
+        // through the same pipeline the Database View uses.
         window.addEventListener('amino:record-update', function() {
             _tableDataCache = {};
             _ifaceSearchTextCache = {};
+            clearRecordCache();
             if (_currentApp === 'interface' && _activePage) {
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 1000);
@@ -33298,6 +33277,7 @@ var InterfaceApp = (function() {
         window.addEventListener('amino:record-updated', function() {
             _tableDataCache = {};
             _ifaceSearchTextCache = {};
+            clearRecordCache();
             if (_currentApp === 'interface' && _activePage) {
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 400);
@@ -33306,6 +33286,7 @@ var InterfaceApp = (function() {
         window.addEventListener('amino:sync', function() {
             _tableDataCache = {};
             _ifaceSearchTextCache = {};
+            clearRecordCache();
             if (_currentApp === 'interface' && _activePage) {
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 1000);
