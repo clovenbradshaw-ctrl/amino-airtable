@@ -339,16 +339,11 @@ var AminoHydration = (function() {
 
     // Normalize a raw API record to canonical form.
     function normalizeRecord(record, tableId) {
-        // n8n Postgres node may return JSONB columns as strings — parse them.
-        var fields = record.fields;
-        if (typeof fields === 'string') {
-            try { fields = JSON.parse(fields); } catch (e) { fields = {}; }
-        }
         return {
             id: record.id,
             tableId: tableId || record.tableId || record.table_id,
             tableName: record.tableName || record.table_name || tableId || '',
-            fields: fields || {},
+            fields: record.fields || {},
             lastSynced: Timestamps.fromApiRecord(record)
         };
     }

@@ -10705,9 +10705,8 @@ async function getRecord(tableId, recordId) {
         req.onerror = () => reject(req.error);
     });
 
-    // Decrypt record if needed — use encryptionKey alone (not encryptionEnabled)
-    // so records encrypted during a previous session's logout are still readable.
-    if (result && encryptionKey) {
+    // Decrypt record if needed
+    if (result && encryptionEnabled && encryptionKey) {
         return decryptRecordFromStorage(result);
     }
     return result;
@@ -10813,10 +10812,8 @@ async function getRecordsByIdsFromDB(tableId, recordIds) {
         });
     });
 
-    // Decrypt records if needed.  Always attempt decryption when a key is
-    // available — records may have been encrypted during a previous session's
-    // logout even if the current encryptionEnabled flag is false.
-    if (encryptionKey) {
+    // Decrypt records if needed
+    if (encryptionEnabled && encryptionKey) {
         return Promise.all(results.map(r => decryptRecordFromStorage(r)));
     }
     return results;
@@ -18022,15 +18019,11 @@ async function hydrateFromWebhooks() {
                         for (var r = 0; r < batch.length; r++) {
                             var rec = batch[r];
                             var fields = rec.fields;
-                            if (!fields) continue;
+                            if (!fields || typeof fields !== 'object') continue;
 
-                            // n8n Postgres node may return JSONB columns as
-                            // strings — parse them before the object guard.
                             if (typeof fields === 'string') {
                                 try { fields = JSON.parse(fields); } catch (e) { continue; }
                             }
-
-                            if (typeof fields !== 'object' || Array.isArray(fields)) continue;
 
                             var cursorTs = _extractWebhookCursorTimestamp(rec);
                             if (cursorTs && cursorTs > maxCursorTimestamp) {
@@ -18565,14 +18558,7 @@ function _startBackgroundHydration() {
 
             // Refresh sidebar/table once hydration completes.
             await renderSidebar(true);
-            if (currentTable) {
-                // Table is already displayed — clear stale field metadata so
-                // showTable re-reads from IDB with the freshly hydrated data,
-                // then re-render the table to pick up new records.
-                clearRecordCache();
-                delete META_FIELDS[currentTable];
-                await showTable(currentTable);
-            } else {
+            if (!currentTable) {
                 var firstTable = Object.keys(META_TABLES)[0];
                 if (firstTable) {
                     await showTable(firstTable);
