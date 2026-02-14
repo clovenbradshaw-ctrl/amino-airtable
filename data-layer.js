@@ -1229,10 +1229,29 @@ var AminoData = (function() {
     }
 
     async function getRecord(recordId) {
-        // Online-only mode: serve from in-memory cache only (no IndexedDB).
+        // Online-only mode: serve from in-memory cache, fall back to API.
         if (_onlineOnlyMode) {
             if (_recordCacheById[recordId]) {
                 return cloneRecord(_recordCacheById[recordId]);
+            }
+            // Fetch single record from API when not in cache
+            try {
+                var data = await apiFetch('/amino-record?recordId=' + encodeURIComponent(recordId), 'onlineRead');
+                if (data && data.record) {
+                    var rec = data.record;
+                    var record = {
+                        id: rec.id,
+                        tableId: rec.tableId || rec.table_id,
+                        tableName: rec.tableName || rec.table_name || '',
+                        fields: rec.fields || {},
+                        lastSynced: rec.lastSynced || rec.last_synced_at || new Date().toISOString()
+                    };
+                    if (_isTombstone(record)) return null;
+                    cacheRecord(record);
+                    return cloneRecord(record);
+                }
+            } catch (e) {
+                console.warn('[AminoData] getRecord API fallback failed for', recordId, ':', e.message);
             }
             return null;
         }
