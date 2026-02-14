@@ -18043,6 +18043,9 @@ async function hydrateFromWebhooks() {
                                         fieldName: fMeta.fieldName || recId,
                                         fieldType: fMeta.fieldType || 'singleLineText'
                                     };
+                                    if (fMeta.options && typeof fMeta.options === 'object') {
+                                        fieldMeta.options = fMeta.options;
+                                    }
                                     META_FIELDS[tableId][recId] = fieldMeta;
                                     fieldsToSave.push(fieldMeta);
                                     if (!existing) totalFields++;
@@ -24090,7 +24093,11 @@ function _applyRelationalColumns(tableId, fields, recordMap) {
         var linkFieldName = _fIdToName[linkFieldId] || linkFieldId;
         for (var rid in recordMap) {
             var row = recordMap[rid];
-            var linkedIds = _resolveLinkedIds(row[linkFieldId] || row[linkFieldName]);
+            // Only compute count if the link field actually exists in the record.
+            // If missing, preserve any existing server-computed value.
+            var linkRaw = row[linkFieldId] !== undefined ? row[linkFieldId] : row[linkFieldName];
+            if (linkRaw === undefined) continue;
+            var linkedIds = _resolveLinkedIds(linkRaw);
             row[cf.fieldId] = linkedIds.length;
             if (cf.fieldName && cf.fieldName !== cf.fieldId) {
                 row[cf.fieldName] = linkedIds.length;
@@ -24124,7 +24131,11 @@ function _applyRelationalColumns(tableId, fields, recordMap) {
 
         for (var rid in recordMap) {
             var row = recordMap[rid];
-            var linkedIds = _resolveLinkedIds(row[linkFieldId] || row[linkFieldName]);
+            // Only compute lookup/rollup if the link field exists in the record.
+            // If missing, preserve any existing server-computed value.
+            var linkRaw = row[linkFieldId] !== undefined ? row[linkFieldId] : row[linkFieldName];
+            if (linkRaw === undefined) continue;
+            var linkedIds = _resolveLinkedIds(linkRaw);
 
             if (linkedIds.length === 0) {
                 var emptyVal = isRollup ? null : [];
@@ -24135,13 +24146,20 @@ function _applyRelationalColumns(tableId, fields, recordMap) {
 
             // Resolve values from linked records
             var values = [];
+            var anyResolved = false;
             for (var li = 0; li < linkedIds.length; li++) {
                 var linkedFields = _getLinkedRecordFields(linkedTableId, linkedIds[li]);
                 if (!linkedFields) continue;
+                anyResolved = true;
                 var val = linkedFields[foreignFieldId];
                 if (val === undefined) val = linkedFields[foreignFieldName];
                 values.push(val);
             }
+
+            // If linked records exist but none could be resolved from memory,
+            // preserve any existing server-computed value rather than overwriting
+            // with an empty result.
+            if (!anyResolved && linkedIds.length > 0) continue;
 
             var result;
             if (isRollup) {
