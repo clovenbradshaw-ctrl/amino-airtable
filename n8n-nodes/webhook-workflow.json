@@ -466,6 +466,124 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [416, 1120]
+    },
+    {
+      "parameters": {
+        "path": "amino-fields",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "a1b2c3d4-5e6f-7a8b-9c0d-e1f2a3b4c5d6",
+      "name": "GET /fields",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-256, 1280],
+      "webhookId": "amino-fields"
+    },
+    {
+      "parameters": {
+        "url": "https://app.aminoimmigration.com/_matrix/client/v3/account/whoami",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || 'Bearer ' + ($json.query.access_token || '') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "b2c3d4e5-6f7a-8b9c-0d1e-f2a3b4c5d6e7",
+      "name": "Auth /fields",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-32, 1280]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "exists", "singleValue": true }, "id": "a1b2c3d4-auth-fields-cond1" }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "authenticated"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3 },
+                "conditions": [{ "id": "a1b2c3d4-auth-fields-cond2", "leftValue": "={{ $json.user_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notExists", "singleValue": true } }],
+                "combinator": "and"
+              },
+              "renameOutput": true, "outputKey": "unauthorized"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [192, 1280],
+      "id": "c3d4e5f6-7a8b-9c0d-1e2f-a3b4c5d6e7f8",
+      "name": "Switch5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT field_id, table_id, field_name, field_type, is_computed, options FROM amino.field_registry WHERE table_id = '{{ $('GET /fields').first().json.query.tableId }}' ORDER BY field_name;",
+        "options": {}
+      },
+      "id": "d4e5f6a7-8b9c-0d1e-2f3a-b4c5d6e7f8a9",
+      "name": "Query Fields",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [416, 1280],
+      "credentials": {
+        "postgres": {
+          "id": "PKlgmlqQf0SbnPZT",
+          "name": "Amino State DB"
+        }
+      },
+      "settings": {
+        "alwaysOutputData": true
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /fields').first().json.query.tableId, fields: $input.all().filter(i => i.json.field_id).map(i => ({ fieldId: i.json.field_id, tableId: i.json.table_id, fieldName: i.json.field_name, fieldType: i.json.field_type, isComputed: i.json.is_computed, options: i.json.options })) }) }}",
+        "options": {}
+      },
+      "id": "e5f6a7b8-9c0d-1e2f-3a4b-c5d6e7f8a9b0",
+      "name": "Respond Fields",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [640, 1280]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'unauthorized', message: 'Valid Matrix access token required' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "f6a7b8c9-0d1e-2f3a-4b5c-d6e7f8a9b0c1",
+      "name": "401 /fields",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [416, 1440]
     }
   ],
   "connections": {
@@ -484,7 +602,11 @@
     "GET /records/since": { "main": [[{ "node": "Auth /since", "type": "main", "index": 0 }]] },
     "Auth /since": { "main": [[{ "node": "Switch4", "type": "main", "index": 0 }]] },
     "Switch4": { "main": [[{ "node": "Query Records Since", "type": "main", "index": 0 }], [{ "node": "401 /since", "type": "main", "index": 0 }]] },
-    "Query Records Since": { "main": [[{ "node": "Respond Records Since", "type": "main", "index": 0 }]] }
+    "Query Records Since": { "main": [[{ "node": "Respond Records Since", "type": "main", "index": 0 }]] },
+    "GET /fields": { "main": [[{ "node": "Auth /fields", "type": "main", "index": 0 }]] },
+    "Auth /fields": { "main": [[{ "node": "Switch5", "type": "main", "index": 0 }]] },
+    "Switch5": { "main": [[{ "node": "Query Fields", "type": "main", "index": 0 }], [{ "node": "401 /fields", "type": "main", "index": 0 }]] },
+    "Query Fields": { "main": [[{ "node": "Respond Fields", "type": "main", "index": 0 }]] }
   },
   "pinData": {},
   "meta": {

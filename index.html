@@ -16669,6 +16669,10 @@ async function showTable(tableId) {
     // Keep META_VIEWS cached since it's small and used by sidebar for instant rendering
     if (currentTable && currentTable !== tableId) {
         delete META_FIELDS[currentTable];
+        // Clear field registry fetch flag so it's re-fetched when table is visited again
+        if (typeof _fieldRegistryFetched !== 'undefined') {
+            delete _fieldRegistryFetched[currentTable];
+        }
     }
     // Release previous record IDs
     originalRecordIds = [];
@@ -16762,6 +16766,11 @@ async function showTable(tableId) {
         views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
     }
 
+    // Fetch field registry metadata (formula/lookup/rollup definitions) from
+    // Postgres. This is non-blocking: we fire it early and await before render
+    // so formula definitions are available when _applyFormulaColumns runs.
+    var fieldRegistryPromise = fetchFieldRegistry(tableId);
+
     originalRecordIds = recordIds;
     currentRecordIds = originalRecordIds;
     totalRecords = currentRecordIds.length;
@@ -16800,6 +16809,11 @@ async function showTable(tableId) {
         renderFieldsDropdown();
         updateFieldsCount();
     });
+
+    // Wait for field registry to complete before rendering so formula
+    // definitions are available for _applyFormulaColumns.
+    await fieldRegistryPromise;
+    if (navVersion !== myNav) return;
 
     // Now render full table with data
     await renderTable();
@@ -24421,6 +24435,114 @@ function computedFieldVisual(fieldType) {
 // ============ Formula Column Computation ============
 // Compute formula-type column values for every record in a recordMap.
 // Uses the formula engine exposed by src/formulas/bridge.js (ES module).
+// ── Field registry fetch — pulls formula/lookup/rollup definitions ────
+// The amino.field_registry table in Postgres stores Airtable field metadata
+// including the options JSONB column which contains formula expressions,
+// lookup/rollup configuration, and result type info. This data is critical
+// for client-side formula evaluation but isn't included in the /amino-records
+// response. We fetch it separately and merge into META_FIELDS.
+
+var _fieldRegistryFetched = {};  // tableId -> true (avoids redundant fetches)
+
+async function fetchFieldRegistry(tableId) {
+    if (_fieldRegistryFetched[tableId]) return;
+
+    try {
+        var matrixToken = (typeof MatrixClient !== 'undefined' && MatrixClient.getAccessToken && MatrixClient.getAccessToken())
+            ? MatrixClient.getAccessToken()
+            : (typeof session !== 'undefined' && session && session.accessToken ? session.accessToken : null);
+
+        if (!matrixToken) return;
+
+        var url = N8N_WEBHOOK_BASE + '/amino-fields?tableId=' + encodeURIComponent(tableId) +
+                  '&access_token=' + encodeURIComponent(matrixToken);
+
+        var response = await fetch(url);
+        if (!response.ok) return;
+
+        var data = await response.json();
+        var fields = data.fields;
+        if (!Array.isArray(fields) || fields.length === 0) return;
+
+        if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+
+        for (var i = 0; i < fields.length; i++) {
+            var f = fields[i];
+            if (!f.fieldId) continue;
+
+            var existing = META_FIELDS[tableId][f.fieldId];
+            if (existing) {
+                // Merge: preserve existing data but fill in missing metadata
+                if (f.fieldType && (!existing.fieldType || existing.fieldType === 'unknown' || existing._placeholder)) {
+                    existing.fieldType = f.fieldType;
+                }
+                if (f.fieldName && (!existing.fieldName || existing.fieldName === f.fieldId)) {
+                    existing.fieldName = f.fieldName;
+                }
+                // Always update options from field_registry — this is the
+                // authoritative source for formula/lookup/rollup definitions.
+                if (f.options && typeof f.options === 'object' && Object.keys(f.options).length > 0) {
+                    existing.options = f.options;
+                }
+                if (f.isComputed != null) {
+                    existing.isComputed = f.isComputed;
+                }
+                delete existing._placeholder;
+            } else {
+                // New field from registry
+                META_FIELDS[tableId][f.fieldId] = {
+                    tableId: f.tableId || tableId,
+                    fieldId: f.fieldId,
+                    fieldName: f.fieldName || f.fieldId,
+                    fieldType: f.fieldType || 'unknown',
+                    options: f.options || {},
+                    isComputed: f.isComputed || false
+                };
+            }
+
+            // Persist to IndexedDB so formulas work offline
+            try {
+                var fieldToSave = META_FIELDS[tableId][f.fieldId];
+                if (typeof saveField === 'function') {
+                    await saveField(fieldToSave);
+                }
+            } catch (_e) {
+                // IndexedDB write failed — field metadata still in memory
+            }
+        }
+
+        // Invalidate compiled formula cache for this table since options changed
+        delete _compiledFormulaCache[tableId];
+        delete _compiledFormulaCacheKeys[tableId];
+        _formulaCompileWarned = {};
+
+        _fieldRegistryFetched[tableId] = true;
+
+        // Also fetch field registries for linked tables (needed for lookups/rollups).
+        // We discover linked table IDs from multipleRecordLinks fields' options.
+        var linkedTableIds = new Set();
+        var tableFields = META_FIELDS[tableId] || {};
+        for (var fid in tableFields) {
+            var tf = tableFields[fid];
+            if (tf && tf.options && tf.options.linkedTableId) {
+                linkedTableIds.add(tf.options.linkedTableId);
+            }
+        }
+        // Fetch each linked table's field registry in parallel (non-blocking)
+        var linkedPromises = [];
+        linkedTableIds.forEach(function(ltid) {
+            if (!_fieldRegistryFetched[ltid]) {
+                linkedPromises.push(fetchFieldRegistry(ltid));
+            }
+        });
+        if (linkedPromises.length > 0) {
+            await Promise.all(linkedPromises);
+        }
+    } catch (err) {
+        console.warn('[FieldRegistry] Failed to fetch field registry for ' + tableId + ':', err.message);
+    }
+}
+
 // Called from renderTable() and renderRecordProfile() so that ALL rows
 // display computed formula values, not just rows that had values stored.
 
