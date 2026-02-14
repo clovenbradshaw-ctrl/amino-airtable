@@ -18043,6 +18043,14 @@ async function hydrateFromWebhooks() {
                                         fieldName: fMeta.fieldName || recId,
                                         fieldType: fMeta.fieldType || 'singleLineText'
                                     };
+                                    // Preserve field options (formula expressions, linked table config,
+                                    // recordLinkFieldId, fieldIdInLinkedTable, etc.) — these are
+                                    // critical for formula computation, edge building, and relational
+                                    // field resolution.
+                                    if (fMeta.options) fieldMeta.options = fMeta.options;
+                                    if (fMeta.readOnly != null) fieldMeta.readOnly = fMeta.readOnly;
+                                    if (fMeta.result) fieldMeta.result = fMeta.result;
+                                    if (fMeta.description) fieldMeta.description = fMeta.description;
                                     META_FIELDS[tableId][recId] = fieldMeta;
                                     fieldsToSave.push(fieldMeta);
                                     if (!existing) totalFields++;
@@ -18239,11 +18247,35 @@ async function webhookIncrementalSync() {
                 if (records.length === 0) continue;
 
                 var dataRecords = [];
+                var fieldsToSave = [];
                 for (var r = 0; r < records.length; r++) {
                     var rec = records[r];
-                    // Only sync actual records (rec*), skip schema metadata (fld*, viw*)
                     var recId = rec.id || '';
-                    if (!recId.startsWith('rec')) continue;
+
+                    // Extract field metadata from fld* records (schema updates)
+                    if (recId.startsWith('fld')) {
+                        var fMeta = rec.fields;
+                        if (typeof fMeta === 'string') {
+                            try { fMeta = JSON.parse(fMeta); } catch (e) { fMeta = null; }
+                        }
+                        if (fMeta && typeof fMeta === 'object' && !Array.isArray(fMeta) && fMeta.fieldName) {
+                            if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+                            var fieldMeta = {
+                                tableId: tableId,
+                                fieldId: recId,
+                                fieldName: fMeta.fieldName || recId,
+                                fieldType: fMeta.fieldType || 'singleLineText'
+                            };
+                            if (fMeta.options) fieldMeta.options = fMeta.options;
+                            if (fMeta.readOnly != null) fieldMeta.readOnly = fMeta.readOnly;
+                            if (fMeta.result) fieldMeta.result = fMeta.result;
+                            if (fMeta.description) fieldMeta.description = fMeta.description;
+                            META_FIELDS[tableId][recId] = fieldMeta;
+                            fieldsToSave.push(fieldMeta);
+                        }
+                        continue;
+                    }
+                    if (!recId.startsWith('rec')) continue;  // Skip viw*, etc.
 
                     var fields = rec.fields;
                     if (!fields) continue;
@@ -18262,8 +18294,8 @@ async function webhookIncrementalSync() {
                     });
                 }
 
-                if (dataRecords.length > 0) {
-                    await saveBatch([], [], [], dataRecords);
+                if (dataRecords.length > 0 || fieldsToSave.length > 0) {
+                    await saveBatch([], fieldsToSave, [], dataRecords);
                     totalUpdated += dataRecords.length;
                 }
             } catch (tableErr) {
@@ -18354,6 +18386,9 @@ function _startBackgroundHydration() {
     _backgroundHydrationInFlight = (async function() {
         var hydrated = false;
         var source = AminoHydration.getHydrationSource(); // default: 'postgres'
+        // Show loading overlay so the user sees progress during first-time hydration
+        showLoadingOverlay();
+        updateLoadingOverlay('Downloading your data...', 'Preparing...', 0, 0, 0, 0, null);
         SyncBanner.show('Downloading your data in the background...', { progress: 0 });
         console.log('[BackgroundHydration] Hydration source:', source);
 
@@ -18614,6 +18649,9 @@ function _startBackgroundHydration() {
                 }
             }
 
+            // Hydration complete — dismiss the loading overlay
+            hideLoadingOverlay();
+
             // Notify Interface and other listeners that data has been hydrated
             // so they can refresh their views with the complete dataset.
             window.dispatchEvent(new CustomEvent('amino:sync', {
@@ -18622,7 +18660,6 @@ function _startBackgroundHydration() {
 
             // Backfill field history in background (do not block app access)
             try {
-                updateLoadingOverlay('Backfilling history...', 'Reading Matrix room timelines...', 0, 0, 0, 0, null);
                 await backfillHistoryFromMatrix();
             } catch (backfillErr) {
                 console.warn('[init] History backfill failed (non-fatal):', backfillErr);
@@ -18632,6 +18669,7 @@ function _startBackgroundHydration() {
             updateStatus('Up to date', true, null, null);
             SyncBanner.hide();
         } else {
+            hideLoadingOverlay();
             updateStatus('No data available — waiting for sync', true, null, null);
             await renderSidebar(true);
         }
@@ -19123,8 +19161,8 @@ async function init() {
             await renderSidebar(true);
         }
 
-        // Prioritize app access: enter UI immediately, run room/data hydration in background.
-        hideLoadingOverlay();
+        // Don't hide the loading overlay here — _startBackgroundHydration() will
+        // show the overlay with download progress and hide it when hydration completes.
         updateStatus('Syncing data in background...', false, null, null);
 
         // Show the hydration source picker if this is the first hydration
