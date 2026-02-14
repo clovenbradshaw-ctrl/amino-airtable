@@ -17906,7 +17906,7 @@ async function webhookFetch(path, options) {
             // Treat this as a successful empty response, not a transient error.
             if (parseErr.message && parseErr.message.indexOf('Empty response body') !== -1) {
                 console.log('[webhookFetch] Empty response for ' + path + ' — treating as empty result set');
-                return {};
+                return { records: [] };
             }
             // Other parse failures (non-JSON body from proxy, etc.) may be
             // transient — retry with backoff.
