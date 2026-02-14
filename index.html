@@ -11510,6 +11510,22 @@ async function fetchAndProcessHistoryForRecord(tableId, recordId) {
     }
 }
 
+// Fetch event history from Postgres events API (amino.event_log) and build
+// field history entries. This is the primary on-demand history source —
+// events are queried when needed, not downloaded at hydration.
+async function fetchHistoryFromPostgresEvents(tableId, recordId) {
+    try {
+        var result = await AminoData.fetchEventsForRecord(recordId);
+        if (!result || !result.events || result.events.length === 0) {
+            return [];
+        }
+        return buildFieldHistoryFromRawEvents(tableId, recordId, result.events);
+    } catch (err) {
+        console.warn('[History] Postgres events API failed, will fall back to Matrix:', err.message);
+        return [];
+    }
+}
+
 // ============ View Folders ============
 
 function getFoldersForTable(tableId) {
@@ -19405,8 +19421,12 @@ async function openHistoryModal(tableId, recordId) {
         if (rawEvents && rawEvents.length > 0) {
             currentHistoryData = buildFieldHistoryFromRawEvents(tableId, recordId, rawEvents);
         } else {
-            // Fetch on-demand from Matrix rooms (not cached locally)
-            currentHistoryData = await fetchAndProcessHistoryForRecord(tableId, recordId);
+            // Fetch on-demand from Postgres events API (activity stream)
+            currentHistoryData = await fetchHistoryFromPostgresEvents(tableId, recordId);
+            // Fall back to Matrix rooms if Postgres returned nothing
+            if (!currentHistoryData || currentHistoryData.length === 0) {
+                currentHistoryData = await fetchAndProcessHistoryForRecord(tableId, recordId);
+            }
         }
         renderHistoryModal();
     } catch (err) {
@@ -19552,8 +19572,11 @@ async function revertFieldToHistoryState(tableId, recordId, fieldId, targetValue
     try {
         await editRecord(tableId, recordId, revertChanges);
 
-        // Refresh the history modal — fetch on-demand from Matrix rooms
-        currentHistoryData = await fetchAndProcessHistoryForRecord(tableId, recordId);
+        // Refresh the history modal — fetch on-demand from Postgres events API
+        currentHistoryData = await fetchHistoryFromPostgresEvents(tableId, recordId);
+        if (!currentHistoryData || currentHistoryData.length === 0) {
+            currentHistoryData = await fetchAndProcessHistoryForRecord(tableId, recordId);
+        }
         renderHistoryModal();
     } catch (err) {
         console.error('[Revert] Failed to revert field:', err);
@@ -23866,8 +23889,12 @@ async function renderProfileSyncHistory() {
                 history = history.slice(0, 100);
             }
         } else {
-            // Fetch on-demand from Matrix rooms (not cached locally)
-            history = await fetchAndProcessHistoryForRecord(profileCurrentTableId, profileCurrentRecordId);
+            // Fetch on-demand from Postgres events API (activity stream)
+            history = await fetchHistoryFromPostgresEvents(profileCurrentTableId, profileCurrentRecordId);
+            // Fall back to Matrix rooms if Postgres returned nothing
+            if (!history || history.length === 0) {
+                history = await fetchAndProcessHistoryForRecord(profileCurrentTableId, profileCurrentRecordId);
+            }
             // Limit to 100 most recent entries
             if (history && history.length > 100) {
                 history = history.slice(0, 100);

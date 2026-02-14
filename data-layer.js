@@ -2212,6 +2212,71 @@ var AminoData = (function() {
         window.addEventListener('beforeunload', _beforeUnloadHandler);
     }
 
+    // ============ Events API (Postgres activity stream) ============
+    // On-demand queries for event history — NOT downloaded during hydration.
+    // These hit the /amino-events-* webhook endpoints backed by amino.event_log.
+
+    async function fetchEventsForRecord(recordId) {
+        var data = await apiFetch(
+            '/amino-events-record?recordId=' + encodeURIComponent(recordId),
+            'onlineRead'
+        );
+        // Normalize response: add recordId to each event, map createdAt → created_at
+        var events = (data.events || []).map(function(e) {
+            return {
+                id: e.id,
+                recordId: recordId,
+                record_id: recordId,
+                created_at: e.createdAt,
+                operator: e.operator,
+                payload: e.payload,
+                uuid: e.uuid,
+                set: e.set
+            };
+        });
+        return { recordId: data.recordId, count: data.count, events: events };
+    }
+
+    async function fetchEventsSince(since, options) {
+        options = options || {};
+        var params = 'since=' + encodeURIComponent(since);
+        if (options.set) params += '&set=' + encodeURIComponent(options.set);
+        if (options.limit) params += '&limit=' + encodeURIComponent(options.limit);
+        var data = await apiFetch('/amino-events-since?' + params, 'onlineRead');
+        var events = (data.events || []).map(function(e) {
+            return {
+                id: e.id,
+                recordId: e.recordId,
+                record_id: e.recordId,
+                created_at: e.createdAt,
+                operator: e.operator,
+                payload: e.payload,
+                uuid: e.uuid,
+                set: e.set
+            };
+        });
+        return { since: data.since, count: data.count, events: events };
+    }
+
+    async function fetchEventsBySet(set, limit) {
+        var params = 'set=' + encodeURIComponent(set);
+        if (limit) params += '&limit=' + encodeURIComponent(limit);
+        var data = await apiFetch('/amino-events-set?' + params, 'onlineRead');
+        var events = (data.events || []).map(function(e) {
+            return {
+                id: e.id,
+                recordId: e.recordId,
+                record_id: e.recordId,
+                created_at: e.createdAt,
+                operator: e.operator,
+                payload: e.payload,
+                uuid: e.uuid,
+                set: e.set
+            };
+        });
+        return { set: data.set, count: data.count, events: events };
+    }
+
     // ============ Public API ============
 
     return {
@@ -2283,6 +2348,11 @@ var AminoData = (function() {
 
         // Sync deduplication (called by editRecord in index.html)
         trackOptimisticWrite: _trackOptimisticWrite,
+
+        // Events API (on-demand Postgres activity stream)
+        fetchEventsForRecord: fetchEventsForRecord,
+        fetchEventsSince: fetchEventsSince,
+        fetchEventsBySet: fetchEventsBySet,
 
         // Constants (read-only access)
         WEBHOOK_BASE_URL: WEBHOOK_BASE_URL,
