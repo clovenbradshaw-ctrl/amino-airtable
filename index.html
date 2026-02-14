@@ -13211,6 +13211,9 @@ async function trySynapseLogin() {
         // Password no longer needed
         password = null;
 
+        // Show loading overlay before hiding login screen to prevent blank screen gap
+        showLoadingOverlay();
+        updateLoadingOverlay('Signing in...', 'Setting up your workspace...', 0, 0, 0, 0, null);
         hideSynapseLoginScreen();
 
         // Decide whether to keep encrypted local data or clear for re-hydration.
@@ -13644,7 +13647,9 @@ async function tryOfflineUnlock() {
         password = null;
         document.getElementById('offline-unlock-password').value = '';
 
-        // 9. Hide offline unlock, show app with offline banner
+        // 9. Show loading overlay, then hide offline unlock and show app with offline banner
+        showLoadingOverlay();
+        setLoadingOverlayMode('local-memory');
         hideOfflineUnlockScreen();
         showOfflineModeBanner();
 
@@ -13653,6 +13658,7 @@ async function tryOfflineUnlock() {
             await init();
         } catch (initErr) {
             console.error('[OfflineUnlock] Init failed:', initErr);
+            hideLoadingOverlay();
             showOfflineUnlockScreen();
             showOfflineUnlockError('Failed to load cached data: ' + initErr.message);
             return;
@@ -19159,8 +19165,14 @@ async function init() {
     totalRecords = 0;
     lastEventTimestamp = null;
 
-    // Keep the auth screen visible while we restore local metadata.
-    // This avoids flashing an extra "local memory" overlay for returning users.
+    // Ensure loading overlay is visible during init — prevents blank screen
+    // between auth/login screen dismissal and first content render.
+    // Callers should have already shown it, but this is a safety net.
+    var overlay = document.getElementById('loading-overlay');
+    if (overlay && overlay.classList.contains('hidden')) {
+        showLoadingOverlay();
+        setLoadingOverlayMode('local-memory');
+    }
 
     // Load sidebar state (pinned, recent, expanded sections)
     loadSidebarState();
@@ -19209,6 +19221,8 @@ async function init() {
         try {
             console.log('[init] Attempting Tier 1 hydration via Box AMO snapshot');
             SyncStatusFeed.info('Attempting Box snapshot hydration...');
+            // Switch loading overlay to full progress mode for the long download
+            setLoadingOverlayMode('default');
             updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
             var boxResult = await hydrateFromBoxAmoFile();
             if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
@@ -36189,7 +36203,11 @@ window.addEventListener('beforeunload', function() {
                     encryptionEnabled = true;
                     _deferEncryptionUI = true;
 
-                    // Session + encryption restored — hide login and init app
+                    // Session + encryption restored — show loading overlay, then hide login and init app.
+                    // The loading overlay (z-index 200) covers the login screen (z-index 105)
+                    // so the user sees a seamless transition instead of a blank screen gap.
+                    showLoadingOverlay();
+                    setLoadingOverlayMode('local-memory');
                     hideSynapseLoginScreen();
                     try {
                         await init();
