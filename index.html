@@ -23963,7 +23963,203 @@ function _shouldSkipFormulaColumns(recordCount, formulaCount) {
     return (recordCount * formulaCount) > 50000;
 }
 
+// ── Relational field helpers (count, lookup, rollup) ──────────────────
+
+/**
+ * Synchronously fetch a linked record's fields from in-memory caches.
+ * Returns null if the record is not available in memory.
+ */
+function _getLinkedRecordFields(linkedTableId, recordId) {
+    if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[linkedTableId] &&
+        window.IN_MEMORY_DATA[linkedTableId][recordId]) {
+        return window.IN_MEMORY_DATA[linkedTableId][recordId];
+    }
+    var cacheKey = linkedTableId + '|' + recordId;
+    var cached = _recordCache.get(cacheKey);
+    if (cached && cached.fields) return cached.fields;
+    return null;
+}
+
+/**
+ * Apply a rollup aggregation function to an array of values.
+ */
+function _rollupAggregate(values, aggName) {
+    switch (aggName) {
+        case 'SUM':
+            return values.reduce(function(a, b) { return (a || 0) + (b || 0); }, 0);
+        case 'MAX': {
+            var nums = values.filter(function(v) { return typeof v === 'number'; });
+            return nums.length ? Math.max.apply(null, nums) : null;
+        }
+        case 'MIN': {
+            var nums = values.filter(function(v) { return typeof v === 'number'; });
+            return nums.length ? Math.min.apply(null, nums) : null;
+        }
+        case 'AVERAGE': {
+            var nums = values.filter(function(v) { return typeof v === 'number'; });
+            return nums.length ? nums.reduce(function(a, b) { return a + b; }, 0) / nums.length : null;
+        }
+        case 'COUNT':
+            return values.filter(function(v) { return typeof v === 'number'; }).length;
+        case 'COUNTA':
+            return values.filter(function(v) { return v != null && v !== ''; }).length;
+        case 'COUNTALL':
+            return values.length;
+        case 'CONCATENATE':
+        case 'ARRAYJOIN':
+            return values.map(function(v) { return v != null ? String(v) : ''; }).join(', ');
+        case 'ARRAYUNIQUE':
+            var seen = {};
+            return values.filter(function(v) {
+                var k = String(v);
+                if (seen[k]) return false;
+                seen[k] = true;
+                return true;
+            });
+        case 'ARRAYCOMPACT':
+            return values.filter(function(v) { return v != null && v !== ''; });
+        case 'AND':
+            return values.every(Boolean);
+        case 'OR':
+            return values.some(Boolean);
+        default:
+            return values.join(', ');
+    }
+}
+
+/**
+ * Resolve linked record IDs from a record's link field value.
+ * Handles both array-of-IDs and array-of-objects formats.
+ */
+function _resolveLinkedIds(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map(function(v) {
+        if (typeof v === 'string') return v;
+        if (v && typeof v === 'object' && v.id) return v.id;
+        return null;
+    }).filter(Boolean);
+}
+
+/**
+ * Compute count, lookup, and rollup fields for all records in recordMap.
+ * These are relational computations that resolve linked record data.
+ * Runs synchronously using in-memory data caches.
+ */
+function _applyRelationalColumns(tableId, fields, recordMap) {
+    if (_disableFormulaEvaluation) return;
+
+    var countFields = [];
+    var lookupFields = [];
+    var rollupFields = [];
+
+    for (var fid in fields) {
+        var f = fields[fid];
+        if (!f) continue;
+        var opts = f.options || {};
+        switch (f.fieldType) {
+            case 'count':
+                if (opts.recordLinkFieldId) countFields.push(f);
+                break;
+            case 'lookup':
+                if (opts.recordLinkFieldId && opts.fieldIdInLinkedTable) lookupFields.push(f);
+                break;
+            case 'rollup':
+                if (opts.recordLinkFieldId && opts.fieldIdInLinkedTable) rollupFields.push(f);
+                break;
+        }
+    }
+
+    if (countFields.length === 0 && lookupFields.length === 0 && rollupFields.length === 0) return;
+
+    // Build fieldId→fieldName map for current table
+    var _fIdToName = {};
+    for (var _fid in fields) {
+        var _f = fields[_fid];
+        if (_f && _f.fieldName) _fIdToName[_fid] = _f.fieldName;
+    }
+
+    // ── Count fields ──────────────────────────────────────────────
+    for (var ci = 0; ci < countFields.length; ci++) {
+        var cf = countFields[ci];
+        var linkFieldId = cf.options.recordLinkFieldId;
+        var linkFieldName = _fIdToName[linkFieldId] || linkFieldId;
+        for (var rid in recordMap) {
+            var row = recordMap[rid];
+            var linkedIds = _resolveLinkedIds(row[linkFieldId] || row[linkFieldName]);
+            row[cf.fieldId] = linkedIds.length;
+            if (cf.fieldName && cf.fieldName !== cf.fieldId) {
+                row[cf.fieldName] = linkedIds.length;
+            }
+        }
+    }
+
+    // ── Lookup and rollup fields ──────────────────────────────────
+    var relFields = lookupFields.concat(rollupFields);
+    if (relFields.length === 0) return;
+
+    for (var ri = 0; ri < relFields.length; ri++) {
+        var rf = relFields[ri];
+        var linkFieldId = rf.options.recordLinkFieldId;
+        var linkField = fields[linkFieldId];
+        if (!linkField || !linkField.options || !linkField.options.linkedTableId) continue;
+
+        var linkedTableId = linkField.options.linkedTableId;
+        var linkedTableFields = META_FIELDS[linkedTableId] || {};
+        var foreignFieldId = rf.options.fieldIdInLinkedTable;
+        var foreignFieldEntry = linkedTableFields[foreignFieldId];
+        var foreignFieldName = (foreignFieldEntry && foreignFieldEntry.fieldName) || foreignFieldId;
+        var linkFieldName = _fIdToName[linkFieldId] || linkFieldId;
+
+        var isRollup = rf.fieldType === 'rollup';
+        var aggName = '';
+        if (isRollup) {
+            var aggFormula = rf.options.formula || 'ARRAYJOIN(values)';
+            aggName = aggFormula.replace(/\(values\)/i, '').trim().toUpperCase();
+        }
+
+        for (var rid in recordMap) {
+            var row = recordMap[rid];
+            var linkedIds = _resolveLinkedIds(row[linkFieldId] || row[linkFieldName]);
+
+            if (linkedIds.length === 0) {
+                var emptyVal = isRollup ? null : [];
+                row[rf.fieldId] = emptyVal;
+                if (rf.fieldName && rf.fieldName !== rf.fieldId) row[rf.fieldName] = emptyVal;
+                continue;
+            }
+
+            // Resolve values from linked records
+            var values = [];
+            for (var li = 0; li < linkedIds.length; li++) {
+                var linkedFields = _getLinkedRecordFields(linkedTableId, linkedIds[li]);
+                if (!linkedFields) continue;
+                var val = linkedFields[foreignFieldId];
+                if (val === undefined) val = linkedFields[foreignFieldName];
+                values.push(val);
+            }
+
+            var result;
+            if (isRollup) {
+                result = _rollupAggregate(values, aggName);
+            } else {
+                result = values;
+            }
+
+            row[rf.fieldId] = result;
+            if (rf.fieldName && rf.fieldName !== rf.fieldId) {
+                row[rf.fieldName] = result;
+            }
+        }
+    }
+}
+
 function _applyFormulaColumns(tableId, fields, recordMap) {
+    if (_disableFormulaEvaluation) return;
+
+    // Compute count, lookup, and rollup fields first (they don't need the
+    // formula parser/compiler and may feed into formula fields).
+    _applyRelationalColumns(tableId, fields, recordMap);
+
     var engine = window._formulaEngine;
     if (!engine) return;
 
@@ -24128,6 +24324,13 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
 // Returns augmented copy of recordFields.
 function _applyFormulaSingleRecord(tableId, fields, recordFields, recordId) {
     if (_disableFormulaEvaluation) return recordFields;
+
+    // Compute count, lookup, and rollup fields for this single record.
+    var singleMap = {};
+    singleMap[recordId] = recordFields;
+    _applyRelationalColumns(tableId, fields, singleMap);
+    recordFields = singleMap[recordId];
+
     var engine = window._formulaEngine;
     if (!engine) return recordFields;
 
