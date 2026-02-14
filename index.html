@@ -16075,11 +16075,11 @@ async function selectTableView(tableId, viewId) {
 
     // If switching to a different table, load it first
     if (currentTable !== tableId) {
-        // Release previous table's field data to free memory
-        // Keep META_VIEWS cached since it's small and used by sidebar for instant rendering
-        if (currentTable) {
-            delete META_FIELDS[currentTable];
-        }
+        // Keep META_FIELDS cached across table switches — the data is small
+        // (~4-16 KB per table) and is needed by lookup/rollup fields that
+        // reference linked tables, as well as by the Interface view which
+        // renders multiple tables on a single page.  Stale entries are
+        // invalidated on hydration (amino:sync handler).
         originalRecordIds = [];
         currentRecordIds = [];
 
@@ -16094,10 +16094,14 @@ async function selectTableView(tableId, viewId) {
         // Show loading state immediately
         showTableLoading('Loading table structure...');
 
-        // Load fields, views, and record IDs in parallel
+        // Use cached metadata when available to skip IDB reads.
+        var cachedFields = META_FIELDS[tableId] && Object.keys(META_FIELDS[tableId]).length > 0;
+        var cachedViews = META_VIEWS[tableId] && Object.keys(META_VIEWS[tableId]).length > 0;
+
+        // Load only what's missing, always need record IDs from IDB
         var parallelResults = await Promise.all([
-            getFieldsForTable(tableId),
-            getViewsForTable(tableId),
+            cachedFields ? Promise.resolve(null) : getFieldsForTable(tableId),
+            cachedViews ? Promise.resolve(null) : getViewsForTable(tableId),
             getRecordIdsForTable(tableId)
         ]);
         if (navVersion !== myNav) return;
@@ -16106,11 +16110,14 @@ async function selectTableView(tableId, viewId) {
         var views = parallelResults[1];
         var recordIds = parallelResults[2];
 
-        META_FIELDS[tableId] = {};
-        fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
-
-        META_VIEWS[tableId] = {};
-        views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+        if (fields) {
+            META_FIELDS[tableId] = {};
+            fields.forEach(f => META_FIELDS[tableId][f.fieldId] = f);
+        }
+        if (views) {
+            META_VIEWS[tableId] = {};
+            views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
+        }
 
         originalRecordIds = recordIds;
         currentRecordIds = originalRecordIds;
@@ -16337,11 +16344,11 @@ async function showTable(tableId) {
     // Clean up special view state (Events, Sync Status)
     cleanupSpecialViewState();
 
-    // Release previous table's field data to free memory (re-loaded on demand)
-    // Keep META_VIEWS cached since it's small and used by sidebar for instant rendering
-    if (currentTable && currentTable !== tableId) {
-        delete META_FIELDS[currentTable];
-    }
+    // Keep META_FIELDS cached across table switches — the data is small
+    // (~4-16 KB per table) and is needed by lookup/rollup fields that
+    // reference linked tables, as well as by the Interface view which
+    // renders multiple tables on a single page.  Stale entries are
+    // invalidated on hydration (amino:sync handler).
     // Release previous record IDs
     originalRecordIds = [];
     currentRecordIds = [];
