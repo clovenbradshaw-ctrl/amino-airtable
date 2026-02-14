@@ -459,7 +459,12 @@ var AminoData = (function() {
                 throw new Error(errMsg);
             }
 
-            return response.json();
+            var text = await response.text();
+            if (!text || !text.trim()) {
+                console.log('[AminoData] Empty response for ' + path + ' — treating as empty result set');
+                return { records: [] };
+            }
+            return JSON.parse(text);
         }
 
         // All retries exhausted

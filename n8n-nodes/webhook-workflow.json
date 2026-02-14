@@ -190,7 +190,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/:tableId').first().json.query.tableId }}' AND table_name != '' ORDER BY last_synced_at DESC;",
+        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/:tableId').first().json.query.tableId }}' ORDER BY last_synced_at DESC;",
         "options": {}
       },
       "id": "f3c59e25-dde4-40ef-8fef-c89918d54689",
@@ -203,12 +203,15 @@
           "id": "PKlgmlqQf0SbnPZT",
           "name": "Amino State DB"
         }
+      },
+      "settings": {
+        "alwaysOutputData": true
       }
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/:tableId').first().json.query.tableId, count: $input.all().length, records: $input.all().map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
+        "responseBody": "={{ JSON.stringify({ tableId: $('GET /records/:tableId').first().json.query.tableId, count: $input.all().filter(i => i.json.record_id).length, records: $input.all().filter(i => i.json.record_id).map(i => ({ id: i.json.record_id, tableName: i.json.table_name, fields: i.json.fields, lastSynced: i.json.last_synced_at })) }) }}",
         "options": {}
       },
       "id": "f2560193-799d-4de6-8985-16516ed8acc5",
@@ -420,7 +423,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/since').first().json.query.tableId }}' AND table_name != '' AND last_synced_at > '{{ $('GET /records/since').first().json.query.since }}'::timestamptz ORDER BY last_synced_at DESC;",
+        "query": "=SELECT record_id, table_name, fields, last_synced_at FROM amino.current_state WHERE table_id = '{{ $('GET /records/since').first().json.query.tableId }}' AND last_synced_at > '{{ $('GET /records/since').first().json.query.since }}'::timestamptz ORDER BY last_synced_at DESC;",
         "options": {}
       },
       "id": "1bd52406-1f02-4e31-8f0c-ba40c2ba5bba",
@@ -433,6 +436,9 @@
           "id": "PKlgmlqQf0SbnPZT",
           "name": "Amino State DB"
         }
+      },
+      "settings": {
+        "alwaysOutputData": true
       }
     },
     {
