@@ -16403,11 +16403,9 @@ async function selectTableView(tableId, viewId) {
 
     // If switching to a different table, load it first
     if (currentTable !== tableId) {
-        // Release previous table's field data to free memory
-        // Keep META_VIEWS cached since it's small and used by sidebar for instant rendering
-        if (currentTable) {
-            delete META_FIELDS[currentTable];
-        }
+        // Keep META_FIELDS cached across table switches so the Interface view
+        // (which may reference multiple tables) always has field metadata available.
+        // Field metadata is small (~1-5KB per table) and re-fetching from IDB is slow.
         originalRecordIds = [];
         currentRecordIds = [];
 
@@ -16665,11 +16663,11 @@ async function showTable(tableId) {
     // Clean up special view state (Events, Sync Status)
     cleanupSpecialViewState();
 
-    // Release previous table's field data to free memory (re-loaded on demand)
-    // Keep META_VIEWS cached since it's small and used by sidebar for instant rendering
+    // Keep META_FIELDS cached across table switches so the Interface view
+    // (which may reference multiple tables) always has field metadata available.
+    // Only clear the field registry fetch flag so updated formula definitions
+    // are re-fetched from Postgres on revisit.
     if (currentTable && currentTable !== tableId) {
-        delete META_FIELDS[currentTable];
-        // Clear field registry fetch flag so it's re-fetched when table is visited again
         if (typeof _fieldRegistryFetched !== 'undefined') {
             delete _fieldRegistryFetched[currentTable];
         }
@@ -16813,6 +16811,28 @@ async function showTable(tableId) {
     // Wait for field registry to complete before rendering so formula
     // definitions are available for _applyFormulaColumns.
     await fieldRegistryPromise;
+    if (navVersion !== myNav) return;
+
+    // Pre-load linked table records so lookup/rollup/count formulas can
+    // resolve cross-table references without returning null. This reads
+    // linked records into the LRU cache before renderTable runs formulas.
+    var _preloadFields = META_FIELDS[tableId] || {};
+    if (Object.keys(_preloadFields).length > 0 && recordIds.length > 0) {
+        try {
+            // Build a lightweight recordMap from the first page of IDs to scan
+            // for linked record references. Full map is built inside renderTable;
+            // here we only need enough to discover which linked IDs exist.
+            var _preloadSample = await getRecordsByIds(tableId, recordIds.slice(0, PAGE_SIZE || 100));
+            var _preloadMap = {};
+            for (var _pi = 0; _pi < _preloadSample.length; _pi++) {
+                var _pr = _preloadSample[_pi];
+                _preloadMap[_pr.recordId || _pr.id] = _pr.fields || _pr;
+            }
+            await _preloadLinkedTableRecords(tableId, _preloadFields, _preloadMap);
+        } catch (_preErr) {
+            console.warn('[showTable] Pre-load linked records failed (non-fatal):', _preErr.message);
+        }
+    }
     if (navVersion !== myNav) return;
 
     // Now render full table with data
@@ -18356,6 +18376,31 @@ async function hydrateFromWebhooks() {
                 var recordsData = await webhookFetch('/amino-records?tableId=' + encodeURIComponent(tableId));
                 var records = recordsData.records || [];
 
+                // Mark-and-sweep: collect server-side record IDs, then delete
+                // any local records that no longer exist on the server.
+                // This prevents stale/deleted records from persisting locally.
+                var serverRecordIds = {};
+                for (var _si = 0; _si < records.length; _si++) {
+                    var _sId = records[_si].id || '';
+                    if (_sId.startsWith('rec')) serverRecordIds[_sId] = true;
+                }
+                if (Object.keys(serverRecordIds).length > 0 && db) {
+                    try {
+                        var localIds = await getRecordIdsForTable(tableId);
+                        var staleIds = localIds.filter(function(rid) { return !serverRecordIds[rid]; });
+                        if (staleIds.length > 0) {
+                            var delTx = db.transaction('data', 'readwrite');
+                            var delStore = delTx.objectStore('data');
+                            for (var _di = 0; _di < staleIds.length; _di++) {
+                                delStore.delete([tableId, staleIds[_di]]);
+                            }
+                            console.log('[WebhookHydration] Removed', staleIds.length, 'stale records from', tableName);
+                        }
+                    } catch (_sweepErr) {
+                        console.warn('[WebhookHydration] Stale record cleanup failed for', tableName, '(non-fatal):', _sweepErr.message);
+                    }
+                }
+
                 if (records.length > 0) {
                     var BATCH = 200;
                     for (var b = 0; b < records.length; b += BATCH) {
@@ -18895,6 +18940,11 @@ function _startBackgroundHydration() {
                     console.log('[BackgroundHydration] Postgres webhook hydration succeeded:', webhookResult2.totalRecords, 'records');
                     await setSyncMeta('lastWebhookSync', webhookResult2.nextCursor || new Date().toISOString());
                     try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
+                    // Warn if some tables failed so users know data may be incomplete
+                    if (webhookResult2.partial && webhookResult2.failedTables > 0) {
+                        SyncStatusFeed.warn('Partial hydration: ' + webhookResult2.failedTables + ' of ' + webhookResult2.totalTables + ' tables failed to download');
+                        SyncBanner.show(webhookResult2.failedTables + ' table' + (webhookResult2.failedTables !== 1 ? 's' : '') + ' failed to sync — use Settings → Refresh to retry', { error: false });
+                    }
                 }
             } catch (pgErr) {
                 console.warn('[BackgroundHydration] Postgres webhook hydration failed:', pgErr.message || pgErr);
@@ -19473,9 +19523,11 @@ async function init() {
             await renderSidebar(true);
         }
 
-        // Prioritize app access: enter UI immediately, run room/data hydration in background.
-        hideLoadingOverlay();
+        // Keep the loading overlay visible during hydration so users see
+        // progress instead of an empty app shell. The overlay will be hidden
+        // after hydration completes and the first table is rendered.
         updateStatus('Syncing data in background...', false, null, null);
+        updateLoadingOverlay('Downloading data...', 'Preparing to sync...', 0, 0, 0, 0, null);
 
         // Show the hydration source picker if this is the first hydration
         // (no prior successful hydration in localStorage). Otherwise use the
@@ -19484,17 +19536,27 @@ async function init() {
         try { hasHydratedBefore = !!localStorage.getItem('amino_hydration_complete'); } catch(e) {}
 
         if (!hasHydratedBefore) {
-            // First time — show picker, then start hydration with chosen source
+            // First time — show picker, then start hydration with chosen source.
+            // Hide overlay so the picker is visible.
+            hideLoadingOverlay();
             showHydrationPicker().then(function(chosenSource) {
                 console.log('[init] User chose hydration source:', chosenSource);
-                _startBackgroundHydration().catch(function(err) {
+                showLoadingOverlay();
+                updateLoadingOverlay('Downloading data...', 'Starting ' + chosenSource + ' sync...', 0, 0, 0, 0, null);
+                _startBackgroundHydration().then(function() {
+                    hideLoadingOverlay();
+                }).catch(function(err) {
                     console.warn('[init] Background hydration failed:', err);
+                    hideLoadingOverlay();
                 });
             });
         } else {
-            // Returning user — use persisted source (default: postgres)
-            _startBackgroundHydration().catch(function(err) {
+            // Returning user — keep overlay visible, use persisted source
+            _startBackgroundHydration().then(function() {
+                hideLoadingOverlay();
+            }).catch(function(err) {
                 console.warn('[init] Background hydration failed:', err);
+                hideLoadingOverlay();
             });
         }
 
@@ -23630,8 +23692,13 @@ function _flushSyncRenderUpdates() {
     var currentTableUpdates = pending.filter(function(u) { return u.tableId === currentTable; });
     if (currentTableUpdates.length === 0) return;
 
-    // Try targeted cell updates for each changed record on the current page
-    var didFullRender = false;
+    // Try targeted cell updates for each changed record on the current page.
+    // If the record is NOT on the current page, skip the full re-render to
+    // avoid DOM destruction/flicker. The filter cache was already invalidated
+    // so the next explicit navigation (page change, filter toggle) will pick
+    // up the changes. Only do a full re-render if we detect a genuinely new
+    // record that wasn't in the original set (which would change pagination).
+    var needsFullRender = false;
     for (var i = 0; i < currentTableUpdates.length; i++) {
         var upd = currentTableUpdates[i];
         var row = document.querySelector('tr[data-record-id="' + CSS.escape(upd.recordId) + '"]');
@@ -23648,12 +23715,15 @@ function _flushSyncRenderUpdates() {
                     if (val !== undefined) cell.innerHTML = formatCell(val, f?.fieldType);
                 }
             });
-        } else if (!didFullRender) {
-            // Record not visible or no field data — full re-render (once)
-            _inlineEditingCell = null;
-            renderTable();
-            didFullRender = true;
+        } else if (!row && upd.recordId && originalRecordIds && originalRecordIds.indexOf(upd.recordId) === -1) {
+            // Genuinely new record not in our set — need full re-render for pagination
+            needsFullRender = true;
         }
+        // else: record exists but is on a different page — no re-render needed
+    }
+    if (needsFullRender) {
+        _inlineEditingCell = null;
+        renderTable();
     }
 }
 
@@ -24586,8 +24656,12 @@ function invalidateFormulaResultCache(tableId, recordId) {
 
 function _shouldSkipFormulaColumns(recordCount, formulaCount) {
     if (_disableFormulaEvaluation) return true;
-    // Budget guard for very large formula workloads.
-    return (recordCount * formulaCount) > 50000;
+    // Budget guard: only skip on truly massive workloads (raised from 50K).
+    // Previous 50K threshold silently skipped formulas on moderately-sized
+    // tables (e.g. 200 records × 250 fields). The new 500K threshold still
+    // protects against runaway computation while letting most real tables
+    // compute all formulas.
+    return (recordCount * formulaCount) > 500000;
 }
 
 // ── Relational field helpers (count, lookup, rollup) ──────────────────
@@ -24605,6 +24679,57 @@ function _getLinkedRecordFields(linkedTableId, recordId) {
     var cached = _recordCache.get(cacheKey);
     if (cached && cached.fields) return cached.fields;
     return null;
+}
+
+/**
+ * Pre-load linked table records needed by lookup/rollup/count fields.
+ * Scans the field metadata for relational fields, collects linked record IDs
+ * from the current recordMap, and fetches any that aren't already in cache.
+ * This ensures _getLinkedRecordFields() won't return null during formula eval.
+ */
+async function _preloadLinkedTableRecords(tableId, fields, recordMap) {
+    // Collect all linked table IDs and the record IDs we need from them
+    var needed = {}; // linkedTableId -> Set of recordIds
+    for (var fid in fields) {
+        var f = fields[fid];
+        if (!f || !f.options) continue;
+        var linkFieldId = null;
+        if (f.fieldType === 'count' || f.fieldType === 'lookup' || f.fieldType === 'rollup') {
+            linkFieldId = f.options.recordLinkFieldId;
+        }
+        if (!linkFieldId) continue;
+        var linkField = fields[linkFieldId];
+        if (!linkField || !linkField.options || !linkField.options.linkedTableId) continue;
+        var linkedTableId = linkField.options.linkedTableId;
+        if (!needed[linkedTableId]) needed[linkedTableId] = {};
+        // Scan records for linked IDs in the link field
+        var linkFieldName = (linkField.fieldName && linkField.fieldName !== linkFieldId) ? linkField.fieldName : null;
+        for (var rid in recordMap) {
+            var row = recordMap[rid];
+            var linkedIds = _resolveLinkedIds(row[linkFieldId] || (linkFieldName ? row[linkFieldName] : undefined));
+            for (var li = 0; li < linkedIds.length; li++) {
+                needed[linkedTableId][linkedIds[li]] = true;
+            }
+        }
+    }
+    // For each linked table, find which record IDs aren't already cached
+    for (var ltId in needed) {
+        var allIds = Object.keys(needed[ltId]);
+        var missing = [];
+        for (var mi = 0; mi < allIds.length; mi++) {
+            var ck = ltId + '|' + allIds[mi];
+            if (_recordCache.has(ck)) continue;
+            if (window.IN_MEMORY_DATA && window.IN_MEMORY_DATA[ltId] && window.IN_MEMORY_DATA[ltId][allIds[mi]]) continue;
+            missing.push(allIds[mi]);
+        }
+        if (missing.length === 0) continue;
+        // Batch-load missing records from IDB into the cache
+        try {
+            await getRecordsByIds(ltId, missing);
+        } catch (e) {
+            console.warn('[Formula] Failed to pre-load linked records for table', ltId, ':', e.message);
+        }
+    }
 }
 
 /**
@@ -24941,7 +25066,13 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
                     _formulaResultCache[frcKey] = { inputHash: inputHash, value: value };
                 }
             } catch (_e) {
-                // Formula runtime error — leave cell empty
+                // Formula runtime error — log once per field to aid debugging
+                if (!_formulaCompileWarned) _formulaCompileWarned = {};
+                var _runtimeKey = 'runtime:' + c.fieldId;
+                if (!_formulaCompileWarned[_runtimeKey]) {
+                    _formulaCompileWarned[_runtimeKey] = true;
+                    console.warn('[Formula] Runtime error in', c.fieldName || c.fieldId, ':', _e.message);
+                }
             }
         }
     }
@@ -26239,8 +26370,12 @@ function compareValues(a, b, direction) {
 // re-rendering the same view with the same filters (e.g. toggling back to a tab).
 var _filterCache = { key: null, result: null };
 function _filterCacheKey() {
+    // Intentionally excludes _recordSearchDataVersion so that background sync
+    // events don't invalidate the filter cache during pagination. The cache is
+    // explicitly invalidated by invalidateFilterCache() when sync events touch
+    // the current table, and whenever the user changes filters/sorts/search.
     return currentTable + '|' + currentView + '|' + JSON.stringify(currentFilters) + '|' +
-           JSON.stringify(currentSorts) + '|' + currentSearchQuery + '|' + originalRecordIds.length + '|' + _recordSearchDataVersion;
+           JSON.stringify(currentSorts) + '|' + currentSearchQuery + '|' + originalRecordIds.length;
 }
 function invalidateFilterCache() { _filterCache.key = null; _filterCache.result = null; }
 
@@ -30412,6 +30547,11 @@ var InterfaceApp = (function() {
             return _getApiRecords(source);
         }
         var tableId = _resolveTableId(source);
+        if (!tableId) {
+            var pattern = source.tableNamePattern || source.fallbackTablePattern || '(none)';
+            var available = Object.keys(META_TABLES || {}).map(function(tid) { return resolveTableName(tid); }).join(', ');
+            console.warn('[Interface] Table not found for pattern "' + pattern + '". Available tables: ' + (available || '(none)'));
+        }
         return tableId ? _getTableRecords(tableId) : [];
     }
 
@@ -30480,6 +30620,12 @@ var InterfaceApp = (function() {
                 recordMap[ifaceRecordId] = ifaceRecord.fields || {};
             }
             if (Object.keys(recordMap).length) {
+                // Pre-load linked table records so lookups/rollups resolve
+                try {
+                    await _preloadLinkedTableRecords(tableId, fieldMeta, recordMap);
+                } catch (_plErr) {
+                    console.warn('[Interface] Pre-load linked records failed (non-fatal):', _plErr.message);
+                }
                 _applyFormulaColumns(tableId, fieldMeta, recordMap);
             }
         }
@@ -32999,7 +33145,10 @@ var InterfaceApp = (function() {
     async function renderPage(pageId) {
         _activePage = pageId;
         var container = document.getElementById('iface-page-container');
-        if (!container || !_schema) return;
+        if (!container || !_schema) {
+            console.warn('[Interface] renderPage: no container or schema — cannot render');
+            return;
+        }
 
         var visiblePages = _getVisiblePages();
         if (!visiblePages.length) {
@@ -33023,6 +33172,7 @@ var InterfaceApp = (function() {
 
         container.innerHTML = '<div class="iface-page active" data-page-id="' + _esc(page.id) + '"><div class="iface-empty"><div class="iface-skeleton" style="width:60%;height:20px;margin:20px auto;"></div><div class="iface-skeleton" style="width:40%;height:14px;margin:8px auto;"></div></div></div>';
 
+        try {
         // Build block map for tab containers
         var allBlocks = _flattenBlocks(page.blocks);
         var allBlocksMap = {};
@@ -33037,7 +33187,10 @@ var InterfaceApp = (function() {
             }
         });
         var fetchPromises = Object.keys(fetchWork).map(function(key) {
-            return _getSourceRecords(fetchWork[key]);
+            return _getSourceRecords(fetchWork[key]).catch(function(err) {
+                console.warn('[Interface] Pre-fetch failed for source:', key, err.message);
+                return [];
+            });
         });
         await Promise.all(fetchPromises);
 
@@ -33098,6 +33251,17 @@ var InterfaceApp = (function() {
                 _gcalInit(b);
             }
         });
+
+        } catch (renderErr) {
+            console.error('[Interface] renderPage failed:', renderErr);
+            container.innerHTML = '<div class="iface-page active" data-page-id="' + _esc(page.id) + '">' +
+                '<div class="iface-empty" style="color:var(--danger-500,#ef4444);padding:32px;text-align:center;">' +
+                '<div style="font-size:16px;font-weight:600;margin-bottom:8px;">Failed to load page</div>' +
+                '<div style="font-size:13px;opacity:0.8;margin-bottom:16px;">' + _esc(renderErr.message) + '</div>' +
+                '<button onclick="InterfaceApp.renderPage(\'' + _esc(_activePage) + '\')" ' +
+                'style="padding:8px 16px;border-radius:6px;border:1px solid var(--border-primary);background:var(--bg-elevated);color:var(--text-primary);cursor:pointer;font-size:13px;">Retry</button>' +
+                '</div></div>';
+        }
     }
 
     function _updateTopbarNav(pageId) {
@@ -33109,6 +33273,7 @@ var InterfaceApp = (function() {
         var html = '';
         var tableId, records, searchQ, pageState;
 
+        try {
         switch (block.type) {
             case 'welcome-greeting':
                 html = _renderWelcomeGreeting(block);
@@ -33208,6 +33373,11 @@ var InterfaceApp = (function() {
 
             default:
                 html = '<div class="iface-block"><div class="iface-block-body"><div class="iface-empty">Unknown block type: ' + _esc(block.type) + '</div></div></div>';
+        }
+        } catch (blockErr) {
+            console.error('[Interface] Block render error (' + (block.type || 'unknown') + '/' + block.id + '):', blockErr);
+            html = '<div class="iface-block"><div class="iface-block-body"><div class="iface-empty" style="color:var(--danger-500,#ef4444);">' +
+                'Block failed to load: ' + _esc(blockErr.message) + '</div></div></div>';
         }
         return html;
     }
@@ -33906,31 +34076,42 @@ var InterfaceApp = (function() {
         }
         console.log('[Interface] First render in', Math.round(performance.now() - t0), 'ms');
 
-        // Listen for data updates — clear both Interface table-data cache
-        // and the shared record LRU cache so re-renders fetch fresh data
-        // through the same pipeline the Database View uses.
-        window.addEventListener('amino:record-update', function() {
-            _tableDataCache = {};
-            _ifaceSearchTextCache = {};
-            clearRecordCache();
+        // Listen for data updates — only invalidate the affected table's
+        // cache entry (not all tables) to avoid expensive full re-fetches.
+        // The shared record LRU cache is managed by the Database View's
+        // amino:record-updated handler — no need to clear it here.
+        window.addEventListener('amino:record-update', function(e) {
+            var affectedTable = e.detail && e.detail.tableId;
+            if (affectedTable && _tableDataCache[affectedTable]) {
+                delete _tableDataCache[affectedTable];
+                delete _ifaceSearchTextCache[affectedTable];
+            } else if (!affectedTable) {
+                _tableDataCache = {};
+                _ifaceSearchTextCache = {};
+            }
             if (_currentApp === 'interface' && _activePage) {
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 1000);
             }
         });
-        window.addEventListener('amino:record-updated', function() {
-            _tableDataCache = {};
-            _ifaceSearchTextCache = {};
-            clearRecordCache();
+        window.addEventListener('amino:record-updated', function(e) {
+            var affectedTable = e.detail && e.detail.tableId;
+            if (affectedTable && _tableDataCache[affectedTable]) {
+                delete _tableDataCache[affectedTable];
+                delete _ifaceSearchTextCache[affectedTable];
+            } else if (!affectedTable) {
+                _tableDataCache = {};
+                _ifaceSearchTextCache = {};
+            }
             if (_currentApp === 'interface' && _activePage) {
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 400);
             }
         });
         window.addEventListener('amino:sync', function() {
+            // Full sync — invalidate all Interface caches
             _tableDataCache = {};
             _ifaceSearchTextCache = {};
-            clearRecordCache();
             if (_currentApp === 'interface' && _activePage) {
                 clearTimeout(init._refreshTimer);
                 init._refreshTimer = setTimeout(function() { renderPage(_activePage); }, 1000);
@@ -36368,17 +36549,17 @@ window.addEventListener('beforeunload', function() {
                 }
             }
             // Session valid but no encryption key — need password to re-derive.
-            // Only offer offline unlock when there is genuinely no internet connection;
-            // otherwise fall through to the online login form for normal re-authentication.
-            if (!navigator.onLine) {
-                var hasCachedForRekey = await _hasCachedDataForOffline();
-                if (hasCachedForRekey) {
-                    console.log('[Startup] Session exists but no encryption key and offline — showing offline unlock for password re-derivation');
-                    showOfflineUnlockScreen();
-                    return;
-                }
+            // Show the unlock screen (not the full login screen) whenever we have
+            // cached data that just needs a password to decrypt. This avoids the
+            // "random logout" perception on browser restarts (session is valid,
+            // only the sessionStorage encryption key was lost).
+            var hasCachedForRekey = await _hasCachedDataForOffline();
+            if (hasCachedForRekey) {
+                console.log('[Startup] Session valid but encryption key missing — showing unlock screen for password re-derivation');
+                showOfflineUnlockScreen();
+                return;
             }
-            // Fall through to show Synapse login
+            // No cached data — fall through to show Synapse login
         } else {
             // Session verification failed — only offer offline access if it was a
             // network error (server unreachable), not if the server actively rejected
