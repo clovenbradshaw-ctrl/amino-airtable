@@ -16900,6 +16900,13 @@ function renderTableHeaders() {
     container.innerHTML = html;
 }
 
+// Calls cb() immediately if the formula engine is ready, otherwise waits for
+// the 'formulaengine:ready' event dispatched by src/formulas/bridge.js.
+function _whenFormulaEngineReady(cb) {
+    if (window._formulaEngine) { cb(); }
+    else { window.addEventListener('formulaengine:ready', cb, { once: true }); }
+}
+
 async function renderTable(paginationOnly) {
     if (!currentTable) return;
     // Skip rendering if we're in a special view (Events or Sync Status)
@@ -17226,27 +17233,29 @@ async function renderTable(paginationOnly) {
         var _dfFields = fields;
         var _dfColMeta = _colMeta;
         var _dfDisplayIds = displayRecordIds;
-        requestAnimationFrame(function() {
-            if (navVersion !== _dfNav) return; // Navigation changed, skip stale update
-            _applyFormulaColumns(_dfTable, _dfFields, _dfRecordMap);
-            // Surgically update only formula cells in the DOM
-            var _tbl = document.getElementById('table');
-            if (!_tbl) return;
-            for (var _dfi = 0; _dfi < _dfDisplayIds.length; _dfi++) {
-                var _dfRid = _dfDisplayIds[_dfi];
-                var _dfRow = _dfRecordMap[_dfRid] || {};
-                for (var _dfci = 0; _dfci < _dfColMeta.length; _dfci++) {
-                    var _dfCm = _dfColMeta[_dfci];
-                    if (!_dfCm.isComputed) continue; // Only update formula cells
-                    var _dfVal = _dfRow[_dfCm.id];
-                    if (_dfVal === undefined) _dfVal = _dfRow[_dfCm.name];
-                    var _dfNewHtml = formatCell(_dfVal, _dfCm.fieldType);
-                    var _dfCell = _tbl.querySelector('tr[data-record-id="' + CSS.escape(_dfRid) + '"] td[data-field-id="' + CSS.escape(_dfCm.id) + '"]');
-                    if (_dfCell && _dfCell.innerHTML !== _dfNewHtml) {
-                        _dfCell.innerHTML = _dfNewHtml;
+        _whenFormulaEngineReady(function() {
+            requestAnimationFrame(function() {
+                if (navVersion !== _dfNav) return; // Navigation changed, skip stale update
+                _applyFormulaColumns(_dfTable, _dfFields, _dfRecordMap);
+                // Surgically update only formula cells in the DOM
+                var _tbl = document.getElementById('table');
+                if (!_tbl) return;
+                for (var _dfi = 0; _dfi < _dfDisplayIds.length; _dfi++) {
+                    var _dfRid = _dfDisplayIds[_dfi];
+                    var _dfRow = _dfRecordMap[_dfRid] || {};
+                    for (var _dfci = 0; _dfci < _dfColMeta.length; _dfci++) {
+                        var _dfCm = _dfColMeta[_dfci];
+                        if (!_dfCm.isComputed) continue; // Only update formula cells
+                        var _dfVal = _dfRow[_dfCm.id];
+                        if (_dfVal === undefined) _dfVal = _dfRow[_dfCm.name];
+                        var _dfNewHtml = formatCell(_dfVal, _dfCm.fieldType);
+                        var _dfCell = _tbl.querySelector('tr[data-record-id="' + CSS.escape(_dfRid) + '"] td[data-field-id="' + CSS.escape(_dfCm.id) + '"]');
+                        if (_dfCell && _dfCell.innerHTML !== _dfNewHtml) {
+                            _dfCell.innerHTML = _dfNewHtml;
+                        }
                     }
                 }
-            }
+            });
         });
     }
 }
@@ -24504,9 +24513,9 @@ function computedFieldVisual(fieldType) {
 
 var _fieldRegistryFetched = {};  // tableId -> true (avoids redundant fetches)
 
-async function fetchFieldRegistry(tableId) {
-    if (_fieldRegistryFetched[tableId]) return;
-
+// Internal: performs the actual network fetch and merge for a table's field registry.
+// Called directly on first load (blocking) or from background setTimeout on refresh.
+async function _fetchFieldRegistryNetwork(tableId) {
     try {
         var matrixToken = (typeof MatrixClient !== 'undefined' && MatrixClient.getAccessToken && MatrixClient.getAccessToken())
             ? MatrixClient.getAccessToken()
@@ -24601,6 +24610,29 @@ async function fetchFieldRegistry(tableId) {
     } catch (err) {
         console.warn('[FieldRegistry] Failed to fetch field registry for ' + tableId + ':', err.message);
     }
+}
+
+async function fetchFieldRegistry(tableId) {
+    if (_fieldRegistryFetched[tableId]) return;
+
+    // If IDB-loaded META_FIELDS already has formula options for this table, use
+    // them immediately so renderTable is not blocked by a network round-trip.
+    // The network refresh runs in the background to keep definitions current.
+    var _hasOptions = false;
+    var _existingFields = META_FIELDS[tableId] || {};
+    for (var _fk in _existingFields) {
+        if (_existingFields[_fk].options && Object.keys(_existingFields[_fk].options).length > 0) {
+            _hasOptions = true; break;
+        }
+    }
+    if (_hasOptions) {
+        _fieldRegistryFetched[tableId] = true;
+        setTimeout(function() { _fetchFieldRegistryNetwork(tableId); }, 0);
+        return;
+    }
+
+    // No cached options — must fetch synchronously before rendering
+    await _fetchFieldRegistryNetwork(tableId);
 }
 
 // Called from renderTable() and renderRecordProfile() so that ALL rows
@@ -25048,13 +25080,14 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
                 }
 
                 var value = c.fn(row, { recordId: rid });
-                if (value !== null && value !== undefined && !(value && value.__error)) {
-                    row[c.fieldId] = value;
-                    if (c.fieldName && c.fieldName !== c.fieldId) {
-                        row[c.fieldName] = value;
-                    }
-                    _formulaResultCache[frcKey] = { inputHash: inputHash, value: value };
+                // Always overwrite formula fields — even with null — so that stale
+                // values fetched from Postgres are never shown instead of app-computed ones.
+                var _computedVal = (value && value.__error) ? null : (value !== undefined ? value : null);
+                row[c.fieldId] = _computedVal;
+                if (c.fieldName && c.fieldName !== c.fieldId) {
+                    row[c.fieldName] = _computedVal;
                 }
+                _formulaResultCache[frcKey] = { inputHash: inputHash, value: _computedVal };
             } catch (_e) {
                 // Formula runtime error — log once per field to aid debugging
                 if (!_formulaCompileWarned) _formulaCompileWarned = {};

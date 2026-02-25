@@ -14,3 +14,4 @@ window._formulaEngine = {
   collectFieldRefs,
   compileFormula
 };
+window.dispatchEvent(new CustomEvent('formulaengine:ready'));
