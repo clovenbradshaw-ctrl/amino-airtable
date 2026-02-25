@@ -1884,6 +1884,19 @@
       // Render header and nav first (fast — only needs client record)
       renderNav();
       renderHeader();
+      // Show data-missing banner if no client record was found
+      if (!state.clientRecord && !dataLoaded) {
+        var noDataBanner = document.createElement('div');
+        noDataBanner.id = 'profile-no-data-banner';
+        noDataBanner.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px 20px;margin:16px;display:flex;align-items:center;justify-content:space-between;font-size:14px;color:#856404;';
+        noDataBanner.innerHTML = '<span>\u26A0\uFE0F Could not load profile data. The session may have expired or data is unavailable.</span>' +
+          '<div style="display:flex;gap:8px;">' +
+          '<button onclick="location.reload()" style="padding:6px 12px;border-radius:6px;border:1px solid #ffc107;background:#fff;color:#856404;cursor:pointer;font-size:13px;">Retry</button>' +
+          '<a href="index.html" style="padding:6px 12px;border-radius:6px;border:1px solid #ffc107;background:#fff;color:#856404;cursor:pointer;font-size:13px;text-decoration:none;">Back to Interface</a>' +
+          '</div>';
+        var content = document.getElementById('profileContent');
+        if (content) content.insertBefore(noDataBanner, content.firstChild);
+      }
       renderTabs();
       renderAdminToggle();
 
