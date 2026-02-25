@@ -34153,7 +34153,6 @@ var InterfaceApp = (function() {
         }
 
         try {
-        try {
             var snapshot = await _buildClientProfileContext(recordId);
             var snapshotJson = JSON.stringify(snapshot);
             // If snapshot > 4MB, strip non-essential tables to fit in sessionStorage
@@ -34169,6 +34168,7 @@ var InterfaceApp = (function() {
             sessionStorage.setItem('amino.clientProfile.context.v1', snapshotJson);
         } catch (e) {
             console.warn('[Interface] Failed to persist client profile context:', e.message);
+        }
 
         try {
             _saveRecentProfileRecord({
