@@ -1986,6 +1986,32 @@
         }
         .forms-builder-preview-submit:hover { background: var(--primary-600); }
 
+        /* ── Form Filler ── */
+        .forms-filler { display: none; flex-direction: column; height: 100%; }
+        .forms-filler.visible { display: flex; }
+        .forms-filler-body { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 32px 16px; background: var(--bg-tertiary); }
+        .forms-filler-card { width: 100%; max-width: 640px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--radius-xl); padding: 32px; box-shadow: var(--shadow-md); }
+        .forms-filler-field { margin-bottom: 20px; }
+        .forms-filler-field label { display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+        .forms-filler-field label .required { color: var(--danger-500); margin-left: 2px; }
+        .forms-filler-field input, .forms-filler-field select, .forms-filler-field textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--border-primary); border-radius: var(--radius-md); font-size: 14px; color: var(--text-primary); background: var(--bg-primary); transition: border-color var(--transition-fast); font-family: var(--font-sans); }
+        .forms-filler-field input:focus, .forms-filler-field select:focus, .forms-filler-field textarea:focus { outline: none; border-color: var(--primary-500); }
+        .forms-filler-field textarea { min-height: 80px; resize: vertical; }
+        .forms-filler-field .field-help { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        .forms-filler-field .field-error { font-size: 12px; color: var(--danger-500); margin-top: 4px; display: none; }
+        .forms-filler-field.has-error input, .forms-filler-field.has-error select, .forms-filler-field.has-error textarea { border-color: var(--danger-500); }
+        .forms-filler-field.has-error .field-error { display: block; }
+        .forms-filler-title { font-size: 22px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+        .forms-filler-desc { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.5; }
+        .forms-filler-submit { width: 100%; padding: 12px; background: var(--primary-500); color: #fff; border: none; border-radius: var(--radius-md); font-size: 15px; font-weight: 600; cursor: pointer; transition: background var(--transition-fast); margin-top: 8px; }
+        .forms-filler-submit:hover { background: var(--primary-600); }
+        .forms-filler-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+        .forms-filler-success { text-align: center; padding: 40px 20px; }
+        .forms-filler-success-icon { font-size: 48px; margin-bottom: 16px; }
+        .forms-filler-success h2 { font-size: 22px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+        .forms-filler-success p { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; }
+        .forms-filler-another { padding: 10px 20px; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-md); font-size: 14px; cursor: pointer; }
+
         .forms-builder-config {
             width: 280px; border-left: 1px solid var(--border-primary);
             background: var(--bg-secondary); overflow-y: auto; flex-shrink: 0;
@@ -6758,6 +6784,7 @@
                 <div class="forms-builder-topbar-right">
                     <button class="forms-builder-btn" onclick="FormsApp.togglePreview()">Preview</button>
                     <button class="forms-builder-btn" onclick="FormsApp.shareForm()">Share</button>
+                    <button class="forms-builder-btn" onclick="FormsApp.openFillerFromBuilder()" id="forms-fill-btn" title="Fill out this form">Fill Form</button>
                     <button class="forms-builder-btn primary" onclick="FormsApp.publishForm()" id="forms-publish-btn">Publish</button>
                 </div>
             </div>
@@ -6778,6 +6805,28 @@
                     <div id="forms-builder-config-body">
                         <p style="font-size:13px;color:var(--text-muted);">Select a field to configure it.</p>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+        <!-- Form Filler View (shown when filling out a form) -->
+        <div class="forms-filler" id="forms-filler-view">
+            <div class="forms-builder-topbar">
+                <div class="forms-builder-topbar-left">
+                    <button class="forms-builder-back" onclick="FormsApp.closeFiller()" title="Back">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <span class="forms-builder-title" id="forms-filler-title">Fill Form</span>
+                    <span class="forms-builder-subtitle" id="forms-filler-subtitle"></span>
+                </div>
+                <div class="forms-builder-topbar-right">
+                    <span id="forms-filler-status" style="font-size:13px;color:var(--text-muted);"></span>
+                </div>
+            </div>
+            <div class="forms-filler-body">
+                <div class="forms-filler-card" id="forms-filler-card">
+                    <!-- Live form rendered dynamically -->
                 </div>
             </div>
         </div>
@@ -29408,6 +29457,9 @@ var FormsApp = (function() {
                 '<div style="display:flex;align-items:center;gap:6px;">' +
                     '<span class="forms-card-status ' + statusClass + '">' + statusLabel + '</span>' +
                     '<div class="forms-card-actions">' +
+                        '<button class="forms-card-action-btn" onclick="event.stopPropagation();FormsApp.openFiller(\'' + _esc(form.tableId) + '\', \'' + _esc(form.viewId) + '\')" title="Fill Form" style="color:var(--primary-500);">' +
+                            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' +
+                        '</button>' +
                         '<button class="forms-card-action-btn" onclick="event.stopPropagation();FormsApp.duplicateForm(\'' + _esc(form.tableId) + '\', \'' + _esc(form.viewId) + '\')" title="Duplicate">' +
                             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>' +
                         '</button>' +
@@ -29975,6 +30027,245 @@ var FormsApp = (function() {
         _render();
     }
 
+    // ── Form Filler ──
+
+    var _fillerTableId = null;
+    var _fillerViewId = null;
+    var _fillerValues = {};
+
+    function openFiller(tableId, viewId) {
+        _fillerTableId = tableId;
+        _fillerViewId = viewId;
+        _fillerValues = {};
+
+        var view = (META_VIEWS[tableId] || {})[viewId];
+        if (!view) {
+            if (typeof showToast === 'function') showToast('error', 'Form not found');
+            return;
+        }
+
+        // Hide list/builder, show filler
+        var listView = document.getElementById('forms-list-view');
+        var builderView = document.getElementById('forms-builder-view');
+        var fillerView = document.getElementById('forms-filler-view');
+        if (listView) listView.style.display = 'none';
+        if (builderView) builderView.classList.remove('visible');
+        if (fillerView) fillerView.classList.add('visible');
+
+        var titleEl = document.getElementById('forms-filler-title');
+        var subtitleEl = document.getElementById('forms-filler-subtitle');
+        if (titleEl) titleEl.textContent = (view.formConfig && view.formConfig.title) || view.viewName || 'Fill Form';
+        if (subtitleEl) subtitleEl.textContent = _getTableName(tableId);
+
+        _renderFillerForm(tableId, view);
+    }
+
+    function closeFiller() {
+        _fillerTableId = null;
+        _fillerViewId = null;
+        _fillerValues = {};
+
+        var listView = document.getElementById('forms-list-view');
+        var fillerView = document.getElementById('forms-filler-view');
+        if (listView) listView.style.display = '';
+        if (fillerView) fillerView.classList.remove('visible');
+        _render();
+    }
+
+    function _renderFillerForm(tableId, view) {
+        var card = document.getElementById('forms-filler-card');
+        if (!card) return;
+        var fields = META_FIELDS[tableId] || {};
+        var hidden = view.hiddenFieldIds || [];
+        var order = view.fieldOrder || [];
+        var formConfig = view.formConfig || {};
+        var fieldConfigs = formConfig.fieldConfigs || {};
+
+        // Build visible ordered field list
+        var ordered = [];
+        var allFieldIds = Object.keys(fields);
+        for (var k = 0; k < order.length; k++) {
+            if (fields[order[k]] && hidden.indexOf(order[k]) === -1) ordered.push(order[k]);
+        }
+        for (var k = 0; k < allFieldIds.length; k++) {
+            if (ordered.indexOf(allFieldIds[k]) === -1 && hidden.indexOf(allFieldIds[k]) === -1) ordered.push(allFieldIds[k]);
+        }
+        // Filter out non-editable fields
+        var visibleFieldIds = ordered.filter(function(fid) {
+            var f = fields[fid];
+            if (!f) return false;
+            var ft = (f.fieldType || '').toLowerCase();
+            return ft !== 'formula' && ft !== 'rollup' && ft !== 'lookup' && ft !== 'autonumber' && ft !== 'createdtime' && ft !== 'lastmodifiedtime';
+        });
+
+        var title = formConfig.title || view.viewName || 'Untitled Form';
+        var desc = formConfig.description || '';
+        var submitText = formConfig.submitButtonText || 'Submit';
+
+        var html = '<div class="forms-filler-title">' + _esc(title) + '</div>';
+        if (desc) html += '<div class="forms-filler-desc">' + _esc(desc) + '</div>';
+
+        for (var i = 0; i < visibleFieldIds.length; i++) {
+            var fieldId = visibleFieldIds[i];
+            var field = fields[fieldId];
+            if (!field) continue;
+            var fc = fieldConfigs[fieldId] || {};
+            var label = fc.label || field.fieldName || fieldId;
+            var required = fc.required || false;
+            var helpText = fc.helpText || '';
+            var placeholder = fc.placeholder || '';
+            var ft = (field.fieldType || '').toLowerCase();
+
+            html += '<div class="forms-filler-field" id="ff-field-' + _esc(fieldId) + '">';
+            html += '<label>' + _esc(label) + (required ? '<span class="required">*</span>' : '') + '</label>';
+
+            if (ft === 'multilinetext' || ft === 'richtext') {
+                html += '<textarea id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)"></textarea>';
+            } else if (ft === 'checkbox') {
+                html += '<input type="checkbox" id="ff-' + _esc(fieldId) + '" style="width:auto;" onchange="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.checked)">';
+            } else if (ft === 'singleselect') {
+                var options = (field.options && field.options.choices) ? field.options.choices : [];
+                html += '<select id="ff-' + _esc(fieldId) + '" onchange="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+                html += '<option value="">' + _esc(placeholder || 'Select...') + '</option>';
+                options.forEach(function(opt) {
+                    var optName = opt.name || opt;
+                    html += '<option value="' + _esc(optName) + '">' + _esc(optName) + '</option>';
+                });
+                html += '</select>';
+            } else if (ft === 'date' || ft === 'datetime') {
+                html += '<input type="date" id="ff-' + _esc(fieldId) + '" onchange="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+            } else if (ft === 'number' || ft === 'currency' || ft === 'percent') {
+                html += '<input type="number" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+            } else if (ft === 'email') {
+                html += '<input type="email" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+            } else if (ft === 'url') {
+                html += '<input type="url" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+            } else {
+                html += '<input type="text" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+            }
+
+            if (helpText) html += '<div class="field-help">' + _esc(helpText) + '</div>';
+            html += '<div class="field-error">This field is required</div>';
+            html += '</div>';
+        }
+
+        html += '<button class="forms-filler-submit" id="forms-filler-submit" onclick="FormsApp.submitFiller()">' + _esc(submitText) + '</button>';
+        card.innerHTML = html;
+    }
+
+    function onFillerInput(fieldId, value) {
+        _fillerValues[fieldId] = value;
+        // Clear error state on input
+        var fieldEl = document.getElementById('ff-field-' + fieldId);
+        if (fieldEl) fieldEl.classList.remove('has-error');
+    }
+
+    async function submitFiller() {
+        if (!_fillerTableId || !_fillerViewId) return;
+        var view = (META_VIEWS[_fillerTableId] || {})[_fillerViewId];
+        if (!view) return;
+
+        var fields = META_FIELDS[_fillerTableId] || {};
+        var hidden = view.hiddenFieldIds || [];
+        var formConfig = view.formConfig || {};
+        var fieldConfigs = formConfig.fieldConfigs || {};
+
+        // Validate required fields
+        var hasErrors = false;
+        Object.keys(fieldConfigs).forEach(function(fieldId) {
+            var fc = fieldConfigs[fieldId] || {};
+            if (fc.required && hidden.indexOf(fieldId) === -1) {
+                var val = _fillerValues[fieldId];
+                if (val === undefined || val === null || val === '') {
+                    var fieldEl = document.getElementById('ff-field-' + fieldId);
+                    if (fieldEl) fieldEl.classList.add('has-error');
+                    hasErrors = true;
+                }
+            }
+        });
+        if (hasErrors) {
+            if (typeof showToast === 'function') showToast('warning', 'Please fill in all required fields');
+            return;
+        }
+
+        var btn = document.getElementById('forms-filler-submit');
+        var statusEl = document.getElementById('forms-filler-status');
+        if (btn) btn.disabled = true;
+        if (statusEl) statusEl.textContent = 'Submitting...';
+
+        try {
+            // Build fields payload using field names (not IDs)
+            var payload = {};
+            Object.keys(_fillerValues).forEach(function(fieldId) {
+                var f = fields[fieldId];
+                var fieldName = f ? (f.fieldName || fieldId) : fieldId;
+                var val = _fillerValues[fieldId];
+                if (val !== undefined && val !== null && val !== '') {
+                    payload[fieldName] = val;
+                }
+            });
+
+            var session = typeof _loadSynapseSession === 'function' ? _loadSynapseSession() : null;
+            if (!session || !session.accessToken) {
+                throw new Error('Not authenticated');
+            }
+
+            // POST to amino-write to create a new record
+            var newRecordId = 'rec' + Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+            var body = JSON.stringify({
+                tableId: _fillerTableId,
+                recordId: newRecordId,
+                fields: payload,
+                create: true,
+                access_token: session.accessToken
+            });
+
+            var response = await fetch(
+                (typeof WRITE_API_BASE !== 'undefined' ? WRITE_API_BASE : 'https://n8n.intelechia.com/webhook/amino-write') +
+                '?access_token=' + encodeURIComponent(session.accessToken),
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body }
+            );
+
+            if (!response.ok) {
+                var errText = await response.text().catch(function() { return ''; });
+                throw new Error('Server error ' + response.status + (errText ? ': ' + errText.substring(0, 100) : ''));
+            }
+
+            // Show success state
+            var card = document.getElementById('forms-filler-card');
+            if (card) {
+                var successMsg = (formConfig.successMessage) || 'Thank you! Your response has been recorded.';
+                card.innerHTML = '<div class="forms-filler-success">' +
+                    '<div class="forms-filler-success-icon">&#10003;</div>' +
+                    '<h2>Submitted!</h2>' +
+                    '<p>' + _esc(successMsg) + '</p>' +
+                    '<button class="forms-filler-another" onclick="FormsApp.resetFiller()">Submit Another Response</button>' +
+                    '</div>';
+            }
+            if (statusEl) statusEl.textContent = 'Submitted';
+            if (typeof showToast === 'function') showToast('success', 'Form submitted successfully');
+
+        } catch (err) {
+            console.error('[FormsApp] Submission failed:', err);
+            if (typeof showToast === 'function') showToast('error', 'Submission failed: ' + (err.message || ''));
+            if (btn) btn.disabled = false;
+            if (statusEl) statusEl.textContent = '';
+        }
+    }
+
+    function openFillerFromBuilder() {
+        if (!_currentFormTableId || !_currentFormId) return;
+        openFiller(_currentFormTableId, _currentFormId);
+    }
+
+    function resetFiller() {
+        _fillerValues = {};
+        var view = (_fillerTableId && _fillerViewId) ? (META_VIEWS[_fillerTableId] || {})[_fillerViewId] : null;
+        if (view) _renderFillerForm(_fillerTableId, view);
+        var statusEl = document.getElementById('forms-filler-status');
+        if (statusEl) statusEl.textContent = '';
+    }
+
     return {
         init: init,
         onSearch: onSearch,
@@ -29993,6 +30284,12 @@ var FormsApp = (function() {
         togglePreview: togglePreview,
         duplicateForm: duplicateForm,
         deleteForm: deleteForm,
+        openFiller: openFiller,
+        openFillerFromBuilder: openFillerFromBuilder,
+        closeFiller: closeFiller,
+        onFillerInput: onFillerInput,
+        submitFiller: submitFiller,
+        resetFiller: resetFiller,
         refresh: _render
     };
 })();
@@ -30118,7 +30415,7 @@ var InterfaceApp = (function() {
                         id: 'clients-table',
                         type: 'data-table',
                         label: 'RK Lacy Law Clients',
-                        mirrorViewFields: true,
+
                         source: {
                             op: 'DES',
                             tableNamePattern: 'client info',
@@ -30958,15 +31255,18 @@ var InterfaceApp = (function() {
     function _renderCardList(block, records) {
         var display = block.display || {};
         var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '">';
-        html += '<div class="iface-block-drag-handle">Drag</div>';
+        if (_editMode) html += '<div class="iface-block-drag-handle">Drag</div>';
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'List') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
         html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" data-search-block="' + _esc(block.id) + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
-        html += '<div class="iface-block-actions">';
-        html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
-        html += '</div></div></div>';
-        html += '<div class="iface-block-body"><div class="iface-card-list">';
+        html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" data-search-block="' + _esc(block.id) + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
+        if (_editMode) {
+            html += '<div class="iface-block-actions">';
+            html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
+            html += '</div>';
+        }
+        html += '</div></div>';
         if (!records || !records.length) {
             html += '<div class="iface-empty">No records found</div>';
         } else {
@@ -30975,7 +31275,9 @@ var InterfaceApp = (function() {
                 var title = _findFieldValue(f, display.titleField) || r.recordId;
                 var subtitle = _findFieldValue(f, display.subtitleField) || '';
                 var meta = display.metaField ? _findFieldValue(f, display.metaField) : '';
-                html += '<div class="iface-card" data-record-id="' + _esc(r.recordId) + '">';
+                var clickable = block.source && (block.source.tableNamePattern || '').toLowerCase().includes('client');
+                var cardClick = clickable ? ' onclick="InterfaceApp.openClientProfilePage(\'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"' : '';
+                html += '<div class="iface-card" data-record-id="' + _esc(r.recordId) + '"' + cardClick + '>';
                 html += '<div class="iface-card-icon">' + (display.icon || '\uD83D\uDCCB') + '</div>';
                 html += '<div class="iface-card-content">';
                 html += '<div class="iface-card-title">' + _formatFieldValue(title) + '</div>';
@@ -30991,14 +31293,17 @@ var InterfaceApp = (function() {
     function _renderTimeline(block, records) {
         var display = block.display || {};
         var html = '<div class="iface-block" data-block-id="' + _esc(block.id) + '">';
-        html += '<div class="iface-block-drag-handle">Drag</div>';
+        if (_editMode) html += '<div class="iface-block-drag-handle">Drag</div>';
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Timeline') + '</span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
         html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" data-search-block="' + _esc(block.id) + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
-        html += '<div class="iface-block-actions">';
-        html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
-        html += '</div></div></div>';
+        if (_editMode) {
+            html += '<div class="iface-block-actions">';
+            html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
+            html += '</div>';
+        }
+        html += '</div></div>';
         html += '<div class="iface-block-body"><div class="iface-timeline">';
         if (!records || !records.length) {
             html += '<div class="iface-empty">No events scheduled</div>';
@@ -31014,7 +31319,11 @@ var InterfaceApp = (function() {
                         if (!isNaN(d.getTime())) timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
                     } catch (e) { timeStr = String(timeVal); }
                 }
-                html += '<div class="iface-timeline-item">';
+                var isClientSource = block.source && (block.source.tableNamePattern || '').toLowerCase().includes('client');
+                var clientIdField = display.clientField || display.titleField;
+                var clientId = clientIdField ? _findFieldValue(r.fields || {}, clientIdField) : null;
+                var itemClick = (isClientSource && r.recordId) ? ' onclick="InterfaceApp.openClientProfilePage(\'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"' : '';
+                html += '<div class="iface-timeline-item"' + itemClick + '>';
                 html += '<div class="iface-timeline-time">' + _esc(timeStr || '--:--') + '</div>';
                 html += '<div class="iface-timeline-content">';
                 html += '<div class="iface-timeline-title">' + _formatFieldValue(title) + '</div>';
@@ -31102,7 +31411,6 @@ var InterfaceApp = (function() {
 
     function _renderStatsRow() {
         var tableCount = Object.keys(typeof META_TABLES !== 'undefined' ? META_TABLES : {}).length;
-        var roomCount = 'N/A';
         var userCount = '--';
         try {
             if (typeof _settingsMembers !== 'undefined' && _settingsMembers && _settingsMembers.length > 0) {
@@ -31110,11 +31418,27 @@ var InterfaceApp = (function() {
             }
         } catch (e) {}
 
+        // Count clients and active cases from cached data
+        var clientCount = '--';
+        var activeCount = '--';
+        try {
+            var clientTableId = _resolveTableId({ op: 'DES', tableNamePattern: 'client info', fallbackTablePattern: 'client' });
+            if (clientTableId && _tableDataCache[clientTableId] && _tableDataCache[clientTableId].records) {
+                var clientRecs = _tableDataCache[clientTableId].records;
+                clientCount = clientRecs.length;
+                var activeRecs = clientRecs.filter(function(r) {
+                    var s = String(_findFieldValue(r.fields || {}, 'File Case Status (from Case Master View // Activities)') || '').toLowerCase();
+                    return s.includes('active') || s.includes('pend') || s.includes('open');
+                });
+                activeCount = activeRecs.length;
+            }
+        } catch (e) {}
+
         var html = '<div class="iface-stats-row">';
-        html += '<div class="iface-stat-cell" onclick="switchApp(\'database\')"><div class="stat-num">' + tableCount + '</div><div class="stat-label">Tables</div></div>';
-        html += '<div class="iface-stat-cell"><div class="stat-num">' + roomCount + '</div><div class="stat-label">Rooms</div></div>';
+        html += '<div class="iface-stat-cell" onclick="InterfaceApp.switchPage(\'clients\')" style="cursor:pointer;"><div class="stat-num">' + clientCount + '</div><div class="stat-label">Clients</div></div>';
+        html += '<div class="iface-stat-cell" onclick="InterfaceApp.switchPage(\'clients\')" style="cursor:pointer;"><div class="stat-num">' + activeCount + '</div><div class="stat-label">Active Cases</div></div>';
+        html += '<div class="iface-stat-cell" onclick="switchApp(\'database\')" style="cursor:pointer;"><div class="stat-num">' + tableCount + '</div><div class="stat-label">Tables Synced</div></div>';
         html += '<div class="iface-stat-cell"><div class="stat-num">' + userCount + '</div><div class="stat-label">Users</div></div>';
-        html += '<div class="iface-stat-cell"><div class="stat-num green">99.9%</div><div class="stat-label">Uptime</div></div>';
         html += '</div>';
         return html;
     }
@@ -31191,7 +31515,9 @@ var InterfaceApp = (function() {
                     else if (details.length) subtitle = details.join(' \u00B7 ');
                 }
 
-                html += '<div class="iface-recent-item">';
+                var isClientRec = block.source && (block.source.tableNamePattern || '').toLowerCase().includes('client');
+                var recentClick = isClientRec ? ' onclick="InterfaceApp.openClientProfilePage(\'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"' : '';
+                html += '<div class="iface-recent-item"' + recentClick + '>';
                 html += '<div class="iface-recent-item-left">';
                 html += '<div class="iface-ri-avatar">' + _esc(initials) + '</div>';
                 html += '<div class="iface-ri-info">';
@@ -31633,10 +31959,10 @@ var InterfaceApp = (function() {
             html += '<tr><td colspan="' + emptyColspan + '" style="text-align:center;color:var(--text-muted);padding:40px;">No records found</td></tr>';
         } else {
             pageRecords.forEach(function(r) {
-                var isClientTable = block.id === 'clients-table';
-                var rowClick = isClientTable
+                var isClientSource = block.source && (block.source.tableNamePattern || '').toLowerCase().includes('client');
+                var rowClick = isClientSource
                     ? ' onclick="InterfaceApp.openClientProfilePage(\'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"'
-                    : '';
+                    : ' onclick="InterfaceApp.openRecordDrawer(\'' + _esc(block.id) + '\', \'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"';
                 html += '<tr data-record-id="' + _esc(r.recordId) + '"' + rowClick + '>';
                 columns.forEach(function(col) {
                     var val = _findFieldValue(r.fields || {}, col.field);
@@ -31969,7 +32295,8 @@ var InterfaceApp = (function() {
             if (curatedVisibleColumns.length) return curatedVisibleColumns;
         }
 
-        return mirroredColumns;
+        // Cap fallback to 8 columns to keep tables readable
+        return mirroredColumns.slice(0, 8);
     }
 
     function _renderDataTable(block, records, pageState, allRecords, tableId) {
@@ -31994,14 +32321,17 @@ var InterfaceApp = (function() {
         });
 
         var html = '<div class="iface-block iface-data-table-block" data-block-id="' + _esc(block.id) + '">';
-        html += '<div class="iface-block-drag-handle">Drag</div>';
+        if (_editMode) html += '<div class="iface-block-drag-handle">Drag</div>';
         html += '<div class="iface-block-header">';
         html += '<span class="iface-block-title">' + _esc(block.label || 'Table') + ' <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(' + total + ' records)</span></span>';
         html += '<div style="display:flex;gap:8px;align-items:center;">';
         html += '<input type="text" class="iface-block-search" placeholder="Search..." value="' + _esc(_blockSearchState[block.id] || '') + '" data-search-block="' + _esc(block.id) + '" oninput="InterfaceApp.onBlockSearch(\'' + _esc(block.id) + '\', this.value)">';
-        html += '<div class="iface-block-actions">';
-        html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
-        html += '</div></div></div>';
+        if (_editMode) {
+            html += '<div class="iface-block-actions">';
+            html += '<button class="iface-block-action-btn danger" onclick="InterfaceApp.removeBlock(\'' + _esc(block.id) + '\')">Remove</button>';
+            html += '</div>';
+        }
+        html += '</div></div>';
 
         // Filters
         if (filters.length) {
@@ -32041,7 +32371,9 @@ var InterfaceApp = (function() {
             html += '<tr><td colspan="' + columns.length + '" style="text-align:center;color:var(--text-muted);padding:30px;">No records</td></tr>';
         } else {
             pageRecords.forEach(function(r) {
-                html += '<tr data-record-id="' + _esc(r.recordId) + '">';
+                var isClientSrc = block.source && (block.source.tableNamePattern || '').toLowerCase().includes('client');
+                var rClick = isClientSrc ? ' onclick="InterfaceApp.openClientProfilePage(\'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"' : ' onclick="InterfaceApp.openRecordDrawer(\'' + _esc(block.id) + '\', \'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"';
+                html += '<tr data-record-id="' + _esc(r.recordId) + '"' + rClick + '>';
                 columns.forEach(function(col) {
                     var val = _findFieldValue(r.fields || {}, col.field);
                     var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -33779,11 +34111,21 @@ var InterfaceApp = (function() {
             tableIdMap[tableId] = tableName;
 
             if (tNameLower === 'client info' || LOOKUP_TABLES[tNameLower]) {
-                // Client info and lookup tables: include all records
+            if (LOOKUP_TABLES[tNameLower]) {
+                // Lookup tables: include all records for ID resolution
                 data[tableName] = rows;
                 continue;
             }
 
+            if (tNameLower === 'client info') {
+                // Only include the target client record to prevent sessionStorage overflow
+                var targetRec = rows.find(function(row) {
+                    return (row.recordId || row.id) === recordId ||
+                           (row.fields && (row.fields.recordId === recordId || row.fields.airtableId === recordId));
+                });
+                data[tableName] = targetRec ? [targetRec] : rows.slice(0, 50);
+                continue;
+            }
             // Data tables: filter to client-related records via edge path
             var pathInfo = tablePathMap[tableId];
             if (pathInfo && pathInfo.path && pathInfo.path.length > 0) {
@@ -33811,11 +34153,22 @@ var InterfaceApp = (function() {
         }
 
         try {
+        try {
             var snapshot = await _buildClientProfileContext(recordId);
-            sessionStorage.setItem('amino.clientProfile.context.v1', JSON.stringify(snapshot));
+            var snapshotJson = JSON.stringify(snapshot);
+            // If snapshot > 4MB, strip non-essential tables to fit in sessionStorage
+            if (snapshotJson.length > 4 * 1024 * 1024) {
+                var slim = { version: snapshot.version, capturedAt: snapshot.capturedAt, clientId: snapshot.clientId, tableIdMap: snapshot.tableIdMap, data: {} };
+                var essentialTables = ['Client Info', 'Case Master View'];
+                Object.keys(snapshot.data).forEach(function(t) {
+                    var tLower = t.toLowerCase();
+                    if (essentialTables.some(function(e) { return tLower.includes(e.toLowerCase()); })) slim.data[t] = snapshot.data[t];
+                });
+                snapshotJson = JSON.stringify(slim);
+            }
+            sessionStorage.setItem('amino.clientProfile.context.v1', snapshotJson);
         } catch (e) {
             console.warn('[Interface] Failed to persist client profile context:', e.message);
-        }
 
         try {
             _saveRecentProfileRecord({
@@ -34165,6 +34518,110 @@ var InterfaceApp = (function() {
 
     // ============ Public API ============
 
+    // ============ Record Drawer ============
+    // Shows a side drawer with all fields for a record when clicked in a non-client table.
+
+    function openRecordDrawer(blockId, recordId, event) {
+        if (event && event.target && event.target.closest('button, a, input, select, textarea')) return;
+
+        var block = _findBlock(blockId);
+        var tableId = block ? _resolveTableId(block.source) : null;
+        if (!tableId || !recordId) return;
+
+        // Get or create the drawer
+        var drawer = document.getElementById('iface-record-drawer');
+        if (!drawer) {
+            drawer = document.createElement('div');
+            drawer.id = 'iface-record-drawer';
+            drawer.style.cssText = 'position:fixed;top:0;right:0;width:480px;max-width:100vw;height:100vh;background:var(--bg-secondary);border-left:1px solid var(--border-primary);box-shadow:var(--shadow-lg);z-index:1000;display:flex;flex-direction:column;transform:translateX(100%);transition:transform 0.25s ease;overflow:hidden;';
+            document.body.appendChild(drawer);
+        }
+
+        // Fetch record and populate drawer
+        _getTableRecords(tableId).then(function(records) {
+            var record = records.find(function(r) { return (r.recordId || r.id) === recordId; });
+            if (!record) { closeRecordDrawer(); return; }
+
+            var tableFields = (typeof META_FIELDS !== 'undefined' && META_FIELDS && META_FIELDS[tableId]) ? META_FIELDS[tableId] : {};
+            var label = block ? (block.label || 'Record') : 'Record';
+            var html = '<div style="padding:16px 20px;border-bottom:1px solid var(--border-primary);display:flex;align-items:center;justify-content:space-between;background:var(--bg-elevated);">' +
+                '<div><div style="font-size:13px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">' + _esc(label) + '</div>' +
+                '<div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-top:2px;">' + _esc(recordId) + '</div></div>' +
+                '<button onclick="InterfaceApp.closeRecordDrawer()" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border-primary);background:var(--bg-tertiary);cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;">&#215;</button>' +
+                '</div>';
+            html += '<div style="flex:1;overflow-y:auto;padding:20px;">';
+
+            var f = record.fields || {};
+            var fieldIds = Object.keys(tableFields);
+            if (!fieldIds.length) {
+                // Fallback: render all fields directly from record
+                Object.keys(f).slice(0, 30).forEach(function(fieldName) {
+                    var val = f[fieldName];
+                    if (val == null || val === '') return;
+                    html += _renderDrawerField(fieldName, val);
+                });
+            } else {
+                fieldIds.forEach(function(fid) {
+                    var meta = tableFields[fid] || {};
+                    var fieldName = meta.fieldName || fid;
+                    var val = f[fieldName] !== undefined ? f[fieldName] : f[fid];
+                    if (val == null || val === '') return;
+                    html += _renderDrawerField(fieldName, val);
+                });
+            }
+
+            html += '</div>';
+            drawer.innerHTML = html;
+            drawer.style.transform = 'translateX(0)';
+
+            // Click outside to close
+            if (!drawer._backdropHandler) {
+                drawer._backdropHandler = function(e) {
+                    if (!drawer.contains(e.target)) closeRecordDrawer();
+                };
+                document.addEventListener('click', drawer._backdropHandler);
+            }
+        }).catch(function(err) {
+            console.warn('[Interface] Record drawer load failed:', err.message);
+        });
+    }
+
+    function _renderDrawerField(fieldName, val) {
+        var displayVal = '';
+        if (Array.isArray(val)) {
+            displayVal = val.map(function(v) {
+                if (typeof v === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(v)) {
+                    return _resolveRecordIdToLabel(v) || v;
+                }
+                return typeof v === 'object' ? (v.name || v.label || JSON.stringify(v)) : String(v);
+            }).filter(Boolean).join(', ');
+        } else if (typeof val === 'object' && val !== null) {
+            displayVal = val.name || val.label || val.filename || JSON.stringify(val);
+        } else if (typeof val === 'string' && /^rec[A-Za-z0-9]{10,}$/.test(val)) {
+            displayVal = _resolveRecordIdToLabel(val) || val;
+        } else if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+            try { displayVal = new Date(val).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: val.includes('T') ? 'short' : undefined }); } catch(e) { displayVal = val; }
+        } else {
+            displayVal = String(val);
+        }
+        if (!displayVal) return '';
+        return '<div style="margin-bottom:14px;">' +
+            '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">' + _esc(fieldName) + '</div>' +
+            '<div style="font-size:14px;color:var(--text-primary);word-break:break-word;">' + _esc(displayVal) + '</div>' +
+            '</div>';
+    }
+
+    function closeRecordDrawer() {
+        var drawer = document.getElementById('iface-record-drawer');
+        if (drawer) {
+            drawer.style.transform = 'translateX(100%)';
+            if (drawer._backdropHandler) {
+                document.removeEventListener('click', drawer._backdropHandler);
+                drawer._backdropHandler = null;
+            }
+        }
+    }
+
     return {
         init: init,
         loadSchema: loadSchema,
@@ -34180,6 +34637,8 @@ var InterfaceApp = (function() {
         caseNotesWidgetAction: caseNotesWidgetAction,
         openClientFromCaseNote: openClientFromCaseNote,
         openClientProfilePage: openClientProfilePage,
+        openRecordDrawer: openRecordDrawer,
+        closeRecordDrawer: closeRecordDrawer,
         navigatePage: navigatePage,
         _selectInboxClient: _selectInboxClient,
         onClientGraphClientChange: onClientGraphClientChange,
