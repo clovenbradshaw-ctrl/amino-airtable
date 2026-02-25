@@ -1804,6 +1804,22 @@ var AminoData = (function() {
         }
     }
 
+    // Returns the total number of records stored in IndexedDB across all tables.
+    // Uses the native IDBObjectStore.count() which is O(1) — no row iteration.
+    async function getLocalRecordCount() {
+        if (!_db) return 0;
+        try {
+            var tx = _db.transaction('records', 'readonly');
+            return await new Promise(function(resolve) {
+                var req = tx.objectStore('records').count();
+                req.onsuccess = function() { resolve(req.result); };
+                req.onerror = function() { resolve(0); };
+            });
+        } catch (e) {
+            return 0;
+        }
+    }
+
     // ============ Connectivity Monitor ============
 
     var _onBrowserOnlineHandler = null; // G-9 fix: store reference for cleanup
@@ -2350,6 +2366,7 @@ var AminoData = (function() {
         startConnectivityMonitor: startConnectivityMonitor,
         stopConnectivityMonitor: stopConnectivityMonitor,
         getLastSyncTime: getLastSyncTime,
+        getLocalRecordCount: getLocalRecordCount,
 
         // Offline write queue
         queueOfflineMutation: queueOfflineMutation,

@@ -19529,36 +19529,26 @@ async function init() {
         updateStatus('Syncing data in background...', false, null, null);
         updateLoadingOverlay('Downloading data...', 'Preparing to sync...', 0, 0, 0, 0, null);
 
-        // Show the hydration source picker if this is the first hydration
-        // (no prior successful hydration in localStorage). Otherwise use the
-        // persisted source preference (default: postgres).
-        var hasHydratedBefore = false;
-        try { hasHydratedBefore = !!localStorage.getItem('amino_hydration_complete'); } catch(e) {}
+        // Show what's already on-device before sync begins
+        var _preSyncCount = 0, _preSyncLastSynced = null;
+        try {
+            _preSyncCount = await AminoData.getLocalRecordCount();
+            _preSyncLastSynced = await AminoData.getLastSyncTime();
+        } catch(e) {}
+        var _preSyncSubtitle = _preSyncCount > 0
+            ? _preSyncCount.toLocaleString() + ' records on device'
+                + (_preSyncLastSynced ? ' · Last added: ' + _timeAgo(new Date(_preSyncLastSynced).getTime()) : '')
+            : 'Preparing to sync...';
+        updateLoadingOverlay('Syncing data...', _preSyncSubtitle, 0, 0, 0, 0, null);
 
-        if (!hasHydratedBefore) {
-            // First time — show picker, then start hydration with chosen source.
-            // Hide overlay so the picker is visible.
+        // Hydration source is configured in Settings > Preferences > Local Data.
+        // Default is postgres. Skip the picker modal on first run.
+        _startBackgroundHydration().then(function() {
             hideLoadingOverlay();
-            showHydrationPicker().then(function(chosenSource) {
-                console.log('[init] User chose hydration source:', chosenSource);
-                showLoadingOverlay();
-                updateLoadingOverlay('Downloading data...', 'Starting ' + chosenSource + ' sync...', 0, 0, 0, 0, null);
-                _startBackgroundHydration().then(function() {
-                    hideLoadingOverlay();
-                }).catch(function(err) {
-                    console.warn('[init] Background hydration failed:', err);
-                    hideLoadingOverlay();
-                });
-            });
-        } else {
-            // Returning user — keep overlay visible, use persisted source
-            _startBackgroundHydration().then(function() {
-                hideLoadingOverlay();
-            }).catch(function(err) {
-                console.warn('[init] Background hydration failed:', err);
-                hideLoadingOverlay();
-            });
-        }
+        }).catch(function(err) {
+            console.warn('[init] Background hydration failed:', err);
+            hideLoadingOverlay();
+        });
 
         // Defer non-critical network operations for the hydration path too
         _deferNetworkInit();
