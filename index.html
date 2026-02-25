@@ -30120,12 +30120,12 @@ var FormsApp = (function() {
             html += '<label>' + _esc(label) + (required ? '<span class="required">*</span>' : '') + '</label>';
 
             if (ft === 'multilinetext' || ft === 'richtext') {
-                html += '<textarea id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)"></textarea>';
+                html += '<textarea id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput(\'' + _esc(fieldId) + '\', this.value)"></textarea>';
             } else if (ft === 'checkbox') {
-                html += '<input type="checkbox" id="ff-' + _esc(fieldId) + '" style="width:auto;" onchange="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.checked)">';
+                html += '<input type="checkbox" id="ff-' + _esc(fieldId) + '" style="width:auto;" onchange="FormsApp.onFillerInput(\'' + _esc(fieldId) + '\', this.checked)">';
             } else if (ft === 'singleselect') {
                 var options = (field.options && field.options.choices) ? field.options.choices : [];
-                html += '<select id="ff-' + _esc(fieldId) + '" onchange="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+                html += '<select id="ff-' + _esc(fieldId) + '" onchange="FormsApp.onFillerInput(\'' + _esc(fieldId) + '\', this.value)">';
                 html += '<option value="">' + _esc(placeholder || 'Select...') + '</option>';
                 options.forEach(function(opt) {
                     var optName = opt.name || opt;
@@ -30133,15 +30133,15 @@ var FormsApp = (function() {
                 });
                 html += '</select>';
             } else if (ft === 'date' || ft === 'datetime') {
-                html += '<input type="date" id="ff-' + _esc(fieldId) + '" onchange="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+                html += '<input type="date" id="ff-' + _esc(fieldId) + '" onchange="FormsApp.onFillerInput(\'' + _esc(fieldId) + '\', this.value)">';
             } else if (ft === 'number' || ft === 'currency' || ft === 'percent') {
-                html += '<input type="number" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+                html += '<input type="number" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput(\'' + _esc(fieldId) + '\', this.value)">';
             } else if (ft === 'email') {
-                html += '<input type="email" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+                html += '<input type="email" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput(\'' + _esc(fieldId) + '\', this.value)">';
             } else if (ft === 'url') {
-                html += '<input type="url" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+                html += '<input type="url" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput(\'' + _esc(fieldId) + '\', this.value)">';
             } else {
-                html += '<input type="text" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput('' + _esc(fieldId) + '', this.value)">';
+                html += '<input type="text" id="ff-' + _esc(fieldId) + '" placeholder="' + _esc(placeholder) + '" oninput="FormsApp.onFillerInput(\'' + _esc(fieldId) + '\', this.value)">';
             }
 
             if (helpText) html += '<div class="field-help">' + _esc(helpText) + '</div>';
