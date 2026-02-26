@@ -3482,12 +3482,6 @@
         .iface-action-card .acard-icon.slate { background: #f1f5f9; color: var(--iface-text-muted); }
         .iface-action-card h3 { font-size: 15px; font-weight: 600; color: var(--iface-text); }
         .iface-action-card p { font-size: 13px; color: var(--iface-text-muted); line-height: 1.5; }
-        .iface-action-card .acard-arrow {
-            font-size: 13px; color: var(--iface-accent); font-weight: 500;
-            display: flex; align-items: center; gap: 4px; margin-top: auto;
-            opacity: 0; transition: opacity 150ms ease;
-        }
-        .iface-action-card:hover .acard-arrow { opacity: 1; }
 
         /* Stats row */
         .iface-stats-row {
@@ -31657,7 +31651,7 @@ var InterfaceApp = (function() {
             html += '<div class="acard-icon ' + _esc(item.color || 'blue') + '">' + (icons[item.icon] || '') + '</div>';
             html += '<h3>' + _esc(item.label) + '</h3>';
             html += '<p>' + _esc(item.desc) + '</p>';
-            html += '<span class="acard-arrow">Open \u2192</span>';
+
             html += '</div>';
         });
         html += '</div>';
