@@ -3300,6 +3300,110 @@
         }
         .iface-add-col-btn:hover { background: var(--primary-50, var(--bg-hover)); }
 
+        /* ===== CRM Settings Panel ===== */
+        .crm-settings-section {
+            margin-bottom: 24px; padding-bottom: 20px;
+            border-bottom: 1px solid var(--iface-border, var(--border-primary));
+        }
+        .crm-settings-section:last-child { border-bottom: none; margin-bottom: 0; }
+        .crm-settings-heading {
+            font-size: 14px; font-weight: 600; color: var(--iface-text, var(--text-primary));
+            margin: 0 0 12px 0; letter-spacing: -0.01em;
+        }
+        .crm-settings-description {
+            font-size: 12px; color: var(--iface-text-light, var(--text-muted));
+            margin: 0 0 12px 0; line-height: 1.5;
+        }
+        .crm-settings-row {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; padding: 8px 0; min-height: 36px;
+        }
+        .crm-settings-row label {
+            font-size: 13px; color: var(--iface-text, var(--text-primary));
+            font-weight: 500; flex-shrink: 0;
+        }
+        .crm-settings-row select, .crm-settings-row input[type="text"] {
+            padding: 6px 10px; font-size: 13px; border: 1px solid var(--iface-border, var(--border-primary));
+            border-radius: var(--iface-radius, var(--radius-md)); background: var(--iface-bg, var(--bg-primary));
+            color: var(--iface-text, var(--text-primary)); min-width: 150px;
+        }
+        .crm-settings-row input[type="checkbox"] {
+            width: 18px; height: 18px; accent-color: var(--iface-accent, var(--primary-500));
+            cursor: pointer;
+        }
+        .crm-settings-page-group {
+            margin-bottom: 12px; padding: 8px 12px;
+            background: var(--iface-bg, var(--bg-primary));
+            border: 1px solid var(--iface-border, var(--border-primary));
+            border-radius: var(--iface-radius, var(--radius-md));
+        }
+        .crm-settings-page-group h4 {
+            font-size: 12px; font-weight: 600; color: var(--iface-text-light, var(--text-muted));
+            text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px 0;
+        }
+
+        /* ===== CRM Favorites ===== */
+        .crm-favorites-list { padding: 0; }
+        .crm-favorite-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 16px; border-bottom: 1px solid var(--iface-border, var(--border-primary));
+            transition: background var(--transition-fast, 0.1s ease);
+        }
+        .crm-favorite-item:last-child { border-bottom: none; }
+        .crm-favorite-item:hover { background: var(--iface-hover, var(--bg-hover)); }
+        .crm-favorite-star {
+            color: var(--iface-text-light, var(--text-muted)); cursor: pointer;
+            display: flex; align-items: center; padding: 2px;
+            transition: color var(--transition-fast, 0.1s ease);
+        }
+        .crm-favorite-star:hover, .crm-favorite-star.active { color: #f59e0b; }
+        .crm-favorite-info { flex: 1; min-width: 0; }
+        .crm-favorite-name {
+            font-size: 14px; font-weight: 500; color: var(--iface-text, var(--text-primary));
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .crm-favorite-meta { font-size: 12px; color: var(--iface-text-light, var(--text-muted)); margin-top: 2px; }
+        .crm-recent-section { margin-top: 0; }
+
+        /* ===== CRM Favorite Star in Data Table ===== */
+        .iface-fav-star {
+            display: inline-flex; align-items: center; cursor: pointer;
+            color: var(--iface-text-light, var(--text-muted)); padding: 2px;
+            transition: color var(--transition-fast, 0.1s ease);
+        }
+        .iface-fav-star:hover, .iface-fav-star.favorited { color: #f59e0b; }
+        .iface-fav-star svg { width: 14px; height: 14px; }
+
+        /* ===== CRM Customize Mode ===== */
+        .iface-customize-btn {
+            padding: 4px 10px; font-size: 12px; border: 1px solid var(--iface-border, var(--border-primary));
+            border-radius: var(--iface-radius, var(--radius-md)); background: transparent;
+            color: var(--iface-text-light, var(--text-muted)); cursor: pointer;
+            display: inline-flex; align-items: center; gap: 4px;
+            transition: all var(--transition-fast, 0.1s ease);
+        }
+        .iface-customize-btn:hover { border-color: var(--iface-accent, var(--primary-500)); color: var(--iface-text, var(--text-primary)); }
+        .iface-customize-btn.active {
+            background: var(--iface-accent, var(--primary-500)); color: #fff;
+            border-color: var(--iface-accent, var(--primary-500));
+        }
+        .iface-block-customize-controls {
+            display: flex; gap: 4px; align-items: center; margin-left: auto; padding: 0 4px;
+        }
+        .iface-block-customize-btn {
+            width: 26px; height: 26px; border-radius: var(--radius-sm);
+            border: 1px solid var(--iface-border, var(--border-primary));
+            background: var(--iface-bg, var(--bg-primary)); color: var(--iface-text-light, var(--text-muted));
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 14px; line-height: 1; padding: 0;
+        }
+        .iface-block-customize-btn:hover { border-color: var(--iface-accent, var(--primary-500)); color: var(--iface-accent, var(--primary-500)); }
+        .iface-block-customize-btn.collapse-btn { font-size: 12px; }
+        .iface-block-collapsed .iface-block-body,
+        .iface-block-collapsed .iface-table-wrapper,
+        .iface-block-collapsed .iface-pagination,
+        .iface-block-collapsed .iface-filter-bar { display: none; }
+
         /* Pagination */
         .iface-pagination {
             display: flex; align-items: center; justify-content: space-between;
@@ -6716,6 +6820,10 @@
                     New Note
                 </button>
                 <span class="iface-synced-badge" id="iface-sync-badge">Synced</span>
+                <button class="iface-customize-btn" id="iface-customize-btn" onclick="InterfaceApp.toggleCustomizeMode()" title="Customize dashboard layout">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    Customize
+                </button>
                 <div class="iface-topbar-avatar" id="iface-avatar" onclick="switchApp('settings')">RL</div>
                 <button class="iface-edit-toggle" id="iface-edit-toggle" onclick="InterfaceApp.toggleEditMode()">Edit Layout</button>
             </div>
@@ -11791,7 +11899,20 @@ var UserPreferences = (function() {
         dateFormat: 'relative',      // 'relative', 'absolute', 'iso'
         timezone: null,              // null = browser default
         showOfflineSyncToasts: true, // show toast when offline-queued edits sync
-        confirmInlineCellEdit: true  // require confirmation before opening inline edit
+        confirmInlineCellEdit: true, // require confirmation before opening inline edit
+
+        // ── CRM Interface Preferences (EO: GIVEN — user-entered configuration) ──
+        crmDefaultPage: null,                  // default Interface page ID on load
+        crmFavoriteClients: [],                // array of { recordId, label, pinnedAt }
+        crmRecentProfiles: [],                 // recently viewed client profile record IDs (max 20)
+        crmBlockPrefs: {},                     // blockId -> { collapsed, columnWidths, hiddenColumns, sortField, sortDir, pageSize, filterPresets }
+        crmPageOrder: [],                      // user-customized page tab order (array of page IDs)
+        crmHiddenBlocks: {},                   // pageId -> [blockId, ...] — blocks the user chose to hide
+        crmBlockOrder: {},                     // pageId -> [blockId, ...] — user-customized block order
+        crmDashboardLayout: 'default',         // 'default' | 'compact' | 'wide'
+        crmQuickFilters: {},                   // blockId -> { filterId: value } — saved filter state per block
+        crmShowWelcome: true,                  // show welcome greeting on home page
+        crmDefaultClientSort: { field: 'Last Modified', dir: 'desc' }  // default sort for client table
     };
 
     var _prefs = Object.assign({}, _defaults);
@@ -30645,11 +30766,145 @@ var InterfaceApp = (function() {
                         endpoint: CASE_NOTES_WIDGET_ENDPOINT
                     }
                 ]
+            },
+            {
+                id: 'crm-settings',
+                label: 'Preferences',
+                icon: 'settings',
+                blocks: [
+                    {
+                        id: 'crm-settings-panel',
+                        type: 'crm-settings',
+                        label: 'CRM Preferences'
+                    },
+                    {
+                        id: 'crm-favorites-panel',
+                        type: 'crm-favorites',
+                        label: 'Favorite Clients'
+                    }
+                ]
             }
         ]
     };
 
     var _schema = null;
+
+    // ============ CRM User Preferences (EO: GIVEN — user-entered configuration) ============
+    // Persisted via UserPreferences module → IndexedDB + Matrix account data.
+    // Each preference mutation emits an EO ALT operator semantically: user alters
+    // their personal interface state, captured as GIVEN data.
+
+    function _getCrmPref(key) {
+        if (typeof UserPreferences !== 'undefined') return UserPreferences.get(key);
+        return null;
+    }
+
+    function _setCrmPref(key, value) {
+        if (typeof UserPreferences !== 'undefined') UserPreferences.set(key, value);
+    }
+
+    function _setCrmPrefs(obj) {
+        if (typeof UserPreferences !== 'undefined') UserPreferences.setMultiple(obj);
+    }
+
+    // ── Block-level preferences ──
+
+    function _getBlockPref(blockId) {
+        var all = _getCrmPref('crmBlockPrefs') || {};
+        return all[blockId] || {};
+    }
+
+    function _setBlockPref(blockId, key, value) {
+        var all = _getCrmPref('crmBlockPrefs') || {};
+        if (!all[blockId]) all[blockId] = {};
+        all[blockId][key] = value;
+        _setCrmPref('crmBlockPrefs', all);
+    }
+
+    function _setBlockPrefs(blockId, prefs) {
+        var all = _getCrmPref('crmBlockPrefs') || {};
+        all[blockId] = Object.assign(all[blockId] || {}, prefs);
+        _setCrmPref('crmBlockPrefs', all);
+    }
+
+    // ── Favorite clients ──
+
+    function _getFavoriteClients() {
+        return _getCrmPref('crmFavoriteClients') || [];
+    }
+
+    function _isClientFavorited(recordId) {
+        return _getFavoriteClients().some(function(f) { return f.recordId === recordId; });
+    }
+
+    function toggleFavoriteClient(recordId, label) {
+        var favs = _getFavoriteClients();
+        var idx = favs.findIndex(function(f) { return f.recordId === recordId; });
+        if (idx >= 0) {
+            favs.splice(idx, 1);
+        } else {
+            favs.unshift({ recordId: recordId, label: label || recordId, pinnedAt: Date.now() });
+            if (favs.length > 50) favs = favs.slice(0, 50);
+        }
+        _setCrmPref('crmFavoriteClients', favs);
+        // Re-render if on clients page
+        if (_activePage) renderPage(_activePage);
+    }
+
+    // ── Recent profiles ──
+
+    function _trackRecentProfile(recordId, label) {
+        var recent = _getCrmPref('crmRecentProfiles') || [];
+        recent = recent.filter(function(r) { return r.recordId !== recordId; });
+        recent.unshift({ recordId: recordId, label: label || recordId, viewedAt: Date.now() });
+        if (recent.length > 20) recent = recent.slice(0, 20);
+        _setCrmPref('crmRecentProfiles', recent);
+    }
+
+    // ── Hidden blocks ──
+
+    function _isBlockHiddenByUser(pageId, blockId) {
+        var hidden = (_getCrmPref('crmHiddenBlocks') || {})[pageId] || [];
+        return hidden.indexOf(blockId) !== -1;
+    }
+
+    function toggleBlockVisibility(pageId, blockId) {
+        var allHidden = _getCrmPref('crmHiddenBlocks') || {};
+        var hidden = allHidden[pageId] || [];
+        var idx = hidden.indexOf(blockId);
+        if (idx >= 0) {
+            hidden.splice(idx, 1);
+        } else {
+            hidden.push(blockId);
+        }
+        allHidden[pageId] = hidden;
+        _setCrmPref('crmHiddenBlocks', allHidden);
+        renderPage(_activePage);
+    }
+
+    // ── Block order ──
+
+    function _getUserBlockOrder(pageId) {
+        return (_getCrmPref('crmBlockOrder') || {})[pageId] || null;
+    }
+
+    function _saveUserBlockOrder(pageId, blockIds) {
+        var allOrder = _getCrmPref('crmBlockOrder') || {};
+        allOrder[pageId] = blockIds;
+        _setCrmPref('crmBlockOrder', allOrder);
+    }
+
+    // ── Quick filter persistence ──
+
+    function _getSavedQuickFilters(blockId) {
+        return (_getCrmPref('crmQuickFilters') || {})[blockId] || {};
+    }
+
+    function _saveQuickFilters(blockId, filters) {
+        var all = _getCrmPref('crmQuickFilters') || {};
+        all[blockId] = filters;
+        _setCrmPref('crmQuickFilters', all);
+    }
 
     // ============ Schema Persistence (Matrix Room, EO Format) ============
 
@@ -31843,6 +32098,29 @@ var InterfaceApp = (function() {
         var filters = block.filters || [];
         var ps = pageState || { page: 0, pageSize: block.segment && block.segment.pageSize || 50 };
 
+        // Apply user CRM block preferences (EO: GIVEN — user-entered column config)
+        var blockPrefs = _getBlockPref(block.id);
+        if (blockPrefs.hiddenColumns && blockPrefs.hiddenColumns.length) {
+            var hiddenSet = {};
+            blockPrefs.hiddenColumns.forEach(function(f) { hiddenSet[f] = true; });
+            columns = columns.filter(function(col) { return !hiddenSet[col.field]; });
+        }
+        if (blockPrefs.columnWidths) {
+            columns = columns.map(function(col) {
+                if (blockPrefs.columnWidths[col.field]) {
+                    return Object.assign({}, col, { width: blockPrefs.columnWidths[col.field] });
+                }
+                return col;
+            });
+        }
+        // Apply user's saved sort if set (overrides schema default for this user)
+        if (blockPrefs.sortField && block.segment) {
+            block.segment.sort = { field: blockPrefs.sortField, dir: blockPrefs.sortDir || 'desc' };
+        }
+        if (blockPrefs.pageSize && ps) {
+            ps.pageSize = blockPrefs.pageSize;
+        }
+
         // Build field-name-to-fieldType lookup so cell formatters can
         // delegate to formatCell() for computed/formula fields, matching
         // the DB screen rendering exactly.
@@ -31940,6 +32218,10 @@ var InterfaceApp = (function() {
         // Temporarily hidden until the relationship graph experience is improved.
         var includeRelationshipAction = false;
         html += '<thead><tr>';
+        // Favorite star column header for client tables
+        if (isClientTable) {
+            html += '<th style="width:32px;padding:0 4px;" title="Favorites"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></th>';
+        }
         columns.forEach(function(col) {
             var sortIndicator = '';
             if (block.segment && block.segment.sort && block.segment.sort.field === col.field) {
@@ -31954,28 +32236,42 @@ var InterfaceApp = (function() {
         }
         html += '</tr></thead><tbody>';
 
+        // Determine if this is a client table (for favorite stars)
+        var isClientTable = block.source && (block.source.tableNamePattern || '').toLowerCase().includes('client');
+
         if (!pageRecords.length) {
-            var emptyColspan = columns.length + (includeRelationshipAction ? 1 : 0);
+            var emptyColspan = columns.length + (isClientTable ? 1 : 0) + (includeRelationshipAction ? 1 : 0);
             html += '<tr><td colspan="' + emptyColspan + '" style="text-align:center;color:var(--text-muted);padding:40px;">No records found</td></tr>';
         } else {
             pageRecords.forEach(function(r) {
-                var isClientSource = block.source && (block.source.tableNamePattern || '').toLowerCase().includes('client');
-                var rowClick = isClientSource
+                var rowClick = isClientTable
                     ? ' onclick="InterfaceApp.openClientProfilePage(\'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"'
                     : ' onclick="InterfaceApp.openRecordDrawer(\'' + _esc(block.id) + '\', \'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;"';
                 html += '<tr data-record-id="' + _esc(r.recordId) + '"' + rowClick + '>';
+
+                // Favorite star column for client tables
+                if (isClientTable) {
+                    var isFav = _isClientFavorited(r.recordId);
+                    var clientLabel = _findFieldValue(r.fields || {}, 'Client Name') || _findFieldValue(r.fields || {}, 'Name') || r.recordId;
+                    html += '<td style="width:32px;text-align:center;padding:0 4px;">';
+                    html += '<span class="iface-fav-star' + (isFav ? ' favorited' : '') + '" onclick="event.stopPropagation();InterfaceApp.toggleFavoriteClient(\'' + _esc(r.recordId) + '\', \'' + _esc(String(clientLabel).replace(/'/g, '')) + '\')" title="' + (isFav ? 'Remove from favorites' : 'Add to favorites') + '">';
+                    html += '<svg viewBox="0 0 24 24" ' + (isFav ? 'fill="currentColor"' : 'fill="none"') + ' stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+                    html += '</span></td>';
+                }
+
                 columns.forEach(function(col) {
                     var val = _findFieldValue(r.fields || {}, col.field);
                     var label = (col.label || col.field || '').toLowerCase();
                     var colId = (col.label || col.field).toLowerCase().replace(/[^a-z0-9]+/g, '-');
                     var colFieldType = _fieldTypeByName[col.field] || null;
+                    var widthStyle = col.width ? ' style="min-width:' + col.width + 'px;max-width:' + col.width + 'px;"' : '';
                     // Special formatting based on column type
                     if (label.includes('client name') || label === 'name') {
-                        html += '<td data-col="' + _esc(colId) + '"><span class="client-name">' + _formatFieldValueRevamped(val, col.field, colFieldType) + '</span></td>';
+                        html += '<td data-col="' + _esc(colId) + '"' + widthStyle + '><span class="client-name">' + _formatFieldValueRevamped(val, col.field, colFieldType) + '</span></td>';
                     } else if (label.includes('file status') || label.includes('status')) {
-                        html += '<td data-col="' + _esc(colId) + '">' + _formatFileStatus(val) + '</td>';
+                        html += '<td data-col="' + _esc(colId) + '"' + widthStyle + '>' + _formatFileStatus(val) + '</td>';
                     } else {
-                        html += '<td data-col="' + _esc(colId) + '">' + _formatFieldValueRevamped(val, col.field, colFieldType) + '</td>';
+                        html += '<td data-col="' + _esc(colId) + '"' + widthStyle + '>' + _formatFieldValueRevamped(val, col.field, colFieldType) + '</td>';
                     }
                 });
                 if (includeRelationshipAction) {
@@ -33561,6 +33857,39 @@ var InterfaceApp = (function() {
         });
         var rootBlocks = page.blocks.filter(function(b) { return !nestedBlockIds[b.id]; });
 
+        // Apply user-customized block order if set (EO: GIVEN user preference)
+        var userOrder = _getUserBlockOrder(page.id);
+        if (userOrder && userOrder.length) {
+            var blockMap = {};
+            rootBlocks.forEach(function(b) { blockMap[b.id] = b; });
+            var ordered = [];
+            userOrder.forEach(function(bid) { if (blockMap[bid]) ordered.push(blockMap[bid]); });
+            // Append any blocks not in the saved order (newly added)
+            rootBlocks.forEach(function(b) { if (!userOrder.includes(b.id)) ordered.push(b); });
+            rootBlocks = ordered;
+        }
+
+        // Filter out blocks the user has hidden via CRM preferences
+        rootBlocks = rootBlocks.filter(function(b) {
+            return !_isBlockHiddenByUser(page.id, b.id);
+        });
+
+        // Restore saved quick filters per block (EO: GIVEN filter state)
+        rootBlocks.forEach(function(b) {
+            if (b.filters && b.filters.length) {
+                var saved = _getSavedQuickFilters(b.id);
+                if (saved && Object.keys(saved).length && !b._activeFilters) {
+                    b._activeFilters = {};
+                    Object.keys(saved).forEach(function(filterId) {
+                        var filterDef = b.filters.find(function(f) { return f.id === filterId; });
+                        if (filterDef && saved[filterId]) {
+                            b._activeFilters[filterId] = { field: filterDef.field, op: 'contains', value: saved[filterId] };
+                        }
+                    });
+                }
+            }
+        });
+
         var editClass = _editMode ? ' iface-editing' : '';
         // Determine if page content needs the page-content wrapper (home page) or is full-width (clients, events)
         var isHomePage = page.id === 'home';
@@ -33584,6 +33913,10 @@ var InterfaceApp = (function() {
 
         // Update topbar nav highlighting
         _updateTopbarNav(page.id);
+
+        // Update customize button state
+        var custBtn = document.getElementById('iface-customize-btn');
+        if (custBtn) custBtn.classList.toggle('active', _customizeMode);
 
         // Update avatar initials
         var avatarEl = document.getElementById('iface-avatar');
@@ -33625,12 +33958,19 @@ var InterfaceApp = (function() {
 
     async function _renderBlock(block, allBlocksMap) {
         if (block._hidden) return '';
+
+        // Check user collapse preference (EO: GIVEN)
+        var blockPrefs = _getBlockPref(block.id);
+        var isCollapsed = blockPrefs.collapsed === true;
+
         var html = '';
         var tableId, records, searchQ, pageState;
 
         try {
         switch (block.type) {
             case 'welcome-greeting':
+                // Respect user preference to hide welcome
+                if (_getCrmPref('crmShowWelcome') === false) return '';
                 html = _renderWelcomeGreeting(block);
                 break;
 
@@ -33726,6 +34066,14 @@ var InterfaceApp = (function() {
                 html = '';
                 break;
 
+            case 'crm-settings':
+                html = _renderCrmSettingsPanel(block);
+                break;
+
+            case 'crm-favorites':
+                html = _renderCrmFavoritesPanel(block);
+                break;
+
             default:
                 html = '<div class="iface-block"><div class="iface-block-body"><div class="iface-empty">Unknown block type: ' + _esc(block.type) + '</div></div></div>';
         }
@@ -33734,7 +34082,249 @@ var InterfaceApp = (function() {
             html = '<div class="iface-block"><div class="iface-block-body"><div class="iface-empty" style="color:var(--danger-500,#ef4444);">' +
                 'Block failed to load: ' + _esc(blockErr.message) + '</div></div></div>';
         }
+
+        // Wrap with customize controls when in customize mode
+        if (_customizeMode && block.id && html) {
+            var collapsedClass = isCollapsed ? ' iface-block-collapsed' : '';
+            var controls = '<div class="iface-block-customize-wrapper' + collapsedClass + '" data-customize-block="' + _esc(block.id) + '">';
+            controls += '<div class="iface-block-customize-controls">';
+            controls += '<button class="iface-block-customize-btn" onclick="InterfaceApp.moveBlockInPage(\'' + _esc(_activePage) + '\', \'' + _esc(block.id) + '\', -1)" title="Move up">\u2191</button>';
+            controls += '<button class="iface-block-customize-btn" onclick="InterfaceApp.moveBlockInPage(\'' + _esc(_activePage) + '\', \'' + _esc(block.id) + '\', 1)" title="Move down">\u2193</button>';
+            controls += '<button class="iface-block-customize-btn collapse-btn" onclick="InterfaceApp.toggleBlockCollapse(\'' + _esc(block.id) + '\')" title="' + (isCollapsed ? 'Expand' : 'Collapse') + '">' + (isCollapsed ? '\u25BC' : '\u25B2') + '</button>';
+            controls += '<button class="iface-block-customize-btn" onclick="InterfaceApp.toggleBlockVisibility(\'' + _esc(_activePage) + '\', \'' + _esc(block.id) + '\')" title="Hide block" style="color:var(--danger-500,#ef4444);">\u2715</button>';
+            controls += '</div>';
+            html = controls + html + '</div>';
+        } else if (isCollapsed && block.id && html) {
+            // Even outside customize mode, respect collapsed state
+            html = '<div class="iface-block-collapsed" data-customize-block="' + _esc(block.id) + '">' + html + '</div>';
+        }
+
         return html;
+    }
+
+    // ============ CRM Settings Panel Renderer ============
+
+    function _renderCrmSettingsPanel(block) {
+        var html = '<div class="iface-page-content"><div class="iface-block" data-block-id="' + _esc(block.id) + '">';
+        html += '<div class="iface-block-header"><span class="iface-block-title">CRM Preferences</span></div>';
+        html += '<div class="iface-block-body" style="padding:20px;max-height:none;">';
+
+        // ── General preferences ──
+        html += '<div class="crm-settings-section">';
+        html += '<h3 class="crm-settings-heading">General</h3>';
+
+        // Default page
+        var defaultPage = _getCrmPref('crmDefaultPage') || '';
+        var pages = _getVisiblePages().filter(function(p) { return p.id !== 'home'; });
+        html += '<div class="crm-settings-row">';
+        html += '<label>Default page on login</label>';
+        html += '<select onchange="InterfaceApp._setCrmSetting(\'crmDefaultPage\', this.value)">';
+        html += '<option value=""' + (!defaultPage ? ' selected' : '') + '>Auto (first page)</option>';
+        pages.forEach(function(p) {
+            html += '<option value="' + _esc(p.id) + '"' + (defaultPage === p.id ? ' selected' : '') + '>' + _esc(p.label) + '</option>';
+        });
+        html += '</select></div>';
+
+        // Dashboard layout
+        var layout = _getCrmPref('crmDashboardLayout') || 'default';
+        html += '<div class="crm-settings-row">';
+        html += '<label>Dashboard density</label>';
+        html += '<select onchange="InterfaceApp._setCrmSetting(\'crmDashboardLayout\', this.value)">';
+        ['default', 'compact', 'wide'].forEach(function(opt) {
+            html += '<option value="' + opt + '"' + (layout === opt ? ' selected' : '') + '>' + opt.charAt(0).toUpperCase() + opt.slice(1) + '</option>';
+        });
+        html += '</select></div>';
+
+        // Show welcome greeting
+        var showWelcome = _getCrmPref('crmShowWelcome');
+        if (showWelcome === null || showWelcome === undefined) showWelcome = true;
+        html += '<div class="crm-settings-row">';
+        html += '<label>Show welcome greeting</label>';
+        html += '<input type="checkbox"' + (showWelcome ? ' checked' : '') + ' onchange="InterfaceApp._setCrmSetting(\'crmShowWelcome\', this.checked)">';
+        html += '</div>';
+
+        // Default client sort
+        var clientSort = _getCrmPref('crmDefaultClientSort') || { field: 'Last Modified', dir: 'desc' };
+        html += '<div class="crm-settings-row">';
+        html += '<label>Default client sort</label>';
+        html += '<div style="display:flex;gap:8px;">';
+        html += '<select onchange="InterfaceApp._setCrmSetting(\'crmDefaultClientSort\', {field: this.value, dir: document.getElementById(\'crm-client-sort-dir\').value})">';
+        ['Client Name', 'Last Modified', 'A#', 'ICH Atty', 'Case Manager', 'Country'].forEach(function(f) {
+            html += '<option value="' + _esc(f) + '"' + (clientSort.field === f ? ' selected' : '') + '>' + _esc(f) + '</option>';
+        });
+        html += '</select>';
+        html += '<select id="crm-client-sort-dir" onchange="InterfaceApp._setCrmSetting(\'crmDefaultClientSort\', {field: document.querySelector(\'[onchange*=crmDefaultClientSort] select\').value || \'Last Modified\', dir: this.value})">';
+        html += '<option value="desc"' + (clientSort.dir === 'desc' ? ' selected' : '') + '>Newest first</option>';
+        html += '<option value="asc"' + (clientSort.dir === 'asc' ? ' selected' : '') + '>Oldest first</option>';
+        html += '</select></div></div>';
+
+        html += '</div>';
+
+        // ── Block visibility ──
+        html += '<div class="crm-settings-section">';
+        html += '<h3 class="crm-settings-heading">Block Visibility</h3>';
+        html += '<p class="crm-settings-description">Toggle which blocks are visible on each page. Hidden blocks are saved to your preferences.</p>';
+
+        var allPages = _getVisiblePages();
+        allPages.forEach(function(page) {
+            if (page.id === 'crm-settings') return;
+            var pageBlocks = (page.blocks || []).filter(function(b) { return b.label || b.type; });
+            if (!pageBlocks.length) return;
+            html += '<div class="crm-settings-page-group">';
+            html += '<h4>' + _esc(page.label) + '</h4>';
+            pageBlocks.forEach(function(b) {
+                var hidden = _isBlockHiddenByUser(page.id, b.id);
+                html += '<div class="crm-settings-row">';
+                html += '<label>' + _esc(b.label || b.type) + '</label>';
+                html += '<input type="checkbox"' + (!hidden ? ' checked' : '') + ' onchange="InterfaceApp.toggleBlockVisibility(\'' + _esc(page.id) + '\', \'' + _esc(b.id) + '\')">';
+                html += '</div>';
+            });
+            html += '</div>';
+        });
+        html += '</div>';
+
+        // ── Reset preferences ──
+        html += '<div class="crm-settings-section">';
+        html += '<div class="crm-settings-row" style="justify-content:flex-end;">';
+        html += '<button class="iface-btn-secondary" style="color:var(--danger-500,#ef4444);border-color:var(--danger-500,#ef4444);" onclick="if(confirm(\'Reset all CRM preferences to defaults?\')) InterfaceApp._resetCrmPrefs()">Reset All Preferences</button>';
+        html += '</div></div>';
+
+        html += '</div></div></div>';
+        return html;
+    }
+
+    // ============ CRM Favorites Panel Renderer ============
+
+    function _renderCrmFavoritesPanel(block) {
+        var favs = _getFavoriteClients();
+        var recent = _getCrmPref('crmRecentProfiles') || [];
+
+        var html = '<div class="iface-page-content"><div class="iface-block" data-block-id="' + _esc(block.id) + '">';
+        html += '<div class="iface-block-header"><span class="iface-block-title">Favorite Clients</span>';
+        html += '<span style="font-size:12px;color:var(--text-muted);">' + favs.length + ' pinned</span>';
+        html += '</div>';
+        html += '<div class="iface-block-body" style="max-height:none;padding:0;">';
+
+        if (!favs.length) {
+            html += '<div class="iface-empty" style="padding:24px;">No favorite clients yet. Click the star icon on any client row to add them here.</div>';
+        } else {
+            html += '<div class="crm-favorites-list">';
+            favs.forEach(function(fav) {
+                html += '<div class="crm-favorite-item" onclick="InterfaceApp.openClientProfilePage(\'' + _esc(fav.recordId) + '\', event)" style="cursor:pointer;">';
+                html += '<div class="crm-favorite-star" onclick="event.stopPropagation();InterfaceApp.toggleFavoriteClient(\'' + _esc(fav.recordId) + '\', \'' + _esc(fav.label) + '\')" title="Remove from favorites">';
+                html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+                html += '</div>';
+                html += '<div class="crm-favorite-info">';
+                html += '<div class="crm-favorite-name">' + _esc(fav.label) + '</div>';
+                if (fav.pinnedAt) {
+                    html += '<div class="crm-favorite-meta">Pinned ' + _formatRelativeTime(new Date(fav.pinnedAt).toISOString()) + '</div>';
+                }
+                html += '</div>';
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+
+        // Recent profiles section
+        if (recent.length) {
+            html += '<div class="crm-recent-section">';
+            html += '<div class="iface-block-header" style="border-top:1px solid var(--iface-border,var(--border-primary));"><span class="iface-block-title">Recently Viewed</span></div>';
+            html += '<div class="crm-favorites-list">';
+            recent.slice(0, 10).forEach(function(r) {
+                var isFav = _isClientFavorited(r.recordId);
+                html += '<div class="crm-favorite-item" onclick="InterfaceApp.openClientProfilePage(\'' + _esc(r.recordId) + '\', event)" style="cursor:pointer;">';
+                html += '<div class="crm-favorite-star' + (isFav ? ' active' : '') + '" onclick="event.stopPropagation();InterfaceApp.toggleFavoriteClient(\'' + _esc(r.recordId) + '\', \'' + _esc(r.label) + '\')" title="' + (isFav ? 'Remove from favorites' : 'Add to favorites') + '">';
+                html += '<svg width="16" height="16" viewBox="0 0 24 24" ' + (isFav ? 'fill="currentColor"' : 'fill="none"') + ' stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+                html += '</div>';
+                html += '<div class="crm-favorite-info">';
+                html += '<div class="crm-favorite-name">' + _esc(r.label) + '</div>';
+                if (r.viewedAt) {
+                    html += '<div class="crm-favorite-meta">Viewed ' + _formatRelativeTime(new Date(r.viewedAt).toISOString()) + '</div>';
+                }
+                html += '</div>';
+                html += '</div>';
+            });
+            html += '</div></div>';
+        }
+
+        html += '</div></div></div>';
+        return html;
+    }
+
+    // ============ CRM Settings Helpers (public API) ============
+
+    function _setCrmSettingFromUI(key, value) {
+        _setCrmPref(key, value);
+        _showToast('Preference saved');
+    }
+
+    function _resetCrmPrefs() {
+        _setCrmPrefs({
+            crmDefaultPage: null,
+            crmFavoriteClients: [],
+            crmRecentProfiles: [],
+            crmBlockPrefs: {},
+            crmPageOrder: [],
+            crmHiddenBlocks: {},
+            crmBlockOrder: {},
+            crmDashboardLayout: 'default',
+            crmQuickFilters: {},
+            crmShowWelcome: true,
+            crmDefaultClientSort: { field: 'Last Modified', dir: 'desc' }
+        });
+        _showToast('All CRM preferences reset');
+        renderPage(_activePage);
+    }
+
+    // ============ Block Reorder (Drag-and-Drop for Dashboard Customization) ============
+
+    var _customizeMode = false;
+
+    function toggleCustomizeMode() {
+        _customizeMode = !_customizeMode;
+        renderPage(_activePage);
+    }
+
+    function moveBlockInPage(pageId, blockId, direction) {
+        if (!_schema) return;
+        var page = _schema.pages.find(function(p) { return p.id === pageId; });
+        if (!page) return;
+
+        // Collect current block order (respect user order if any)
+        var nestedBlockIds = {};
+        page.blocks.forEach(function(b) {
+            (b.children || []).forEach(function(cid) { nestedBlockIds[cid] = true; });
+            (b.tabs || []).forEach(function(tab) { if (tab && tab.blockId) nestedBlockIds[tab.blockId] = true; });
+        });
+        var rootIds = page.blocks.filter(function(b) { return !nestedBlockIds[b.id]; }).map(function(b) { return b.id; });
+
+        var userOrder = _getUserBlockOrder(pageId);
+        if (userOrder && userOrder.length) {
+            // Use user order but ensure all blocks are included
+            var ordered = [];
+            userOrder.forEach(function(id) { if (rootIds.includes(id)) ordered.push(id); });
+            rootIds.forEach(function(id) { if (!ordered.includes(id)) ordered.push(id); });
+            rootIds = ordered;
+        }
+
+        var idx = rootIds.indexOf(blockId);
+        if (idx === -1) return;
+        var newIdx = idx + direction;
+        if (newIdx < 0 || newIdx >= rootIds.length) return;
+
+        // Swap
+        var tmp = rootIds[idx];
+        rootIds[idx] = rootIds[newIdx];
+        rootIds[newIdx] = tmp;
+
+        _saveUserBlockOrder(pageId, rootIds);
+        renderPage(_activePage);
+    }
+
+    function toggleBlockCollapse(blockId) {
+        var prefs = _getBlockPref(blockId);
+        _setBlockPref(blockId, 'collapsed', !prefs.collapsed);
+        renderPage(_activePage);
     }
 
     function _flattenBlocks(blocks) {
@@ -33863,6 +34453,17 @@ var InterfaceApp = (function() {
             delete block._activeFilters[filterId];
         }
 
+        // Persist quick filter to user preferences (EO: GIVEN — user ALT on filter state)
+        var filterState = {};
+        if (block._activeFilters) {
+            Object.keys(block._activeFilters).forEach(function(fid) {
+                if (block._activeFilters[fid] && block._activeFilters[fid].value) {
+                    filterState[fid] = block._activeFilters[fid].value;
+                }
+            });
+        }
+        _saveQuickFilters(blockId, filterState);
+
         // Reset pagination when filter changes
         _tablePaginationState[blockId] = { page: 0, pageSize: (block.segment && block.segment.pageSize) || 50 };
         renderPage(_activePage);
@@ -33881,6 +34482,10 @@ var InterfaceApp = (function() {
         } else {
             block.segment.sort = { field: fieldName, dir: 'asc' };
         }
+
+        // Persist sort preference to user preferences (EO: GIVEN — user ALT on sort)
+        _setBlockPrefs(blockId, { sortField: fieldName, sortDir: block.segment.sort.dir });
+
         _tablePaginationState[blockId] = { page: 0, pageSize: block.segment.pageSize || 50 };
         renderPage(_activePage);
         if (_urlStateBootstrapped) persistUrlState();
@@ -34148,7 +34753,7 @@ var InterfaceApp = (function() {
 
     async function openClientProfilePage(recordId, event) {
         if (!recordId) return;
-        if (event && event.target && event.target.closest('button, a, input, select, textarea')) {
+        if (event && event.target && event.target.closest('button, a, input, select, textarea, .iface-fav-star')) {
             return;
         }
 
@@ -34178,6 +34783,9 @@ var InterfaceApp = (function() {
                 subtitle: 'Recent client'
             });
         } catch (e) {}
+
+        // Track as recently viewed in CRM preferences (EO: GIVEN — user navigated)
+        try { _trackRecentProfile(recordId, recordId); } catch (e) {}
 
         var targetUrl = 'client-profile.html?clientId=' + encodeURIComponent(recordId);
         window.location.href = targetUrl;
@@ -34432,7 +35040,13 @@ var InterfaceApp = (function() {
         console.log('[Interface] Schema loaded in', Math.round(performance.now() - t0), 'ms');
 
         var visiblePages = _getVisiblePages().filter(function(p) { return p.id !== 'home'; });
-        _activePage = visiblePages.length ? visiblePages[0].id : null;
+        // Apply user's default page preference (EO: GIVEN — user preference)
+        var userDefaultPage = _getCrmPref('crmDefaultPage');
+        if (userDefaultPage && visiblePages.some(function(p) { return p.id === userDefaultPage; })) {
+            _activePage = userDefaultPage;
+        } else {
+            _activePage = visiblePages.length ? visiblePages[0].id : null;
+        }
 
         // Set admin visibility
         var editBtn = document.getElementById('iface-edit-toggle');
@@ -34661,6 +35275,16 @@ var InterfaceApp = (function() {
         _toggleAttorneyFilter: _toggleAttorneyFilter,
         _showGoogleCalendar: _showGoogleCalendar,
         getInterfaceRoomId: function() { return _findOrCreateInterfaceRoom(); },
+        // CRM preferences & favorites (EO: GIVEN — user preference mutations)
+        toggleFavoriteClient: toggleFavoriteClient,
+        toggleBlockVisibility: toggleBlockVisibility,
+        toggleCustomizeMode: toggleCustomizeMode,
+        moveBlockInPage: moveBlockInPage,
+        toggleBlockCollapse: toggleBlockCollapse,
+        _setCrmSetting: _setCrmSettingFromUI,
+        _resetCrmPrefs: _resetCrmPrefs,
+        _getBlockPref: _getBlockPref,
+        _setBlockPref: _setBlockPref,
         get schema() { return _schema; },
         get activePage() { return _activePage; },
         get editMode() { return _editMode; }
