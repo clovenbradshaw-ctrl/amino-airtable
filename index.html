@@ -7,6 +7,7 @@
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css">
     <style>
         /* ===== Noema Design System - CSS Variables ===== */
         :root {
@@ -1180,7 +1181,8 @@
         #home-app .routes-card h3 { font-size: 17px; }
         #home-app .routes-card p { font-size: 13px; color: var(--h-text-muted); line-height: 1.45; }
         #home-app .routes-card span { margin-top: auto; font-size: 13px; color: var(--h-brand); font-weight: 600; }
-        #home-app .routes-card-icon { font-size: 22px; }
+        #home-app .routes-card-icon { font-size: 24px; line-height: 1; color: var(--h-brand); }
+        #home-app .routes-card-icon i { vertical-align: middle; }
         #home-app .routes-home-stats {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -6107,25 +6109,25 @@
 
             <div class="routes-home-cards">
                 <button class="routes-card" onclick="switchApp('database')">
-                    <div class="routes-card-icon">🗄️</div>
+                    <div class="routes-card-icon"><i class="ph ph-database"></i></div>
                     <h3>Database</h3>
                     <p>Browse synced tables and records directly from local + Matrix cache.</p>
                     <span>Open Database →</span>
                 </button>
                 <button class="routes-card" onclick="switchApp('interface')">
-                    <div class="routes-card-icon">🧭</div>
+                    <div class="routes-card-icon"><i class="ph ph-compass"></i></div>
                     <h3>Interface</h3>
                     <p>Open the first Interface page with live records, including case notes from PostgreSQL.</p>
                     <span>Open Interface →</span>
                 </button>
                 <button class="routes-card" onclick="switchApp('forms')">
-                    <div class="routes-card-icon">📋</div>
+                    <div class="routes-card-icon"><i class="ph ph-clipboard-text"></i></div>
                     <h3>Forms</h3>
                     <p>Create and manage data entry forms. View forms shared with you across all tables.</p>
                     <span>Open Forms →</span>
                 </button>
                 <button class="routes-card" onclick="switchApp('settings')">
-                    <div class="routes-card-icon">⚙️</div>
+                    <div class="routes-card-icon"><i class="ph ph-gear-six"></i></div>
                     <h3>Settings</h3>
                     <p>Manage users, room access, and workspace preferences.</p>
                     <span>Open Settings →</span>
@@ -16801,6 +16803,8 @@ function setRefreshIndicatorSyncing(isSyncing) {
     }
 }
 
+var _autoRefreshInFlight = false;
+
 function startRefreshCountdown() {
     if (refreshCountdownInterval) clearInterval(refreshCountdownInterval);
 
@@ -16813,8 +16817,18 @@ function startRefreshCountdown() {
 
         if (remaining > 0) {
             textEl.textContent = 'Auto-refresh in ' + remaining + 's';
-        } else {
-            textEl.textContent = 'Refreshing soon...';
+        } else if (!_autoRefreshInFlight) {
+            // Timer expired — trigger an actual data refresh
+            _autoRefreshInFlight = true;
+            textEl.textContent = 'Refreshing...';
+            setRefreshIndicatorSyncing(true);
+            webhookIncrementalSync().then(function() {
+                _autoRefreshInFlight = false;
+                setRefreshIndicatorSyncing(false);
+            }).catch(function() {
+                _autoRefreshInFlight = false;
+                setRefreshIndicatorSyncing(false);
+            });
         }
     }
 
@@ -18831,6 +18845,18 @@ async function webhookIncrementalSync() {
                 if (dataRecords.length > 0) {
                     await saveBatch([], [], [], dataRecords);
                     totalUpdated += dataRecords.length;
+                    // Dispatch per-record events so the debounced UI renderer
+                    // picks up changes automatically (the handler requires
+                    // tableId + recordId to update cells / trigger re-render).
+                    for (var dr = 0; dr < dataRecords.length; dr++) {
+                        window.dispatchEvent(new CustomEvent('amino:record-updated', {
+                            detail: {
+                                tableId: dataRecords[dr].tableId,
+                                recordId: dataRecords[dr].recordId,
+                                fields: dataRecords[dr].fields
+                            }
+                        }));
+                    }
                 }
             } catch (tableErr) {
                 failedTableIds.push(tableId);
@@ -18845,12 +18871,6 @@ async function webhookIncrementalSync() {
 
         if (failedTableIds.length > 0) {
             SyncStatusFeed.warn('Webhook incremental sync failed for ' + failedTableIds.length + ' table' + (failedTableIds.length !== 1 ? 's' : '') + ': ' + failedTableIds.join(', '));
-        }
-
-        if (totalUpdated > 0) {
-            window.dispatchEvent(new CustomEvent('amino:record-updated', {
-                detail: { source: 'webhook-poll', count: totalUpdated }
-            }));
         }
 
         return totalUpdated;
@@ -21723,10 +21743,10 @@ function showImportStatus(title, details, type, progress) {
     var div = document.createElement('div');
     div.className = 'import-status' + (type === 'success' ? ' success' : type === 'error' ? ' error' : '');
 
-    var icon = type === 'success' ? '✓' : type === 'error' ? '✗' : '⟳';
+    var iconClass = type === 'success' ? 'ph ph-check-circle' : type === 'error' ? 'ph ph-x-circle' : 'ph ph-arrows-clockwise';
     var titleClass = type === 'success' ? ' success' : type === 'error' ? ' error' : '';
 
-    div.innerHTML = '<div class="import-status-title' + titleClass + '">' + icon + ' ' + esc(title) + '</div>' +
+    div.innerHTML = '<div class="import-status-title' + titleClass + '"><i class="' + iconClass + '"' + (type === 'progress' ? ' style="animation: spin 1s linear infinite;"' : '') + '></i> ' + esc(title) + '</div>' +
                     '<div class="import-status-details">' + esc(details) + '</div>' +
                     (type === 'progress' ? '<div class="import-progress"><div class="import-progress-bar" style="width: ' + (progress || 0) + '%"></div></div>' : '');
 
@@ -31481,7 +31501,7 @@ var InterfaceApp = (function() {
             if (_editMode && _currentUserRole === 'admin') {
                 var roles = _normalizePageRoles(page);
                 var roleLabel = _rolesLabel(roles);
-                html += '<button class="iface-page-access-btn is-admin" title="Edit page access" onclick="InterfaceApp.editPagePermissions(\'' + _esc(page.id) + '\')">⚙</button>';
+                html += '<button class="iface-page-access-btn is-admin" title="Edit page access" onclick="InterfaceApp.editPagePermissions(\'' + _esc(page.id) + '\')"><i class="ph ph-gear-six"></i></button>';
                 html += '<span class="iface-page-access-pill" title="Visible to">' + _esc(roleLabel) + '</span>';
             }
             html += '</span>';
