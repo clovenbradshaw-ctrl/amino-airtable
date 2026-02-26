@@ -42,6 +42,17 @@ User preferences are private per-user data stored in Matrix account data. They a
 | `pageSize` | `number` | `100` | Records per page |
 | `dateFormat` | `'relative' \| 'absolute' \| 'iso'` | `'relative'` | Date display format |
 | `timezone` | `string \| null` | `null` | Timezone (null = browser) |
+| `crmDefaultPage` | `string \| null` | `null` | Default CRM Interface page on login |
+| `crmFavoriteClients` | `array` | `[]` | Pinned client records `[{recordId, label, pinnedAt}]` |
+| `crmRecentProfiles` | `array` | `[]` | Recently viewed client profiles (max 20) |
+| `crmBlockPrefs` | `object` | `{}` | Per-block prefs: `{blockId: {collapsed, columnWidths, hiddenColumns, sortField, sortDir, pageSize}}` |
+| `crmPageOrder` | `string[]` | `[]` | User-customized page tab order |
+| `crmHiddenBlocks` | `object` | `{}` | `{pageId: [blockId, ...]}` — blocks user chose to hide |
+| `crmBlockOrder` | `object` | `{}` | `{pageId: [blockId, ...]}` — user-customized block order |
+| `crmDashboardLayout` | `string` | `'default'` | Dashboard density: `'default' \| 'compact' \| 'wide'` |
+| `crmQuickFilters` | `object` | `{}` | `{blockId: {filterId: value}}` — saved filter state per block |
+| `crmShowWelcome` | `boolean` | `true` | Show welcome greeting on home page |
+| `crmDefaultClientSort` | `object` | `{field: 'Last Modified', dir: 'desc'}` | Default sort for client tables |
 
 ### API
 
