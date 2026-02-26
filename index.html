@@ -13233,10 +13233,23 @@ async function safeResponseJson(response, context) {
     }
 }
 
-// ============ Synapse Login ============
+// ============ Synapse Auth Module ============
+// Compartmentalized authentication: login, session, offline unlock, password reset.
+// Encapsulated as IIFE to isolate auth internals and prevent external breakage.
 
 var SYNAPSE_HOMESERVER_URL = 'https://app.aminoimmigration.com';
 var SYNAPSE_SESSION_KEY = 'amino_synapse_session';
+var _isOfflineSession = false;
+
+var SynapseAuth = (function() {
+    'use strict';
+
+    var _authState = 'idle'; // 'idle' | 'logging_in' | 'verifying' | 'resetting'
+
+    // Safe DOM access — returns null instead of throwing if element is missing
+    function _el(id) {
+        return document.getElementById(id) || null;
+    }
 
 function _saveSynapseSession(session) {
     try {
@@ -13289,17 +13302,21 @@ async function verifySynapseSession() {
 }
 
 async function trySynapseLogin() {
-    var username = document.getElementById('synapse-username').value.trim();
-    var password = document.getElementById('synapse-password').value.trim();
+    if (_authState === 'logging_in') return; // Prevent double-submit
+
+    var usernameEl = _el('synapse-username');
+    var passwordEl = _el('synapse-password');
+    var username = usernameEl ? usernameEl.value.trim() : '';
+    var password = passwordEl ? passwordEl.value.trim() : '';
 
     if (!username || !password) {
         showSynapseError('Please enter your username and password.');
         return;
     }
 
-    var btn = document.getElementById('synapse-login-btn');
-    btn.textContent = 'Signing in...';
-    btn.disabled = true;
+    _authState = 'logging_in';
+    var btn = _el('synapse-login-btn');
+    if (btn) { btn.textContent = 'Signing in...'; btn.disabled = true; }
     hideSynapseError();
 
     try {
@@ -13424,32 +13441,36 @@ async function trySynapseLogin() {
         console.error('[Synapse] Login failed:', err);
         showSynapseError(err.message || 'Login failed. Please check your credentials.');
     } finally {
-        btn.textContent = 'Sign In';
-        btn.disabled = false;
+        _authState = 'idle';
+        if (btn) { btn.textContent = 'Sign In'; btn.disabled = false; }
     }
 }
 
 function showSynapseError(msg) {
-    var el = document.getElementById('synapse-login-error');
+    var el = _el('synapse-login-error');
+    if (!el) return;
     el.textContent = msg;
     el.style.display = 'block';
 }
 
 function hideSynapseError() {
-    var el = document.getElementById('synapse-login-error');
-    el.style.display = 'none';
+    var el = _el('synapse-login-error');
+    if (el) el.style.display = 'none';
 }
 
 function showSynapseLoginScreen() {
-    var el = document.getElementById('synapse-login-screen');
+    var el = _el('synapse-login-screen');
+    if (!el) return;
     el.classList.remove('hidden', 'fading-out');
-    // Always show the login form, not the reset form
-    document.getElementById('synapse-login-form').style.display = 'block';
-    document.getElementById('synapse-reset-form').style.display = 'none';
+    var loginForm = _el('synapse-login-form');
+    var resetForm = _el('synapse-reset-form');
+    if (loginForm) loginForm.style.display = 'block';
+    if (resetForm) resetForm.style.display = 'none';
 }
 
 function hideSynapseLoginScreen() {
-    var el = document.getElementById('synapse-login-screen');
+    var el = _el('synapse-login-screen');
+    if (!el) return;
     el.classList.add('fading-out');
     el.addEventListener('transitionend', function handler() {
         el.removeEventListener('transitionend', handler);
@@ -13480,37 +13501,48 @@ var _resetClientSecret = null;
 var _resetSid = null;
 
 function showPasswordReset() {
-    document.getElementById('synapse-login-form').style.display = 'none';
-    document.getElementById('synapse-reset-form').style.display = 'block';
+    var loginForm = _el('synapse-login-form');
+    var resetForm = _el('synapse-reset-form');
+    if (loginForm) loginForm.style.display = 'none';
+    if (resetForm) resetForm.style.display = 'block';
     _showResetStep(1);
     _resetClientSecret = null;
     _resetSid = null;
-    document.getElementById('synapse-reset-error').style.display = 'none';
-    document.getElementById('synapse-reset-success').style.display = 'none';
+    var errEl = _el('synapse-reset-error');
+    var succEl = _el('synapse-reset-success');
+    if (errEl) errEl.style.display = 'none';
+    if (succEl) succEl.style.display = 'none';
 }
 
 function hidePasswordReset() {
-    document.getElementById('synapse-reset-form').style.display = 'none';
-    document.getElementById('synapse-login-form').style.display = 'block';
-    document.getElementById('synapse-reset-email').value = '';
-    document.getElementById('synapse-reset-error').style.display = 'none';
-    document.getElementById('synapse-reset-success').style.display = 'none';
+    var resetForm = _el('synapse-reset-form');
+    var loginForm = _el('synapse-login-form');
+    if (resetForm) resetForm.style.display = 'none';
+    if (loginForm) loginForm.style.display = 'block';
+    var emailEl = _el('synapse-reset-email');
+    if (emailEl) emailEl.value = '';
+    var errEl = _el('synapse-reset-error');
+    var succEl = _el('synapse-reset-success');
+    if (errEl) errEl.style.display = 'none';
+    if (succEl) succEl.style.display = 'none';
 }
 
 function _showResetStep(step) {
     document.querySelectorAll('.synapse-reset-step').forEach(function(el) { el.classList.remove('active'); });
-    var stepEl = document.getElementById('synapse-reset-step' + step);
+    var stepEl = _el('synapse-reset-step' + step);
     if (stepEl) stepEl.classList.add('active');
 }
 
 function _showResetError(msg) {
-    var el = document.getElementById('synapse-reset-error');
+    var el = _el('synapse-reset-error');
+    if (!el) return;
     el.textContent = msg;
     el.style.display = 'block';
 }
 
 function _hideResetError() {
-    document.getElementById('synapse-reset-error').style.display = 'none';
+    var el = _el('synapse-reset-error');
+    if (el) el.style.display = 'none';
 }
 
 async function requestPasswordReset() {
@@ -13684,49 +13716,47 @@ function synapseLogout() {
     localStorage.removeItem('amino_data_layer_key');
 }
 
-// Wire up Synapse login UI
-document.getElementById('synapse-login-btn').onclick = trySynapseLogin;
-document.getElementById('synapse-username').onkeydown = function(e) { if (e.key === 'Enter') document.getElementById('synapse-password').focus(); };
-document.getElementById('synapse-password').onkeydown = function(e) { if (e.key === 'Enter') trySynapseLogin(); };
-
-// Wire up password reset UI
-document.getElementById('synapse-reset-email').onkeydown = function(e) { if (e.key === 'Enter') requestPasswordReset(); };
-document.getElementById('synapse-reset-new-password').onkeydown = function(e) { if (e.key === 'Enter') document.getElementById('synapse-reset-confirm-password').focus(); };
-document.getElementById('synapse-reset-confirm-password').onkeydown = function(e) { if (e.key === 'Enter') confirmPasswordReset(); };
-
-// Wire up view selection UI
-document.getElementById('view-as-database-btn').onclick = selectDatabaseView;
-document.getElementById('view-as-interface-btn').onclick = selectInterfaceView;
+// ── Wire UI (null-safe to prevent breakage if DOM elements are missing) ──
+(function _wireAuthUI() {
+    var el;
+    el = _el('synapse-login-btn'); if (el) el.onclick = trySynapseLogin;
+    el = _el('synapse-username'); if (el) el.onkeydown = function(e) { if (e.key === 'Enter') { var pw = _el('synapse-password'); if (pw) pw.focus(); } };
+    el = _el('synapse-password'); if (el) el.onkeydown = function(e) { if (e.key === 'Enter') trySynapseLogin(); };
+    el = _el('synapse-reset-email'); if (el) el.onkeydown = function(e) { if (e.key === 'Enter') requestPasswordReset(); };
+    el = _el('synapse-reset-new-password'); if (el) el.onkeydown = function(e) { if (e.key === 'Enter') { var cp = _el('synapse-reset-confirm-password'); if (cp) cp.focus(); } };
+    el = _el('synapse-reset-confirm-password'); if (el) el.onkeydown = function(e) { if (e.key === 'Enter') confirmPasswordReset(); };
+    el = _el('view-as-database-btn'); if (el) el.onclick = selectDatabaseView;
+    el = _el('view-as-interface-btn'); if (el) el.onclick = selectInterfaceView;
+})();
 
 // ============ Offline Unlock ============
 
-var _isOfflineSession = false;
-
 function showOfflineUnlockScreen() {
     var session = _loadSynapseSession();
-    var screen = document.getElementById('offline-unlock-screen');
+    var screen = _el('offline-unlock-screen');
+    if (!screen) return;
     screen.classList.add('visible');
 
-    // Show cached username
     if (session && session.userId) {
-        var userBadge = document.getElementById('offline-unlock-user');
-        var usernameSpan = document.getElementById('offline-unlock-username');
+        var userBadge = _el('offline-unlock-user');
+        var usernameSpan = _el('offline-unlock-username');
         var localpart = session.userId.split(':')[0].replace(/^@/, '');
-        usernameSpan.textContent = localpart;
-        userBadge.style.display = 'inline-flex';
+        if (usernameSpan) usernameSpan.textContent = localpart;
+        if (userBadge) userBadge.style.display = 'inline-flex';
     }
 
-    // Hide the synapse login screen while offline unlock is visible
-    document.getElementById('synapse-login-screen').classList.add('hidden');
+    var loginScreen = _el('synapse-login-screen');
+    if (loginScreen) loginScreen.classList.add('hidden');
 
-    // Focus the password input
     setTimeout(function() {
-        document.getElementById('offline-unlock-password').focus();
+        var pwEl = _el('offline-unlock-password');
+        if (pwEl) pwEl.focus();
     }, 100);
 }
 
 function hideOfflineUnlockScreen() {
-    var screen = document.getElementById('offline-unlock-screen');
+    var screen = _el('offline-unlock-screen');
+    if (!screen) return;
     screen.classList.add('fading-out');
     screen.addEventListener('transitionend', function handler() {
         screen.removeEventListener('transitionend', handler);
@@ -13736,21 +13766,25 @@ function hideOfflineUnlockScreen() {
 }
 
 function showOfflineUnlockError(msg) {
-    var el = document.getElementById('offline-unlock-error');
+    var el = _el('offline-unlock-error');
+    if (!el) return;
     el.textContent = msg;
     el.style.display = 'block';
 }
 
 function hideOfflineUnlockError() {
-    document.getElementById('offline-unlock-error').style.display = 'none';
+    var el = _el('offline-unlock-error');
+    if (el) el.style.display = 'none';
 }
 
 function showOfflineModeBanner() {
-    document.getElementById('offline-mode-banner').classList.add('visible');
+    var el = _el('offline-mode-banner');
+    if (el) el.classList.add('visible');
 }
 
 function hideOfflineModeBanner() {
-    document.getElementById('offline-mode-banner').classList.remove('visible');
+    var el = _el('offline-mode-banner');
+    if (el) el.classList.remove('visible');
 }
 
 async function tryOfflineUnlock() {
@@ -13904,10 +13938,76 @@ window.addEventListener('amino:connectivity-restored', function() {
     }
 });
 
-// Wire up offline unlock UI
-document.getElementById('offline-unlock-btn').onclick = tryOfflineUnlock;
-document.getElementById('offline-unlock-online-btn').onclick = offlineUnlockGoOnline;
-document.getElementById('offline-unlock-password').onkeydown = function(e) { if (e.key === 'Enter') tryOfflineUnlock(); };
+// Wire up offline unlock UI (null-safe)
+(function _wireOfflineUI() {
+    var el;
+    el = _el('offline-unlock-btn'); if (el) el.onclick = tryOfflineUnlock;
+    el = _el('offline-unlock-online-btn'); if (el) el.onclick = offlineUnlockGoOnline;
+    el = _el('offline-unlock-password'); if (el) el.onkeydown = function(e) { if (e.key === 'Enter') tryOfflineUnlock(); };
+})();
+
+    // ── Public API ──
+    return {
+        HOMESERVER_URL: SYNAPSE_HOMESERVER_URL,
+        login: trySynapseLogin,
+        verifySession: verifySynapseSession,
+        init: initSynapseLogin,
+        loadSession: _loadSynapseSession,
+        saveSession: _saveSynapseSession,
+        clearSession: _clearSynapseSession,
+        showLoginScreen: showSynapseLoginScreen,
+        hideLoginScreen: hideSynapseLoginScreen,
+        showError: showSynapseError,
+        hideError: hideSynapseError,
+        showPasswordReset: showPasswordReset,
+        hidePasswordReset: hidePasswordReset,
+        requestPasswordReset: requestPasswordReset,
+        confirmPasswordReset: confirmPasswordReset,
+        synapseLogout: synapseLogout,
+        showOfflineUnlockScreen: showOfflineUnlockScreen,
+        hideOfflineUnlockScreen: hideOfflineUnlockScreen,
+        tryOfflineUnlock: tryOfflineUnlock,
+        offlineUnlockGoOnline: offlineUnlockGoOnline,
+        tryReconnect: tryReconnect,
+        showOfflineModeBanner: showOfflineModeBanner,
+        hideOfflineModeBanner: hideOfflineModeBanner,
+        showViewSelection: showViewSelection,
+        hideViewSelection: hideViewSelection,
+        selectDatabaseView: selectDatabaseView,
+        selectInterfaceView: selectInterfaceView,
+        get isOffline() { return _isOfflineSession; },
+        set isOffline(v) { _isOfflineSession = v; },
+        get authState() { return _authState; }
+    };
+})();
+
+// Backward-compatible global function aliases (used by HTML onclick handlers and external code)
+var showSynapseLoginScreen = SynapseAuth.showLoginScreen;
+var hideSynapseLoginScreen = SynapseAuth.hideLoginScreen;
+var showSynapseError = SynapseAuth.showError;
+var hideSynapseError = SynapseAuth.hideError;
+var trySynapseLogin = SynapseAuth.login;
+var verifySynapseSession = SynapseAuth.verifySession;
+var initSynapseLogin = SynapseAuth.init;
+var synapseLogout = SynapseAuth.synapseLogout;
+var showPasswordReset = SynapseAuth.showPasswordReset;
+var hidePasswordReset = SynapseAuth.hidePasswordReset;
+var requestPasswordReset = SynapseAuth.requestPasswordReset;
+var confirmPasswordReset = SynapseAuth.confirmPasswordReset;
+var showOfflineUnlockScreen = SynapseAuth.showOfflineUnlockScreen;
+var hideOfflineUnlockScreen = SynapseAuth.hideOfflineUnlockScreen;
+var tryOfflineUnlock = SynapseAuth.tryOfflineUnlock;
+var offlineUnlockGoOnline = SynapseAuth.offlineUnlockGoOnline;
+var tryReconnect = SynapseAuth.tryReconnect;
+var showOfflineModeBanner = SynapseAuth.showOfflineModeBanner;
+var hideOfflineModeBanner = SynapseAuth.hideOfflineModeBanner;
+var showViewSelection = SynapseAuth.showViewSelection;
+var hideViewSelection = SynapseAuth.hideViewSelection;
+var selectDatabaseView = SynapseAuth.selectDatabaseView;
+var selectInterfaceView = SynapseAuth.selectInterfaceView;
+function _loadSynapseSession() { return SynapseAuth.loadSession(); }
+function _saveSynapseSession(s) { return SynapseAuth.saveSession(s); }
+function _clearSynapseSession() { return SynapseAuth.clearSession(); }
 
 // ============ Auth ============
 
@@ -34729,7 +34829,6 @@ var InterfaceApp = (function() {
             var tNameLower = tableName.toLowerCase();
             tableIdMap[tableId] = tableName;
 
-            if (tNameLower === 'client info' || LOOKUP_TABLES[tNameLower]) {
             if (LOOKUP_TABLES[tNameLower]) {
                 // Lookup tables: include all records for ID resolution
                 data[tableName] = rows;
