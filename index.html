@@ -17091,26 +17091,30 @@ async function showTable(tableId) {
     await fieldRegistryPromise;
     if (navVersion !== myNav) return;
 
-    // Pre-load linked table records so lookup/rollup/count formulas can
-    // resolve cross-table references without returning null. This reads
-    // linked records into the LRU cache before renderTable runs formulas.
+    // Pre-load linked table records AND ensure formula engine is ready in
+    // parallel. Both must complete before renderTable so formulas compute
+    // inline on first paint — no deferred/empty-cell flash.
     var _preloadFields = META_FIELDS[tableId] || {};
+    var _linkedPreloadPromise = Promise.resolve();
     if (Object.keys(_preloadFields).length > 0 && recordIds.length > 0) {
-        try {
-            // Build a lightweight recordMap from the first page of IDs to scan
-            // for linked record references. Full map is built inside renderTable;
-            // here we only need enough to discover which linked IDs exist.
-            var _preloadSample = await getRecordsByIds(tableId, recordIds.slice(0, PAGE_SIZE || 100));
-            var _preloadMap = {};
-            for (var _pi = 0; _pi < _preloadSample.length; _pi++) {
-                var _pr = _preloadSample[_pi];
-                _preloadMap[_pr.recordId || _pr.id] = _pr.fields || _pr;
+        _linkedPreloadPromise = (async function() {
+            try {
+                // Build a lightweight recordMap from the first page of IDs to scan
+                // for linked record references. Full map is built inside renderTable;
+                // here we only need enough to discover which linked IDs exist.
+                var _preloadSample = await getRecordsByIds(tableId, recordIds.slice(0, PAGE_SIZE || 100));
+                var _preloadMap = {};
+                for (var _pi = 0; _pi < _preloadSample.length; _pi++) {
+                    var _pr = _preloadSample[_pi];
+                    _preloadMap[_pr.recordId || _pr.id] = _pr.fields || _pr;
+                }
+                await _preloadLinkedTableRecords(tableId, _preloadFields, _preloadMap);
+            } catch (_preErr) {
+                console.warn('[showTable] Pre-load linked records failed (non-fatal):', _preErr.message);
             }
-            await _preloadLinkedTableRecords(tableId, _preloadFields, _preloadMap);
-        } catch (_preErr) {
-            console.warn('[showTable] Pre-load linked records failed (non-fatal):', _preErr.message);
-        }
+        })();
     }
+    await Promise.all([_linkedPreloadPromise, _formulaEngineReady()]);
     if (navVersion !== myNav) return;
 
     // Now render full table with data
@@ -17183,6 +17187,29 @@ function renderTableHeaders() {
 function _whenFormulaEngineReady(cb) {
     if (window._formulaEngine) { cb(); }
     else { window.addEventListener('formulaengine:ready', cb, { once: true }); }
+}
+
+// Promise-based version of _whenFormulaEngineReady with a timeout safety valve.
+// Resolves once the formula engine is loaded, or after timeoutMs to prevent
+// indefinite blocking if bridge.js fails to load.
+function _formulaEngineReady(timeoutMs) {
+    if (window._formulaEngine) return Promise.resolve();
+    if (!timeoutMs) timeoutMs = 5000;
+    return new Promise(function(resolve) {
+        var resolved = false;
+        var timer = setTimeout(function() {
+            if (resolved) return;
+            resolved = true;
+            console.warn('[Formula] Engine did not load within ' + timeoutMs + 'ms — proceeding without formulas');
+            resolve();
+        }, timeoutMs);
+        window.addEventListener('formulaengine:ready', function() {
+            if (resolved) return;
+            resolved = true;
+            clearTimeout(timer);
+            resolve();
+        }, { once: true });
+    });
 }
 
 async function renderTable(paginationOnly) {
@@ -17261,17 +17288,12 @@ async function renderTable(paginationOnly) {
     // Get columns from view configuration
     var fields = META_FIELDS[currentTable] || {};
 
-    // OPTIMIZATION 5: Defer formula computation until after first paint.
-    // Instead of blocking the HTML build with _applyFormulaColumns(), render
-    // the table with raw data first (formula cells show as empty/loading),
-    // then compute formulas in a requestAnimationFrame callback and surgically
-    // update only the formula cells in the DOM. This lets the browser paint
-    // the table grid ~100-500ms sooner on tables with complex formulas.
-    var _deferFormulas = !paginationOnly && displayRecordIds.length > 0;
-    if (!_deferFormulas) {
-        // Pagination or empty — compute inline (fast, no visible difference)
-        _applyFormulaColumns(currentTable, fields, recordMap);
-    }
+    // Always compute formula fields locally before rendering. The formula
+    // engine is guaranteed to be loaded by showTable() awaiting
+    // _formulaEngineReady() before calling renderTable(). Formula values
+    // from the DB are never trusted — local computation is the single
+    // source of truth for computed fields.
+    _applyFormulaColumns(currentTable, fields, recordMap);
     var viewId = currentView || '_default';
     var colList = getVisibleFieldsForView(currentTable, viewId);
 
@@ -17501,41 +17523,8 @@ async function renderTable(paginationOnly) {
     // Update record count badge
     updateRecordCountBadge();
 
-    // OPTIMIZATION 5 (cont.): After the table DOM is painted, compute formula
-    // columns in a rAF callback and surgically update only the formula cells.
-    // This lets the browser paint the full grid (with non-formula data) first.
-    if (_deferFormulas) {
-        var _dfTable = currentTable;
-        var _dfNav = renderNav;
-        var _dfRecordMap = recordMap;
-        var _dfFields = fields;
-        var _dfColMeta = _colMeta;
-        var _dfDisplayIds = displayRecordIds;
-        _whenFormulaEngineReady(function() {
-            requestAnimationFrame(function() {
-                if (navVersion !== _dfNav) return; // Navigation changed, skip stale update
-                _applyFormulaColumns(_dfTable, _dfFields, _dfRecordMap);
-                // Surgically update only formula cells in the DOM
-                var _tbl = document.getElementById('table');
-                if (!_tbl) return;
-                for (var _dfi = 0; _dfi < _dfDisplayIds.length; _dfi++) {
-                    var _dfRid = _dfDisplayIds[_dfi];
-                    var _dfRow = _dfRecordMap[_dfRid] || {};
-                    for (var _dfci = 0; _dfci < _dfColMeta.length; _dfci++) {
-                        var _dfCm = _dfColMeta[_dfci];
-                        if (!_dfCm.isComputed) continue; // Only update formula cells
-                        var _dfVal = _dfRow[_dfCm.id];
-                        if (_dfVal === undefined) _dfVal = _dfRow[_dfCm.name];
-                        var _dfNewHtml = formatCell(_dfVal, _dfCm.fieldType);
-                        var _dfCell = _tbl.querySelector('tr[data-record-id="' + CSS.escape(_dfRid) + '"] td[data-field-id="' + CSS.escape(_dfCm.id) + '"]');
-                        if (_dfCell && _dfCell.innerHTML !== _dfNewHtml) {
-                            _dfCell.innerHTML = _dfNewHtml;
-                        }
-                    }
-                }
-            });
-        });
-    }
+    // Formula columns are now computed inline above (before HTML build),
+    // so no deferred rAF callback is needed.
 }
 
 // Group records by a field value
@@ -25126,7 +25115,10 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
     _applyRelationalColumns(tableId, fields, recordMap);
 
     var engine = window._formulaEngine;
-    if (!engine) return;
+    if (!engine) {
+        console.warn('[Formula] _applyFormulaColumns called but formula engine is not loaded. Formula fields will be empty.');
+        return;
+    }
 
     // Collect formula fields for this table
     var formulaFields = [];
@@ -25138,6 +25130,18 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         }
     }
     if (formulaFields.length === 0) return;
+
+    // Clear stale DB values for formula fields so they never leak through.
+    // Formula fields must ONLY show locally-computed values, not values
+    // synced from Airtable/Postgres.
+    for (var _cfIdx = 0; _cfIdx < formulaFields.length; _cfIdx++) {
+        var _cfField = formulaFields[_cfIdx];
+        for (var _crid in recordMap) {
+            var _crow = recordMap[_crid];
+            if (_crow.hasOwnProperty(_cfField.fieldId)) _crow[_cfField.fieldId] = null;
+            if (_cfField.fieldName && _crow.hasOwnProperty(_cfField.fieldName)) _crow[_cfField.fieldName] = null;
+        }
+    }
 
     var recordCount = Object.keys(recordMap).length;
     if (_shouldSkipFormulaColumns(recordCount, formulaFields.length)) {
@@ -25304,7 +25308,10 @@ function _applyFormulaSingleRecord(tableId, fields, recordFields, recordId) {
     recordFields = singleMap[recordId];
 
     var engine = window._formulaEngine;
-    if (!engine) return recordFields;
+    if (!engine) {
+        console.warn('[Formula] _applyFormulaSingleRecord called but formula engine is not loaded.');
+        return recordFields;
+    }
 
     // Use the same cache built by _applyFormulaColumns
     var cached = _compiledFormulaCache[tableId];
@@ -27986,11 +27993,26 @@ async function renderSchemaView() {
     var fields = META_FIELDS[currentTable] || {};
     var fieldIds = Object.keys(fields);
 
+    // Compute formula/lookup/rollup/count fields for schema view records.
+    var _schemaRecordMap = {};
+    for (var _sri = 0; _sri < records.length; _sri++) {
+        var _sr = records[_sri];
+        if (_sr.recordId) _schemaRecordMap[_sr.recordId] = _sr.fields || {};
+    }
+    if (Object.keys(_schemaRecordMap).length > 0) {
+        try {
+            await _preloadLinkedTableRecords(currentTable, fields, _schemaRecordMap);
+        } catch (_schemaPreErr) {
+            console.warn('[SchemaView] Pre-load linked records failed (non-fatal):', _schemaPreErr.message);
+        }
+        _applyFormulaColumns(currentTable, fields, _schemaRecordMap);
+    }
+
     var html = '<div class="schema-view-container">';
 
     for (var record of records) {
         var recordId = record.recordId;
-        var recordFields = record.fields || {};
+        var recordFields = _schemaRecordMap[recordId] || record.fields || {};
 
         html += '<div class="schema-card" data-record-id="' + esc(recordId) + '" onclick="handleRowClick(event, \'' + esc(currentTable) + '\', \'' + esc(recordId) + '\')" style="cursor: pointer;">';
 
@@ -31216,9 +31238,13 @@ var InterfaceApp = (function() {
                 recordMap[ifaceRecordId] = ifaceRecord.fields || {};
             }
             if (Object.keys(recordMap).length) {
-                // Pre-load linked table records so lookups/rollups resolve
+                // Pre-load linked table records and ensure formula engine is
+                // ready in parallel so formulas always compute for interface views.
                 try {
-                    await _preloadLinkedTableRecords(tableId, fieldMeta, recordMap);
+                    await Promise.all([
+                        _preloadLinkedTableRecords(tableId, fieldMeta, recordMap),
+                        _formulaEngineReady()
+                    ]);
                 } catch (_plErr) {
                     console.warn('[Interface] Pre-load linked records failed (non-fatal):', _plErr.message);
                 }
