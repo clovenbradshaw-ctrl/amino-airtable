@@ -19542,13 +19542,6 @@ async function init() {
 
     updateStatus('Loading local data...', false, null, null);
 
-    // OPTIMIZATION 2: Check IDB for existing data FIRST before attempting
-    // Box AMO hydration. If we already have tables+records from a previous
-    // session, skip the blocking network fetch entirely and defer Box AMO
-    // to a background refresh. This removes 0-45s from the critical path.
-    var _boxHydrationSucceeded = false;
-    var _boxHydrationDeferred = false;
-
     // Quick IDB metadata read to check if we have cached data
     var metaResults = await Promise.all([
         getAllTables(),
@@ -19562,78 +19555,32 @@ async function init() {
     var views = metaResults[2];
     appOpenedEventId = metaResults[4];
 
-    // Check if IDB has enough data to skip Box AMO
+    // Check if IDB has enough data to skip hydration on startup
     var _idbHasData = tables.length > 0;
     var _lsHydrationComplete = false;
     try { _lsHydrationComplete = !!localStorage.getItem('amino_hydration_complete'); } catch(e) {}
+    var _hydrationDeferred = _idbHasData && _lsHydrationComplete;
 
-    if (_idbHasData && _lsHydrationComplete) {
-        // IDB has tables and a previous hydration completed — use cached data,
-        // defer Box AMO to background refresh after UI is visible.
-        console.log('[init] IDB cache hit (' + tables.length + ' tables, hydration complete) — skipping blocking Box AMO');
-        SyncStatusFeed.info('Using cached data — Box refresh deferred to background');
-        _boxHydrationDeferred = true;
-    } else {
-        // No IDB data or incomplete hydration — need Box AMO synchronously
-        try {
-            console.log('[init] Attempting Tier 1 hydration via Box AMO snapshot');
-            SyncStatusFeed.info('Attempting Box snapshot hydration...');
-            // Switch loading overlay to full progress mode for the long download
-            setLoadingOverlayMode('default');
-            updateLoadingOverlay('Loading from Box...', 'Downloading hydration snapshot...', 0, 0, 0, 0, null);
-            var boxResult = await hydrateFromBoxAmoFile();
-            if (boxResult && boxResult.importedEvents > 0 && Object.keys(META_TABLES).length > 0) {
-                _boxHydrationSucceeded = true;
-                console.log('[init] Box AMO hydration succeeded:', boxResult.importedEvents, 'events across', Object.keys(META_TABLES).length, 'tables');
-                SyncStatusFeed.success('Box snapshot hydrated: ' + boxResult.importedEvents.toLocaleString() + ' events');
-                try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
-            }
-        } catch (boxErr) {
-            console.warn('[init] Box AMO hydration failed (will fall back to Postgres):', boxErr.message || boxErr);
-            SyncStatusFeed.warn('Box snapshot unavailable — falling back to Postgres...');
-        }
-
-        // Re-read metadata in case Box hydration populated new tables
-        if (_boxHydrationSucceeded) {
-            var freshMeta = await Promise.all([getAllTables(), getAllFields(), getAllViews()]);
-            tables = freshMeta[0];
-            fields = freshMeta[1];
-            views = freshMeta[2];
-        }
+    if (_hydrationDeferred) {
+        console.log('[init] IDB cache hit (' + tables.length + ' tables, hydration complete) — deferring hydration to background');
+        SyncStatusFeed.info('Using cached data — refresh deferred to background');
     }
 
-    // Merge IDB metadata into in-memory state.  When Box AMO hydration
-    // succeeded, use additive merge (||) so the fresh snapshot data takes
-    // precedence over potentially stale IDB entries.
-    if (_boxHydrationSucceeded) {
-        tables.forEach(t => META_TABLES[t.tableId] = META_TABLES[t.tableId] || t);
-        fields.forEach(f => {
-            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-            META_FIELDS[f.tableId][f.fieldId] = META_FIELDS[f.tableId][f.fieldId] || f;
-        });
-        views.forEach(v => {
-            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-            META_VIEWS[v.tableId][v.viewId] = META_VIEWS[v.tableId][v.viewId] || v;
-        });
-    } else {
-        tables.forEach(t => META_TABLES[t.tableId] = t);
-        fields.forEach(f => {
-            if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
-            META_FIELDS[f.tableId][f.fieldId] = f;
-        });
-        views.forEach(v => {
-            if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
-            META_VIEWS[v.tableId][v.viewId] = v;
-        });
-    }
+    // Merge IDB metadata into in-memory state.
+    tables.forEach(t => META_TABLES[t.tableId] = t);
+    fields.forEach(f => {
+        if (!META_FIELDS[f.tableId]) META_FIELDS[f.tableId] = {};
+        META_FIELDS[f.tableId][f.fieldId] = f;
+    });
+    views.forEach(v => {
+        if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
+        META_VIEWS[v.tableId][v.viewId] = v;
+    });
 
     // Build edges from field metadata on startup (debounced — may coalesce with hydration)
     scheduleEdgeRebuild();
 
-    // Use in-memory META_TABLES as the authoritative table list. After Box
-    // AMO hydration, processEventsMemoryOnly populates META_TABLES before
-    // the background IDB save finishes, so the IDB read above may return
-    // fewer tables than actually exist in memory.
+    // Use in-memory META_TABLES as the authoritative table list.
     var tableCount = Object.keys(META_TABLES).length;
 
     // Load user preferences (local-only, fast) — don't await network-dependent prefs yet
@@ -19656,25 +19603,11 @@ async function init() {
     _initOnlineOnlyModeUI();
 
     // Check if records actually exist AND previous hydration completed fully.
-    // After Box AMO hydration, records live in IN_MEMORY_DATA (IDB save is
-    // still in flight), so check both IDB and memory.
     var hasRecords = false;
     var hydrationWasComplete = false;
 
-    // Box hydration is considered complete for rendering purposes — we have
-    // tables and records in memory and will catch up via room sync.
-    if (_boxHydrationSucceeded && window.IN_MEMORY_DATA) {
-        var inMemoryRecordCount = 0;
-        var memTableIds = Object.keys(window.IN_MEMORY_DATA);
-        for (var mt = 0; mt < memTableIds.length; mt++) {
-            inMemoryRecordCount += Object.keys(window.IN_MEMORY_DATA[memTableIds[mt]]).length;
-        }
-        hasRecords = inMemoryRecordCount > 0;
-        hydrationWasComplete = hasRecords;
-    }
-
-    // When Box was deferred (IDB cache hit), check IDB directly for records
-    if (_boxHydrationDeferred) {
+    // When IDB cache was hit, trust the localStorage hydration-complete flag
+    if (_hydrationDeferred) {
         hydrationWasComplete = _lsHydrationComplete;
     }
 
@@ -19695,7 +19628,7 @@ async function init() {
     }
 
     if (tableCount > 0 && hasRecords && hydrationWasComplete) {
-        // Data exists (from local IDB cache or Box AMO hydration) — render it
+        // Data exists in local IDB cache — render it
         updateStatus('Found ' + tableCount + ' tables', false, null, 'Loading data...');
 
         // OPTIMIZATION 4: Restore first table's decrypted records from sessionStorage.
@@ -19762,39 +19695,13 @@ async function init() {
             }, 1000);
         }
 
-        // After Box hydration: kick off room-data catch-up in the background
-        // to apply any mutations that occurred after the AMO snapshot timestamp,
-        // and to backfill field-level edit history from room timelines.
-        if (_boxHydrationSucceeded) {
-            (async function _boxCatchUp() {
-                try {
-                    await ensureRoomMembership();
-                    await backfillHistoryFromMatrix();
-                } catch (err) {
-                    console.warn('[init] Post-Box room catch-up failed (non-fatal):', err);
-                }
-            })();
-        }
-
-        // OPTIMIZATION 2 (cont.): When Box AMO was deferred because we had
-        // IDB cache, run it now in the background to freshen the local data.
-        // This catches up any changes since the last session without blocking startup.
-        if (_boxHydrationDeferred) {
-            (async function _deferredBoxRefresh() {
-                try {
-                    console.log('[init] Running deferred Box AMO refresh in background');
-                    var boxResult = await hydrateFromBoxAmoFile();
-                    if (boxResult && boxResult.importedEvents > 0) {
-                        console.log('[init] Deferred Box refresh completed:', boxResult.importedEvents, 'events');
-                        SyncStatusFeed.success('Background refresh: ' + boxResult.importedEvents.toLocaleString() + ' events');
-                        try { localStorage.setItem('amino_hydration_complete', new Date().toISOString()); } catch(e) {}
-                    }
-                    await ensureRoomMembership();
-                    await backfillHistoryFromMatrix();
-                } catch (err) {
-                    console.warn('[init] Deferred Box refresh failed (non-fatal):', err);
-                }
-            })();
+        // When hydration was deferred (IDB cache hit), run a background
+        // refresh using the configured hydration source to catch up on any
+        // changes since the last session without blocking startup.
+        if (_hydrationDeferred) {
+            _startBackgroundHydration().catch(function(err) {
+                console.warn('[init] Deferred background hydration failed (non-fatal):', err);
+            });
         }
 
         // Defer non-critical network operations to AFTER the UI is visible.
