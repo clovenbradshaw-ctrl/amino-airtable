@@ -1,7 +1,8 @@
-const CACHE_NAME = 'amino-shell-v2';
+const CACHE_NAME = 'amino-shell-v3';
 const PRECACHE_URLS = [
   './',
   './index.html',
+  './hydration.js',
   './data-layer.js',
   './matrix.js',
   './src/formulas/bridge.js',
