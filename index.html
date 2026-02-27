@@ -17294,6 +17294,70 @@ async function renderTable(paginationOnly) {
     // from the DB are never trusted — local computation is the single
     // source of truth for computed fields.
     _applyFormulaColumns(currentTable, fields, recordMap);
+
+    // ── DEBUG: Show what the app thinks each formula field's expression is ──
+    var _debugFormulaDiv = document.getElementById('formula-debug-panel');
+    if (!_debugFormulaDiv) {
+        _debugFormulaDiv = document.createElement('div');
+        _debugFormulaDiv.id = 'formula-debug-panel';
+        _debugFormulaDiv.style.cssText = 'background:#1a1025;border:2px solid #a78bfa;border-radius:8px;padding:12px 16px;margin:8px 0 12px 0;font-family:monospace;font-size:12px;color:#e2e8f0;max-height:300px;overflow:auto;';
+        tableContainer.parentNode.insertBefore(_debugFormulaDiv, tableContainer);
+    }
+    var _debugLines = ['<div style="color:#a78bfa;font-weight:bold;font-size:13px;margin-bottom:8px;">🔍 Formula Field Debug — Table: ' + esc(currentTable) + '</div>'];
+    var _debugFormulaCount = 0;
+    var _debugComputedCount = 0;
+    for (var _dfid in fields) {
+        var _df = fields[_dfid];
+        if (!_df) continue;
+        var _isFormulaType = _df.fieldType === 'formula' || _df.fieldType === 'lookup' || _df.fieldType === 'rollup' || _df.fieldType === 'count';
+        if (!_isFormulaType) continue;
+        _debugComputedCount++;
+        var _dfExpr = (_df.options && (_df.options.formula || _df.options.expression)) || null;
+        var _dfResult = (_df.options && _df.options.result) || null;
+        var _dfOpts = _df.options ? JSON.stringify(_df.options) : '(no options)';
+        var _dfColor = _dfExpr ? '#4ade80' : '#f87171';
+        var _dfIcon = _dfExpr ? '✅' : '❌';
+        if (_df.fieldType === 'formula') {
+            _debugFormulaCount++;
+            _debugLines.push(
+                '<div style="margin:4px 0;padding:6px 8px;background:rgba(255,255,255,0.05);border-radius:4px;border-left:3px solid ' + _dfColor + ';">' +
+                _dfIcon + ' <strong style="color:#c4b5fd;">' + esc(_df.fieldName || _dfid) + '</strong>' +
+                ' <span style="color:#94a3b8;">(ID: ' + esc(_dfid) + ', type: ' + esc(_df.fieldType) + ')</span><br>' +
+                '&nbsp;&nbsp;Formula: <code style="color:' + _dfColor + ';background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:3px;">' + esc(_dfExpr || 'MISSING — no options.formula') + '</code><br>' +
+                '&nbsp;&nbsp;Result type: <code style="color:#93c5fd;">' + esc(_dfResult ? JSON.stringify(_dfResult) : 'none') + '</code><br>' +
+                '&nbsp;&nbsp;Full options: <code style="color:#94a3b8;font-size:11px;">' + esc(_dfOpts.length > 200 ? _dfOpts.substring(0, 200) + '...' : _dfOpts) + '</code>' +
+                '</div>'
+            );
+        } else {
+            _debugLines.push(
+                '<div style="margin:4px 0;padding:6px 8px;background:rgba(255,255,255,0.03);border-radius:4px;border-left:3px solid #60a5fa;">' +
+                '🔗 <strong style="color:#93c5fd;">' + esc(_df.fieldName || _dfid) + '</strong>' +
+                ' <span style="color:#94a3b8;">(ID: ' + esc(_dfid) + ', type: ' + esc(_df.fieldType) + ')</span><br>' +
+                '&nbsp;&nbsp;Options: <code style="color:#94a3b8;font-size:11px;">' + esc(_dfOpts.length > 200 ? _dfOpts.substring(0, 200) + '...' : _dfOpts) + '</code>' +
+                '</div>'
+            );
+        }
+    }
+    _debugLines.push('<div style="margin-top:8px;color:#94a3b8;font-size:11px;">Total computed fields: ' + _debugComputedCount + ' | Formula fields: ' + _debugFormulaCount + ' | Engine loaded: ' + (!!window._formulaEngine) + '</div>');
+    // Also show a sample record's formula field values
+    var _sampleRid = displayRecordIds[0];
+    var _sampleRow = _sampleRid ? recordMap[_sampleRid] : null;
+    if (_sampleRow) {
+        _debugLines.push('<div style="margin-top:8px;color:#a78bfa;font-weight:bold;">Sample record (' + esc(_sampleRid) + ') formula values:</div>');
+        for (var _sfid in fields) {
+            var _sf = fields[_sfid];
+            if (!_sf || _sf.fieldType !== 'formula') continue;
+            var _sval = _sampleRow[_sfid];
+            if (_sval === undefined) _sval = _sampleRow[_sf.fieldName];
+            _debugLines.push(
+                '<div style="margin:2px 0;padding:3px 8px;font-size:11px;">' +
+                esc(_sf.fieldName || _sfid) + ' = <code style="color:#fbbf24;">' + esc(_sval != null ? String(_sval) : 'null/undefined') + '</code></div>'
+            );
+        }
+    }
+    _debugFormulaDiv.innerHTML = _debugLines.join('');
+    // ── END DEBUG ──
+
     var viewId = currentView || '_default';
     var colList = getVisibleFieldsForView(currentTable, viewId);
 
