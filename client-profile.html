@@ -1022,6 +1022,44 @@
           state.data[tableId] = state.data[tableName];
         }
       });
+      // Translate field IDs to human-readable names using snapshot fieldMeta.
+      // This handles cases where _getTableRecords could not translate field IDs
+      // (e.g., META_FIELDS had only placeholder entries at snapshot time).
+      var _fieldMeta = ctx.fieldMeta || {};
+      if (Object.keys(_fieldMeta).length > 0) {
+        Object.keys(state.data).forEach(function(tableName) {
+          var rows = state.data[tableName];
+          if (!Array.isArray(rows) || !rows.length) return;
+          // Skip table-ID aliases to avoid double-processing
+          if (/^tbl[a-zA-Z0-9]+$/.test(tableName) && state.data[state.tableMap[tableName]]) return;
+
+          // Find applicable field map (try table name, then look up by tableId)
+          var fMap = _fieldMeta[tableName];
+          if (!fMap) {
+            var tIdMap = ctx.tableIdMap || {};
+            Object.keys(tIdMap).forEach(function(tid) {
+              if (tIdMap[tid] === tableName && _fieldMeta[tid]) fMap = _fieldMeta[tid];
+            });
+          }
+          if (!fMap || typeof fMap !== 'object') return;
+
+          // Check if any row has field-ID keys that can be translated
+          var sampleFields = (rows[0] ? rows[0].fields : null) || {};
+          var hasFieldIdKeys = Object.keys(sampleFields).some(function(key) { return !!fMap[key]; });
+          if (!hasFieldIdKeys) return; // already translated
+
+          state.data[tableName] = rows.map(function(row) {
+            var fields = row.fields || {};
+            var translated = {};
+            Object.keys(fields).forEach(function(key) {
+              translated[key] = fields[key];
+              var name = fMap[key];
+              if (name && name !== key) translated[name] = fields[key];
+            });
+            return { recordId: row.recordId, id: row.id, fields: translated };
+          });
+        });
+      }
       // Eagerly build record index after loading all data
       buildRecordIndex();
     }
@@ -1087,6 +1125,41 @@
               if (tableId !== tableName) state.data[tableId] = normalized;
             });
           }));
+        }
+        // AminoData returns records with field-ID keys. Try to translate using
+        // field metadata from a previous context snapshot.
+        try {
+          var _prevCtxRaw = sessionStorage.getItem(CONTEXT_KEY);
+          var _prevCtx = _prevCtxRaw ? JSON.parse(_prevCtxRaw) : null;
+          var _fMeta = _prevCtx && _prevCtx.fieldMeta ? _prevCtx.fieldMeta : {};
+          if (Object.keys(_fMeta).length > 0) {
+            Object.keys(state.data).forEach(function(tableName) {
+              var rows = state.data[tableName];
+              if (!Array.isArray(rows) || !rows.length) return;
+              if (/^tbl[a-zA-Z0-9]+$/.test(tableName) && state.data[state.tableMap[tableName]]) return;
+
+              var fMap = _fMeta[tableName];
+              if (!fMap) {
+                Object.keys(state.tableMap).forEach(function(k) {
+                  if (state.tableMap[k] === tableName && _fMeta[k]) fMap = _fMeta[k];
+                });
+              }
+              if (!fMap || typeof fMap !== 'object') return;
+
+              state.data[tableName] = rows.map(function(row) {
+                var fields = row.fields || {};
+                var translated = {};
+                Object.keys(fields).forEach(function(key) {
+                  translated[key] = fields[key];
+                  var name = fMap[key];
+                  if (name && name !== key) translated[name] = fields[key];
+                });
+                return { recordId: row.recordId || row.id, fields: translated };
+              });
+            });
+          }
+        } catch (_ftErr) {
+          console.warn('[Profile] Field translation from cached metadata failed:', _ftErr.message);
         }
         // Eagerly build record index after all tables loaded
         buildRecordIndex();
