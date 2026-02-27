@@ -31212,7 +31212,15 @@ var InterfaceApp = (function() {
         // If META_FIELDS was deleted (by DB screen navigation) or only has
         // placeholder entries (fieldName === fieldId), reload from IDB.
         var fieldMeta = (typeof META_FIELDS !== 'undefined' && META_FIELDS[tableId]) ? META_FIELDS[tableId] : null;
-        if ((!fieldMeta || Object.keys(fieldMeta).length === 0) && typeof db !== 'undefined' && db && typeof getFieldsForTable === 'function') {
+        var _fmNeedsReload = !fieldMeta || Object.keys(fieldMeta).length === 0;
+        if (!_fmNeedsReload && fieldMeta) {
+            // Detect placeholder entries where fieldName === fieldId (no real names)
+            var _allPlaceholder = Object.keys(fieldMeta).every(function(k) {
+                return fieldMeta[k]._placeholder || fieldMeta[k].fieldName === k;
+            });
+            if (_allPlaceholder) _fmNeedsReload = true;
+        }
+        if (_fmNeedsReload && typeof db !== 'undefined' && db && typeof getFieldsForTable === 'function') {
             try {
                 var idbFields = await getFieldsForTable(tableId);
                 if (idbFields && idbFields.length > 0) {
@@ -34719,6 +34727,27 @@ var InterfaceApp = (function() {
             return false;
         });
 
+        // Pre-load field metadata from IDB for tables with only placeholder entries
+        // so that _getTableRecords can translate field IDs to human-readable names.
+        if (typeof db !== 'undefined' && db && typeof getFieldsForTable === 'function') {
+            await Promise.all(tableIds.map(function(tid) {
+                var fm = META_FIELDS[tid];
+                var hasOnlyPlaceholders = fm && Object.keys(fm).length > 0 &&
+                    Object.keys(fm).every(function(k) { return fm[k]._placeholder || fm[k].fieldName === k; });
+                if (!fm || Object.keys(fm).length === 0 || hasOnlyPlaceholders) {
+                    return getFieldsForTable(tid).then(function(idbFields) {
+                        if (idbFields && idbFields.length > 0) {
+                            if (!META_FIELDS[tid]) META_FIELDS[tid] = {};
+                            idbFields.forEach(function(f) {
+                                META_FIELDS[tid][f.fieldId] = f;
+                            });
+                        }
+                    }).catch(function() {});
+                }
+                return Promise.resolve();
+            }));
+        }
+
         // ── Phase 1: Fetch all tables in parallel batches ──
         // Previously sequential (~100ms × 25 tables = ~2.5s).
         // Now batched 6-wide (~100ms × ceil(25/6) batches ≈ ~500ms).
@@ -34788,12 +34817,34 @@ var InterfaceApp = (function() {
             }
         }
 
+        // Build compact field metadata map (fieldId -> fieldName) per table
+        // so client-profile.html can translate field IDs if needed.
+        var fieldMetaMap = {};
+        for (var fmi = 0; fmi < tableIds.length; fmi++) {
+            var fmTableId = tableIds[fmi];
+            var fm = META_FIELDS[fmTableId];
+            if (fm && typeof fm === 'object') {
+                var simplified = {};
+                Object.keys(fm).forEach(function(fid) {
+                    if (fm[fid].fieldName && fm[fid].fieldName !== fid && !fm[fid]._placeholder) {
+                        simplified[fid] = fm[fid].fieldName;
+                    }
+                });
+                if (Object.keys(simplified).length > 0) {
+                    fieldMetaMap[fmTableId] = simplified;
+                    var fmTName = tableIdToName[fmTableId];
+                    if (fmTName) fieldMetaMap[fmTName] = simplified;
+                }
+            }
+        }
+
         return {
             version: 1,
             capturedAt: Date.now(),
             clientId: recordId,
             data: data,
-            tableIdMap: tableIdMap
+            tableIdMap: tableIdMap,
+            fieldMeta: fieldMetaMap
         };
     }
 
@@ -34808,7 +34859,7 @@ var InterfaceApp = (function() {
             var snapshotJson = JSON.stringify(snapshot);
             // If snapshot > 4MB, strip non-essential tables to fit in sessionStorage
             if (snapshotJson.length > 4 * 1024 * 1024) {
-                var slim = { version: snapshot.version, capturedAt: snapshot.capturedAt, clientId: snapshot.clientId, tableIdMap: snapshot.tableIdMap, data: {} };
+                var slim = { version: snapshot.version, capturedAt: snapshot.capturedAt, clientId: snapshot.clientId, tableIdMap: snapshot.tableIdMap, fieldMeta: snapshot.fieldMeta, data: {} };
                 var essentialTables = ['Client Info', 'Case Master View'];
                 Object.keys(snapshot.data).forEach(function(t) {
                     var tLower = t.toLowerCase();
