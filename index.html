@@ -32272,6 +32272,9 @@ var InterfaceApp = (function() {
         html += '<div class="iface-table-wrapper"><table class="iface-table-revamp">';
         // Temporarily hidden until the relationship graph experience is improved.
         var includeRelationshipAction = false;
+        // Determine if this is a client table (for favorite stars)
+        var isClientTable = block.source && (block.source.tableNamePattern || '').toLowerCase().includes('client');
+
         html += '<thead><tr>';
         // Favorite star column header for client tables
         if (isClientTable) {
@@ -32290,9 +32293,6 @@ var InterfaceApp = (function() {
             html += '<th style="width:180px;">Client Relationship Graph</th>';
         }
         html += '</tr></thead><tbody>';
-
-        // Determine if this is a client table (for favorite stars)
-        var isClientTable = block.source && (block.source.tableNamePattern || '').toLowerCase().includes('client');
 
         if (!pageRecords.length) {
             var emptyColspan = columns.length + (isClientTable ? 1 : 0) + (includeRelationshipAction ? 1 : 0);
