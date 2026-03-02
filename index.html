@@ -18770,6 +18770,8 @@ async function hydrateFromWebhooks() {
                                         fieldName: fMeta.fieldName || recId,
                                         fieldType: fMeta.fieldType || 'singleLineText'
                                     };
+                                    if (fMeta.options) fieldMeta.options = fMeta.options;
+                                    if (fMeta.readOnly != null) fieldMeta.readOnly = fMeta.readOnly;
                                     META_FIELDS[tableId][recId] = fieldMeta;
                                     fieldsToSave.push(fieldMeta);
                                     if (!existing) totalFields++;
