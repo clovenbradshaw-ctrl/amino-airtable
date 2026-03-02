@@ -17295,15 +17295,16 @@ async function renderTable(paginationOnly) {
     // source of truth for computed fields.
     _applyFormulaColumns(currentTable, fields, recordMap);
 
-    // ── DEBUG: Show what the app thinks each formula field's expression is ──
+    // ── DEBUG: Collapsible formula debug panel ──
     var _debugFormulaDiv = document.getElementById('formula-debug-panel');
+    var _debugExpanded = localStorage.getItem('amino:formula-debug-visible') === 'true';
     if (!_debugFormulaDiv) {
         _debugFormulaDiv = document.createElement('div');
         _debugFormulaDiv.id = 'formula-debug-panel';
-        _debugFormulaDiv.style.cssText = 'background:#1a1025;border:2px solid #a78bfa;border-radius:8px;padding:12px 16px;margin:8px 0 12px 0;font-family:monospace;font-size:12px;color:#e2e8f0;max-height:300px;overflow:auto;';
+        _debugFormulaDiv.style.cssText = 'background:#1a1025;border:2px solid #a78bfa;border-radius:8px;margin:8px 0 12px 0;font-family:monospace;font-size:12px;color:#e2e8f0;overflow:hidden;';
         tableContainer.parentNode.insertBefore(_debugFormulaDiv, tableContainer);
     }
-    var _debugLines = ['<div style="color:#a78bfa;font-weight:bold;font-size:13px;margin-bottom:8px;">🔍 Formula Field Debug — Table: ' + esc(currentTable) + '</div>'];
+    // Count computed/formula fields first for the header summary
     var _debugFormulaCount = 0;
     var _debugComputedCount = 0;
     for (var _dfid in fields) {
@@ -17312,50 +17313,61 @@ async function renderTable(paginationOnly) {
         var _isFormulaType = _df.fieldType === 'formula' || _df.fieldType === 'lookup' || _df.fieldType === 'rollup' || _df.fieldType === 'count';
         if (!_isFormulaType) continue;
         _debugComputedCount++;
-        var _dfExpr = (_df.options && (_df.options.formula || _df.options.expression)) || null;
-        var _dfResult = (_df.options && _df.options.result) || null;
-        var _dfOpts = _df.options ? JSON.stringify(_df.options) : '(no options)';
+        if (_df.fieldType === 'formula') _debugFormulaCount++;
+    }
+    // Build the toggle header (always visible)
+    var _debugHtml = '<div id="formula-debug-toggle" style="padding:8px 16px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;" onclick="var c=document.getElementById(\'formula-debug-content\');var a=c.style.display===\'none\';c.style.display=a?\'block\':\'none\';this.querySelector(\'.dbg-arrow\').textContent=a?\'\\u25BC\':\'\\u25B6\';localStorage.setItem(\'amino:formula-debug-visible\',a?\'true\':\'false\');">' +
+        '<span class="dbg-arrow" style="color:#a78bfa;font-size:10px;">' + (_debugExpanded ? '\u25BC' : '\u25B6') + '</span>' +
+        '<span style="color:#a78bfa;font-weight:bold;font-size:12px;">Formula Debug</span>' +
+        '<span style="color:#94a3b8;font-size:11px;">' + _debugComputedCount + ' computed, ' + _debugFormulaCount + ' formula | Engine: ' + (!!window._formulaEngine) + '</span>' +
+        '</div>';
+    // Build the collapsible content
+    _debugHtml += '<div id="formula-debug-content" style="display:' + (_debugExpanded ? 'block' : 'none') + ';padding:0 16px 12px 16px;max-height:300px;overflow:auto;">';
+    for (var _dfid2 in fields) {
+        var _df2 = fields[_dfid2];
+        if (!_df2) continue;
+        var _isFormulaType2 = _df2.fieldType === 'formula' || _df2.fieldType === 'lookup' || _df2.fieldType === 'rollup' || _df2.fieldType === 'count';
+        if (!_isFormulaType2) continue;
+        var _dfExpr = (_df2.options && (_df2.options.formula || _df2.options.expression)) || null;
+        var _dfResult = (_df2.options && _df2.options.result) || null;
+        var _dfOpts = _df2.options ? JSON.stringify(_df2.options) : '(no options)';
         var _dfColor = _dfExpr ? '#4ade80' : '#f87171';
-        var _dfIcon = _dfExpr ? '✅' : '❌';
-        if (_df.fieldType === 'formula') {
-            _debugFormulaCount++;
-            _debugLines.push(
+        var _dfIcon = _dfExpr ? '\u2705' : '\u274C';
+        if (_df2.fieldType === 'formula') {
+            _debugHtml +=
                 '<div style="margin:4px 0;padding:6px 8px;background:rgba(255,255,255,0.05);border-radius:4px;border-left:3px solid ' + _dfColor + ';">' +
-                _dfIcon + ' <strong style="color:#c4b5fd;">' + esc(_df.fieldName || _dfid) + '</strong>' +
-                ' <span style="color:#94a3b8;">(ID: ' + esc(_dfid) + ', type: ' + esc(_df.fieldType) + ')</span><br>' +
-                '&nbsp;&nbsp;Formula: <code style="color:' + _dfColor + ';background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:3px;">' + esc(_dfExpr || 'MISSING — no options.formula') + '</code><br>' +
+                _dfIcon + ' <strong style="color:#c4b5fd;">' + esc(_df2.fieldName || _dfid2) + '</strong>' +
+                ' <span style="color:#94a3b8;">(ID: ' + esc(_dfid2) + ', type: ' + esc(_df2.fieldType) + ')</span><br>' +
+                '&nbsp;&nbsp;Formula: <code style="color:' + _dfColor + ';background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:3px;">' + esc(_dfExpr || 'MISSING \u2014 no options.formula') + '</code><br>' +
                 '&nbsp;&nbsp;Result type: <code style="color:#93c5fd;">' + esc(_dfResult ? JSON.stringify(_dfResult) : 'none') + '</code><br>' +
                 '&nbsp;&nbsp;Full options: <code style="color:#94a3b8;font-size:11px;">' + esc(_dfOpts.length > 200 ? _dfOpts.substring(0, 200) + '...' : _dfOpts) + '</code>' +
-                '</div>'
-            );
+                '</div>';
         } else {
-            _debugLines.push(
+            _debugHtml +=
                 '<div style="margin:4px 0;padding:6px 8px;background:rgba(255,255,255,0.03);border-radius:4px;border-left:3px solid #60a5fa;">' +
-                '🔗 <strong style="color:#93c5fd;">' + esc(_df.fieldName || _dfid) + '</strong>' +
-                ' <span style="color:#94a3b8;">(ID: ' + esc(_dfid) + ', type: ' + esc(_df.fieldType) + ')</span><br>' +
+                '\uD83D\uDD17 <strong style="color:#93c5fd;">' + esc(_df2.fieldName || _dfid2) + '</strong>' +
+                ' <span style="color:#94a3b8;">(ID: ' + esc(_dfid2) + ', type: ' + esc(_df2.fieldType) + ')</span><br>' +
                 '&nbsp;&nbsp;Options: <code style="color:#94a3b8;font-size:11px;">' + esc(_dfOpts.length > 200 ? _dfOpts.substring(0, 200) + '...' : _dfOpts) + '</code>' +
-                '</div>'
-            );
+                '</div>';
         }
     }
-    _debugLines.push('<div style="margin-top:8px;color:#94a3b8;font-size:11px;">Total computed fields: ' + _debugComputedCount + ' | Formula fields: ' + _debugFormulaCount + ' | Engine loaded: ' + (!!window._formulaEngine) + '</div>');
-    // Also show a sample record's formula field values
+    // Sample record formula values
     var _sampleRid = displayRecordIds[0];
     var _sampleRow = _sampleRid ? recordMap[_sampleRid] : null;
     if (_sampleRow) {
-        _debugLines.push('<div style="margin-top:8px;color:#a78bfa;font-weight:bold;">Sample record (' + esc(_sampleRid) + ') formula values:</div>');
+        _debugHtml += '<div style="margin-top:8px;color:#a78bfa;font-weight:bold;">Sample record (' + esc(_sampleRid) + ') formula values:</div>';
         for (var _sfid in fields) {
             var _sf = fields[_sfid];
             if (!_sf || _sf.fieldType !== 'formula') continue;
             var _sval = _sampleRow[_sfid];
             if (_sval === undefined) _sval = _sampleRow[_sf.fieldName];
-            _debugLines.push(
+            _debugHtml +=
                 '<div style="margin:2px 0;padding:3px 8px;font-size:11px;">' +
-                esc(_sf.fieldName || _sfid) + ' = <code style="color:#fbbf24;">' + esc(_sval != null ? String(_sval) : 'null/undefined') + '</code></div>'
-            );
+                esc(_sf.fieldName || _sfid) + ' = <code style="color:#fbbf24;">' + esc(_sval != null ? String(_sval) : 'null/undefined') + '</code></div>';
         }
     }
-    _debugFormulaDiv.innerHTML = _debugLines.join('');
+    _debugHtml += '</div>';
+    _debugFormulaDiv.innerHTML = _debugHtml;
     // ── END DEBUG ──
 
     var viewId = currentView || '_default';
@@ -25242,17 +25254,13 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
     }
     if (formulaFields.length === 0) return;
 
-    // Clear stale DB values for formula fields so they never leak through.
-    // Formula fields must ONLY show locally-computed values, not values
-    // synced from Airtable/Postgres.
-    for (var _cfIdx = 0; _cfIdx < formulaFields.length; _cfIdx++) {
-        var _cfField = formulaFields[_cfIdx];
-        for (var _crid in recordMap) {
-            var _crow = recordMap[_crid];
-            if (_crow.hasOwnProperty(_cfField.fieldId)) _crow[_cfField.fieldId] = null;
-            if (_cfField.fieldName && _crow.hasOwnProperty(_cfField.fieldName)) _crow[_cfField.fieldName] = null;
-        }
-    }
+    // NOTE: We no longer pre-clear formula field values to null.  The old
+    // approach wiped Postgres-synced values before computing, which meant that
+    // if the local formula engine failed to compute (compile error, missing
+    // field references, etc.), the cell was left blank instead of showing the
+    // server-side value.  Instead, _applyFormulaColumns now overwrites formula
+    // values in-place as each formula succeeds — stale DB values are only kept
+    // as a fallback when local computation produces null or errors.
 
     var recordCount = Object.keys(recordMap).length;
     if (_shouldSkipFormulaColumns(recordCount, formulaFields.length)) {
@@ -25345,10 +25353,15 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
     // Build fieldId → fieldName map so formulas (which reference fields by
     // name like {Price}) can resolve values in records keyed by field ID.
     var _idToName = {};
+    // Build a bidirectional alias map (ID↔name) passed to compiled formulas
+    // so field_ref lookups can resolve in both directions at runtime.
+    var _fieldAliasMap = {};
     for (var _fid in fields) {
         var _fm = fields[_fid];
         if (_fm.fieldName && _fm.fieldName !== _fid) {
             _idToName[_fid] = _fm.fieldName;
+            _fieldAliasMap[_fid] = _fm.fieldName;
+            _fieldAliasMap[_fm.fieldName] = _fid;
         }
     }
 
@@ -25385,13 +25398,16 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
                     continue;
                 }
 
-                var value = c.fn(row, { recordId: rid });
-                // Always overwrite formula fields — even with null — so that stale
-                // values fetched from Postgres are never shown instead of app-computed ones.
+                var value = c.fn(row, { recordId: rid, _fieldAliasMap: _fieldAliasMap });
+                // Overwrite formula fields with computed values.  If local
+                // computation returns null/error, keep the existing (possibly
+                // Postgres-synced) value as a fallback so cells aren't blank.
                 var _computedVal = (value && value.__error) ? null : (value !== undefined ? value : null);
-                row[c.fieldId] = _computedVal;
-                if (c.fieldName && c.fieldName !== c.fieldId) {
-                    row[c.fieldName] = _computedVal;
+                if (_computedVal !== null) {
+                    row[c.fieldId] = _computedVal;
+                    if (c.fieldName && c.fieldName !== c.fieldId) {
+                        row[c.fieldName] = _computedVal;
+                    }
                 }
                 _formulaResultCache[frcKey] = { inputHash: inputHash, value: _computedVal };
             } catch (_e) {
@@ -25437,9 +25453,12 @@ function _applyFormulaSingleRecord(tableId, fields, recordFields, recordId) {
     var sorted = cached._sorted;
 
     // Populate bidirectional name↔id aliases (same as _applyFormulaColumns)
+    var _fieldAliasMap = {};
     for (var _fid in fields) {
         var _fm = fields[_fid];
         if (_fm.fieldName && _fm.fieldName !== _fid) {
+            _fieldAliasMap[_fid] = _fm.fieldName;
+            _fieldAliasMap[_fm.fieldName] = _fid;
             if (recordFields[_fid] !== undefined && recordFields[_fm.fieldName] === undefined) {
                 recordFields[_fm.fieldName] = recordFields[_fid];
             } else if (recordFields[_fm.fieldName] !== undefined && recordFields[_fid] === undefined) {
@@ -25451,7 +25470,7 @@ function _applyFormulaSingleRecord(tableId, fields, recordFields, recordId) {
     for (var i = 0; i < sorted.length; i++) {
         var c = sorted[i];
         try {
-            var value = c.fn(recordFields, { recordId: recordId });
+            var value = c.fn(recordFields, { recordId: recordId, _fieldAliasMap: _fieldAliasMap });
             if (value !== null && value !== undefined && !(value && value.__error)) {
                 recordFields[c.fieldId] = value;
                 if (c.fieldName && c.fieldName !== c.fieldId) {
