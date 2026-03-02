@@ -295,6 +295,50 @@ console.log('\n=== Complex Formula Tests ===');
   assert(result === 20, 'precedence: 10 + 3*4 - 2 = 20');
 }
 
+// ── Field Alias Map Tests ─────────────────────────────────────
+
+console.log('\n=== Field Alias Map Tests ===');
+
+{
+  // Field ref resolves via alias map when direct lookup fails
+  const record = { 'Given Name': 'Angel', 'Family Name': 'Ledia' };
+  const aliasMap = {
+    fldABC: 'Given Name',
+    'Given Name': 'fldABC',
+    fldDEF: 'Family Name',
+    'Family Name': 'fldDEF'
+  };
+  const result = exec(
+    '{fldABC} & " " & {fldDEF}',
+    record,
+    { _fieldAliasMap: aliasMap }
+  );
+  assert(result === 'Angel Ledia', 'alias map: field IDs resolve to names via _fieldAliasMap');
+}
+
+{
+  // Alias map works in reverse (name → ID)
+  const record = { fldABC: 42 };
+  const aliasMap = { fldABC: 'Price', Price: 'fldABC' };
+  const result = exec('{Price} + 8', record, { _fieldAliasMap: aliasMap });
+  assert(result === 50, 'alias map: field names resolve to IDs via _fieldAliasMap');
+}
+
+{
+  // Direct lookup still preferred over alias
+  const record = { Name: 'Direct', fldXYZ: 'Alias' };
+  const aliasMap = { Name: 'fldXYZ', fldXYZ: 'Name' };
+  const result = exec('{Name}', record, { _fieldAliasMap: aliasMap });
+  assert(result === 'Direct', 'alias map: direct lookup preferred over alias');
+}
+
+{
+  // No alias map — falls through to undefined gracefully
+  const record = { 'Other Field': 'value' };
+  const result = exec('{Missing} & "!"', record);
+  assert(result === '!', 'no alias map: undefined field produces empty string in concat');
+}
+
 // ── Summary ───────────────────────────────────────────────────
 
 console.log(`\n=== Compiler Results: ${passed} passed, ${failed} failed ===`);
