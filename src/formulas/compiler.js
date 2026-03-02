@@ -273,9 +273,14 @@ function compileNode(node) {
   switch (node.type) {
     case 'field_ref': {
       const name = node.name;
-      return (record) => {
+      return (record, meta) => {
         // Direct property lookup (most common)
         if (record[name] !== undefined) return record[name];
+        // Try field alias map (ID→name or name→ID) passed from _applyFormulaColumns
+        if (meta && meta._fieldAliasMap) {
+          const alt = meta._fieldAliasMap[name];
+          if (alt && record[alt] !== undefined) return record[alt];
+        }
         // Fallback: case-insensitive match for field name mismatches
         const lower = name.toLowerCase();
         const keys = Object.keys(record);
