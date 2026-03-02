@@ -18770,9 +18770,56 @@ async function hydrateFromWebhooks() {
                                         fieldName: fMeta.fieldName || recId,
                                         fieldType: fMeta.fieldType || 'singleLineText'
                                     };
+                                    if (fMeta.options) fieldMeta.options = fMeta.options;
+                                    if (fMeta.readOnly != null) fieldMeta.readOnly = fMeta.readOnly;
                                     META_FIELDS[tableId][recId] = fieldMeta;
                                     fieldsToSave.push(fieldMeta);
                                     if (!existing) totalFields++;
+                                }
+                                continue;
+                            }
+                            // def:fld* records carry formula/rollup/lookup definitions
+                            // from the Airtable metadata API (stored by the reconciliation
+                            // workflow's "Extract Field Defs" node). Merge them into
+                            // META_FIELDS as a proper options object.
+                            if (recId.startsWith('def:fld')) {
+                                var defFieldId = recId.slice(4); // 'def:fldXYZ' → 'fldXYZ'
+                                var defMeta = rec.fields;
+                                if (typeof defMeta === 'string') {
+                                    try { defMeta = JSON.parse(defMeta); } catch (e) { defMeta = null; }
+                                }
+                                if (defMeta && typeof defMeta === 'object' && defMeta.fieldType) {
+                                    if (!META_FIELDS[tableId]) META_FIELDS[tableId] = {};
+                                    var target = META_FIELDS[tableId][defFieldId];
+                                    if (!target) {
+                                        // Create stub entry if fld* record hasn't arrived yet
+                                        target = {
+                                            tableId: tableId,
+                                            fieldId: defFieldId,
+                                            fieldName: defMeta.fieldName || defFieldId,
+                                            fieldType: defMeta.fieldType
+                                        };
+                                        META_FIELDS[tableId][defFieldId] = target;
+                                        fieldsToSave.push(target);
+                                        totalFields++;
+                                    }
+                                    // Reconstruct the Airtable-style options object
+                                    var opts = target.options || {};
+                                    if (defMeta.formula != null) opts.formula = defMeta.formula;
+                                    if (defMeta.rollupFunction != null) opts.formula = defMeta.rollupFunction;
+                                    if (defMeta.recordLinkFieldId) opts.recordLinkFieldId = defMeta.recordLinkFieldId;
+                                    if (defMeta.fieldIdInLinkedTable) opts.fieldIdInLinkedTable = defMeta.fieldIdInLinkedTable;
+                                    if (defMeta.linkedTableId) opts.linkedTableId = defMeta.linkedTableId;
+                                    if (defMeta.referencedFieldIds) opts.referencedFieldIds = defMeta.referencedFieldIds;
+                                    if (defMeta.inverseLinkFieldId) opts.inverseLinkFieldId = defMeta.inverseLinkFieldId;
+                                    if (defMeta.prefersSingleRecordLink != null) opts.prefersSingleRecordLink = defMeta.prefersSingleRecordLink;
+                                    if (defMeta.isReversed != null) opts.isReversed = defMeta.isReversed;
+                                    if (defMeta.isValid != null) opts.isValid = defMeta.isValid;
+                                    if (defMeta.resultType) {
+                                        opts.result = { type: defMeta.resultType };
+                                        if (defMeta.resultOptions) opts.result.options = defMeta.resultOptions;
+                                    }
+                                    target.options = opts;
                                 }
                                 continue;
                             }
