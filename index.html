@@ -14344,6 +14344,11 @@ async function refreshLocalDB(sourceOverride) {
                 });
             }
 
+            // Reconcile META_FIELDS after reload
+            for (var _rcTableId in META_FIELDS) {
+                if (typeof _reconcileMetaFields === 'function') _reconcileMetaFields(_rcTableId);
+            }
+
             // Schedule edge rebuild after refresh (debounced to coalesce with other updates)
             scheduleEdgeRebuild();
 
@@ -17042,6 +17047,10 @@ async function showTable(tableId) {
         views.forEach(v => META_VIEWS[tableId][v.viewId] = v);
     }
 
+    // Build name→id map from IDB-loaded fields (needed before fetchFieldRegistry
+    // so placeholder guard and prevention work correctly).
+    _reconcileMetaFields(tableId);
+
     // Fetch field registry metadata (formula/lookup/rollup definitions) from
     // Postgres. This is non-blocking: we fire it early and await before render
     // so formula definitions are available when _applyFormulaColumns runs.
@@ -17287,6 +17296,19 @@ async function renderTable(paginationOnly) {
 
     // Get columns from view configuration
     var fields = META_FIELDS[currentTable] || {};
+
+    // Normalize record keys: records from Postgres are keyed by field names
+    // ("Client Name") but formulas/columns may reference field IDs ("fldXYZ").
+    // Copy name-keyed values to their canonical ID keys so both resolve.
+    var _nameToId = (window._fieldNameToId && window._fieldNameToId[currentTable]) || {};
+    for (var _nrid in recordMap) {
+        var _nrow = recordMap[_nrid];
+        for (var _nk in _nameToId) {
+            if (_nrow[_nk] !== undefined && _nrow[_nameToId[_nk]] === undefined) {
+                _nrow[_nameToId[_nk]] = _nrow[_nk];
+            }
+        }
+    }
 
     // Always compute formula fields locally before rendering. The formula
     // engine is guaranteed to be loaded by showTable() awaiting
@@ -18858,16 +18880,21 @@ async function hydrateFromWebhooks() {
                             for (var fi = 0; fi < fieldIds.length; fi++) {
                                 var fid = fieldIds[fi];
                                 if (!META_FIELDS[tableId][fid]) {
-                                    var fieldMeta = {
-                                        tableId: tableId,
-                                        fieldId: fid,
-                                        fieldName: fid,
-                                        fieldType: inferFieldType(fields[fid]),
-                                        _placeholder: true
-                                    };
-                                    META_FIELDS[tableId][fid] = fieldMeta;
-                                    fieldsToSave.push(fieldMeta);
-                                    totalFields++;
+                                    // Skip placeholder creation if this field name already
+                                    // maps to a canonical ID-keyed entry (prevents duplicates)
+                                    var _knownId = window._fieldNameToId && window._fieldNameToId[tableId] && window._fieldNameToId[tableId][fid];
+                                    if (!_knownId) {
+                                        var fieldMeta = {
+                                            tableId: tableId,
+                                            fieldId: fid,
+                                            fieldName: fid,
+                                            fieldType: inferFieldType(fields[fid]),
+                                            _placeholder: true
+                                        };
+                                        META_FIELDS[tableId][fid] = fieldMeta;
+                                        fieldsToSave.push(fieldMeta);
+                                        totalFields++;
+                                    }
                                 }
                             }
 
@@ -19392,6 +19419,11 @@ function _startBackgroundHydration() {
                 META_VIEWS[v.tableId][v.viewId] = META_VIEWS[v.tableId][v.viewId] || v;
             });
 
+            // Reconcile META_FIELDS for all tables after hydration reload
+            for (var _rcTableId in META_FIELDS) {
+                _reconcileMetaFields(_rcTableId);
+            }
+
             // Schedule edge rebuild after hydration (debounced)
             scheduleEdgeRebuild();
 
@@ -19688,6 +19720,12 @@ async function init() {
         if (!META_VIEWS[v.tableId]) META_VIEWS[v.tableId] = {};
         META_VIEWS[v.tableId][v.viewId] = v;
     });
+
+    // Reconcile META_FIELDS for all tables — removes name-keyed placeholders
+    // that duplicate canonical ID-keyed entries loaded from IDB.
+    for (var _rcTableId in META_FIELDS) {
+        _reconcileMetaFields(_rcTableId);
+    }
 
     // Build edges from field metadata on startup (debounced — may coalesce with hydration)
     scheduleEdgeRebuild();
@@ -24891,6 +24929,10 @@ async function _fetchFieldRegistryNetwork(tableId) {
 
         _fieldRegistryFetched[tableId] = true;
 
+        // Reconcile META_FIELDS: remove duplicate name-keyed placeholders
+        // now that canonical ID-keyed entries are loaded from the registry.
+        _reconcileMetaFields(tableId);
+
         // If the current table's field definitions were just updated in the
         // background (deferred refresh path), re-render so formula cells that
         // were empty on first paint get computed and displayed.
@@ -24925,6 +24967,50 @@ async function _fetchFieldRegistryNetwork(tableId) {
     }
 }
 
+// Reconcile META_FIELDS by removing name-keyed placeholder entries that
+// duplicate canonical ID-keyed entries. Also builds _fieldNameToId reverse
+// lookup used by record key normalization and placeholder prevention.
+function _reconcileMetaFields(tableId) {
+    var tableFields = META_FIELDS[tableId];
+    if (!tableFields) return;
+    if (!window._fieldNameToId) window._fieldNameToId = {};
+    window._fieldNameToId[tableId] = {};
+
+    // Build name→id map from canonical (ID-keyed) entries
+    for (var fid in tableFields) {
+        var f = tableFields[fid];
+        if (!f || !f.fieldName) continue;
+        if (fid.startsWith('fld') && f.fieldName !== fid) {
+            window._fieldNameToId[tableId][f.fieldName] = fid;
+        }
+    }
+
+    // Remove name-keyed placeholders that duplicate a canonical ID-keyed entry
+    var toRemove = [];
+    var nameToId = window._fieldNameToId[tableId];
+    for (var name in nameToId) {
+        if (tableFields[name] && tableFields[name]._placeholder) {
+            toRemove.push(name);
+        }
+    }
+    for (var i = 0; i < toRemove.length; i++) {
+        delete tableFields[toRemove[i]];
+        // Also remove from IDB so duplicates don't come back on reload
+        try {
+            if (typeof db !== 'undefined' && db) {
+                var tx = db.transaction('fields', 'readwrite');
+                tx.objectStore('fields').delete([tableId, toRemove[i]]);
+            }
+        } catch (_e) { /* IDB cleanup is best-effort */ }
+    }
+    if (toRemove.length > 0) {
+        if (typeof invalidateVisibleFieldsCache === 'function') invalidateVisibleFieldsCache();
+        // Invalidate formula cache since field set changed
+        delete _compiledFormulaCache[tableId];
+        delete _compiledFormulaCacheKeys[tableId];
+    }
+}
+
 async function fetchFieldRegistry(tableId) {
     if (_fieldRegistryFetched[tableId]) return;
 
@@ -24936,6 +25022,21 @@ async function fetchFieldRegistry(tableId) {
     // that every formula-type field already has its expression loaded before
     // allowing the fast-path (background-only refresh).
     var _existingFields = META_FIELDS[tableId] || {};
+
+    // Guard: if any placeholders remain, we can't trust fieldType checks
+    // (inferFieldType can never return "formula"). Force a blocking fetch
+    // so canonical entries with real fieldTypes are loaded before render.
+    var _placeholderCount = 0, _totalCount = 0;
+    for (var _pc in _existingFields) {
+        _totalCount++;
+        if (_existingFields[_pc] && _existingFields[_pc]._placeholder) _placeholderCount++;
+    }
+    if (_placeholderCount > 0 && _placeholderCount >= _totalCount * 0.5) {
+        await _fetchFieldRegistryNetwork(tableId);
+        _reconcileMetaFields(tableId);
+        return;
+    }
+
     var _formulaOptionsReady = true;
     var _hasFormulaFields = false;
     for (var _fk in _existingFields) {
@@ -24959,6 +25060,7 @@ async function fetchFieldRegistry(tableId) {
         // All computed fields have their definitions cached — safe to skip
         // the blocking fetch and refresh in the background.
         _fieldRegistryFetched[tableId] = true;
+        _reconcileMetaFields(tableId);
         setTimeout(function() { _fetchFieldRegistryNetwork(tableId); }, 0);
         return;
     }
@@ -24967,6 +25069,7 @@ async function fetchFieldRegistry(tableId) {
         // to block rendering.  Still refresh in the background in case new
         // computed fields were added in Airtable.
         _fieldRegistryFetched[tableId] = true;
+        _reconcileMetaFields(tableId);
         setTimeout(function() { _fetchFieldRegistryNetwork(tableId); }, 0);
         return;
     }
@@ -24975,6 +25078,7 @@ async function fetchFieldRegistry(tableId) {
     // must fetch synchronously before rendering so _applyFormulaColumns
     // has the expressions it needs to compute cell values.
     await _fetchFieldRegistryNetwork(tableId);
+    _reconcileMetaFields(tableId);
 }
 
 // Called from renderTable() and renderRecordProfile() so that ALL rows
@@ -25282,12 +25386,15 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
         return;
     }
 
-    // Collect formula fields for this table
+    // Collect formula fields for this table. Detect by expression presence,
+    // not just fieldType — inferFieldType() can never return "formula" so
+    // placeholder entries with real formula expressions would be missed.
     var formulaFields = [];
     for (var fid in fields) {
         var f = fields[fid];
         var formulaExpr = f && f.options && (f.options.formula || f.options.expression);
-        if (f.fieldType === 'formula' && formulaExpr) {
+        if (formulaExpr) {
+            if (f.fieldType !== 'formula') f.fieldType = 'formula';
             formulaFields.push(f);
         }
     }
@@ -25438,11 +25545,12 @@ function _applyFormulaColumns(tableId, fields, recordMap) {
                 }
 
                 var value = c.fn(row, { recordId: rid, _fieldAliasMap: _fieldAliasMap });
-                // Overwrite formula fields with computed values.  If local
-                // computation returns null/error, keep the existing (possibly
-                // Postgres-synced) value as a fallback so cells aren't blank.
-                var _computedVal = (value && value.__error) ? null : (value !== undefined ? value : null);
-                if (_computedVal !== null) {
+                // Always write computed values (including null) — only skip
+                // on explicit engine errors. The old null guard prevented
+                // legitimate null results from being written.
+                var _isError = value && typeof value === 'object' && value.__error;
+                var _computedVal = _isError ? null : (value !== undefined ? value : null);
+                if (!_isError) {
                     row[c.fieldId] = _computedVal;
                     if (c.fieldName && c.fieldName !== c.fieldId) {
                         row[c.fieldName] = _computedVal;
