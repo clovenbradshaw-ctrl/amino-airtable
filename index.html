@@ -24887,8 +24887,18 @@ async function _fetchFieldRegistryNetwork(tableId) {
         delete _compiledFormulaCache[tableId];
         delete _compiledFormulaCacheKeys[tableId];
         _formulaCompileWarned = {};
+        invalidateFormulaResultCache();
 
         _fieldRegistryFetched[tableId] = true;
+
+        // If the current table's field definitions were just updated in the
+        // background (deferred refresh path), re-render so formula cells that
+        // were empty on first paint get computed and displayed.
+        if (typeof currentTable !== 'undefined' && currentTable === tableId &&
+            typeof renderTable === 'function') {
+            if (typeof invalidateVisibleFieldsCache === 'function') invalidateVisibleFieldsCache();
+            renderTable();
+        }
 
         // Also fetch field registries for linked tables (needed for lookups/rollups).
         // We discover linked table IDs from multipleRecordLinks fields' options.
@@ -24918,23 +24928,52 @@ async function _fetchFieldRegistryNetwork(tableId) {
 async function fetchFieldRegistry(tableId) {
     if (_fieldRegistryFetched[tableId]) return;
 
-    // If IDB-loaded META_FIELDS already has formula options for this table, use
-    // them immediately so renderTable is not blocked by a network round-trip.
-    // The network refresh runs in the background to keep definitions current.
-    var _hasOptions = false;
+    // Check whether IDB-cached META_FIELDS already has the formula/lookup/rollup
+    // definitions we need.  The old check only tested whether ANY field had
+    // non-empty options, which was too loose — a multipleRecordLinks field having
+    // options.linkedTableId would satisfy the check even when formula fields were
+    // still missing their options.formula expressions.  Now we specifically verify
+    // that every formula-type field already has its expression loaded before
+    // allowing the fast-path (background-only refresh).
     var _existingFields = META_FIELDS[tableId] || {};
+    var _formulaOptionsReady = true;
+    var _hasFormulaFields = false;
     for (var _fk in _existingFields) {
-        if (_existingFields[_fk].options && Object.keys(_existingFields[_fk].options).length > 0) {
-            _hasOptions = true; break;
+        var _ef = _existingFields[_fk];
+        if (!_ef) continue;
+        if (_ef.fieldType === 'formula') {
+            _hasFormulaFields = true;
+            if (!_ef.options || (!_ef.options.formula && !_ef.options.expression)) {
+                _formulaOptionsReady = false;
+                break;
+            }
+        } else if (_ef.fieldType === 'lookup' || _ef.fieldType === 'rollup') {
+            _hasFormulaFields = true;
+            if (!_ef.options || !_ef.options.recordLinkFieldId) {
+                _formulaOptionsReady = false;
+                break;
+            }
         }
     }
-    if (_hasOptions) {
+    if (_hasFormulaFields && _formulaOptionsReady) {
+        // All computed fields have their definitions cached — safe to skip
+        // the blocking fetch and refresh in the background.
+        _fieldRegistryFetched[tableId] = true;
+        setTimeout(function() { _fetchFieldRegistryNetwork(tableId); }, 0);
+        return;
+    }
+    if (!_hasFormulaFields && Object.keys(_existingFields).length > 0) {
+        // Table has fields loaded but none are formula/lookup/rollup — no need
+        // to block rendering.  Still refresh in the background in case new
+        // computed fields were added in Airtable.
         _fieldRegistryFetched[tableId] = true;
         setTimeout(function() { _fetchFieldRegistryNetwork(tableId); }, 0);
         return;
     }
 
-    // No cached options — must fetch synchronously before rendering
+    // Formula/computed field definitions are missing or incomplete —
+    // must fetch synchronously before rendering so _applyFormulaColumns
+    // has the expressions it needs to compute cell values.
     await _fetchFieldRegistryNetwork(tableId);
 }
 
